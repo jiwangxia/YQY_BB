@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ImportGroup Label="PropertySheets" />
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <IncludePath>ThirdPartyLibrary\eigen-3.4.0;ThirdPartyLibrary\VTK9.4.2\Release\include\vtk-9.4;$(IncludePath)</IncludePath>
+    <LibraryPath>ThirdPartyLibrary\VTK9.4.2\Release\lib;$(LibraryPath)</LibraryPath>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <Link>
+      <AdditionalDependencies>ThirdPartyLibrary\VTK9.4.2\Release\lib\*.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup />
+</Project>
