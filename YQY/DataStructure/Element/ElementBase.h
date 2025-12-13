@@ -11,5 +11,6 @@ public:
     std::weak_ptr<Property>      m_pProperty;   //所属属性(材料+截面)
 
     virtual int Get_NodeDOF() const = 0;        //获取单元自由度个数
+    //virtual ~ElementBase() = 0;
 };
 

@@ -7,6 +7,9 @@
 #include "DataStructure/Element/ElementBase.h"
 #include "DataStructure/Element/ElementTruss.h"
 #include "DataStructure/Property/Property.h"
+#include "DataStructure/Constraint/Constraint.h"
+#include "DataStructure/Load/LoadBase.h"
+#include "DataStructure/Load/Load_Node.h"
 
 class StructureData : public Base
 {
@@ -19,6 +22,8 @@ public:
 	std::map<int, std::shared_ptr<Material>>          m_Material;
 	std::map<int, std::shared_ptr<SectionBase>>       m_Section;
 	std::map<int, std::shared_ptr<Property>>          m_Property;
+	std::map<int, std::shared_ptr<Constraint>>        m_Constraint;
+	std::map<int, std::shared_ptr<LoadBase>>          m_Load;
 
 	~StructureData();
 

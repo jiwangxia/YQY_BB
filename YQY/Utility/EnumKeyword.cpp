@@ -1,32 +1,40 @@
 ﻿#include "EnumKeyword.h"
 
-const QMap<QString, classKeyword::KeyData> classKeyword::MapKeyData = 
+const QMap<QString, EnumKeyword::KeyData> EnumKeyword::MapKeyData = 
 {
-    {"NODE", classKeyword::KeyData::NODE},
-    {"ELEMENT", classKeyword::KeyData::ELEMENT},
-    {"MATERIAL", classKeyword::KeyData::MATERIAL},
-    {"SECTION", classKeyword::KeyData::SECTION}
+    {"NODE", EnumKeyword::KeyData::NODE},
+    {"ELEMENT", EnumKeyword::KeyData::ELEMENT},
+    {"MATERIAL", EnumKeyword::KeyData::MATERIAL},
+    {"SECTION", EnumKeyword::KeyData::SECTION},
+    {"CONSTRAINT", EnumKeyword::KeyData::CONSTRAINT},
+    {"LOAD", EnumKeyword::KeyData::LOAD}
 };
 
-const QMap<QString, classKeyword::Direction> classKeyword::MapDirection = 
+const QMap<QString, EnumKeyword::Direction> EnumKeyword::MapDirection = 
 {
-    {"X", classKeyword::Direction::X},
-    {"Y", classKeyword::Direction::Y},
-    {"Z", classKeyword::Direction::Z},
-    {"RX", classKeyword::Direction::RX},
-    {"RY", classKeyword::Direction::RY},
-    {"RZ", classKeyword::Direction::RZ}
+    {"X", EnumKeyword::Direction::X},
+    {"Y", EnumKeyword::Direction::Y},
+    {"Z", EnumKeyword::Direction::Z},
+    {"RX", EnumKeyword::Direction::RX},
+    {"RY", EnumKeyword::Direction::RY},
+    {"RZ", EnumKeyword::Direction::RZ}
 };
 
-const QMap<QString, classKeyword::ElementType> classKeyword::MapElementType = 
+const QMap<QString, EnumKeyword::ElementType> EnumKeyword::MapElementType = 
 {
-    {"T3D2", classKeyword::ElementType::T3D2},
-    {"B31", classKeyword::ElementType::B31}
+    {"T3D2", EnumKeyword::ElementType::T3D2},
+    {"B31", EnumKeyword::ElementType::B31}
 };
 
-const QMap<QString, classKeyword::SectionType> classKeyword::MapSectionType = 
+const QMap<QString, EnumKeyword::SectionType> EnumKeyword::MapSectionType = 
 {
-    {"CIRCULAR", classKeyword::SectionType::CIRCULAR},
-    {"L", classKeyword::SectionType::L},
-    {"RECTANGULAR", classKeyword::SectionType::RECTANGULAR}
+    {"CIRCULAR", EnumKeyword::SectionType::CIRCULAR},
+    {"L", EnumKeyword::SectionType::L},
+    {"RECTANGULAR", EnumKeyword::SectionType::RECTANGULAR}
+};
+
+const QMap<QString, EnumKeyword::LoadType> EnumKeyword::MapLoadType =
+{
+    {"NODE_FORCE", EnumKeyword::LoadType::NODE_FORCE},
+    {"ELEMENT_PRESSURE", EnumKeyword::LoadType::ELEMENT_PRESSURE}
 };

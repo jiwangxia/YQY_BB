@@ -2,7 +2,7 @@
 #include "Base/Base.h"
 #include <QTextStream>
 #include <QFile>
-#include "Utility/EnumKeyword.h"
+//#include "Utility/EnumKeyword.h"
 
 class StructureData;
 class Input_Model : public Base
@@ -26,9 +26,9 @@ private:
 	bool InputMaterial(QTextStream& flow, const QStringList& list_str);
 	// 读取分析步
 	//bool InputStep(QTextStream& flow, const QStringList& list_str, const QString& stepType);
-	//// 读取荷载
-	//bool InputForce(QTextStream& flow, const QStringList& list_str, std::shared_ptr<StructureData>& pStructure);
-	//// 读取约束
-	//bool InputConstraint(QTextStream& flow, const QStringList& list_str, std::shared_ptr<StructureData>& pStructure);
+	// 读取荷载
+	bool InputLoad(QTextStream& flow, const QStringList& list_str);
+	// 读取约束
+	bool InputConstraint(QTextStream& flow, const QStringList& list_str);
 };
 

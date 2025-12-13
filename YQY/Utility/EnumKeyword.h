@@ -1,18 +1,18 @@
 ﻿#include <QMap>
 #include <QString>
 
-class classKeyword
+class EnumKeyword
 {
 public:
     enum class KeyData
     {//数据文件关键字
-        UNKNOWN, MATERIAL, SECTION, NODE, ELEMENT, BEAM3D, TRUSS3D
+        UNKNOWN, MATERIAL, SECTION, NODE, ELEMENT, CONSTRAINT, LOAD
     };
     static const QMap<QString, KeyData> MapKeyData;
 
     enum class Direction
     {//三维坐标系的方向
-        UNKNOWN, X, Y, Z, RX, RY, RZ
+        X, Y, Z, RX, RY, RZ, UNKNOWN 
     };
     static const QMap<QString, Direction> MapDirection;
 
@@ -27,5 +27,11 @@ public:
         UNKNOWN, CIRCULAR, L, RECTANGULAR
     };
     static const QMap<QString, SectionType> MapSectionType;
+
+    enum class LoadType
+    {//荷载类型
+        NODE_FORCE, ELEMENT_PRESSURE, UNKNOWN
+    };
+    static const QMap<QString, LoadType> MapLoadType;
 };
 

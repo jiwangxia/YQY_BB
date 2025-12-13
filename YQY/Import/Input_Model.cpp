@@ -43,21 +43,27 @@ bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureDa
 
         QString keyword = list_str[0].trimmed();
         // 使用 Map 进行映射，统一转大写
-        classKeyword::KeyData key = classKeyword::MapKeyData.value(keyword.toUpper(), classKeyword::KeyData::UNKNOWN);
+        auto key = EnumKeyword::MapKeyData.value(keyword.toUpper(), EnumKeyword::KeyData::UNKNOWN);
 
         switch (key)
         {
-        case classKeyword::KeyData::NODE:
+        case EnumKeyword::KeyData::NODE:
             InputNodes(flow, list_str);
             break;
-        case classKeyword::KeyData::ELEMENT:
+        case EnumKeyword::KeyData::ELEMENT:
             InputElement(flow, list_str);
             break;
-        case classKeyword::KeyData::SECTION:
+        case EnumKeyword::KeyData::SECTION:
             InputSection(flow, list_str);
             break;
-        case classKeyword::KeyData::MATERIAL:
+        case EnumKeyword::KeyData::MATERIAL:
             InputMaterial(flow, list_str);
+            break;
+        case EnumKeyword::KeyData::CONSTRAINT:
+            InputConstraint(flow, list_str);
+            break;
+        case EnumKeyword::KeyData::LOAD:
+            InputLoad(flow, list_str);
             break;
 
         default:
@@ -115,7 +121,7 @@ bool Input_Model::InputNodes(QTextStream& flow, const QStringList& list_str)
 
     for (auto& a : m_Structure->m_Nodes)
     {
-    	qDebug() << a.first << " " << a.second->m_X << " " << a.second->m_Y << " " << a.second->m_Z;
+        qDebug() << a.first << " " << a.second->m_X << " " << a.second->m_Y << " " << a.second->m_Z;
     }
     return true;
 }
@@ -165,15 +171,15 @@ bool Input_Model::InputElement(QTextStream& flow, const QStringList& list_str)
 
     for (auto& a : m_Structure->m_Elements)
     {
-    	auto pEle = a.second;
-    	std::cout << pEle->m_Id << " ";
+        auto pEle = a.second;
+        std::cout << pEle->m_Id << " ";
 
-    	for (auto& b : pEle->m_pNode)
-    	{
-    		auto pNode = b.lock();
-    		std::cout << pNode->m_Id << " ";
-    	}
-    	std::cout << pEle->m_pProperty.lock()->m_Id << std::endl;
+        for (auto& b : pEle->m_pNode)
+        {
+            auto pNode = b.lock();
+            std::cout << pNode->m_Id << " ";
+        }
+        std::cout << pEle->m_pProperty.lock()->m_Id << std::endl;
     }
     return true;
 }
@@ -243,6 +249,82 @@ bool Input_Model::InputMaterial(QTextStream& flow, const QStringList& list_str)
         pMaterial->m_Expansion = e;
 
         m_Structure->m_Material.insert(std::make_pair(pMaterial->m_Id, pMaterial));
+    }
+    return true;
+}
+
+bool Input_Model::InputLoad(QTextStream& flow, const QStringList& list_str)
+{
+    Q_ASSERT(list_str.size() == 2);
+    int nLoad = list_str[1].toInt();
+    qDebug().noquote() << QStringLiteral("荷载数: ") << nLoad;
+    QString strdata;
+    for (int i = 0; i < nLoad; i++)
+    {
+        if (!ReadLine(flow, strdata))
+        {//没有读取到有效数据，退出
+            qDebug() << QStringLiteral("Error: 荷载数据不够");
+            exit(1);
+        }
+
+        QStringList strlist_load = strdata.split(QRegularExpression("[\t, ]"), Qt::SkipEmptyParts);//利用空格,分解字符串
+        Q_ASSERT(strlist_load.size() == 5);
+        int    id = strlist_load[0].toInt();
+        int   type = strlist_load[1].toInt();
+        int idNode = strlist_load[2].toInt();
+        int  direaction = strlist_load[3].toInt();
+        double  value = strlist_load[4].toDouble();
+        EnumKeyword::LoadType loadtype = static_cast<EnumKeyword::LoadType>(type);
+
+        switch (loadtype)
+        {
+        case EnumKeyword::LoadType::NODE_FORCE:
+        {
+            auto pLoad = std::make_shared<Load_Node>();
+            pLoad->m_Id = id;
+            pLoad->m_pNode = m_Structure->FindNode(idNode);
+            pLoad->m_Direction = static_cast<EnumKeyword::Direction>(direaction);
+            pLoad->m_Value = value;
+            m_Structure->m_Load.insert(std::make_pair(id, pLoad));
+        }
+            break;
+        case EnumKeyword::LoadType::ELEMENT_PRESSURE:
+            break;
+        case EnumKeyword::LoadType::UNKNOWN:
+            break;
+        }
+
+    }
+    return true;
+}
+
+bool Input_Model::InputConstraint(QTextStream& flow, const QStringList& list_str)
+{
+    Q_ASSERT(list_str.size() == 2);
+    int nConstraint = list_str[1].toInt();
+    qDebug().noquote() << QStringLiteral("约束数: ") << nConstraint;
+    QString strdata;
+    for (int i = 0; i < nConstraint; i++)
+    {
+        if (!ReadLine(flow, strdata))
+        {//没有读取到有效数据，退出
+            qDebug() << QStringLiteral("Error: 约束数据不够");
+            exit(1);
+        }
+
+        QStringList strlist_con = strdata.split(QRegularExpression("[\t, ]"), Qt::SkipEmptyParts);//利用空格,分解字符串
+        Q_ASSERT(strlist_con.size() == 4);
+        int    id = strlist_con[0].toInt();
+        int idNode = strlist_con[1].toInt();
+        auto  direaction = strlist_con[2].toInt();
+        double  value = strlist_con[3].toDouble();
+
+        auto pConstraint = std::make_shared<Constraint>();
+        pConstraint->m_Id = id;
+        pConstraint->m_pNode = m_Structure->FindNode(idNode);
+        pConstraint->m_Direction = static_cast<EnumKeyword::Direction>(direaction);
+        pConstraint->m_Value = value;
+        m_Structure->m_Constraint.insert(std::make_pair(id, pConstraint));
     }
     return true;
 }

@@ -5,6 +5,8 @@
 #include <qdebug>
 #include <iostream>
 
+#include "Utility/EnumKeyword.h"
+
 #define PI 3.141592653589793
 class Base
 {
