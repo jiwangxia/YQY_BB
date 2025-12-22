@@ -6,6 +6,9 @@
     <IncludePath>ThirdPartyLibrary\eigen-3.4.0;ThirdPartyLibrary\VTK9.4.2\Release\include\vtk-9.4;$(IncludePath)</IncludePath>
     <LibraryPath>ThirdPartyLibrary\VTK9.4.2\Release\lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
+  <PropertyGroup Label="QtSettings">
+    <QtInstall>6.8.2_msvc2022_64</QtInstall>
+  </PropertyGroup>
   <ItemDefinitionGroup>
     <Link>
       <AdditionalDependencies>ThirdPartyLibrary\VTK9.4.2\Release\lib\*.lib;%(AdditionalDependencies)</AdditionalDependencies>

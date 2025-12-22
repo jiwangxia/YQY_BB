@@ -3,7 +3,7 @@
 class LoadBase : public Base
 {
 public:
-    LoadBase();
+    LoadBase() {};
     EnumKeyword::LoadType m_LoadType = EnumKeyword::LoadType::UNKNOWN;
     //virtual ~LoadBase() = 0;
 };

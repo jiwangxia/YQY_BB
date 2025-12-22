@@ -4,7 +4,7 @@ class Node;
 class Constraint : public Base
 {
 public:
-    Constraint();
+    Constraint() {}
 
     std::weak_ptr<Node> m_pNode;
     EnumKeyword::Direction m_Direction = EnumKeyword::Direction::UNKNOWN;

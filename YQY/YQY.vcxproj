@@ -36,12 +36,12 @@
     <Import Project="$(QtMsBuild)\qt_defaults.props" />
   </ImportGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="QtSettings">
-    <QtInstall>6.2.4_msvc2019_64</QtInstall>
+    <QtInstall>6.8.2_msvc2022_64</QtInstall>
     <QtModules>core;gui;widgets</QtModules>
     <QtBuildConfig>debug</QtBuildConfig>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="QtSettings">
-    <QtInstall>6.2.4_msvc2019_64</QtInstall>
+    <QtInstall>6.8.2_msvc2022_64</QtInstall>
     <QtModules>core;gui;widgets</QtModules>
     <QtBuildConfig>release</QtBuildConfig>
   </PropertyGroup>
@@ -96,6 +96,9 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="DataStructure\Constraint\Constraint.cpp" />
+    <ClCompile Include="DataStructure\Load\LoadBase.cpp" />
+    <ClCompile Include="DataStructure\Load\Load_Node.cpp" />
     <ClCompile Include="DataStructure\Node\Node.cpp" />
     <ClCompile Include="DataStructure\Material\Material.cpp" />
     <ClCompile Include="DataStructure\Property\Property.cpp" />
@@ -115,6 +118,9 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Base\Base.h" />
+    <ClInclude Include="DataStructure\Constraint\Constraint.h" />
+    <ClInclude Include="DataStructure\Load\LoadBase.h" />
+    <ClInclude Include="DataStructure\Load\Load_Node.h" />
     <ClInclude Include="DataStructure\Node\Node.h" />
     <ClInclude Include="DataStructure\Element\ElementBase.h" />
     <ClInclude Include="DataStructure\Element\ElementTruss.h" />
