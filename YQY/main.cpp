@@ -10,7 +10,7 @@ int main(int argc, char *argv[])
 
     Input_Model importer;
 
-    QString fileName = "Import/ImportFile/Start.txt";
+    QString fileName = "Import/ImportFile/ce.txt";
     // 5. 调用读取函数
     if (importer.InputData(fileName, pStructure))
     {

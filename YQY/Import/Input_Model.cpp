@@ -1,6 +1,5 @@
 ﻿#include "Input_Model.h"
 #include "DataStructure/Structure/StructureData.h"
-
 #include <QRegularExpression>
 #include <QElapsedTimer>
 
@@ -81,10 +80,10 @@ bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureDa
     timer.start();
     m_Structure->CleanupModel();
     qint64 elapsedMs = timer.elapsed();
-    qDebug().noquote() << QStringLiteral("模型清理耗时: ") << elapsedMs << QStringLiteral(" 毫秒");
+    qDebug().noquote() << QStringLiteral("模型整理耗时: ") << elapsedMs << QStringLiteral(" 毫秒");
 
-    // 输出清理后的统计（真实数量）
-
+    // 输出
+    if (0 != m_Structure->m_Nodes.size())
     qDebug().noquote() << QStringLiteral("\n节点数量: ") << m_Structure->m_Nodes.size();
     
     // 按类型统计单元数量
@@ -97,14 +96,19 @@ bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureDa
         else if (dynamic_cast<ElementBeam*>(pair.second.get())) typeName = "B31";
         elementTypeCount[typeName]++;
     }
+    if (0 != m_Structure->m_Elements.size())
     qDebug().noquote() << QStringLiteral("\n单元总数: ") << m_Structure->m_Elements.size();
+
     for (auto it = elementTypeCount.constBegin(); it != elementTypeCount.constEnd(); ++it)
     {
         qDebug().noquote() << it.key() << QStringLiteral(": ") << it.value();
     }
     
+    if (0 != m_Structure->m_Material.size())
     qDebug().noquote() << QStringLiteral("\n材料数量: ") << m_Structure->m_Material.size();
+    if (0 != m_Structure->m_Section.size())
     qDebug().noquote() << QStringLiteral("\n截面数量: ") << m_Structure->m_Section.size();
+    if (0 != m_Structure->m_Constraint.size())
     qDebug().noquote() << QStringLiteral("\n约束数量: ") << m_Structure->m_Constraint.size();
     
     // 按类型统计荷载数量
@@ -116,12 +120,13 @@ bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureDa
         // 可添加其他荷载类型
         loadTypeCount[typeName]++;
     }
+    if (0 != m_Structure->m_Load.size())
     qDebug().noquote() << QStringLiteral("\n荷载总数: ") << m_Structure->m_Load.size();
     for (auto it = loadTypeCount.constBegin(); it != loadTypeCount.constEnd(); ++it)
     {
         qDebug().noquote()  << it.key() << QStringLiteral(": ") << it.value();
     }
-    
+    if (0 != m_Structure->m_AnalysisStep.size())
     qDebug().noquote() << QStringLiteral("\n分析步数量: ") << m_Structure->m_AnalysisStep.size();
 
     return true;
