@@ -7,7 +7,8 @@ const QMap<QString, EnumKeyword::KeyData> EnumKeyword::MapKeyData =
     {"MATERIAL", EnumKeyword::KeyData::MATERIAL},
     {"SECTION", EnumKeyword::KeyData::SECTION},
     {"CONSTRAINT", EnumKeyword::KeyData::CONSTRAINT},
-    {"LOAD", EnumKeyword::KeyData::LOAD}
+    {"LOAD", EnumKeyword::KeyData::LOAD},
+    {"ANALYSIS_STEP", EnumKeyword::KeyData::ANALYSIS_STEP}
 };
 
 const QMap<QString, EnumKeyword::Direction> EnumKeyword::MapDirection = 
@@ -23,6 +24,7 @@ const QMap<QString, EnumKeyword::Direction> EnumKeyword::MapDirection =
 const QMap<QString, EnumKeyword::ElementType> EnumKeyword::MapElementType = 
 {
     {"T3D2", EnumKeyword::ElementType::T3D2},
+    {"CABLE", EnumKeyword::ElementType::CABLE},
     {"B31", EnumKeyword::ElementType::B31}
 };
 
@@ -35,6 +37,12 @@ const QMap<QString, EnumKeyword::SectionType> EnumKeyword::MapSectionType =
 
 const QMap<QString, EnumKeyword::LoadType> EnumKeyword::MapLoadType =
 {
-    {"NODE_FORCE", EnumKeyword::LoadType::NODE_FORCE},
-    {"ELEMENT_PRESSURE", EnumKeyword::LoadType::ELEMENT_PRESSURE}
+    {"FORCE_NODE", EnumKeyword::LoadType::FORCE_NODE},
+    {"ELEMENT_PRESSURE", EnumKeyword::LoadType::FORCE_ELEMENT}
+};
+
+const QMap<QString, EnumKeyword::StepType> EnumKeyword::MapStepType =
+{
+    {"STATIC", EnumKeyword::StepType::STATIC},
+    {"DYNAMIC", EnumKeyword::StepType::DYNAMIC}
 };

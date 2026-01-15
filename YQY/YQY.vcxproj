@@ -96,12 +96,17 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="DataStructure\AnalysisStep\AnalysisStep.cpp" />
     <ClCompile Include="DataStructure\Constraint\Constraint.cpp" />
     <ClCompile Include="DataStructure\Load\LoadBase.cpp" />
-    <ClCompile Include="DataStructure\Load\Load_Node.cpp" />
+    <ClCompile Include="DataStructure\Load\Force_Node.cpp" />
     <ClCompile Include="DataStructure\Node\Node.cpp" />
     <ClCompile Include="DataStructure\Material\Material.cpp" />
     <ClCompile Include="DataStructure\Property\Property.cpp" />
+    <ClCompile Include="DataStructure\Load\Force_Element.cpp" />
+    <ClCompile Include="DataStructure\Load\Force_Gravity.cpp" />
+    <ClCompile Include="DataStructure\Element\ElementBeam.cpp" />
+    <ClCompile Include="DataStructure\Element\ElementCable.cpp" />
     <ClCompile Include="Import\Input_Model.cpp" />
     <ClCompile Include="DataStructure\Structure\StructureData.cpp" />
     <ClCompile Include="DataStructure\Section\SectionCircular.cpp" />
@@ -117,15 +122,20 @@
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="DataStructure\AnalysisStep\AnalysisStep.h" />
     <ClInclude Include="Base\Base.h" />
     <ClInclude Include="DataStructure\Constraint\Constraint.h" />
     <ClInclude Include="DataStructure\Load\LoadBase.h" />
-    <ClInclude Include="DataStructure\Load\Load_Node.h" />
+    <ClInclude Include="DataStructure\Load\Force_Node.h" />
     <ClInclude Include="DataStructure\Node\Node.h" />
     <ClInclude Include="DataStructure\Element\ElementBase.h" />
     <ClInclude Include="DataStructure\Element\ElementTruss.h" />
     <ClInclude Include="DataStructure\Material\Material.h" />
     <ClInclude Include="DataStructure\Property\Property.h" />
+    <ClInclude Include="DataStructure\Load\Force_Element.h" />
+    <ClInclude Include="DataStructure\Load\Force_Gravity.h" />
+    <ClInclude Include="DataStructure\Element\ElementBeam.h" />
+    <ClInclude Include="DataStructure\Element\ElementCable.h" />
     <ClInclude Include="Import\Input_Model.h" />
     <ClInclude Include="DataStructure\Structure\StructureData.h" />
     <ClInclude Include="DataStructure\Section\SectionCircular.h" />

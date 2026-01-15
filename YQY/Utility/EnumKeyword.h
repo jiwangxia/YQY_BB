@@ -1,4 +1,5 @@
-﻿#include <QMap>
+﻿#pragma once
+#include <QMap>
 #include <QString>
 
 class EnumKeyword
@@ -6,7 +7,7 @@ class EnumKeyword
 public:
     enum class KeyData
     {//数据文件关键字
-        UNKNOWN, MATERIAL, SECTION, NODE, ELEMENT, CONSTRAINT, LOAD
+        UNKNOWN, MATERIAL, SECTION, NODE, ELEMENT, CONSTRAINT, LOAD, ANALYSIS_STEP
     };
     static const QMap<QString, KeyData> MapKeyData;
 
@@ -18,7 +19,7 @@ public:
 
     enum class ElementType
     {//单元类型
-        UNKNOWN, T3D2, B31
+        UNKNOWN, T3D2, CABLE, B31
     };
     static const QMap<QString, ElementType> MapElementType;
 
@@ -30,8 +31,14 @@ public:
 
     enum class LoadType
     {//荷载类型
-        NODE_FORCE, ELEMENT_PRESSURE, UNKNOWN
+        FORCE_NODE, FORCE_ELEMENT, UNKNOWN
     };
     static const QMap<QString, LoadType> MapLoadType;
+
+    enum class StepType
+    {//分析步类型
+        STATIC, DYNAMIC, UNKNOWN
+    };
+    static const QMap<QString, StepType> MapStepType;
 };
 

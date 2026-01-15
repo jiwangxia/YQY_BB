@@ -14,12 +14,12 @@ int main(int argc, char *argv[])
     // 5. 调用读取函数
     if (importer.InputData(fileName, pStructure))
     {
-        qDebug() << "Model loaded successfully!";
-        // 此时数据已经存储在 pStructure 中了
+        qDebug() << "\n=====Model loaded successfully!=====";
+
     }
     else
     {
-        qDebug() << "Failed to load model.";
+        qDebug() << "-----Failed to load model.-----";
     }
 
     YQY window;

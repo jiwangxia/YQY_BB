@@ -76,10 +76,25 @@
     <ClCompile Include="DataStructure\Constraint\Constraint.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="DataStructure\Load\Load_Node.cpp">
+    <ClCompile Include="DataStructure\Load\Force_Node.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="DataStructure\Load\LoadBase.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DataStructure\Load\Force_Element.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DataStructure\Load\Force_Gravity.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DataStructure\AnalysisStep\AnalysisStep.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DataStructure\Element\ElementBeam.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DataStructure\Element\ElementCable.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -120,10 +135,25 @@
     <ClInclude Include="DataStructure\Constraint\Constraint.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="DataStructure\Load\Load_Node.h">
+    <ClInclude Include="DataStructure\Load\Force_Node.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DataStructure\Load\LoadBase.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DataStructure\Load\Force_Element.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DataStructure\Load\Force_Gravity.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DataStructure\AnalysisStep\AnalysisStep.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DataStructure\Element\ElementBeam.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DataStructure\Element\ElementCable.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
