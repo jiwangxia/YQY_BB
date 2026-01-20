@@ -13,7 +13,7 @@ int main(int argc, char *argv[])
     Input_Model importer;
 
 
-    if (importer.InputData("Import/ImportFile/200m.txt", pStructure))
+    if (importer.InputData("Import/ImportFile/Start.txt", pStructure))
     {
         qDebug() << "\n=====Model loaded successfully!=====";
 

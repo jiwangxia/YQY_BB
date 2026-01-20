@@ -80,7 +80,7 @@ bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureDa
     timer.start();
     m_Structure->CleanupModel();
     qint64 elapsedMs = timer.elapsed();
-    qDebug().noquote() << QStringLiteral("模型整理耗时: ") << elapsedMs << QStringLiteral(" 毫秒");
+    qDebug().noquote() << QStringLiteral("模型读取耗时: ") << elapsedMs << QStringLiteral(" 毫秒");
 
     // 输出
     if (0 != m_Structure->m_Nodes.size())
@@ -522,7 +522,6 @@ bool Input_Model::InputForceElement(QTextStream& flow, const QStringList& /*list
         pLoad->m_Direction = static_cast<EnumKeyword::Direction>(direction);
         pLoad->m_Value = value;
         m_Structure->m_Load.insert(std::make_pair(autoId, pLoad));
-        qDebug() << QStringLiteral("读取单元压力: ") << strdata;
     }
     return true;
 }

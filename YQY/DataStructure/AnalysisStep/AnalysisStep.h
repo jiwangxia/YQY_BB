@@ -115,5 +115,5 @@ private:
      * @brief 组装约束位移
      * @param [out] x1 约束位移向量
      */
-    void AssembleConstraint(VectorXd& x1);
+    void Assemble_Constraint(VectorXd& x1);
 };

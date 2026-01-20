@@ -1,5 +1,6 @@
 ﻿#include "Solver.h"
 #include "DataStructure/AnalysisStep/AnalysisStep.h"
+#include <QElapsedTimer>
 
 void Solver::SetStructure(std::shared_ptr<StructureData> pStructure)
 {
@@ -29,14 +30,27 @@ void Solver::RunAll()
         int stepId = pair.first;
         auto& step = pair.second;
 
-        qDebug().noquote() << step->GetTypeName() << QStringLiteral("步 ") << stepId;
+        //qDebug().noquote() << step->GetTypeName() << QStringLiteral("步 ") << stepId;
 
         // 运行分析步（初始化 + 组装 + 求解）
         step->Init();
 
+
+        QElapsedTimer timer;
+        timer.start();
         // 根据分析步类型调用对应求解方法
         // TODO: 添加 step->Solve() 方法后启用
         // step->Solve();
+
+        qint64 elapsedMs = timer.elapsed();
+        if (0 != elapsedMs)
+        {
+            qDebug().noquote() << step->GetTypeName() << QStringLiteral("步 ") << QStringLiteral("耗时: ") << elapsedMs << QStringLiteral(" 毫秒");
+        }
+        else
+        {
+            qDebug().noquote() << step->GetTypeName() << QStringLiteral("步 未求解成功") << QStringLiteral("耗时: ") << elapsedMs << QStringLiteral(" 毫秒");
+        }
     }
 
     qDebug().noquote() << QStringLiteral("\n========== 分析完成 ==========\n");
@@ -59,8 +73,8 @@ bool Solver::RunStep(int stepId)
     }
 
     auto& step = it->second;
-    qDebug().noquote() << QStringLiteral("\n----- 运行分析步 ") << stepId 
-                       << " [" << step->GetTypeName() << "] -----";
+    qDebug().noquote() << QStringLiteral("\n----- 运行分析步 ") << stepId
+        << " [" << step->GetTypeName() << "] -----";
 
     step->Init();
     // step->Solve();

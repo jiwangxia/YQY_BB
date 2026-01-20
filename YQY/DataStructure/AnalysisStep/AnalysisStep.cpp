@@ -27,10 +27,11 @@ bool AnalysisStep::PrepareData()
 void AnalysisStep::Init()
 {
     if (!PrepareData()) return;
-
+    VectorXd F1, F2, x1, x2;
     Init_DOF();
     AssembleKs();
-
+    Assemble_AllLoads(F1, F2);
+    Assemble_Constraint(x1);
     // TODO: 根据类型调用求解
     // Solve();
 }
@@ -110,7 +111,7 @@ void AnalysisStep::AssembleKs()
     m_K21.setFromTriplets(L21.begin(), L21.end());
     m_K22.setFromTriplets(L22.begin(), L22.end());
 
-    std::cout << MatrixXd(m_K22);
+    //std::cout << MatrixXd(m_K22);
 }
 
 void AnalysisStep::Assemble(std::vector<int>& DOFs, Eigen::MatrixXd& T, std::list<Tri>& L11, std::list<Tri>& L21, std::list<Tri>& L22)
@@ -175,6 +176,7 @@ void AnalysisStep::Assemble_AllLoads(VectorXd& F1, VectorXd& F2)
             break;
         }
     }
+    //std::cout << "F2:\n" << VectorXd(F2);
 }
 
 VectorXd AnalysisStep::Get_currentForce(double& current_time)
@@ -205,10 +207,27 @@ void AnalysisStep::Assemble_ForceNode(Force_Node* pForceNode, VectorXd& F1, Vect
 
 void AnalysisStep::Assemble_ForceElement(Force_Element* pForceElement, VectorXd& F1, VectorXd& F2, double& current_time)
 {
+    auto pElement = pForceElement->m_pElement.lock();
+    if (!pElement) return;
+
+    int iDirection = static_cast<int>(pForceElement->m_Direction);
+    for (auto& a : pElement->m_pNode)
+    {
+        auto pNode = a.lock();
+        int dof = pNode->m_DOF[iDirection];
+        if (dof >= 0 && dof < m_nFixed)
+        {
+            F1[dof] += pForceElement->m_Value / 2.;
+        }
+        else if (dof >= m_nFixed && dof < (m_nFixed + m_nFree))
+        {
+            F2[dof - m_nFixed] += pForceElement->m_Value / 2.;
+        }
+    }
 }
 
 
-void AnalysisStep::AssembleConstraint(VectorXd& x1)
+void AnalysisStep::Assemble_Constraint(VectorXd& x1)
 {
     x1.resize(m_nFixed);
     for (auto& a : m_pData->m_Constraint)
