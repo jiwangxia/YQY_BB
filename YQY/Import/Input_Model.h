@@ -5,54 +5,143 @@
 #include <functional>
 
 class StructureData;
+
+/**
+ * @brief 模型输入类 - 负责从文件读取有限元模型数据
+ */
 class Input_Model : public Base
 {
 public:
+	/**
+	 * @brief 读取一行有效数据（跳过注释和空行）
+	 * @param [in] flow 文本流
+	 * @param [out] str 读取到的字符串
+	 * @return 成功返回 true，到达文件末尾返回 false
+	 */
 	bool ReadLine(QTextStream& flow, QString& str);
+
+	/**
+	 * @brief 读取模型数据文件
+	 * @param [in] FileName 文件路径
+	 * @param [in] pStructure 结构数据对象
+	 * @return 读取成功返回 true
+	 */
 	bool InputData(const QString& FileName, std::shared_ptr<StructureData> pStructure);
 
 private:
-	std::shared_ptr<StructureData> m_Structure;
+	std::shared_ptr<StructureData> m_Structure;  ///< 结构数据指针
 
-
-
-	// 读取节点数据
+	/**
+	 * @brief 读取节点数据
+	 * @param [in] flow 文本流
+	 * @param [in] list_str 关键字行解析后的字符串列表
+	 * @return 读取成功返回 true
+	 */
 	bool InputNodes(QTextStream& flow, const QStringList& list_str);
-	// 读取单元数据
-	bool InputElement(QTextStream& flow, const QStringList& list_str);
-	
-	// 单元处理函数类型定义
-	using ElementHandler = std::function<bool(Input_Model*, QTextStream&, const QStringList&, int)>;
-	// 单元处理函数映射表
-	static const QMap<EnumKeyword::ElementType, ElementHandler> s_ElementHandlers;
 
-	// 各类单元的具体处理函数
-	bool InputElementTruss(QTextStream& flow, const QStringList& list_str, int nElement);
-	bool InputElementCable(QTextStream& flow, const QStringList& list_str, int nElement);
-	bool InputElementBeam(QTextStream& flow, const QStringList& list_str, int nElement);
+	/**
+	 * @brief 读取单元数据（分发到具体单元处理函数）
+	 * @param [in] flow 文本流
+	 * @param [in] list_str 关键字行解析后的字符串列表
+	 * @return 读取成功返回 true
+	 */
+	bool InputElement(QTextStream& flow, const QStringList& list_str);
+
+	/// @name 单元处理函数映射
+	/// @{
+	using ElementHandler = std::function<bool(Input_Model*, QTextStream&, const QStringList&, int)>;
+	static const QMap<EnumKeyword::ElementType, ElementHandler> s_ElementHandlers;  ///< 单元类型到处理函数的映射表
 	
-	// 读取截面数据
+	/**
+	 * @brief 读取桁架单元数据
+	 * @param [in] flow 文本流
+	 * @param [in] list_str 关键字行解析后的字符串列表
+	 * @param [in] nElement 单元数量
+	 * @return 读取成功返回 true
+	 */
+	bool InputElementTruss(QTextStream& flow, const QStringList& list_str, int nElement);
+
+	/**
+	 * @brief 读取索单元数据
+	 * @param [in] flow 文本流
+	 * @param [in] list_str 关键字行解析后的字符串列表
+	 * @param [in] nElement 单元数量
+	 * @return 读取成功返回 true
+	 */
+	bool InputElementCable(QTextStream& flow, const QStringList& list_str, int nElement);
+
+	/**
+	 * @brief 读取梁单元数据
+	 * @param [in] flow 文本流
+	 * @param [in] list_str 关键字行解析后的字符串列表
+	 * @param [in] nElement 单元数量
+	 * @return 读取成功返回 true
+	 */
+	bool InputElementBeam(QTextStream& flow, const QStringList& list_str, int nElement);
+	/// @}
+
+	/**
+	 * @brief 读取截面数据
+	 * @param [in] flow 文本流
+	 * @param [in] list_str 关键字行解析后的字符串列表
+	 * @return 读取成功返回 true
+	 */
 	bool InputSection(QTextStream& flow, const QStringList& list_str);
-	// 读取材料
+
+	/**
+	 * @brief 读取材料数据
+	 * @param [in] flow 文本流
+	 * @param [in] list_str 关键字行解析后的字符串列表
+	 * @return 读取成功返回 true
+	 */
 	bool InputMaterial(QTextStream& flow, const QStringList& list_str);
-	// 读取分析步
+
+	/**
+	 * @brief 读取分析步数据
+	 * @param [in] flow 文本流
+	 * @param [in] list_str 关键字行解析后的字符串列表
+	 * @return 读取成功返回 true
+	 */
 	bool InputAnalysisStep(QTextStream& flow, const QStringList& list_str);
 
-
-	// 读取荷载
+	/// @name 荷载处理函数映射
+	/// @{
+	/**
+	 * @brief 读取荷载数据（分发到具体荷载处理函数）
+	 * @param [in] flow 文本流
+	 * @param [in] list_str 关键字行解析后的字符串列表
+	 * @return 读取成功返回 true
+	 */
 	bool InputLoad(QTextStream& flow, const QStringList& list_str);
 
-	// 荷载处理函数类型定义
 	using LoadHandler = std::function<bool(Input_Model*, QTextStream&, const QStringList&, int)>;
-	// 荷载处理函数映射表
-	static const QMap<EnumKeyword::LoadType, LoadHandler> s_LoadHandlers;
+	static const QMap<EnumKeyword::LoadType, LoadHandler> s_LoadHandlers;  ///< 荷载类型到处理函数的映射表
 
-	// 各类荷载的具体处理函数
+	/**
+	 * @brief 读取节点力荷载数据
+	 * @param [in] flow 文本流
+	 * @param [in] list_str 关键字行解析后的字符串列表
+	 * @param [in] nLoad 荷载数量
+	 * @return 读取成功返回 true
+	 */
 	bool InputForceNode(QTextStream& flow, const QStringList& list_str, int nLoad);
+
+	/**
+	 * @brief 读取单元荷载数据
+	 * @param [in] flow 文本流
+	 * @param [in] list_str 关键字行解析后的字符串列表
+	 * @param [in] nLoad 荷载数量
+	 * @return 读取成功返回 true
+	 */
 	bool InputForceElement(QTextStream& flow, const QStringList& list_str, int nLoad);
+	/// @}
 
-
-	// 读取约束
+	/**
+	 * @brief 读取约束数据
+	 * @param [in] flow 文本流
+	 * @param [in] list_str 关键字行解析后的字符串列表
+	 * @return 读取成功返回 true
+	 */
 	bool InputConstraint(QTextStream& flow, const QStringList& list_str);
 };
 

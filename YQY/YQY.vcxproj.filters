@@ -97,6 +97,12 @@
     <ClCompile Include="DataStructure\Element\ElementCable.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Utility\ModelManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Solver\Solver.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Base\Base.h">
@@ -156,9 +162,18 @@
     <ClInclude Include="DataStructure\Element\ElementCable.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Utility\ModelManager.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Solver\Solver.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Text Include="Import\ImportFile\Start.txt" />
     <Text Include="Import\ImportFile\ce.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Import\FileFormat.md" />
   </ItemGroup>
 </Project>

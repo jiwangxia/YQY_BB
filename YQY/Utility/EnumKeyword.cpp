@@ -38,7 +38,7 @@ const QMap<QString, EnumKeyword::SectionType> EnumKeyword::MapSectionType =
 const QMap<QString, EnumKeyword::LoadType> EnumKeyword::MapLoadType =
 {
     {"FORCE_NODE", EnumKeyword::LoadType::FORCE_NODE},
-    {"ELEMENT_PRESSURE", EnumKeyword::LoadType::FORCE_ELEMENT}
+    {"FORCE_ELEMENT", EnumKeyword::LoadType::FORCE_ELEMENT}
 };
 
 const QMap<QString, EnumKeyword::StepType> EnumKeyword::MapStepType =

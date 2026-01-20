@@ -2,6 +2,8 @@
 #include <QtWidgets/QApplication>
 #include "Import/Input_Model.h"
 #include "DataStructure/Structure/StructureData.h"
+//#include "DataStructure/AnalysisStep/AnalysisStep.h"
+#include "Solver/Solver.h"
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
@@ -10,16 +12,18 @@ int main(int argc, char *argv[])
 
     Input_Model importer;
 
-    QString fileName = "Import/ImportFile/ce.txt";
-    // 5. 调用读取函数
-    if (importer.InputData(fileName, pStructure))
+
+    if (importer.InputData("Import/ImportFile/200m.txt", pStructure))
     {
         qDebug() << "\n=====Model loaded successfully!=====";
 
-    }
-    else
-    {
-        qDebug() << "-----Failed to load model.-----";
+        // 使用 Solver 运行分析
+        Solver solver;
+        solver.SetStructure(pStructure);
+        solver.RunAll();  // 运行所有分析步
+
+        // 或者运行指定分析步
+        // solver.RunStep(1);
     }
 
     YQY window;

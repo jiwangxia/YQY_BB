@@ -110,6 +110,8 @@
     <ClCompile Include="Import\Input_Model.cpp" />
     <ClCompile Include="DataStructure\Structure\StructureData.cpp" />
     <ClCompile Include="DataStructure\Section\SectionCircular.cpp" />
+    <ClCompile Include="Solver\Solver.cpp" />
+    <ClCompile Include="Utility\ModelManager.cpp" />
     <ClCompile Include="Utility\EnumKeyword.cpp" />
     <ClCompile Include="DataStructure\Section\SectionBase.cpp" />
     <QtRcc Include="Resource\YQY.qrc" />
@@ -139,12 +141,17 @@
     <ClInclude Include="Import\Input_Model.h" />
     <ClInclude Include="DataStructure\Structure\StructureData.h" />
     <ClInclude Include="DataStructure\Section\SectionCircular.h" />
+    <ClInclude Include="Solver\Solver.h" />
+    <ClInclude Include="Utility\ModelManager.h" />
     <ClInclude Include="Utility\EnumKeyword.h" />
     <ClInclude Include="DataStructure\Section\SectionBase.h" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="Import\ImportFile\ce.txt" />
     <Text Include="Import\ImportFile\Start.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Import\FileFormat.md" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Condition="Exists('$(QtMsBuild)\qt.targets')">

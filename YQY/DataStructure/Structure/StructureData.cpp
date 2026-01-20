@@ -13,10 +13,32 @@ StructureData::~StructureData()
 {
 }
 
+void StructureData::Clear()
+{
+    m_Nodes.clear();
+    m_Elements.clear();
+    m_Material.clear();
+    m_Section.clear();
+    m_Property.clear();
+    m_Constraint.clear();
+    m_Load.clear();
+    m_AnalysisStep.clear();
+}
+
 std::shared_ptr<Node> StructureData::FindNode(int id)
 {
     auto result = m_Nodes.find(id);
     if (result != m_Nodes.end())
+    {
+        return result->second;
+    }
+    return nullptr;
+}
+
+std::shared_ptr<ElementBase> StructureData::FindElement(int id)
+{
+    auto result = m_Elements.find(id);
+    if (result != m_Elements.end())
     {
         return result->second;
     }

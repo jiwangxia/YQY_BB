@@ -117,6 +117,7 @@ bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureDa
     {
         QString typeName = "UNKNOWN";
         if (dynamic_cast<Force_Node*>(pair.second.get())) typeName = "FORCE_NODE";
+        else if (dynamic_cast<Force_Element*>(pair.second.get())) typeName = "FORCE_ELEMENT";
         // 可添加其他荷载类型
         loadTypeCount[typeName]++;
     }
@@ -492,7 +493,35 @@ bool Input_Model::InputForceElement(QTextStream& flow, const QStringList& /*list
             qDebug() << QStringLiteral("Error: 单元压力荷载数据不够");
             return false;
         }
-        
+
+        // 检查是否误读到下一个关键字行
+        if (strdata.startsWith("*"))
+        {
+            qDebug().noquote() << QStringLiteral("Error: 单元力荷载数据不足，遇到下一个关键字: ") << strdata;
+            return false;
+        }
+
+        QStringList strlist_load = strdata.split(QRegularExpression("[\\t, ]"), Qt::SkipEmptyParts);
+        // ID, EelmentID, Direction, Value
+        if (strlist_load.size() != 4)
+        {
+            qDebug().noquote() << QStringLiteral("Error: 单元力荷载数据格式错误: ") << strdata;
+            return false;
+        }
+
+        int idElement = strlist_load[1].toInt();
+        int direction = strlist_load[2].toInt();
+        double value = strlist_load[3].toDouble();
+
+        int autoId = static_cast<int>(m_Structure->m_Load.size()) + 1;
+
+        auto pLoad = std::make_shared<Force_Element>();
+        pLoad->m_Id = autoId;
+        pLoad->m_pElement = m_Structure->FindElement(idElement);
+
+        pLoad->m_Direction = static_cast<EnumKeyword::Direction>(direction);
+        pLoad->m_Value = value;
+        m_Structure->m_Load.insert(std::make_pair(autoId, pLoad));
         qDebug() << QStringLiteral("读取单元压力: ") << strdata;
     }
     return true;
@@ -577,6 +606,9 @@ bool Input_Model::InputAnalysisStep(QTextStream& flow, const QStringList& list_s
         pStep->m_StepSize = stepSize;
         pStep->m_Tolerance = tolerance;
         pStep->m_MaxIterations = maxIterations;
+
+        // 关联结构数据
+        pStep->SetStructure(m_Structure);
 
         m_Structure->m_AnalysisStep.insert(std::make_pair(autoId, pStep));
     }
