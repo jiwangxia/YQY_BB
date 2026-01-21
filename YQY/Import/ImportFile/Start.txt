@@ -10,26 +10,28 @@
 3    210.9e-6
 
 
-*Node,3
+*Node,2
 1 0 0 0
-2 10 0 0 
-5 10 10 0
+1 4 3 0
 
-*Element T3D2 2
+
+
+*Element T3D2 1
 1 1 2 1 1
-2 2 3 2 3
 
-*Constraint,1
-1 2 0 0
 
-*Load FORCE_NODE 5
-1 1 1 1000
-1 1 0 1000
-1 1 2 1000
-1 2 0 1000
-1 2 1 1000
-*Load FORCE_ELEMENT 1
-1 2 0 10
+
+*Constraint,5
+ 1    1    0    0 
+ 2    1    1    0 
+ 3    1    2    0 
+4 2 2 0 
+4 2 0 0 
+
+*Load FORCE_NODE 1
+1 2 1 -10000
+
+
 
 *Analysis_Step,1
 1	 Static	     1	    0.05 	 1e-5	 32

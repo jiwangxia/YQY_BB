@@ -103,6 +103,12 @@
     <ClCompile Include="Solver\Solver.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Solver\ModelBase.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Solver\SolverNewmark.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Base\Base.h">
@@ -166,6 +172,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Solver\Solver.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Solver\ModelBase.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Solver\SolverNewmark.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

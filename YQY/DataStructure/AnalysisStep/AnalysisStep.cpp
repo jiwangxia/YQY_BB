@@ -1,6 +1,8 @@
 ﻿#include "AnalysisStep.h"
 #include "DataStructure/Structure/StructureData.h"
 #include "DataStructure/Element/ElementBase.h"
+#include "Solver/SolverNewmark.h"
+#include <Eigen/SparseCholesky>
 
 void AnalysisStep::SetStructure(std::shared_ptr<StructureData> pStructure)
 {
@@ -111,7 +113,7 @@ void AnalysisStep::AssembleKs()
     m_K21.setFromTriplets(L21.begin(), L21.end());
     m_K22.setFromTriplets(L22.begin(), L22.end());
 
-    //std::cout << MatrixXd(m_K22);
+    std::cout << MatrixXd(m_K22);
 }
 
 void AnalysisStep::Assemble(std::vector<int>& DOFs, Eigen::MatrixXd& T, std::list<Tri>& L11, std::list<Tri>& L21, std::list<Tri>& L22)
@@ -176,7 +178,7 @@ void AnalysisStep::Assemble_AllLoads(VectorXd& F1, VectorXd& F2)
             break;
         }
     }
-    //std::cout << "F2:\n" << VectorXd(F2);
+    std::cout << "F2:\n" << VectorXd(F2);
 }
 
 VectorXd AnalysisStep::Get_currentForce(double& current_time)
@@ -247,3 +249,135 @@ void AnalysisStep::Assemble_Constraint(VectorXd& x1)
     }
 }
 
+// ==========================================
+// 求解方法实现
+// ==========================================
+
+void AnalysisStep::Solve()
+{
+    if (!PrepareData()) return;
+
+    switch (m_Type)
+    {
+    case EnumKeyword::StepType::STATIC:
+        Solve_Static();
+        break;
+    case EnumKeyword::StepType::DYNAMIC:
+        Solve_Dynamic();
+        break;
+    default:
+        qDebug().noquote() << QStringLiteral("警告: 未知的分析步类型，无法求解");
+        break;
+    }
+}
+
+void AnalysisStep::Solve_Static()
+{
+    qDebug().noquote() << QStringLiteral("开始静力求解...");
+
+    // 1. 组装刚度矩阵和荷载
+    VectorXd F1, F2, x1;
+    Init_DOF();
+    AssembleKs();
+    Assemble_AllLoads(F1, F2);
+    Assemble_Constraint(x1);
+
+    // 2. 计算等效荷载
+    VectorXd F_eff = F2 - m_K21 * x1;
+
+    // 3. 使用 Eigen 求解 K22 * x2 = F_eff
+    Eigen::SimplicialLDLT<SpMat> LDLT_solver;
+    LDLT_solver.analyzePattern(m_K22);
+    LDLT_solver.factorize(m_K22);
+    if (LDLT_solver.info() != Success)
+    {
+        qDebug().noquote() << QStringLiteral("LDLT分解失败!");
+        return ;
+    }
+
+    VectorXd x2 = LDLT_solver.solve(F_eff);
+
+    // 4. 保存结果到 Outputter (静力学：时间为0，无速度/加速度)
+    m_Outputter.SaveData(0.0, m_pData, m_nFixed, x2, nullptr, nullptr);
+
+    // 5. 将结果写回节点
+    for (auto& nodePair : m_pData->m_Nodes)
+    {
+        auto pNode = nodePair.second;
+        for (int i = 0; i < pNode->m_DOF.size(); ++i)
+        {
+            int dof = pNode->m_DOF[i];
+            if (dof >= 0 && dof < m_nFixed)
+            {
+                // 约束自由度
+                // pNode->m_Displacement[i] = x1[dof];
+            }
+            else if (dof >= m_nFixed && dof < m_nFixed + m_nFree)
+            {
+                // 自由自由度
+                // pNode->m_Displacement[i] = x2[dof - m_nFixed];
+            }
+        }
+    }
+
+    qDebug().noquote() << QStringLiteral("\n静力求解完成 ");
+}
+
+void AnalysisStep::Solve_Dynamic()
+{
+    using namespace Dynamics;
+
+    qDebug().noquote() << QStringLiteral("开始动力求解...");
+
+    // 1. 初始化
+    Init_DOF();
+    AssembleKs();
+
+    // 2. 创建通用模型
+    GeneralModel model(m_nFree);
+
+    // 绑定刚度矩阵
+    model.SetFuncK([this](const State& s, SpMat& buffer) -> const SpMat& {
+        return this->m_K22;
+    });
+
+    // 绑定质量矩阵 (TODO: 需要实现 AssembleMs)
+    // model.SetFuncM([this](const State& s, SpMat& buffer) -> const SpMat& {
+    //     return this->m_M22;
+    // });
+
+    // 绑定阻尼矩阵 (TODO: 需要实现 AssembleCs)
+    // model.SetFuncC([this](const State& s, SpMat& buffer) -> const SpMat& {
+    //     return this->m_C22;
+    // });
+
+    // 绑定残差计算
+    model.SetResidualFunc([this](const State& s, Vec& R_out) {
+        // 计算残差 R = M*a + C*v + K*x - F(t)
+        // TODO: 实现完整的残差计算
+        R_out = this->m_K22 * s.x;
+    });
+
+    // 3. 配置求解器
+    SolverNewmark::Parameters params;
+    params.dt = m_StepSize > 0 ? m_StepSize : 0.01;
+    params.bAdaptive = true;
+
+    SolverNewmark solver(params);
+
+    // 4. 初始状态
+    State state(m_nFree);
+
+    // 5. 观察者回调 (每步保存结果)
+    auto observer = [this](const State& s) {
+        // 增量保存当前时刻数据
+        m_Outputter.SaveData(s.t, m_pData, m_nFixed, s.x, &s.v, &s.a);
+        qDebug().noquote() << QStringLiteral("t = ") << s.t 
+                           << QStringLiteral(", frame = ") << m_Outputter.GetFrameCount();
+    };
+
+    // 6. 求解
+    // solver.solve(model, state, m_Time, observer);
+
+    qDebug().noquote() << QStringLiteral("动力求解完成 (框架已就绪，需要实现质量/阻尼矩阵组装)");
+}
