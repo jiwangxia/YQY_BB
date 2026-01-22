@@ -143,5 +143,15 @@ private:
 	 * @return 读取成功返回 true
 	 */
 	bool InputConstraint(QTextStream& flow, const QStringList& list_str);
+
+	/**
+	 * @brief 读取单元应力
+	 * @param [in] flow 文本流
+	 * @param [in] list_str 关键字行解析后的字符串列表
+	 * @return 读取成功返回 true
+	 */
+	bool InputElement_Stress(QTextStream& flow, const QStringList& list_str);
+
+
 };
 

@@ -29,18 +29,9 @@ enum class DataType : int {
 /**
  * @brief 单个节点在某一时刻的数据快照
  */
-struct NodeData
+class NodeData
 {
-    // 位移
-    double u1 = 0, u2 = 0, u3 = 0;
-    double magnitudeU = 0;
-    // 速度
-    double v1 = 0, v2 = 0, v3 = 0;
-    // 加速度
-    double a1 = 0, a2 = 0, a3 = 0;
-    // 转角
-    double ur1 = 0, ur2 = 0, ur3 = 0;
-
+public:
     NodeData() = default;
 
     /**
@@ -60,20 +51,36 @@ struct NodeData
      * @brief 根据类型获取数据值
      */
     double GetValue(DataType type) const;
+
+private:
+    double m_u1 = 0, m_u2 = 0, m_u3 = 0;       ///< 位移
+    double m_magnitudeU = 0;                   ///< 位移幅值
+    double m_v1 = 0, m_v2 = 0, m_v3 = 0;       ///< 速度
+    double m_a1 = 0, m_a2 = 0, m_a3 = 0;       ///< 加速度
+    double m_ur1 = 0, m_ur2 = 0, m_ur3 = 0;    ///< 转角
 };
 
 /**
  * @brief 单帧数据 (某一时间点所有节点的状态)
  */
-struct DataFrame
+class DataFrame
 {
-    double currentTime = 0;                    ///< 当前时间
-    std::map<int, NodeData> nodeDatas;         ///< 节点ID -> 节点数据
+    friend class Outputter;  ///< 允许 Outputter 访问私有成员
+
+public:
+    /**
+     * @brief 获取当前时间
+     */
+    double GetTime() const { return m_currentTime; }
 
     /**
      * @brief 获取指定节点的指定类型数据
      */
     double GetNodeData(int idNode, DataType type) const;
+
+private:
+    double m_currentTime = 0;                  ///< 当前时间
+    std::map<int, NodeData> m_nodeDatas;       ///< 节点ID -> 节点数据
 };
 
 /**

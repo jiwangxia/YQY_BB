@@ -81,9 +81,9 @@ void AnalysisStep::Init_DOF()
     for (auto& nodes : m_pData->m_Nodes)
     {
         auto pNode = nodes.second;
-        for (auto& a : pNode->m_DOF)
+        for (auto& dofValue : pNode->m_DOF)
         {
-            if (-1 == a) a = iStart++;
+            if (-1 == dofValue) dofValue = iStart++;
         }
     }
 
@@ -104,7 +104,8 @@ void AnalysisStep::AssembleKs()
     for (auto& element : m_pData->m_Elements)
     {
         auto pelement = element.second;
-        pelement->Get_ke(ke);
+        //pelement->Get_ke(ke);
+        pelement->Get_ke_non(ke);
         pelement->GetDOFs(DOFs);
         Assemble(DOFs, ke, L11, L21, L22);
     }
@@ -112,7 +113,7 @@ void AnalysisStep::AssembleKs()
     m_K11.setFromTriplets(L11.begin(), L11.end());
     m_K21.setFromTriplets(L21.begin(), L21.end());
     m_K22.setFromTriplets(L22.begin(), L22.end());
-
+    qDebug();
     std::cout << MatrixXd(m_K22);
 }
 
@@ -178,18 +179,82 @@ void AnalysisStep::Assemble_AllLoads(VectorXd& F1, VectorXd& F2)
             break;
         }
     }
-    std::cout << "F2:\n" << VectorXd(F2);
+    //std::cout << "F2:\n" << VectorXd(F2);
 }
 
-VectorXd AnalysisStep::Get_currentForce(double& current_time)
+void AnalysisStep::UpData(VectorXd& x2, VectorXd* v2, VectorXd* a2)
 {
-    return VectorXd();
+    //F2.setZero();
+    //for (auto& a : m_pData->m_Elements)
+    //{
+    //    auto pElement = a.second;
+    //    std::vector<int> DOFs;
+    //    pElement->GetDOFs(DOFs);
+
+    //    for (int i = 0; i < DOFs.size(); ++i)
+    //    {
+    //        int global_dof = DOFs[i];
+    //        if (global_dof >= m_nFixed)
+    //        {
+    //            F2[global_dof - m_nFixed] += pElement->m_inforce[i];
+    //        }
+    //    }
+    //}
+
+    for (auto& nodePair : m_pData->m_Nodes)
+    {
+        auto pNode = nodePair.second;
+        for (int dofIdx = 0; dofIdx < pNode->m_DOF.size(); dofIdx++)
+        {
+            int dof = pNode->m_DOF[dofIdx];
+            if (dof < m_nFixed)
+            {
+                pNode->m_x2[dofIdx] += 0.0;
+                if (v2)
+                {
+                    pNode->m_Velocity[dofIdx] += 0.0;
+                }
+                if (a2)
+                {
+                    pNode->m_Acceleration[dofIdx] += 0.0;
+                }
+            }
+            else if (dof >= m_nFixed && dof < m_nFixed + m_nFree)
+            {
+                pNode->m_x2[dofIdx] += x2[dof - m_nFixed];
+                if (v2)
+                {
+                    pNode->m_Velocity[dofIdx] += (*v2)[dof - m_nFixed];
+                }
+                if (a2)
+                {
+                    pNode->m_Acceleration[dofIdx] += (*a2)[dof - m_nFixed];
+                }
+            }
+        }
+    }
 }
+
+bool AnalysisStep::Check_Rhs(Eigen::VectorXd& Exteralforce, Eigen::VectorXd& Inforce, Eigen::VectorXd& Rhs)
+{
+    Rhs = Exteralforce - Inforce;
+    double RhsNorm = Rhs.norm();
+    if(RhsNorm < m_Tolerance)
+    {
+        qDebug().noquote() << QStringLiteral("\n收敛，残差范数: %1\n").arg(RhsNorm);
+        return true;
+    }
+    qDebug().noquote() << QStringLiteral("\n残差范数: %1\n").arg(RhsNorm);
+    return false;
+}
+
+
+
 
 void AnalysisStep::Assemble_ForceNode(Force_Node* pForceNode, VectorXd& F1, VectorXd& F2, double& current_time)
 {
     auto pNode = pForceNode->m_pNode.lock();
-    if (!pNode) return; 
+    if (!pNode) return;
 
     int iDirection = static_cast<int>(pForceNode->m_Direction);
     if (iDirection < 0 || iDirection >= pNode->m_DOF.size()) return;
@@ -213,9 +278,9 @@ void AnalysisStep::Assemble_ForceElement(Force_Element* pForceElement, VectorXd&
     if (!pElement) return;
 
     int iDirection = static_cast<int>(pForceElement->m_Direction);
-    for (auto& a : pElement->m_pNode)
+    for (auto& weakNodePtr : pElement->m_pNode)
     {
-        auto pNode = a.lock();
+        auto pNode = weakNodePtr.lock();
         int dof = pNode->m_DOF[iDirection];
         if (dof >= 0 && dof < m_nFixed)
         {
@@ -232,9 +297,9 @@ void AnalysisStep::Assemble_ForceElement(Force_Element* pForceElement, VectorXd&
 void AnalysisStep::Assemble_Constraint(VectorXd& x1)
 {
     x1.resize(m_nFixed);
-    for (auto& a : m_pData->m_Constraint)
+    for (auto& constraintPair : m_pData->m_Constraint)
     {
-        auto pConstraint = a.second;
+        auto pConstraint = constraintPair.second;
         auto pNode = pConstraint->m_pNode.lock();
         if (!pNode) continue;
 
@@ -266,8 +331,8 @@ void AnalysisStep::Solve()
         Solve_Dynamic();
         break;
     default:
-        qDebug().noquote() << QStringLiteral("警告: 未知的分析步类型，无法求解");
         break;
+        qDebug().noquote() << QStringLiteral("警告: 未知的分析步类型，无法求解");
     }
 }
 
@@ -275,50 +340,89 @@ void AnalysisStep::Solve_Static()
 {
     qDebug().noquote() << QStringLiteral("开始静力求解...");
 
-    // 1. 组装刚度矩阵和荷载
-    VectorXd F1, F2, x1;
+    // 初始化自由度编号
     Init_DOF();
-    AssembleKs();
+
+    // 定义力向量和约束向量
+    VectorXd F1, F2, x1;
+    
+    // 定义位移向量
+    VectorXd x2, totalx2;
+    x2.setZero(m_nFree);
+    totalx2.setZero(m_nFree);
+    
+    // 内力向量
+    VectorXd internalForce;
+    internalForce.setZero(m_nFree);
+
+    // 组装外荷载和约束
     Assemble_AllLoads(F1, F2);
     Assemble_Constraint(x1);
 
-    // 2. 计算等效荷载
-    VectorXd F_eff = F2 - m_K21 * x1;
+    // 残差向量
+    VectorXd residual;
 
-    // 3. 使用 Eigen 求解 K22 * x2 = F_eff
-    Eigen::SimplicialLDLT<SpMat> LDLT_solver;
-    LDLT_solver.analyzePattern(m_K22);
-    LDLT_solver.factorize(m_K22);
-    if (LDLT_solver.info() != Success)
+    // Newton-Raphson 迭代
+    for (int iter = 0; iter < m_MaxIterations; iter++)
     {
-        qDebug().noquote() << QStringLiteral("LDLT分解失败!");
-        return ;
-    }
+        // 1. 组装刚度矩阵 (基于当前变形状态)
+        AssembleKs();
 
-    VectorXd x2 = LDLT_solver.solve(F_eff);
-
-    // 4. 保存结果到 Outputter (静力学：时间为0，无速度/加速度)
-    m_Outputter.SaveData(0.0, m_pData, m_nFixed, x2, nullptr, nullptr);
-
-    // 5. 将结果写回节点
-    for (auto& nodePair : m_pData->m_Nodes)
-    {
-        auto pNode = nodePair.second;
-        for (int i = 0; i < pNode->m_DOF.size(); ++i)
+        // 2. 计算单元内力
+        internalForce.setZero();
+        for (auto& elementPair : m_pData->m_Elements) 
         {
-            int dof = pNode->m_DOF[i];
-            if (dof >= 0 && dof < m_nFixed)
+            auto pElement = elementPair.second;
+            std::vector<int> elementDOFs;
+            pElement->GetDOFs(elementDOFs);
+            
+            for (size_t dofIdx = 0; dofIdx < elementDOFs.size(); ++dofIdx) 
             {
-                // 约束自由度
-                // pNode->m_Displacement[i] = x1[dof];
-            }
-            else if (dof >= m_nFixed && dof < m_nFixed + m_nFree)
-            {
-                // 自由自由度
-                // pNode->m_Displacement[i] = x2[dof - m_nFixed];
+                int globalDOF = elementDOFs[dofIdx];
+                if (globalDOF >= m_nFixed) 
+                {
+                    internalForce[globalDOF - m_nFixed] += pElement->m_inforce[dofIdx];
+                }
             }
         }
+
+        // 3. 检查收敛性
+        if (Check_Rhs(F2, internalForce, residual)) 
+        {
+            qDebug().noquote() << QStringLiteral("迭代在第 %1 步收敛").arg(iter);
+            break;
+        }
+
+        // 4. 计算有效荷载 (考虑约束影响)
+        VectorXd effectiveForce = residual - m_K21 * x1;
+
+        // 5. 求解线性方程组 K22 * Δu = F_eff
+        Eigen::SimplicialLDLT<SpMat> ldltSolver;
+        ldltSolver.analyzePattern(m_K22);
+        ldltSolver.factorize(m_K22);
+        if (ldltSolver.info() != Success)
+        {
+            qDebug().noquote() << QStringLiteral("LDLT分解失败!");
+            return;
+        }
+
+        x2 = ldltSolver.solve(effectiveForce);
+        
+        // 6. 累加位移增量
+        totalx2 += x2;
+        
+        // 7. 更新节点位移
+        UpData(x2);
+
+        // 8. 检查是否达到最大迭代次数
+        if (iter == m_MaxIterations - 1)
+        {
+            qDebug().noquote() << QStringLiteral("\n达最大迭代次数\n");
+        }
     }
+
+    // 保存结果到输出器 (静力学：时间为0，无速度/加速度)
+    m_Outputter.SaveData(0.0, m_pData, m_nFixed, totalx2);
 
     qDebug().noquote() << QStringLiteral("\n静力求解完成 ");
 }
@@ -339,7 +443,7 @@ void AnalysisStep::Solve_Dynamic()
     // 绑定刚度矩阵
     model.SetFuncK([this](const State& s, SpMat& buffer) -> const SpMat& {
         return this->m_K22;
-    });
+        });
 
     // 绑定质量矩阵 (TODO: 需要实现 AssembleMs)
     // model.SetFuncM([this](const State& s, SpMat& buffer) -> const SpMat& {
@@ -356,7 +460,7 @@ void AnalysisStep::Solve_Dynamic()
         // 计算残差 R = M*a + C*v + K*x - F(t)
         // TODO: 实现完整的残差计算
         R_out = this->m_K22 * s.x;
-    });
+        });
 
     // 3. 配置求解器
     SolverNewmark::Parameters params;
@@ -372,9 +476,9 @@ void AnalysisStep::Solve_Dynamic()
     auto observer = [this](const State& s) {
         // 增量保存当前时刻数据
         m_Outputter.SaveData(s.t, m_pData, m_nFixed, s.x, &s.v, &s.a);
-        qDebug().noquote() << QStringLiteral("t = ") << s.t 
-                           << QStringLiteral(", frame = ") << m_Outputter.GetFrameCount();
-    };
+        qDebug().noquote() << QStringLiteral("t = ") << s.t
+            << QStringLiteral(", frame = ") << m_Outputter.GetFrameCount();
+        };
 
     // 6. 求解
     // solver.solve(model, state, m_Time, observer);

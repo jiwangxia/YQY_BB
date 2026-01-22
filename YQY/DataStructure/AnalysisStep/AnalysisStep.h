@@ -114,8 +114,9 @@ private:
      * @param [in] current_time 当前时间
      * @return 当前时刻的力向量
      */
-    VectorXd Get_currentForce(double& current_time);
+    void UpData(VectorXd& x2, VectorXd* v2 = nullptr, VectorXd* a2 = nullptr);
 
+    bool Check_Rhs(Eigen::VectorXd& F2, Eigen::VectorXd& f2, Eigen::VectorXd& Rhs);
     /**
      * @brief 组装节点力荷载
      * @param [in] pForceNode 节点力荷载指针

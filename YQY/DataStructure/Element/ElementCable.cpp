@@ -8,6 +8,9 @@ void ElementCable::Get_ke(MatrixXd& ke)
 {
 
 }
-//void ElementCable::GetDOFs(std::vector<int>& DOFs)
-//{
-//}
+
+void ElementCable::Get_ke_non(MatrixXd& ke)
+{
+
+}
+

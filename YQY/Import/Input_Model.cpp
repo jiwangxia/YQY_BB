@@ -560,6 +560,36 @@ bool Input_Model::InputConstraint(QTextStream& flow, const QStringList& list_str
     return true;
 }
 
+bool Input_Model::InputElement_Stress(QTextStream& flow, const QStringList& list_str)
+{
+    Q_ASSERT(list_str.size() == 2);
+    int nStress = list_str[1].toInt();
+
+    QString strdata;
+    for (int i = 0; i < nStress; i++)
+    {
+        if (!ReadLine(flow, strdata))
+        {//没有读取到有效数据，退出
+            qDebug() << QStringLiteral("Error: 单元应力数据不够");
+            exit(1);
+        }
+
+        QStringList strlist_con = strdata.split(QRegularExpression("[\t, ]"), Qt::SkipEmptyParts);//利用空格,分解字符串
+        Q_ASSERT(strlist_con.size() == 2);
+
+        int idElement = strlist_con[0].toInt();
+        double stress = strlist_con[1].toDouble();
+
+        auto pElement = m_Structure->FindElement(idElement);
+        if (pElement)
+        {
+            pElement->m_Stress = stress;
+        }
+    }
+
+    return true;
+}
+
 bool Input_Model::InputAnalysisStep(QTextStream& flow, const QStringList& list_str)
 {
     // *ANALYSIS_STEP, N

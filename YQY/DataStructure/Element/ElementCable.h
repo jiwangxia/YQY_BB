@@ -23,5 +23,6 @@ public:
      * @param [out] ke 单元刚度矩阵（8x8）
      */
     void Get_ke(MatrixXd& ke);
+    void Get_ke_non(MatrixXd& ke);
 };
 

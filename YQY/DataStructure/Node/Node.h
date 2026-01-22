@@ -11,5 +11,8 @@ public:
 
     double m_X, m_Y, m_Z;  ///< 节点坐标
     QVector<int> m_DOF;    ///< 节点自由度编号数组
+    std::vector<double>  m_x2;
+    std::vector<double>  m_Acceleration;
+    std::vector<double>  m_Velocity;
 };
 
