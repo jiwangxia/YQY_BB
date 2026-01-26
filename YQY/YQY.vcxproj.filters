@@ -109,6 +109,9 @@
     <ClCompile Include="Solver\SolverNewmark.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Export\Outputter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Base\Base.h">
@@ -180,10 +183,15 @@
     <ClInclude Include="Solver\SolverNewmark.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Export\Outputter.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Text Include="Import\ImportFile\Start.txt" />
     <Text Include="Import\ImportFile\ce.txt" />
+    <Text Include="Import\ImportFile\Von-Mises-Truss.txt" />
+    <Text Include="Import\ImportFile\11.txt" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Import\FileFormat.md" />

@@ -9,5 +9,7 @@ class LoadBase : public Base
 public:
     LoadBase() {};
     EnumKeyword::LoadType m_LoadType = EnumKeyword::LoadType::UNKNOWN;  ///< 荷载类型
+
+    int m_StepId = 0;               // 作用的分析步ID
 };
 

@@ -153,8 +153,10 @@
     <ClInclude Include="Export\Outputter.h" />
   </ItemGroup>
   <ItemGroup>
+    <Text Include="Import\ImportFile\11.txt" />
     <Text Include="Import\ImportFile\ce.txt" />
     <Text Include="Import\ImportFile\Start.txt" />
+    <Text Include="Import\ImportFile\Von-Mises-Truss.txt" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Import\FileFormat.md" />

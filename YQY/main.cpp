@@ -2,7 +2,6 @@
 #include <QtWidgets/QApplication>
 #include "Import/Input_Model.h"
 #include "DataStructure/Structure/StructureData.h"
-//#include "DataStructure/AnalysisStep/AnalysisStep.h"
 #include "Solver/Solver.h"
 int main(int argc, char *argv[])
 {
@@ -13,7 +12,7 @@ int main(int argc, char *argv[])
     Input_Model importer;
 
 
-    if (importer.InputData("Import/ImportFile/Start.txt", pStructure))
+    if (importer.InputData("Import/ImportFile/shuzhi.txt", pStructure))
     {
         qDebug() << "\n=====Model loaded successfully!=====";
 

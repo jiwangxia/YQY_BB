@@ -73,9 +73,9 @@ void ElementTruss::Get_ke_non(MatrixXd& ke)
     L0 = sqrt(dx0 * dx0 + dy0 * dy0 + dz0 * dz0);
 
     // 计算当前变形后的方向向量 (考虑位移)
-    double dx_current = pNode1->m_X + pNode1->m_x2[0] - pNode0->m_X - pNode0->m_x2[0];
-    double dy_current = pNode1->m_Y + pNode1->m_x2[1] - pNode0->m_Y - pNode0->m_x2[1];
-    double dz_current = pNode1->m_Z + pNode1->m_x2[2] - pNode0->m_Z - pNode0->m_x2[2];
+    double dx_current = pNode1->m_X + pNode1->m_Displacement[0] - pNode0->m_X - pNode0->m_Displacement[0];
+    double dy_current = pNode1->m_Y + pNode1->m_Displacement[1] - pNode0->m_Y - pNode0->m_Displacement[1];
+    double dz_current = pNode1->m_Z + pNode1->m_Displacement[2] - pNode0->m_Z - pNode0->m_Displacement[2];
 
     // 当前长度
     double length_current = sqrt(dx_current * dx_current + dy_current * dy_current + dz_current * dz_current);
@@ -90,7 +90,7 @@ void ElementTruss::Get_ke_non(MatrixXd& ke)
     B_matrix << -dirCos_x, -dirCos_y, -dirCos_z, dirCos_x, dirCos_y, dirCos_z;
 
     // 选择应变公式: true = 对数应变(体积不变), false = 工程应变
-    bool bUseLogStrain = false;  // TODO: 可改为类成员变量 m_bUseLogStrain
+    bool bUseLogStrain = true;  // TODO: 可改为类成员变量 m_bUseLogStrain
 
     if (!bUseLogStrain)
     {

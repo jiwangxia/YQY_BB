@@ -18,12 +18,14 @@ class Node;
 /**
  * @brief 数据类型枚举
  */
-enum class DataType : int {
-    U1, U2, U3, MagnitudeU,      ///< 位移
+enum class DataType : int 
+{
+    U1, U2, U3, MagnitudeU,       ///< 位移
     V1, V2, V3,                   ///< 速度
     A1, A2, A3,                   ///< 加速度
     UR1, UR2, UR3,                ///< 转角
-    N, M2, M3, Mises              ///< 内力
+    F1, F2, F3,                   ///< 节点力 (内力)
+    M1, M2, M3                    ///< 单元内力
 };
 
 /**
@@ -35,17 +37,12 @@ public:
     NodeData() = default;
 
     /**
-     * @brief 从向量中提取节点数据
-     * @param [in] dofs 节点的DOF编号数组
-     * @param [in] nFixed 约束自由度数量
-     * @param [in] x 位移向量 (仅自由DOF部分)
-     * @param [in] v 速度向量 (仅自由DOF部分，可为空)
-     * @param [in] a 加速度向量 (仅自由DOF部分，可为空)
+     * @brief 从节点对象直接提取数据
+     * @param [in] pNode 节点指针
+     * 
+     * 直接读取节点的 m_Displacement, m_Velocity, m_Acceleration, m_Force
      */
-    void ExtractFromVectors(const QVector<int>& dofs, int nFixed,
-                            const Eigen::VectorXd& x,
-                            const Eigen::VectorXd* v = nullptr,
-                            const Eigen::VectorXd* a = nullptr);
+    void ExtractFromNode(const Node* pNode);
 
     /**
      * @brief 根据类型获取数据值
@@ -58,6 +55,8 @@ private:
     double m_v1 = 0, m_v2 = 0, m_v3 = 0;       ///< 速度
     double m_a1 = 0, m_a2 = 0, m_a3 = 0;       ///< 加速度
     double m_ur1 = 0, m_ur2 = 0, m_ur3 = 0;    ///< 转角
+    double m_f1 = 0, m_f2 = 0, m_f3 = 0;       ///< 节点力 (内力)
+    double m_m1 = 0, m_m2 = 0, m_m3 = 0;       ///< 节点力 (扭转)
 };
 
 /**
@@ -86,7 +85,7 @@ private:
 /**
  * @brief 输出管理器 - 管理多帧分析结果数据
  * 
- * 支持增量式保存：每完成一个时间步/荷载步，调用 SaveData() 保存当前状态。
+ * 支持增量式保存：每完成一个时间步/荷载步，调用 SaveDataFromNodes() 保存当前状态。
  * 即使分析未完成，已保存的帧也可以随时导出。
  */
 class Outputter
@@ -96,18 +95,14 @@ public:
     ~Outputter() { Clear(); }
 
     /**
-     * @brief 保存当前时刻数据 (增量式)
+     * @brief 保存当前时刻数据 (直接从节点读取)
      * @param [in] time 当前时间
      * @param [in] pData 结构数据指针
-     * @param [in] nFixed 约束自由度数量
-     * @param [in] x 位移向量 (自由DOF部分)
-     * @param [in] v 速度向量 (自由DOF部分，静力学可传nullptr)
-     * @param [in] a 加速度向量 (自由DOF部分，静力学可传nullptr)
+     * 
+     * 直接从节点的 m_Displacement, m_Velocity, m_Acceleration, m_Force 读取数据。
+     * 支持输出任意节点(包括约束节点)的数据。
      */
-    void SaveData(double time, StructureData* pData, int nFixed,
-                  const Eigen::VectorXd& x,
-                  const Eigen::VectorXd* v = nullptr,
-                  const Eigen::VectorXd* a = nullptr);
+    void SaveDataFromNodes(double time, StructureData* pData);
 
     /**
      * @brief 导出指定节点的时程数据到文件

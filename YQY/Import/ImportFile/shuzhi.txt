@@ -12,7 +12,7 @@
 
 *Node,2
 1 0 0 0
-1 4 3 0
+1 0 -5 0
 
 
 
@@ -21,18 +21,19 @@
 
 
 
-*Constraint,5
+*Constraint,3
  1    1    0    0 
  2    1    1    0 
  3    1    2    0 
-4 2 2 0 
-4 2 0 0 
-
-*Load FORCE_NODE 1
-1 2 1 1e8 1
 
 
+*Load FORCE_NODE 2
+1 2 1 -1e8 1
+2 2 0 1e8  2
 
-*Analysis_Step,1
-1	 Static	     1	    0.05 	 1e-5	 32
+
+
+*Analysis_Step,2
+1	 Static	     1	    0.5 	 1e-5	 32
+2	 Static	     1	    0.5 	 1e-5	 32
 **2    Dynamic     400    0.002    1e-5    32

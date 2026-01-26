@@ -4,55 +4,35 @@
 #include <iomanip>
 #include <sstream>
 
-void NodeData::ExtractFromVectors(const QVector<int>& dofs, int nFixed,
-                                   const Eigen::VectorXd& x,
-                                   const Eigen::VectorXd* v,
-                                   const Eigen::VectorXd* a)
+void NodeData::ExtractFromNode(const Node* pNode)
 {
-    // 辅助lambda：从向量中提取指定范围DOF的值
-    auto extractDOFs = [&dofs, nFixed](const Eigen::VectorXd& vec, int start, int end, double* out)
-    {
-        for (int i = start; i < end && i < dofs.size(); ++i)
-        {
-            int dof = dofs[i];
-            if (dof >= nFixed)
-            {
-                int idx = dof - nFixed;
-                if (idx < vec.size())
-                    out[i - start] = vec[idx];
-            }
-        }
-    };
+    if (!pNode) return;
 
-    // 提取位移 (DOF 0-2)
-    double Disp[3] = { 0, 0, 0 };
-    extractDOFs(x, 0, 3, Disp);
-    m_u1 = Disp[0]; m_u2 = Disp[1]; m_u3 = Disp[2];
+    // 直接从节点读取位移
+    if (pNode->m_Displacement.size() >= 1) m_u1 = pNode->m_Displacement[0];
+    if (pNode->m_Displacement.size() >= 2) m_u2 = pNode->m_Displacement[1];
+    if (pNode->m_Displacement.size() >= 3) m_u3 = pNode->m_Displacement[2];
     m_magnitudeU = std::sqrt(m_u1 * m_u1 + m_u2 * m_u2 + m_u3 * m_u3);
 
-    // 提取速度 (DOF 0-2)
-    if (v && v->size() > 0)
-    {
-        double Vel[3] = { 0, 0, 0 };
-        extractDOFs(*v, 0, 3, Vel);
-        m_v1 = Vel[0]; m_v2 = Vel[1]; m_v3 = Vel[2];
-    }
+    // 直接从节点读取速度
+    if (pNode->m_Velocity.size() >= 1) m_v1 = pNode->m_Velocity[0];
+    if (pNode->m_Velocity.size() >= 2) m_v2 = pNode->m_Velocity[1];
+    if (pNode->m_Velocity.size() >= 3) m_v3 = pNode->m_Velocity[2];
 
-    // 提取加速度 (DOF 0-2)
-    if (a && a->size() > 0)
-    {
-        double Acc[3] = { 0, 0, 0 };
-        extractDOFs(*a, 0, 3, Acc);
-        m_a1 = Acc[0]; m_a2 = Acc[1]; m_a3 = Acc[2];
-    }
+    // 直接从节点读取加速度
+    if (pNode->m_Acceleration.size() >= 1) m_a1 = pNode->m_Acceleration[0];
+    if (pNode->m_Acceleration.size() >= 2) m_a2 = pNode->m_Acceleration[1];
+    if (pNode->m_Acceleration.size() >= 3) m_a3 = pNode->m_Acceleration[2];
 
-    // 提取转角 (DOF 3-5, 如果有6个自由度)
-    if (dofs.size() >= 6)
-    {
-        double Rot[3] = { 0, 0, 0 };
-        extractDOFs(x, 3, 6, Rot);
-        m_ur1 = Rot[0]; m_ur2 = Rot[1]; m_ur3 = Rot[2];
-    }
+    // 直接从节点读取内力/反力
+    if (pNode->m_Force.size() >= 1) m_f1 = pNode->m_Force[0];
+    if (pNode->m_Force.size() >= 2) m_f2 = pNode->m_Force[1];
+    if (pNode->m_Force.size() >= 3) m_f3 = pNode->m_Force[2];
+
+    // 读取转角 (DOF 3-5)
+    if (pNode->m_Displacement.size() >= 4) m_ur1 = pNode->m_Displacement[3];
+    if (pNode->m_Displacement.size() >= 5) m_ur2 = pNode->m_Displacement[4];
+    if (pNode->m_Displacement.size() >= 6) m_ur3 = pNode->m_Displacement[5];
 }
 
 double NodeData::GetValue(DataType type) const
@@ -72,6 +52,12 @@ double NodeData::GetValue(DataType type) const
     case DataType::UR1:        return m_ur1;
     case DataType::UR2:        return m_ur2;
     case DataType::UR3:        return m_ur3;
+    case DataType::F1:         return m_f1;
+    case DataType::F2:         return m_f2;
+    case DataType::F3:         return m_f3;
+    case DataType::M1:         return m_m1;
+    case DataType::M2:         return m_m2;
+    case DataType::M3:         return m_m3;
     default:                   return 0.0;
     }
 }
@@ -86,32 +72,9 @@ double DataFrame::GetNodeData(int idNode, DataType type) const
     return 0.0;
 }
 
-void Outputter::SaveData(double time, StructureData* pData, int nFixed,
-                          const Eigen::VectorXd& x,
-                          const Eigen::VectorXd* v,
-                          const Eigen::VectorXd* a)
+void Outputter::SaveDataFromNodes(double time, StructureData* pData)
 {
     if (!pData) return;
-
-    // 检查是否已存在相同时间点
-    for (auto& frame : m_DataSet)
-    {
-        if (std::abs(frame.m_currentTime - time) < 1e-10)
-        {
-            // 更新已存在的帧
-            frame.m_nodeDatas.clear();
-            for (auto& nodePair : pData->m_Nodes)
-            {
-                auto pNode = nodePair.second;
-                if (!pNode) continue;
-
-                NodeData data;
-                data.ExtractFromVectors(pNode->m_DOF, nFixed, x, v, a);
-                frame.m_nodeDatas[pNode->m_Id] = data;
-            }
-            return;
-        }
-    }
 
     // 创建新帧
     DataFrame frame;
@@ -123,7 +86,7 @@ void Outputter::SaveData(double time, StructureData* pData, int nFixed,
         if (!pNode) continue;
 
         NodeData data;
-        data.ExtractFromVectors(pNode->m_DOF, nFixed, x, v, a);
+        data.ExtractFromNode(pNode.get());  // 直接从节点读取
         frame.m_nodeDatas[pNode->m_Id] = data;
     }
 
@@ -215,6 +178,12 @@ QString Outputter::GetTypeName(DataType type)
     case DataType::UR1:        return "R1";
     case DataType::UR2:        return "R2";
     case DataType::UR3:        return "R3";
+    case DataType::F1:         return "F1";
+    case DataType::F2:         return "F2";
+    case DataType::F3:         return "F3";
+    case DataType::M1:         return "M1";
+    case DataType::M2:         return "M2";
+    case DataType::M3:         return "M3";
     default:                   return "UNKNOWN";
     }
 }

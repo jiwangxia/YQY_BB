@@ -16,7 +16,6 @@ class Force_Element;
 class AnalysisStep : public Base
 {
 public:
-    int m_Id = 0;
     EnumKeyword::StepType m_Type = EnumKeyword::StepType::UNKNOWN;
     double m_Time = 0.0;           ///< 总时间
     double m_StepSize = 0.0;       ///< 每步大小
@@ -65,6 +64,10 @@ public:
     /**
      * @brief 静力求解
      */
+     /**
+      * @brief 静力求解
+      * @param [in] bResetState 是否重置状态（默认为 true，即从零开始求解；false 则在当前变形基础上继续求解）
+      */
     void Solve_Static();
 
     /**
@@ -88,6 +91,11 @@ private:
     void Init_DOF();
 
     /**
+    * @brief 初始化节点内部变量数据
+    */
+    void Init_Nodevector();
+
+    /**
      * @brief 组装整体刚度矩阵
      */
     void AssembleKs();
@@ -107,14 +115,16 @@ private:
      * @param [out] F1 约束自由度对应的力向量
      * @param [out] F2 自由自由度对应的力向量
      */
-    void Assemble_AllLoads(VectorXd& F1, VectorXd& F2);
+    void Assemble_AllLoads(VectorXd& F1, VectorXd& F2, double& Factor);
 
     /**
      * @brief 获取当前时刻的力向量
      * @param [in] current_time 当前时间
      * @return 当前时刻的力向量
      */
-    void UpData(VectorXd& x2, VectorXd* v2 = nullptr, VectorXd* a2 = nullptr);
+    void UpData(VectorXd& x1, VectorXd& x2, VectorXd& F1, VectorXd* v2 = nullptr, VectorXd* a2 = nullptr);
+
+    void Get_CurrentInforce(VectorXd& Inforce);
 
     bool Check_Rhs(Eigen::VectorXd& F2, Eigen::VectorXd& f2, Eigen::VectorXd& Rhs);
     /**
