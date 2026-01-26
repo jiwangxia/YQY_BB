@@ -638,9 +638,6 @@ bool Input_Model::InputAnalysisStep(QTextStream& flow, const QStringList& list_s
         pStep->m_Tolerance = tolerance;
         pStep->m_MaxIterations = maxIterations;
 
-        // 关联结构数据
-        pStep->SetStructure(m_Structure);
-
         m_Structure->m_AnalysisStep.insert(std::make_pair(autoId, pStep));
     }
 

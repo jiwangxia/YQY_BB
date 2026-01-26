@@ -14,6 +14,7 @@
 #include "DataStructure/Load/Force_Node.h"
 #include "DataStructure/Load/Force_Element.h"
 #include "DataStructure/AnalysisStep/AnalysisStep.h"
+#include "Export/Outputter.h"
 
 /**
  * @brief 结构数据类 - 存储和管理整个有限元模型的所有数据
@@ -113,5 +114,13 @@ private:
 	 * @brief 重新编号所有数据
 	 */
 	void RenumberAll();
+
+public:
+	Outputter m_Outputter;          // 分析结果输出
+
+	/**
+	 * @brief 获取输出
+	 */
+	Outputter& GetOutputter() { return m_Outputter; }
 };
 

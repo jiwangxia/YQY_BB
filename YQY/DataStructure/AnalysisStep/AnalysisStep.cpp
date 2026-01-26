@@ -37,7 +37,15 @@ void AnalysisStep::Init_DOF()
 {
     // m_pData 已由 PrepareData() 准备好
 
+    // 重置所有节点的DOF标记，确保重新计算
+    for (auto& nodePair : m_pData->m_Nodes)
+    {
+        auto& pNode = nodePair.second;
+        std::fill(pNode->m_DOF.begin(), pNode->m_DOF.end(), -1);
+    }
+
     // 根据单元节点自由度初始化节点DOF数组
+
     for (auto& elements : m_pData->m_Elements)
     {
         auto pelement = elements.second;
@@ -99,12 +107,6 @@ void AnalysisStep::Init_Nodevector()
             pNode->m_Velocity.resize(numDOF, 0.0);
         if (pNode->m_Acceleration.size() < numDOF)
             pNode->m_Acceleration.resize(numDOF, 0.0);
-
-        //std::fill(pNode->m_Displacement.begin(), pNode->m_Displacement.end(), 0.0);
-        //std::fill(pNode->m_Force.begin(), pNode->m_Force.end(), 0.0);
-        //std::fill(pNode->m_Velocity.begin(), pNode->m_Velocity.end(), 0.0);
-        //std::fill(pNode->m_Acceleration.begin(), pNode->m_Acceleration.end(), 0.0);
-
     }
 }
 
@@ -495,10 +497,12 @@ void AnalysisStep::Solve_Static()
                 qDebug().noquote() << QStringLiteral("\n达最大迭代次数\n");
             }
         }
-
-    }
+    } 
     // 保存结果到输出器 (直接从节点读取所有数据)
-    m_Outputter.SaveDataFromNodes(m_Time, m_pData);
+    if (m_pData)
+    {
+        m_pData->GetOutputter().SaveDataFromNodes(m_Time, m_pData);
+    }
     qDebug().noquote() << QStringLiteral("\n静力求解完成 ");
 }
 

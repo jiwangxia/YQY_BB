@@ -1,6 +1,5 @@
 ﻿#pragma once
 #include "Base/Base.h"
-#include "Export/Outputter.h"
 #include <memory>
 
 typedef Eigen::SparseMatrix<double> SpMat;
@@ -25,13 +24,6 @@ public:
     int m_nFixed = 0;              ///< 约束自由度个数
     int m_nFree = 0;               ///< 自由自由度个数
     SpMat m_K11, m_K21, m_K22;
-
-    Outputter m_Outputter;          ///< 分析结果输出管理器
-
-    /**
-     * @brief 获取输出管理器
-     */
-    Outputter& GetOutputter() { return m_Outputter; }
 
     /**
      * @brief 获取分析步类型名称

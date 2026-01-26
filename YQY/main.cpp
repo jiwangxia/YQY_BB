@@ -11,8 +11,12 @@ int main(int argc, char *argv[])
 
     Input_Model importer;
 
+    QString BaseName   = "竖直杆受轴和水平力";
+    QString InputPath  = QString("Import/ImportFile/%1.bdf").arg(BaseName);
+    QString OutputPath = QString("Export/ExportFile/%1_TEP.bdf").arg(BaseName);
 
-    if (importer.InputData("Import/ImportFile/shuzhi.txt", pStructure))
+    qDebug().noquote() << QStringLiteral("\n读取文件为:") << InputPath << "\n";
+    if (importer.InputData(InputPath, pStructure))
     {
         qDebug() << "\n=====Model loaded successfully!=====";
 
@@ -21,6 +25,10 @@ int main(int argc, char *argv[])
         solver.SetStructure(pStructure);
         solver.RunAll();  // 运行所有分析步
 
+        std::vector<int> nodeIds = { 2 };
+        std::vector<DataType> types = { DataType::U1, DataType::U2, DataType::F1, DataType::F2, DataType::F3 };
+
+        pStructure->GetOutputter().ExportNodes(OutputPath, nodeIds, types);
         // 或者运行指定分析步
         // solver.RunStep(1);
     }

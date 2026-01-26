@@ -155,11 +155,12 @@
   <ItemGroup>
     <Text Include="Import\ImportFile\11.txt" />
     <Text Include="Import\ImportFile\ce.txt" />
-    <Text Include="Import\ImportFile\Start.txt" />
     <Text Include="Import\ImportFile\Von-Mises-Truss.txt" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Import\FileFormat.md" />
+    <None Include="Import\ImportFile\斜杆一端受压.bdf" />
+    <None Include="Import\ImportFile\竖直杆受轴和水平力.bdf" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Condition="Exists('$(QtMsBuild)\qt.targets')">

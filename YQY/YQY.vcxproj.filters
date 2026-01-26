@@ -188,12 +188,13 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <Text Include="Import\ImportFile\Start.txt" />
     <Text Include="Import\ImportFile\ce.txt" />
     <Text Include="Import\ImportFile\Von-Mises-Truss.txt" />
     <Text Include="Import\ImportFile\11.txt" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Import\FileFormat.md" />
+    <None Include="Import\ImportFile\竖直杆受轴和水平力.bdf" />
+    <None Include="Import\ImportFile\斜杆一端受压.bdf" />
   </ItemGroup>
 </Project>

@@ -9,6 +9,9 @@ void Solver::SetStructure(std::shared_ptr<StructureData> pStructure)
 
 void Solver::RunAll()
 {
+    QElapsedTimer timer;
+    timer.start();
+
     auto pStructure = m_pStructure.lock();
     if (!pStructure)
     {
@@ -22,7 +25,7 @@ void Solver::RunAll()
         return;
     }
 
-    qDebug().noquote() << QStringLiteral("\n========== 开始分析 ==========");
+    qDebug().noquote() << QStringLiteral("\n========== 开始分析 ==========\n\n");
 
     bool m_IsFirst = true;
 
@@ -32,21 +35,16 @@ void Solver::RunAll()
         int stepId = pair.first;
         auto& step = pair.second;
         step->m_Id = stepId;
+        step->SetStructure(pStructure);           // 关联结构数据
 
-        if (m_IsFirst)
-        {
-            step->Init();
-            m_IsFirst = false;
-        }
-
+        step->Init();
         // 运行分析步（求解内部会处理初始化）
         step->Solve();
-        std::vector<int> nodeIds = { 2 };
-        std::vector<DataType> types = { DataType::U2, DataType::F1, DataType::F2, DataType::F3 };
-        step->GetOutputter().ExportNodes("Export/ExportFile/12.txt", nodeIds, types);
     }
-
     qDebug().noquote() << QStringLiteral("\n========== 分析完成 ==========\n");
+
+    qint64 elapsedMs = timer.elapsed();
+    qDebug().noquote() << QStringLiteral("模型分析: ") << elapsedMs << QStringLiteral(" 毫秒");
 }
 
 bool Solver::RunStep(int stepId)
