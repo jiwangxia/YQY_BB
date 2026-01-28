@@ -8,7 +8,8 @@ class LoadBase : public Base
 {
 public:
     LoadBase() {};
-    EnumKeyword::LoadType m_LoadType = EnumKeyword::LoadType::UNKNOWN;  ///< 荷载类型
+    EnumKeyword::LoadType   m_LoadType = EnumKeyword::LoadType::UNKNOWN;  ///< 荷载类型
+    EnumKeyword::Direction m_Direction = EnumKeyword::Direction::UNKNOWN;  ///< 荷载方向
 
     int m_StepId = 0;               // 作用的分析步ID
 };

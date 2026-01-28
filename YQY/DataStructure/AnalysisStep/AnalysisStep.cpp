@@ -110,6 +110,15 @@ void AnalysisStep::Init_Nodevector()
     }
 }
 
+void AnalysisStep::Get_ElementLength()
+{
+    for (auto& ele : m_pData->m_Elements)
+    {
+        auto pElement = ele.second;
+        pElement->Get_L0();
+    }
+}
+
 void AnalysisStep::AssembleKs()
 {
     std::list<Tri> L11, L21, L22;
@@ -220,6 +229,16 @@ void AnalysisStep::Assemble_AllLoads(VectorXd& F1, VectorXd& F2, double& Factor)
             if (!pForceElement) continue;
 
             Assemble_ForceElement(pForceElement.get(), F1, F2, m_Time);
+            F2 *= currentScale;
+            break;
+        }
+        case EnumKeyword::LoadType::FORCE_GRAVITY:
+        {
+            // 向下转型为 Force_Gravity
+            auto pForceGravity = std::dynamic_pointer_cast<Force_Gravity>(pLoadBase);
+            if (!pForceGravity) continue;
+
+            Assemble_ForceGravity(pForceGravity.get(), F1, F2, m_Time);
             F2 *= currentScale;
             break;
         }
@@ -363,7 +382,7 @@ void AnalysisStep::Assemble_ForceElement(Force_Element* pForceElement, VectorXd&
         int dof = pNode->m_DOF[iDirection];
         if (dof >= 0 && dof < m_nFixed)
         {
-            F1[dof] += pForceElement->m_Value / 2.;
+            F1[dof] += 0.;
         }
         else if (dof >= m_nFixed && dof < (m_nFixed + m_nFree))
         {
@@ -372,6 +391,35 @@ void AnalysisStep::Assemble_ForceElement(Force_Element* pForceElement, VectorXd&
     }
 }
 
+
+void AnalysisStep::Assemble_ForceGravity(Force_Gravity* pForceGravity, VectorXd& F1, VectorXd& F2, double& current_time)
+{
+    int iDirection = static_cast<int>(pForceGravity->m_Direction);
+    double m_g = pForceGravity->m_g;
+    for (auto& pElement : m_pData->m_Elements)
+    {
+        auto pele = pElement.second;
+        auto pPorety = pele->m_pProperty.lock();
+        auto m_Density = pPorety->m_pMaterial.lock()->m_Density;
+        auto m_A = pPorety->m_pSection.lock()->m_Area;
+        double m_quality = pele->L0 * m_Density * m_A;
+        double m_G = m_quality * m_g;
+
+        for (auto& NodePtr : pele->m_pNode)
+        {
+            auto pNode = NodePtr.lock();
+            int dof = pNode->m_DOF[iDirection];
+            if (dof >= 0 && dof < m_nFixed)
+            {
+                F1[dof] += 0.;
+            }
+            else if (dof >= m_nFixed && dof < (m_nFixed + m_nFree))
+            {
+                F2[dof - m_nFixed] += m_G / 2.;
+            }
+        }
+    }
+}
 
 void AnalysisStep::Assemble_Constraint(VectorXd& x1)
 {
@@ -434,7 +482,7 @@ void AnalysisStep::Solve_Static()
 
     // 组装约束
     Assemble_Constraint(x1);
-
+    Get_ElementLength();
     // 残差向量
     VectorXd residual;
 

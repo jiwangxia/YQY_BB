@@ -36,4 +36,5 @@ public:
      */
     virtual void Get_ke(MatrixXd& ke) = 0;
     virtual void Get_ke_non(MatrixXd& ke) = 0;
+    virtual void Get_L0() = 0;
 };

@@ -11,7 +11,6 @@ public:
     Force_Node() { m_LoadType = EnumKeyword::LoadType::FORCE_NODE; }
 
     std::weak_ptr<Node> m_pNode;  ///< 荷载所在节点
-    EnumKeyword::Direction m_Direction = EnumKeyword::Direction::UNKNOWN;  ///< 荷载方向
 
     double m_Value = 0.0;           // 荷载值
 };

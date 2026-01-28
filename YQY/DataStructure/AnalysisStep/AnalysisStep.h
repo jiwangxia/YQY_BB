@@ -8,6 +8,7 @@ typedef Eigen::Triplet<double> Tri;
 class StructureData;
 class Force_Node;
 class Force_Element;
+class Force_Gravity;
 
 /**
  * @brief 分析步类 - 负责单次分析的完整流程
@@ -87,6 +88,8 @@ private:
     */
     void Init_Nodevector();
 
+    void Get_ElementLength();
+
     /**
      * @brief 组装整体刚度矩阵
      */
@@ -136,6 +139,15 @@ private:
      * @param [in] current_time 当前时间
      */
     void Assemble_ForceElement(Force_Element* pForceElement, VectorXd& F1, VectorXd& F2, double& current_time);
+
+    /**
+     * @brief 组装重力
+     * @param [in] pForceGravity 单元重力指针
+     * @param [in,out] F1 约束自由度对应的力向量（累加）
+     * @param [in,out] F2 自由自由度对应的力向量（累加）
+     * @param [in] current_time 当前时间
+     */
+    void Assemble_ForceGravity(Force_Gravity* pForceGravity, VectorXd& F1, VectorXd& F2, double& current_time);
 
     /**
      * @brief 组装约束位移

@@ -13,6 +13,7 @@
 #include "DataStructure/Load/LoadBase.h"
 #include "DataStructure/Load/Force_Node.h"
 #include "DataStructure/Load/Force_Element.h"
+#include "DataStructure/Load/Force_Gravity.h"
 #include "DataStructure/AnalysisStep/AnalysisStep.h"
 #include "Export/Outputter.h"
 

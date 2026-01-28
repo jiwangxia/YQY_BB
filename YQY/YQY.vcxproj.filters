@@ -190,6 +190,8 @@
   <ItemGroup>
     <Text Include="Import\ImportFile\ce.txt" />
     <Text Include="Import\ImportFile\Von-Mises-Truss.txt" />
+    <Text Include="Import\ImportFile\两斜杆受压.bdf" />
+    <Text Include="Import\ImportFile\1111.bdf" />
     <Text Include="Import\ImportFile\11.txt" />
   </ItemGroup>
   <ItemGroup>

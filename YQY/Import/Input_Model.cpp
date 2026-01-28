@@ -118,15 +118,22 @@ bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureDa
         QString typeName = "UNKNOWN";
         if (dynamic_cast<Force_Node*>(pair.second.get())) typeName = "FORCE_NODE";
         else if (dynamic_cast<Force_Element*>(pair.second.get())) typeName = "FORCE_ELEMENT";
+        else if (dynamic_cast<Force_Gravity*>(pair.second.get())) typeName = "FORCE_GRAVITY";
         // 可添加其他荷载类型
         loadTypeCount[typeName]++;
     }
+
     if (0 != m_Structure->m_Load.size())
     qDebug().noquote() << QStringLiteral("\n荷载总数: ") << m_Structure->m_Load.size();
     for (auto it = loadTypeCount.constBegin(); it != loadTypeCount.constEnd(); ++it)
     {
         qDebug().noquote()  << it.key() << QStringLiteral(": ") << it.value();
+        if (it.key() == "FORCE_GRAVITY")
+        {
+            qDebug().noquote() << QStringLiteral("------重力方向为:") << g_Direction;
+        }
     }
+
     if (0 != m_Structure->m_AnalysisStep.size())
     qDebug().noquote() << QStringLiteral("\n分析步数量: ") << m_Structure->m_AnalysisStep.size();
 
@@ -435,6 +442,7 @@ const QMap<EnumKeyword::LoadType, Input_Model::LoadHandler> Input_Model::s_LoadH
 {
     { EnumKeyword::LoadType::FORCE_NODE,       [](Input_Model* self, QTextStream& flow, const QStringList& list_str, int nLoad) { return self->InputForceNode(flow, list_str, nLoad); } },
     { EnumKeyword::LoadType::FORCE_ELEMENT,    [](Input_Model* self, QTextStream& flow, const QStringList& list_str, int nLoad) { return self->InputForceElement(flow, list_str, nLoad); } },
+    { EnumKeyword::LoadType::FORCE_GRAVITY,    [](Input_Model* self, QTextStream& flow, const QStringList& list_str, int nLoad) { return self->InputForceGravity(flow, list_str, nLoad); } },
     // 新增荷载类型只需在此添加映射
 };
 
@@ -458,7 +466,7 @@ bool Input_Model::InputForceNode(QTextStream& flow, const QStringList& /*list_st
         }
 
         QStringList strlist_load = strdata.split(QRegularExpression("[\\t, ]"), Qt::SkipEmptyParts);
-        // ID, NodeID, Direction, Value
+        // ID, NodeID, Direction, Value, StepID
         if (strlist_load.size() != 5)
         {
             qDebug().noquote() << QStringLiteral("Error: 节点力荷载数据格式错误: ") << strdata;
@@ -486,7 +494,6 @@ bool Input_Model::InputForceNode(QTextStream& flow, const QStringList& /*list_st
 // 单元压力荷载处理
 bool Input_Model::InputForceElement(QTextStream& flow, const QStringList& /*list_str*/, int nLoad)
 {
-    // TODO: 实现单元压力荷载的读取逻辑
     QString strdata;
     for (int i = 0; i < nLoad; i++)
     {
@@ -523,6 +530,52 @@ bool Input_Model::InputForceElement(QTextStream& flow, const QStringList& /*list
 
         pLoad->m_Direction = static_cast<EnumKeyword::Direction>(direction);
         pLoad->m_Value = value;
+        m_Structure->m_Load.insert(std::make_pair(autoId, pLoad));
+    }
+    return true;
+}
+
+bool Input_Model::InputForceGravity(QTextStream& flow, const QStringList& list_str, int nLoad)
+{
+    QString strdata;
+    for (int i = 0; i < nLoad; i++)
+    {
+        if (!ReadLine(flow, strdata))
+        {
+            qDebug() << QStringLiteral("Error: 单元重力数据不够");
+            return false;
+        }
+
+        // 检查是否误读到下一个关键字行
+        if (strdata.startsWith("*"))
+        {
+            qDebug().noquote() << QStringLiteral("Error: 单元重力数据不足，遇到下一个关键字: ") << strdata;
+            return false;
+        }
+
+        QStringList strlist_load = strdata.split(QRegularExpression("[\\t, ]"), Qt::SkipEmptyParts);
+        // ID, Direction, Value, StepID
+        if (strlist_load.size() != 4)
+        {
+            qDebug().noquote() << QStringLiteral("Error: 单元重力数据格式错误: ") << strdata;
+            return false;
+        }
+
+        g_Direction = strlist_load[1].toInt();
+        double value = strlist_load[2].toDouble();
+        int stepid = strlist_load[3].toInt();
+
+        int autoId = static_cast<int>(m_Structure->m_Load.size()) + 1;
+
+        auto pLoad = std::make_shared<Force_Gravity>();
+        pLoad->m_Id = autoId;
+
+        pLoad->m_Direction = static_cast<EnumKeyword::Direction>(g_Direction);
+        if (0 != value)
+        {
+        pLoad->m_g = value;
+        }
+        pLoad->m_StepId = stepid;
         m_Structure->m_Load.insert(std::make_pair(autoId, pLoad));
     }
     return true;

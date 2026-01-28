@@ -24,5 +24,6 @@ public:
      */
     void Get_ke(MatrixXd& ke);
     void Get_ke_non(MatrixXd& ke);
+    void Get_L0();
 };
 

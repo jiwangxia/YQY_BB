@@ -11,6 +11,8 @@ class StructureData;
  */
 class Input_Model : public Base
 {
+private:
+	int g_Direction;
 public:
 	/**
 	 * @brief 读取一行有效数据（跳过注释和空行）
@@ -134,7 +136,15 @@ private:
 	 * @return 读取成功返回 true
 	 */
 	bool InputForceElement(QTextStream& flow, const QStringList& list_str, int nLoad);
-	/// @}
+
+	/**
+	 * @brief 读取重力数据
+	 * @param [in] flow 文本流
+	 * @param [in] list_str 关键字行解析后的字符串列表
+	 * @param [in] nLoad 荷载数量
+	 * @return 读取成功返回 true
+	 */
+	bool InputForceGravity(QTextStream& flow, const QStringList& list_str, int nLoad);
 
 	/**
 	 * @brief 读取约束数据

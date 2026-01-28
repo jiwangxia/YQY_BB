@@ -66,11 +66,11 @@ void ElementTruss::Get_ke_non(MatrixXd& ke)
         return;
     }
 
-    // 计算初始长度 L0
-    double dx0 = pNode1->m_X - pNode0->m_X;
-    double dy0 = pNode1->m_Y - pNode0->m_Y;
-    double dz0 = pNode1->m_Z - pNode0->m_Z;
-    L0 = sqrt(dx0 * dx0 + dy0 * dy0 + dz0 * dz0);
+    //// 计算初始长度 L0
+    //double dx0 = pNode1->m_X - pNode0->m_X;
+    //double dy0 = pNode1->m_Y - pNode0->m_Y;
+    //double dz0 = pNode1->m_Z - pNode0->m_Z;
+    //L0 = sqrt(dx0 * dx0 + dy0 * dy0 + dz0 * dz0);
 
     // 计算当前变形后的方向向量 (考虑位移)
     double dx_current = pNode1->m_X + pNode1->m_Displacement[0] - pNode0->m_X - pNode0->m_Displacement[0];
@@ -151,5 +151,30 @@ void ElementTruss::Get_ke_non(MatrixXd& ke)
             ke.block<3, 3>(3, 3) += Kg_block;
         }
     }
+}
+
+void ElementTruss::Get_L0()
+{
+    auto pProperty = m_pProperty.lock();
+    auto pSection = pProperty->m_pSection.lock();
+    auto pMaterial = pProperty->m_pMaterial.lock();
+
+    double E = pMaterial->m_Young;
+    double A = pSection->m_Area;
+
+    auto pNode0 = m_pNode[0].lock();
+    auto pNode1 = m_pNode[1].lock();
+
+    if (pNode0 == nullptr || pNode1 == nullptr)
+    {
+        qDebug().noquote() << QStringLiteral("Error: ElementTruss 节点指针为空");
+        return;
+    }
+
+    // 计算初始长度 L0
+    double dx0 = pNode1->m_X - pNode0->m_X;
+    double dy0 = pNode1->m_Y - pNode0->m_Y;
+    double dz0 = pNode1->m_Z - pNode0->m_Z;
+    L0 = sqrt(dx0 * dx0 + dy0 * dy0 + dz0 * dz0);
 }
 

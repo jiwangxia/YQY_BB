@@ -14,3 +14,8 @@ void ElementCable::Get_ke_non(MatrixXd& ke)
 
 }
 
+void ElementCable::Get_L0()
+{
+
+}
+

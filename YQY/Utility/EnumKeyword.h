@@ -70,6 +70,7 @@ public:
     {
         FORCE_NODE,     ///< 节点力
         FORCE_ELEMENT,  ///< 单元荷载
+        FORCE_GRAVITY,  ///< 重力荷载
         UNKNOWN         ///< 未知
     };
     static const QMap<QString, LoadType> MapLoadType;  ///< 荷载类型字符串到枚举的映射

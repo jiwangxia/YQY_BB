@@ -13,6 +13,10 @@ void ElementBeam::Get_ke_non(MatrixXd& ke)
 {
 }
 
+void ElementBeam::Get_L0()
+{
+}
+
 //void ElementBeam::GetDOFs(std::vector<int>& DOFs)
 //{
 //}
