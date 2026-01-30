@@ -25,8 +25,8 @@ int main(int argc, char *argv[])
         solver.SetStructure(pStructure);
         solver.RunAll();  // 运行所有分析步
 
-        std::vector<int> nodeIds = { 2 };
-        std::vector<DataType> types = { DataType::U1, DataType::U2, DataType::F1, DataType::F2, DataType::F3 };
+        std::vector<int> nodeIds = {  3 };
+        std::vector<DataType> types = { DataType::U1, DataType::U2, DataType::U3, DataType::F1, DataType::F2, DataType::F3 };
 
         pStructure->GetOutputter().ExportNodes(OutputPath, nodeIds, types);
         // 或者运行指定分析步

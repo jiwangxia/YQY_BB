@@ -148,6 +148,11 @@ void Outputter::ExportNodes(const QString& fileName,
         // 数据列
         for (int nodeId : nodeIds)
         {
+            if (frame.m_nodeDatas.find(nodeId) == frame.m_nodeDatas.end()) 
+            {
+                qDebug() << "Warning: Node" << nodeId << "does not exist!";
+                return; // 或者 return;
+            }
             for (DataType type : types)
             {
                 double val = frame.GetNodeData(nodeId, type);

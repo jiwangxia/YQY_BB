@@ -10,11 +10,11 @@ public:
     SectionBase();
 
     double m_Area = 0.0;  ///< 截面面积
-
+    double m_Radius = 0.0;  ///< 半径
     /**
      * @brief 计算截面面积（纯虚函数）
      */
-    virtual void Calculate_Area() = 0;
+    //virtual void Calculate_Area() = 0;
 
     /**
      * @brief 获取截面面积

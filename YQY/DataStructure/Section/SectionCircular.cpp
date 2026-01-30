@@ -2,7 +2,7 @@
 
 #include "Base/Base.h"
 
-void SectionCircular::Calculate_Area()
+void SectionCircular::Calculate_Radius()
 {
-    m_Area = PI * m_Radius * m_Radius;
+    m_Radius = sqrt(m_Area / PI);
 }

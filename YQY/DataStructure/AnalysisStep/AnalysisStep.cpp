@@ -242,6 +242,16 @@ void AnalysisStep::Assemble_AllLoads(VectorXd& F1, VectorXd& F2, double& Factor)
             F2 *= currentScale;
             break;
         }
+        case EnumKeyword::LoadType::FORCE_WIND:
+        {
+            // 向下转型为 Force_Gravity
+            auto pForceWind = std::dynamic_pointer_cast<Force_Wind>(pLoadBase);
+            if (!pForceWind) continue;
+
+            Assemble_ForceWind(pForceWind.get(), F1, F2, m_Time);
+            F2 *= currentScale;
+            break;
+        }
         default:
             break;
         }
@@ -421,6 +431,36 @@ void AnalysisStep::Assemble_ForceGravity(Force_Gravity* pForceGravity, VectorXd&
     }
 }
 
+void AnalysisStep::Assemble_ForceWind(Force_Wind* pForceWind, VectorXd& F1, VectorXd& F2, double& current_time)
+{
+    int iDirection = static_cast<int>(pForceWind->m_Direction);
+    double m_v = pForceWind->m_velocity;
+    double m_vDensity = pForceWind->m_windDensity;
+    for (auto& pElement : m_pData->m_Elements)
+    {
+        auto pele = pElement.second;
+        auto pPorety = pele->m_pProperty.lock();
+
+        auto m_r = pPorety->m_pSection.lock()->m_Radius;
+        double m_A = pele->L0 * m_r;
+        double m_Fwind = 0.5 * m_vDensity * m_v * m_v * m_A / 2.0;
+
+        for (auto& NodePtr : pele->m_pNode)
+        {
+            auto pNode = NodePtr.lock();
+            int dof = pNode->m_DOF[iDirection];
+            if (dof >= 0 && dof < m_nFixed)
+            {
+                F1[dof] += 0.;
+            }
+            else if (dof >= m_nFixed && dof < (m_nFixed + m_nFree))
+            {
+                F2[dof - m_nFixed] += m_Fwind;
+            }
+        }
+    }
+}
+
 void AnalysisStep::Assemble_Constraint(VectorXd& x1)
 {
     x1.resize(m_nFixed);
@@ -493,12 +533,13 @@ void AnalysisStep::Solve_Static()
         double currentFactor = (double)inc / numIncrements;
         //组装外荷载和
         Assemble_AllLoads(F1, F2, currentFactor);
-
+        //std::cout << "\nF2:" << VectorXd(F2).transpose();
         // Newton-Raphson 迭代
         for (int iter = 0; iter < m_MaxIterations; iter++)
         {
             // 1. 组装刚度矩阵 (基于当前变形状态)
             AssembleKs();
+            //std::cout << "\nK22:\n" << MatrixXd(m_K22);
 
             // 2. 清零节点内力，然后计算单元内力并累加到节点
             for (auto& nodePair : m_pData->m_Nodes)
@@ -530,7 +571,7 @@ void AnalysisStep::Solve_Static()
             }
 
             x2 = ldltSolver.solve(effectiveForce);
-
+            //std::cout << "\nx2: " << VectorXd(x2).transpose();
             F1 = m_K11 * x1 + m_K21.transpose() * x2;
 
             // 6. 累加位移增量

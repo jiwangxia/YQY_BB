@@ -112,6 +112,9 @@
     <ClCompile Include="Export\Outputter.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="DataStructure\Load\Force_Wind.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Base\Base.h">
@@ -186,6 +189,9 @@
     <ClInclude Include="Export\Outputter.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="DataStructure\Load\Force_Wind.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Text Include="Import\ImportFile\ce.txt" />
@@ -193,6 +199,8 @@
     <Text Include="Import\ImportFile\两斜杆受压.bdf" />
     <Text Include="Import\ImportFile\1111.bdf" />
     <Text Include="Import\ImportFile\11.txt" />
+    <Text Include="Import\ImportFile\daoxian.txt" />
+    <Text Include="Import\ImportFile\sifenlie.txt" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Import\FileFormat.md" />

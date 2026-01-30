@@ -65,6 +65,9 @@ bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureDa
         case EnumKeyword::KeyData::LOAD:
             InputLoad(flow, list_str);
             break;
+        case EnumKeyword::KeyData::STRESS:
+            InputElement_Stress(flow, list_str);
+            break;
         case EnumKeyword::KeyData::ANALYSIS_STEP:
             InputAnalysisStep(flow, list_str);
             break;
@@ -116,9 +119,10 @@ bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureDa
     for (const auto& pair : m_Structure->m_Load)
     {
         QString typeName = "UNKNOWN";
-        if (dynamic_cast<Force_Node*>(pair.second.get())) typeName = "FORCE_NODE";
+        if (dynamic_cast<Force_Node*>(pair.second.get()))         typeName = "FORCE_NODE";
         else if (dynamic_cast<Force_Element*>(pair.second.get())) typeName = "FORCE_ELEMENT";
         else if (dynamic_cast<Force_Gravity*>(pair.second.get())) typeName = "FORCE_GRAVITY";
+        else if (dynamic_cast<Force_Wind*>(pair.second.get()))    typeName = "FORCE_WIND";
         // 可添加其他荷载类型
         loadTypeCount[typeName]++;
     }
@@ -357,8 +361,8 @@ bool Input_Model::InputSection(QTextStream& flow, const QStringList& list_str)
             
             auto pSection = std::make_shared<SectionCircular>();
             pSection->m_Id = autoId;
-            pSection->m_Radius = strlist_pro[1].toDouble();
-            pSection->Calculate_Area();
+            pSection->m_Area = strlist_pro[1].toDouble();
+            pSection->Calculate_Radius();
             m_Structure->m_Section.insert(std::make_pair(autoId, pSection));
         }
 
@@ -443,6 +447,7 @@ const QMap<EnumKeyword::LoadType, Input_Model::LoadHandler> Input_Model::s_LoadH
     { EnumKeyword::LoadType::FORCE_NODE,       [](Input_Model* self, QTextStream& flow, const QStringList& list_str, int nLoad) { return self->InputForceNode(flow, list_str, nLoad); } },
     { EnumKeyword::LoadType::FORCE_ELEMENT,    [](Input_Model* self, QTextStream& flow, const QStringList& list_str, int nLoad) { return self->InputForceElement(flow, list_str, nLoad); } },
     { EnumKeyword::LoadType::FORCE_GRAVITY,    [](Input_Model* self, QTextStream& flow, const QStringList& list_str, int nLoad) { return self->InputForceGravity(flow, list_str, nLoad); } },
+    { EnumKeyword::LoadType::FORCE_WIND,       [](Input_Model* self, QTextStream& flow, const QStringList& list_str, int nLoad) { return self->InputForceWind(flow, list_str, nLoad); } }
     // 新增荷载类型只需在此添加映射
 };
 
@@ -581,6 +586,52 @@ bool Input_Model::InputForceGravity(QTextStream& flow, const QStringList& list_s
     return true;
 }
 
+bool Input_Model::InputForceWind(QTextStream& flow, const QStringList& list_str, int nLoad)
+{
+    QString strdata;
+    for (int i = 0; i < nLoad; i++)
+    {
+        if (!ReadLine(flow, strdata))
+        {
+            qDebug() << QStringLiteral("Error: 单元风荷载数据不够");
+            return false;
+        }
+
+        // 检查是否误读到下一个关键字行
+        if (strdata.startsWith("*"))
+        {
+            qDebug().noquote() << QStringLiteral("Error: 单元风荷载数据不足，遇到下一个关键字: ") << strdata;
+            return false;
+        }
+
+        QStringList strlist_load = strdata.split(QRegularExpression("[\\t, ]"), Qt::SkipEmptyParts);
+        // ID, Direction, Value, StepID
+        if (strlist_load.size() != 4)
+        {
+            qDebug().noquote() << QStringLiteral("Error: 单元风荷载数据格式错误: ") << strdata;
+            return false;
+        }
+
+        g_Direction = strlist_load[1].toInt();
+        double value = strlist_load[2].toDouble();
+        int stepid = strlist_load[3].toInt();
+
+        int autoId = static_cast<int>(m_Structure->m_Load.size()) + 1;
+
+        auto pLoad = std::make_shared<Force_Wind>();
+        pLoad->m_Id = autoId;
+
+        pLoad->m_Direction = static_cast<EnumKeyword::Direction>(g_Direction);
+        if (0 != value)
+        {
+            pLoad->m_velocity = value;
+        }
+        pLoad->m_StepId = stepid;
+        m_Structure->m_Load.insert(std::make_pair(autoId, pLoad));
+    }
+    return true;
+}
+
 bool Input_Model::InputConstraint(QTextStream& flow, const QStringList& list_str)
 {
     Q_ASSERT(list_str.size() == 2);
@@ -638,7 +689,7 @@ bool Input_Model::InputElement_Stress(QTextStream& flow, const QStringList& list
         auto pElement = m_Structure->FindElement(idElement);
         if (pElement)
         {
-            pElement->m_Stress = stress;
+            pElement->m_InitStress = stress;
         }
     }
 

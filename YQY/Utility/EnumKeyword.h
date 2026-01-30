@@ -20,6 +20,7 @@ public:
         ELEMENT,        ///< 单元
         CONSTRAINT,     ///< 约束
         LOAD,           ///< 荷载
+        STRESS,         ///< 初始应力
         ANALYSIS_STEP   ///< 分析步
     };
     static const QMap<QString, KeyData> MapKeyData;  ///< 关键字字符串到枚举的映射
@@ -71,6 +72,8 @@ public:
         FORCE_NODE,     ///< 节点力
         FORCE_ELEMENT,  ///< 单元荷载
         FORCE_GRAVITY,  ///< 重力荷载
+        FORCE_WIND,     ///< 风荷载
+        FORCE_ICE,      ///< 冰荷载
         UNKNOWN         ///< 未知
     };
     static const QMap<QString, LoadType> MapLoadType;  ///< 荷载类型字符串到枚举的映射

@@ -9,6 +9,7 @@ class StructureData;
 class Force_Node;
 class Force_Element;
 class Force_Gravity;
+class Force_Wind;
 
 /**
  * @brief 分析步类 - 负责单次分析的完整流程
@@ -148,6 +149,15 @@ private:
      * @param [in] current_time 当前时间
      */
     void Assemble_ForceGravity(Force_Gravity* pForceGravity, VectorXd& F1, VectorXd& F2, double& current_time);
+
+    /**
+     * @brief 组装风荷载
+     * @param [in] pForceWind 单元风荷载指针
+     * @param [in,out] F1 约束自由度对应的力向量（累加）
+     * @param [in,out] F2 自由自由度对应的力向量（累加）
+     * @param [in] current_time 当前时间
+     */
+    void Assemble_ForceWind(Force_Wind* pForceWind, VectorXd& F1, VectorXd& F2, double& current_time);
 
     /**
      * @brief 组装约束位移

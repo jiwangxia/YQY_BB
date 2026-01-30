@@ -90,7 +90,7 @@ void ElementTruss::Get_ke_non(MatrixXd& ke)
     B_matrix << -dirCos_x, -dirCos_y, -dirCos_z, dirCos_x, dirCos_y, dirCos_z;
 
     // 选择应变公式: true = 对数应变(体积不变), false = 工程应变
-    bool bUseLogStrain = true;  // TODO: 可改为类成员变量 m_bUseLogStrain
+    bool bUseLogStrain = true;
 
     if (!bUseLogStrain)
     {
@@ -100,7 +100,7 @@ void ElementTruss::Get_ke_non(MatrixXd& ke)
         ke = B_matrix * B_matrix.transpose() * materialStiffness;
 
         double strain = (length_current - L0) / L0;
-        m_Stress = E * strain;
+        m_Stress = E * strain + m_InitStress;
         double axialForce = m_Stress * A;
 
         m_inforce = B_matrix * axialForce;
@@ -130,7 +130,7 @@ void ElementTruss::Get_ke_non(MatrixXd& ke)
         ke = B_matrix * B_matrix.transpose() * materialStiffness;
 
         double strain = log(length_current / L0);  // 对数应变
-        m_Stress = E * strain;                     // 真应力
+        m_Stress = E * strain + m_InitStress;      // 真应力
         double axialForce = m_Stress * A_current;
 
         m_inforce = B_matrix * axialForce;

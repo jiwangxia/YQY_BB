@@ -107,6 +107,7 @@
     <ClCompile Include="DataStructure\Load\Force_Gravity.cpp" />
     <ClCompile Include="DataStructure\Element\ElementBeam.cpp" />
     <ClCompile Include="DataStructure\Element\ElementCable.cpp" />
+    <ClCompile Include="DataStructure\Load\Force_Wind.cpp" />
     <ClCompile Include="Import\Input_Model.cpp" />
     <ClCompile Include="DataStructure\Structure\StructureData.cpp" />
     <ClCompile Include="DataStructure\Section\SectionCircular.cpp" />
@@ -141,6 +142,7 @@
     <ClInclude Include="DataStructure\Load\Force_Gravity.h" />
     <ClInclude Include="DataStructure\Element\ElementBeam.h" />
     <ClInclude Include="DataStructure\Element\ElementCable.h" />
+    <ClInclude Include="DataStructure\Load\Force_Wind.h" />
     <ClInclude Include="Import\Input_Model.h" />
     <ClInclude Include="DataStructure\Structure\StructureData.h" />
     <ClInclude Include="DataStructure\Section\SectionCircular.h" />
@@ -154,6 +156,8 @@
   </ItemGroup>
   <ItemGroup>
     <Text Include="Import\ImportFile\11.txt" />
+    <Text Include="Import\ImportFile\daoxian.txt" />
+    <Text Include="Import\ImportFile\sifenlie.txt" />
     <Text Include="Import\ImportFile\两斜杆受压.bdf" />
     <Text Include="Import\ImportFile\1111.bdf" />
     <Text Include="Import\ImportFile\ce.txt" />

@@ -7,11 +7,10 @@
 class SectionCircular : public SectionBase
 {
 public:
-    double m_Radius = 0.0;  ///< 半径
 
     /**
-     * @brief 根据半径计算截面面积
+     * @brief 根据截面面积计算半径
      */
-    void Calculate_Area() override;
+    void Calculate_Radius();
 };
 

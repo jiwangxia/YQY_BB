@@ -14,7 +14,9 @@ public:
     ElementBase();
     QVector<std::weak_ptr<Node>> m_pNode;       //节点指针数组
     std::weak_ptr<Property>      m_pProperty;   //所属属性（材料+截面）
-    double m_Stress = 0.0;                      //单元应力
+    double L0;  ///< 单元初始长度
+    double m_InitStress = 0.0;                  // 初始应力
+    double m_Stress = 0.0;                      // 单元应力
 
     /**
      * @brief 获取单元每个节点的自由度个数
@@ -28,7 +30,7 @@ public:
      */
     void GetDOFs(std::vector<int>& DOFs);
 
-    double L0;  ///< 单元初始长度
+
     Eigen::VectorXd m_inforce;
     /**
      * @brief 获取单元刚度矩阵
