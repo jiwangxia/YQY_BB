@@ -1,6 +1,5 @@
 #include "Outputter.h"
 #include "DataStructure/Structure/StructureData.h"
-#include "DataStructure/Node/Node.h"
 #include <iomanip>
 #include <sstream>
 
@@ -103,8 +102,8 @@ static QString FormatValue(double val, int width = 16)
 }
 
 void Outputter::ExportNodes(const QString& fileName,
-                             const std::vector<int>& nodeIds,
-                             const std::vector<DataType>& types) const
+    const std::vector<int>& nodeIds,
+    const std::vector<DataType>& types) const
 {
     QFile file(fileName);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
@@ -114,7 +113,7 @@ void Outputter::ExportNodes(const QString& fileName,
     }
 
     QTextStream stream(&file);
-    const int colWidth = 16; 
+    const int colWidth = 16;
     const QChar padChar = ' ';
 
     // --- 写表头 ---
@@ -131,11 +130,11 @@ void Outputter::ExportNodes(const QString& fileName,
         }
     }
     stream << "\n";
-    
+
     // 分隔线 (长度自适应)
     size_t totalWidth = colWidth + types.size() * nodeIds.size() * colWidth;
     // 简单的重复字符生成分隔线
-    QString line; 
+    QString line;
     line.fill('-', totalWidth);
     stream << line << "\n";
 
@@ -148,7 +147,7 @@ void Outputter::ExportNodes(const QString& fileName,
         // 数据列
         for (int nodeId : nodeIds)
         {
-            if (frame.m_nodeDatas.find(nodeId) == frame.m_nodeDatas.end()) 
+            if (frame.m_nodeDatas.find(nodeId) == frame.m_nodeDatas.end())
             {
                 qDebug() << "Warning: Node" << nodeId << "does not exist!";
                 return; // 或者 return;
@@ -191,4 +190,223 @@ QString Outputter::GetTypeName(DataType type)
     case DataType::M3:         return "M3";
     default:                   return "UNKNOWN";
     }
+}
+
+// 辅助格式化函数 (局部)
+static QString FmtInt(int val, int width = 10, bool leftAlign = false)
+{
+    QString s = QString::number(val);
+    return leftAlign ? s.leftJustified(width, ' ') : s.rightJustified(width, ' ');
+}
+
+static QString FmtDouble(double val, int width = 16, bool leftAlign = false)
+{
+    char buffer[64];
+    snprintf(buffer, sizeof(buffer), "%+.6E", val);
+    QString s(buffer);
+    return leftAlign ? s.leftJustified(width, ' ') : s.rightJustified(width, ' ');
+}
+
+static QString FmtStr(const QString& str, int width = 10, bool leftAlign = false)
+{
+    return leftAlign ? str.leftJustified(width, ' ') : str.rightJustified(width, ' ');
+}
+
+void Outputter::SaveModel(const QString& fileName, StructureData* pData)
+{
+    if (!pData) return;
+
+    QFile file(fileName);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+    {
+        qDebug() << "Failed to open file for saving model:" << fileName;
+        return;
+    }
+
+    QTextStream stream(&file);
+
+    // 1. 材料 *MATERIAL, N
+    if (!pData->m_Material.empty())
+    {
+        stream << "*MATERIAL, " << pData->m_Material.size() << "\n";
+        for (const auto& pair : pData->m_Material)
+        {
+            auto pMat = pair.second;
+            // ID, E, v, Density, MaxStress, Expansion
+            stream << FmtInt(pMat->m_Id, 10, true) << " "
+                   << FmtDouble(pMat->m_Young) << " "
+                   << FmtDouble(pMat->m_Poisson) << " "
+                   << FmtDouble(pMat->m_Density) << " "
+                   << FmtDouble(pMat->m_MaxStress) << " "
+                   << FmtDouble(pMat->m_Expansion) << "\n";
+        }
+    }
+
+    // 2. 截面 *SECTION, N
+    if (!pData->m_Section.empty())
+    {
+        stream << "\n*SECTION, " << pData->m_Section.size() << "\n";
+        for (const auto& pair : pData->m_Section)
+        {
+            auto pSec = pair.second;
+            // ID, Area
+            stream << FmtInt(pSec->m_Id, 10, true) << " " << FmtDouble(pSec->m_Area) << "\n";
+        }
+    }
+
+    // 3. 节点 *NODE, N
+    if (!pData->m_Nodes.empty())
+    {
+        stream << "\n*NODE, " << pData->m_Nodes.size() << "\n";
+        for (const auto& pair : pData->m_Nodes)
+        {
+            auto pNode = pair.second;
+            // ID, X, Y, Z
+            stream << FmtInt(pNode->m_Id, 10, true) << " "
+                   << FmtDouble(pNode->m_X) << " "
+                   << FmtDouble(pNode->m_Y) << " "
+                   << FmtDouble(pNode->m_Z) << "\n";
+        }
+    }
+
+    // 4. 单元 *ELEMENT, TYPE, N
+    std::map<QString, std::vector<std::shared_ptr<ElementBase>>> elemGroups;
+    for (const auto& pair : pData->m_Elements)
+    {
+        auto pElem = pair.second;
+        QString typeName = "UNKNOWN";
+        if (std::dynamic_pointer_cast<ElementTruss>(pElem)) typeName = "T3D2";
+        else if (std::dynamic_pointer_cast<ElementCable>(pElem)) typeName = "CABLE";
+        else if (std::dynamic_pointer_cast<ElementBeam>(pElem)) typeName = "B31";
+        elemGroups[typeName].push_back(pElem);
+    }
+
+    for (const auto& group : elemGroups)
+    {
+        if (group.first == "UNKNOWN" || group.second.empty()) continue;
+
+        stream << "\n*ELEMENT, " << group.first << ", " << group.second.size() << "\n";
+        for (const auto& pElem : group.second)
+        {
+            int nodeId1 = pElem->m_pNode[0].lock() ? pElem->m_pNode[0].lock()->m_Id : 0;
+            int nodeId2 = pElem->m_pNode[1].lock() ? pElem->m_pNode[1].lock()->m_Id : 0;
+            
+            int matId = 0;
+            int secId = 0;
+            auto pProp = pElem->m_pProperty.lock();
+            if (pProp)
+            {
+                if (auto pMat = pProp->m_pMaterial.lock()) matId = pMat->m_Id;
+                if (auto pSec = pProp->m_pSection.lock())  secId = pSec->m_Id;
+            }
+
+            stream << FmtInt(pElem->m_Id, 10, true) << " "
+                   << FmtInt(nodeId1) << " "
+                   << FmtInt(nodeId2) << " "
+                   << FmtInt(matId) << " "
+                   << FmtInt(secId) << "\n";
+        }
+    }
+
+    // 5. 约束 *CONSTRAINT, N
+    if (!pData->m_Constraint.empty())
+    {
+        stream << "\n*CONSTRAINT, " << pData->m_Constraint.size() << "\n";
+        for (const auto& pair : pData->m_Constraint)
+        {
+            auto pCon = pair.second;
+            // ID, NodeID, Dir, Value
+            stream << FmtInt(pCon->m_Id, 10, true) << " "
+                   << FmtInt(pCon->m_pNode.lock() ? pCon->m_pNode.lock()->m_Id : 0) << " "
+                   << FmtInt(static_cast<int>(pCon->m_Direction)) << " "
+                   << FmtDouble(pCon->m_Value) << "\n";
+        }
+    }
+
+    // 6. 荷载 *LOAD, TYPE, N
+    std::map<QString, std::vector<std::shared_ptr<LoadBase>>> loadGroups;
+    for (const auto& pair : pData->m_Load)
+    {
+        auto pLoad = pair.second;
+        QString typeName = "UNKNOWN";
+        if (std::dynamic_pointer_cast<Force_Node>(pLoad)) typeName = "FORCE_NODE";
+        else if (std::dynamic_pointer_cast<Force_Element>(pLoad)) typeName = "FORCE_ELEMENT";
+        else if (std::dynamic_pointer_cast<Force_Gravity>(pLoad)) typeName = "FORCE_GRAVITY";
+        else if (std::dynamic_pointer_cast<Force_Wind>(pLoad)) typeName = "FORCE_WIND";
+        loadGroups[typeName].push_back(pLoad);
+    }
+
+    for (const auto& group : loadGroups)
+    {
+        if (group.first == "UNKNOWN" || group.second.empty()) continue;
+
+        stream << "\n*LOAD, " << group.first << ", " << group.second.size() << "\n";
+        for (const auto& pLoad : group.second)
+        {
+            if (group.first == "FORCE_NODE")
+            {
+                auto pL = std::dynamic_pointer_cast<Force_Node>(pLoad);
+                stream << FmtInt(pL->m_Id, 10, true) << " "
+                       << FmtInt(pL->m_pNode.lock() ? pL->m_pNode.lock()->m_Id : 0) << " "
+                       << FmtInt(static_cast<int>(pL->m_Direction)) << " "
+                       << FmtDouble(pL->m_Value) << " "
+                       << FmtInt(pL->m_StepId) << "\n";
+            }
+            else if (group.first == "FORCE_ELEMENT")
+            {
+                auto pL = std::dynamic_pointer_cast<Force_Element>(pLoad);
+                stream << FmtInt(pL->m_Id, 10, true) << " "
+                       << FmtInt(pL->m_pElement.lock() ? pL->m_pElement.lock()->m_Id : 0) << " "
+                       << FmtInt(static_cast<int>(pL->m_Direction)) << " "
+                       << FmtDouble(pL->m_Value) << "\n";
+            }
+            else if (group.first == "FORCE_GRAVITY")
+            {
+                auto pL = std::dynamic_pointer_cast<Force_Gravity>(pLoad);
+                stream << FmtInt(pL->m_Id, 10, true) << " "
+                       << FmtInt(static_cast<int>(pL->m_Direction)) << " "
+                       << FmtDouble(pL->m_g) << " "
+                       << FmtInt(pL->m_StepId) << "\n";
+            }
+            else if (group.first == "FORCE_WIND")
+            {
+                auto pL = std::dynamic_pointer_cast<Force_Wind>(pLoad);
+                stream << FmtInt(pL->m_Id, 10, true) << " "
+                       << FmtInt(static_cast<int>(pL->m_Direction)) << " "
+                       << FmtDouble(pL->m_velocity) << " "
+                       << FmtInt(pL->m_StepId) << "\n";
+            }
+        }
+    }
+
+    // 7. 初始应力 *STRESS, N
+    if (!pData->m_Elements.empty())
+    {
+        stream << "\n*STRESS, " << pData->m_Elements.size() << "\n";
+        for (auto& pair : pData->m_Elements)
+        {
+            auto pElem = pair.second;
+            // 仅输出有初始应力的单元？目前全部输出
+            stream << FmtInt(pElem->m_Id, 10, true) << " " << FmtDouble(pElem->m_InitStress) << "\n";
+        }
+    }
+
+    // 8. 分析步 *ANALYSIS_STEP, N
+    if (!pData->m_AnalysisStep.empty())
+    {
+        stream << "\n*ANALYSIS_STEP, " << pData->m_AnalysisStep.size() << "\n";
+        for (const auto& pair : pData->m_AnalysisStep)
+        {
+            auto pStep = pair.second;
+            stream << FmtInt(pStep->m_Id, 10, true) << " "
+                   << FmtStr(pStep->GetTypeName()) << " "
+                   << FmtDouble(pStep->m_Time) << " "
+                   << FmtDouble(pStep->m_StepSize) << " "
+                   << FmtDouble(pStep->m_Tolerance) << " "
+                   << FmtInt(pStep->m_MaxIterations) << "\n";
+        }
+    }
+
+    file.close();
+    qDebug() << "Model saved to" << fileName;
 }

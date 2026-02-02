@@ -1,7 +1,7 @@
 #pragma once
 /**
  * @file Outputter.h
- * @brief 分析结果输出管理器 - 用于静力/动力学分析结果的保存和导出
+ * @brief 分析结果输出管理器 - 用于静力/动力学分析结果的保存和导出    输出模型
  */
 
 #include <map>
@@ -113,6 +113,13 @@ public:
     void ExportNodes(const QString& fileName,
                      const std::vector<int>& nodeIds,
                      const std::vector<DataType>& types) const;
+
+    /**
+     * @brief 导出整个模型数据到文件
+     * @param [in] fileName 输出文件名
+     * @param [in] pData 结构数据指针
+     */
+    void SaveModel(const QString& fileName, StructureData* pData);
 
     /**
      * @brief 获取帧数

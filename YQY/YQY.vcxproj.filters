@@ -115,6 +115,9 @@
     <ClCompile Include="DataStructure\Load\Force_Wind.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Conductor\ConductorLib.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Base\Base.h">
@@ -190,6 +193,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DataStructure\Load\Force_Wind.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Conductor\ConductorLib.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
