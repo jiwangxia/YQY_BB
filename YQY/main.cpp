@@ -12,7 +12,7 @@ int main(int argc, char* argv[])
 
     Input_Model importer;
 
-    QString BaseName = "Conductor";
+    QString BaseName = "Conductor1111";
     QString InputPath = QString("Import/ImportFile/%1.txt").arg(BaseName);
     QString OutputPath = QString("Export/ExportFile/%1_TEP.bdf").arg(BaseName);
 
@@ -26,7 +26,7 @@ int main(int argc, char* argv[])
         solver.SetStructure(pStructure);
         solver.RunAll();  // 运行所有分析步
 
-        std::vector<int> nodeIds = {  3 };
+        std::vector<int> nodeIds = {  26 };
         std::vector<DataType> types = { DataType::U1, DataType::U2, DataType::U3, DataType::F1, DataType::F2, DataType::F3 };
 
         pStructure->GetOutputter().ExportNodes(OutputPath, nodeIds, types);
@@ -48,21 +48,37 @@ int main(int argc, char* argv[])
     //    pNode->m_Y = node.y;
     //    pNode->m_Z = node.z;
 
-    //    auto maxid = pStructure->m_Nodes.size() + 1;
+    //    auto maxid = int(pStructure->m_Nodes.size()) + 1;
     //    pNode->m_Id = maxid;
     //    pStructure->m_Nodes.insert(std::make_pair(static_cast<int>(maxid), pNode));
     //}
-
+    //pStructure.get()->Add_Property(6.5E11, 3800, 0.005);
     //for (auto& elem : result.elements)
     //{
     //    auto pElement = std::make_shared<ElementTruss>();
     //    pElement->m_pNode[0] = pStructure->FindNode(static_cast<int>(elem.iNode));
     //    pElement->m_pNode[1] = pStructure->FindNode(static_cast<int>(elem.jNode));
-    //    pElement->m_Id = pStructure->m_Elements.size() + 1;
+    //    pElement->m_Id = int(pStructure->m_Elements.size()) + 1;
     //    pElement->m_InitStress = elem.stress0;
     //    pElement->m_pProperty = pStructure->Create_Property(1, 1);
     //    pStructure->m_Elements.insert(std::make_pair(static_cast<int>(pElement->m_Id), pElement));
     //}
+    //std::vector<int> node{ 1,51,52,102,103,153,154,204 };
+    //std::vector<int> direaction{ 0,1,2 };
+    //std::vector<double> value{ 0, 0, 0 };
+
+    //pStructure.get()->Add_Constraint(node, direaction, value);
+    //pStructure.get()->Add_Gravity(2, 1);
+    //pStructure.get()->Add_AnalysisStep("Static", 1, 0.5, 1e-4, 1000);
+
+    //Solver solver;
+    //solver.SetStructure(pStructure);
+    //solver.RunAll();  // 运行所有分析步
+
+    //std::vector<int> nodeIds = { 26 };
+    //std::vector<DataType> types = { DataType::U1, DataType::U2, DataType::U3, DataType::F1, DataType::F2, DataType::F3 };
+    //QString OutputPath = QString("Export/ExportFile/ceshi_TEP.bdf");
+    //pStructure->GetOutputter().ExportNodes(OutputPath, nodeIds, types);
 
     //pStructure->GetOutputter().SaveModel("Export/ExportFile/Conductor_TEP.bdf", pStructure.get());
     YQY window;

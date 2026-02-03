@@ -77,7 +77,7 @@ bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureDa
         }
     }
     file.close();
-    
+
     // 合并重复节点、删除重复单元、删除孤立节点、重新编号
     QElapsedTimer timer;
     timer.start();
@@ -87,8 +87,8 @@ bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureDa
 
     // 输出
     if (0 != m_Structure->m_Nodes.size())
-    qDebug().noquote() << QStringLiteral("\n节点数量: ") << m_Structure->m_Nodes.size();
-    
+        qDebug().noquote() << QStringLiteral("\n节点数量: ") << m_Structure->m_Nodes.size();
+
     // 按类型统计单元数量
     QMap<QString, int> elementTypeCount;
     for (const auto& pair : m_Structure->m_Elements)
@@ -100,20 +100,20 @@ bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureDa
         elementTypeCount[typeName]++;
     }
     if (0 != m_Structure->m_Elements.size())
-    qDebug().noquote() << QStringLiteral("\n单元总数: ") << m_Structure->m_Elements.size();
+        qDebug().noquote() << QStringLiteral("\n单元总数: ") << m_Structure->m_Elements.size();
 
     for (auto it = elementTypeCount.constBegin(); it != elementTypeCount.constEnd(); ++it)
     {
         qDebug().noquote() << it.key() << QStringLiteral(": ") << it.value();
     }
-    
+
     if (0 != m_Structure->m_Material.size())
-    qDebug().noquote() << QStringLiteral("\n材料数量: ") << m_Structure->m_Material.size();
+        qDebug().noquote() << QStringLiteral("\n材料数量: ") << m_Structure->m_Material.size();
     if (0 != m_Structure->m_Section.size())
-    qDebug().noquote() << QStringLiteral("\n截面数量: ") << m_Structure->m_Section.size();
+        qDebug().noquote() << QStringLiteral("\n截面数量: ") << m_Structure->m_Section.size();
     if (0 != m_Structure->m_Constraint.size())
-    qDebug().noquote() << QStringLiteral("\n约束数量: ") << m_Structure->m_Constraint.size();
-    
+        qDebug().noquote() << QStringLiteral("\n约束数量: ") << m_Structure->m_Constraint.size();
+
     // 按类型统计荷载数量
     QMap<QString, int> loadTypeCount;
     for (const auto& pair : m_Structure->m_Load)
@@ -128,10 +128,10 @@ bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureDa
     }
 
     if (0 != m_Structure->m_Load.size())
-    qDebug().noquote() << QStringLiteral("\n荷载总数: ") << m_Structure->m_Load.size();
+        qDebug().noquote() << QStringLiteral("\n荷载总数: ") << m_Structure->m_Load.size();
     for (auto it = loadTypeCount.constBegin(); it != loadTypeCount.constEnd(); ++it)
     {
-        qDebug().noquote()  << it.key() << QStringLiteral(": ") << it.value();
+        qDebug().noquote() << it.key() << QStringLiteral(": ") << it.value();
         if (it.key() == "FORCE_GRAVITY")
         {
             qDebug().noquote() << QStringLiteral("------重力方向为:") << g_Direction;
@@ -139,7 +139,7 @@ bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureDa
     }
 
     if (0 != m_Structure->m_AnalysisStep.size())
-    qDebug().noquote() << QStringLiteral("\n分析步数量: ") << m_Structure->m_AnalysisStep.size();
+        qDebug().noquote() << QStringLiteral("\n分析步数量: ") << m_Structure->m_AnalysisStep.size();
 
     return true;
 }
@@ -160,7 +160,7 @@ bool Input_Model::InputNodes(QTextStream& flow, const QStringList& list_str)
             qDebug().noquote() << QStringLiteral("Error: 节点数据不足");
             exit(1);
         }
-        
+
         // 检查是否误读到下一个关键字行
         if (strdata.startsWith("*"))
         {
@@ -202,21 +202,21 @@ bool Input_Model::InputElement(QTextStream& flow, const QStringList& list_str)
 {
     // *ELEMENT, TYPE_NAME, N
     Q_ASSERT(list_str.size() == 3);
-    
+
     QString typeStr = list_str[1].trimmed().toUpper();
     EnumKeyword::ElementType elementType = EnumKeyword::MapElementType.value(typeStr, EnumKeyword::ElementType::UNKNOWN);
-    
+
     int nElement = list_str[2].toInt();
-    
+
     // 记录读取前的单元数量
     int countBefore = static_cast<int>(m_Structure->m_Elements.size());
-  
+
     // 查找并调用对应的处理函数
     auto handler = s_ElementHandlers.value(elementType, nullptr);
     if (handler)
     {
         bool result = handler(this, flow, list_str, nElement);
-        
+
         return result;
     }
     else
@@ -245,7 +245,7 @@ bool Input_Model::InputElementTruss(QTextStream& flow, const QStringList& /*list
             qDebug().noquote() << QStringLiteral("Error: 桁架单元数据不够");
             return false;
         }
-        
+
         if (strdata.startsWith("*"))
         {
             qDebug().noquote() << QStringLiteral("Error: 桁架单元数据不足，遇到下一个关键字: ") << strdata;
@@ -333,7 +333,7 @@ bool Input_Model::InputElementBeam(QTextStream& flow, const QStringList& /*list_
             qDebug().noquote() << QStringLiteral("Error: 梁单元数据不够");
             return false;
         }
-        
+
         qDebug().noquote() << QStringLiteral("读取梁单元: ") << strdata;
     }
     return true;
@@ -358,7 +358,7 @@ bool Input_Model::InputSection(QTextStream& flow, const QStringList& list_str)
         if (strlist_pro.size() == 2)  //圆截面
         {
             int autoId = static_cast<int>(m_Structure->m_Section.size()) + 1;
-            
+
             auto pSection = std::make_shared<SectionCircular>();
             pSection->m_Id = autoId;
             pSection->m_Area = strlist_pro[1].toDouble();
@@ -417,21 +417,21 @@ bool Input_Model::InputLoad(QTextStream& flow, const QStringList& list_str)
 {
     // *LOAD, TYPE_NAME, N
     Q_ASSERT(list_str.size() == 3);
-    
+
     QString typeStr = list_str[1].trimmed().toUpper();
     EnumKeyword::LoadType loadType = EnumKeyword::MapLoadType.value(typeStr, EnumKeyword::LoadType::UNKNOWN);
-    
+
     int nLoad = list_str[2].toInt();
-    
+
     // 记录读取前的荷载数量
     int countBefore = static_cast<int>(m_Structure->m_Load.size());
-  
+
     // 查找并调用对应的处理函数
     auto handler = s_LoadHandlers.value(loadType, nullptr);
     if (handler)
     {
         bool result = handler(this, flow, list_str, nLoad);
-        
+
         return result;
     }
     else
@@ -462,7 +462,7 @@ bool Input_Model::InputForceNode(QTextStream& flow, const QStringList& /*list_st
             qDebug().noquote() << QStringLiteral("Error: 节点力荷载数据不够");
             return false;
         }
-        
+
         // 检查是否误读到下一个关键字行
         if (strdata.startsWith("*"))
         {
@@ -578,7 +578,7 @@ bool Input_Model::InputForceGravity(QTextStream& flow, const QStringList& list_s
         pLoad->m_Direction = static_cast<EnumKeyword::Direction>(g_Direction);
         if (0 != value)
         {
-        pLoad->m_g = value;
+            pLoad->m_g = value;
         }
         pLoad->m_StepId = stepid;
         m_Structure->m_Load.insert(std::make_pair(autoId, pLoad));
@@ -710,7 +710,7 @@ bool Input_Model::InputAnalysisStep(QTextStream& flow, const QStringList& list_s
             qDebug().noquote() << QStringLiteral("Error: 分析步数据不够");
             exit(1);
         }
-        
+
         // 检查是否误读到下一个关键字行
         if (strdata.startsWith("*"))
         {
@@ -726,10 +726,10 @@ bool Input_Model::InputAnalysisStep(QTextStream& flow, const QStringList& list_s
             exit(1);
         }
 
-        QString typeStr       = strlist_step[1].toUpper();
-        double  time          = strlist_step[2].toDouble();
-        double  stepSize      = strlist_step[3].toDouble();
-        double  tolerance     = strlist_step[4].toDouble();
+        QString typeStr = strlist_step[1].toUpper();
+        double  time = strlist_step[2].toDouble();
+        double  stepSize = strlist_step[3].toDouble();
+        double  tolerance = strlist_step[4].toDouble();
         int     maxIterations = strlist_step[5].toInt();
 
         int autoId = static_cast<int>(m_Structure->m_AnalysisStep.size()) + 1;

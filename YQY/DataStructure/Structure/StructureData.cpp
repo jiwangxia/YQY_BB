@@ -126,6 +126,95 @@ std::shared_ptr<Property> StructureData::Create_Property(int id_material, int id
     return property;
 }
 
+void StructureData::Add_Property(double E, double density, double Area, double* v, double* S, double* e)
+{
+    auto pMaterial = std::make_shared<Material>();
+    pMaterial->m_Id = int(m_Material.size()) + 1;
+    pMaterial->m_Young = E;
+    pMaterial->m_Density = density;
+
+    if (v != nullptr) 
+    {
+        // 假设m_MaxStress是double类型
+        pMaterial->m_Poisson = *v;
+    }
+    else
+        pMaterial->m_Poisson = 0.0;
+
+    if (S != nullptr) 
+    {
+        // 假设m_MaxStress是double类型
+        pMaterial->m_MaxStress = *S;
+    }
+    else
+        pMaterial->m_MaxStress = 0.0;
+
+    if (e != nullptr) 
+    {
+        // 假设m_Expansion是double类型
+        pMaterial->m_Expansion = *e;
+    }
+    else
+        pMaterial->m_Expansion = 0.0;
+
+    m_Material.insert(std::make_pair(pMaterial->m_Id, pMaterial));
+
+    int autoId = static_cast<int>(m_Section.size()) + 1;
+
+    auto pSection = std::make_shared<SectionCircular>();
+    pSection->m_Id = autoId;
+    pSection->m_Area = Area;
+    pSection->Calculate_Radius();
+    m_Section.insert(std::make_pair(autoId, pSection));
+}
+
+int StructureData::Add_Constraint(std::vector<int> Nodeid, std::vector<int> direaction, std::vector<double> value)
+{
+    Q_ASSERT(direaction.size() == value.size());
+    size_t num = value.size();
+    for (auto& node : Nodeid)
+    {
+        auto pNode = FindNode(node);
+        for (int i = 0; i < num; ++i)
+        {
+            auto pConstraint = std::make_shared<Constraint>();
+            pConstraint->m_Id = static_cast<int>(m_Constraint.size()) + 1;
+            pConstraint->m_pNode = pNode;
+            pConstraint->m_Direction = static_cast<EnumKeyword::Direction>(direaction[i]);
+            pConstraint->m_Value = value[i];
+            m_Constraint.insert({ pConstraint->m_Id,pConstraint });
+        }
+    }
+    return int(num * Nodeid.size());
+}
+
+void StructureData::Add_Gravity(int direction, int idStep)
+{
+    int autoId = static_cast<int>(m_Load.size()) + 1;
+
+    auto pLoad = std::make_shared<Force_Gravity>();
+    pLoad->m_Id = autoId;
+
+    pLoad->m_Direction = static_cast<EnumKeyword::Direction>(direction);
+
+    pLoad->m_StepId = idStep;
+    m_Load.insert(std::make_pair(autoId, pLoad));
+}
+
+void StructureData::Add_AnalysisStep(QString Name, double TotalTime, double increament, double tolerance, double maxIteration)
+{
+    auto autoId = int(m_AnalysisStep.size()) + 1;
+    auto pStep = std::make_shared<AnalysisStep>();
+    pStep->m_Id = autoId;
+    pStep->m_Type = EnumKeyword::MapStepType.value(Name.toUpper(), EnumKeyword::StepType::UNKNOWN);
+    pStep->m_Time = TotalTime;
+    pStep->m_StepSize = increament;
+    pStep->m_Tolerance = tolerance;
+    pStep->m_MaxIterations = maxIteration;
+
+    m_AnalysisStep.insert(std::make_pair(autoId, pStep));
+}
+
 // ===== 模型检查函数 =====
 void StructureData::CleanupModel(double tolerance)
 {
