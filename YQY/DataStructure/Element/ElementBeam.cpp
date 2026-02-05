@@ -17,6 +17,10 @@ void ElementBeam::Get_L0()
 {
 }
 
-//void ElementBeam::GetDOFs(std::vector<int>& DOFs)
-//{
-//}
+void ElementBeam::Get_me_Lumped(MatrixXd& me)//集中质量矩阵
+{
+}
+
+void ElementBeam::Get_me_Consistent(MatrixXd& me) //一致质量矩阵
+{
+}

@@ -38,5 +38,7 @@ public:
      */
     virtual void Get_ke(MatrixXd& ke) = 0;
     virtual void Get_ke_non(MatrixXd& ke) = 0;
+    virtual void Get_me_Lumped(MatrixXd& me) = 0;       //集中质量矩阵
+    virtual void Get_me_Consistent(MatrixXd& me) = 0;   //一致质量矩阵
     virtual void Get_L0() = 0;
 };

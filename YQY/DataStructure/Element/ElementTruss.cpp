@@ -153,6 +153,36 @@ void ElementTruss::Get_ke_non(MatrixXd& ke)
     }
 }
 
+void ElementTruss::Get_me_Lumped(MatrixXd& me)//集中质量矩阵
+{
+    auto pProperty = m_pProperty.lock();
+    auto pSection = pProperty->m_pSection.lock();
+    auto pMaterial = pProperty->m_pMaterial.lock();
+
+    double Density = pMaterial->m_Density;
+    double A = pSection->m_Area;
+    Get_L0();
+
+    double mass = L0 * A * Density;
+    me = MatrixXd::Identity(6, 6) * (mass / 2.0);
+}
+
+void ElementTruss::Get_me_Consistent(MatrixXd& me) //一致质量矩阵
+{
+    auto pProperty = m_pProperty.lock();
+    auto pSection = pProperty->m_pSection.lock();
+    auto pMaterial = pProperty->m_pMaterial.lock();
+
+    double Density = pMaterial->m_Density;
+    double A = pSection->m_Area;
+    Get_L0();
+
+    double mass = L0 * A * Density;
+    me = MatrixXd::Identity(6, 6) * (mass / 3.0);
+    me(0, 3) = me(1, 4) = me(2, 5) = mass / 6.0;
+    me(3, 0) = me(4, 1) = me(5, 2) = mass / 6.0;
+}
+
 void ElementTruss::Get_L0()
 {
     auto pProperty = m_pProperty.lock();

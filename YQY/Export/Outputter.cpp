@@ -2,6 +2,7 @@
 #include "DataStructure/Structure/StructureData.h"
 #include <iomanip>
 #include <sstream>
+#include <cmath>
 
 void NodeData::ExtractFromNode(const Node* pNode)
 {
@@ -92,13 +93,92 @@ void Outputter::SaveDataFromNodes(double time, StructureData* pData)
     m_DataSet.push_back(frame);
 }
 
-// 辅助格式化函数：科学计数法，固定宽度，保留6位小数
+// 智能格式化类实现
+class OutputFormatter 
+{
+public:
+    enum FormatStyle 
+    {
+        Scientific,      // 科学计数法
+        FixedDecimal,    // 固定小数
+        SmartFormat,     // 智能选择
+        Engineering      // 工程计数法
+    };
+
+    static QString Format(double value, FormatStyle style = SmartFormat, int width = 16, int precision = 6)
+    {
+        char buffer[128];
+
+        // 新增判断：如果绝对值小于1e-7，则视为0
+        const double ZERO_THRESHOLD = 1e-7;
+        if (std::fabs(value) < ZERO_THRESHOLD) 
+        {
+            value = 0.0;
+        }
+
+        switch (style) 
+        {
+        case Scientific:
+            // 科学计数法，保留正号对齐
+            snprintf(buffer, sizeof(buffer), "%+*.*E", width, precision, value);
+            break;
+
+        case FixedDecimal:
+            // 固定小数格式
+            if (value >= 0) 
+            {
+                // 正数前加空格对齐负号
+                snprintf(buffer, sizeof(buffer), " %*.*f", width - 1, precision, value);
+            }
+            else 
+            {
+                snprintf(buffer, sizeof(buffer), "%*.*f", width, precision, value);
+            }
+            break;
+
+        case Engineering:
+            // 工程计数法（指数为3的倍数）
+            // 这里简化为科学计数法，实际工程计数法需要更复杂的处理
+            snprintf(buffer, sizeof(buffer), "%+*.*E", width, precision, value);
+            break;
+
+        case SmartFormat:
+        default:
+            // 智能选择：当数值绝对值在 [1e-4, 1e6] 范围内用固定小数，否则用科学计数法
+            if (fabs(value) >= 1e6 || (fabs(value) <= 1e-4 && value != 0.0)) 
+            {
+                // 太大或太小时用科学计数法
+                snprintf(buffer, sizeof(buffer), "%+*.*E", width, precision, value);
+            }
+            else 
+            {
+                // 正常范围内用固定小数
+                if (value >= 0) 
+                {
+                    snprintf(buffer, sizeof(buffer), " %*.*f", width - 1, precision, value);
+                }
+                else 
+                {
+                    snprintf(buffer, sizeof(buffer), "%*.*f", width, precision, value);
+                }
+            }
+            break;
+        }
+
+        // 如果字符串长度小于width，右对齐
+        QString result(buffer);
+        if (result.length() < width) 
+        {
+            result = result.rightJustified(width, ' ');
+        }
+        return result;
+    }
+};
+
+// 辅助格式化函数：使用智能格式
 static QString FormatValue(double val, int width = 16)
 {
-    char buffer[64];
-    // 使用 %+.6E 确保正负号始终存在，保证对齐
-    snprintf(buffer, sizeof(buffer), "%+.6E", val);
-    return QString(buffer).rightJustified(width, ' ');
+    return OutputFormatter::Format(val, OutputFormatter::SmartFormat, width, 6);
 }
 
 void Outputter::ExportNodes(const QString& fileName,
@@ -193,7 +273,7 @@ QString Outputter::GetTypeName(DataType type)
 }
 
 // 辅助格式化函数 (局部)
-static QString FmtInt(int val, int width = 10, bool leftAlign = false)
+static QString FmtInt(int val, int width = 6, bool leftAlign = false)
 {
     QString s = QString::number(val);
     return leftAlign ? s.leftJustified(width, ' ') : s.rightJustified(width, ' ');
@@ -201,9 +281,8 @@ static QString FmtInt(int val, int width = 10, bool leftAlign = false)
 
 static QString FmtDouble(double val, int width = 16, bool leftAlign = false)
 {
-    char buffer[64];
-    snprintf(buffer, sizeof(buffer), "%+.6E", val);
-    QString s(buffer);
+    // 使用智能格式
+    QString s = OutputFormatter::Format(val, OutputFormatter::SmartFormat, width, 6);
     return leftAlign ? s.leftJustified(width, ' ') : s.rightJustified(width, ' ');
 }
 
@@ -234,11 +313,11 @@ void Outputter::SaveModel(const QString& fileName, StructureData* pData)
             auto pMat = pair.second;
             // ID, E, v, Density, MaxStress, Expansion
             stream << FmtInt(pMat->m_Id, 10, true) << " "
-                   << FmtDouble(pMat->m_Young) << " "
-                   << FmtDouble(pMat->m_Poisson) << " "
-                   << FmtDouble(pMat->m_Density) << " "
-                   << FmtDouble(pMat->m_MaxStress) << " "
-                   << FmtDouble(pMat->m_Expansion) << "\n";
+                << FmtDouble(pMat->m_Young) << " "
+                << FmtDouble(pMat->m_Poisson) << " "
+                << FmtDouble(pMat->m_Density) << " "
+                << FmtDouble(pMat->m_MaxStress) << " "
+                << FmtDouble(pMat->m_Expansion) << "\n";
         }
     }
 
@@ -263,9 +342,9 @@ void Outputter::SaveModel(const QString& fileName, StructureData* pData)
             auto pNode = pair.second;
             // ID, X, Y, Z
             stream << FmtInt(pNode->m_Id, 10, true) << " "
-                   << FmtDouble(pNode->m_X) << " "
-                   << FmtDouble(pNode->m_Y) << " "
-                   << FmtDouble(pNode->m_Z) << "\n";
+                << FmtDouble(pNode->m_X) << " "
+                << FmtDouble(pNode->m_Y) << " "
+                << FmtDouble(pNode->m_Z) << "\n";
         }
     }
 
@@ -290,7 +369,7 @@ void Outputter::SaveModel(const QString& fileName, StructureData* pData)
         {
             int nodeId1 = pElem->m_pNode[0].lock() ? pElem->m_pNode[0].lock()->m_Id : 0;
             int nodeId2 = pElem->m_pNode[1].lock() ? pElem->m_pNode[1].lock()->m_Id : 0;
-            
+
             int matId = 0;
             int secId = 0;
             auto pProp = pElem->m_pProperty.lock();
@@ -301,10 +380,10 @@ void Outputter::SaveModel(const QString& fileName, StructureData* pData)
             }
 
             stream << FmtInt(pElem->m_Id, 10, true) << " "
-                   << FmtInt(nodeId1) << " "
-                   << FmtInt(nodeId2) << " "
-                   << FmtInt(matId) << " "
-                   << FmtInt(secId) << "\n";
+                << FmtInt(nodeId1) << " "
+                << FmtInt(nodeId2) << " "
+                << FmtInt(matId) << " "
+                << FmtInt(secId) << "\n";
         }
     }
 
@@ -317,9 +396,9 @@ void Outputter::SaveModel(const QString& fileName, StructureData* pData)
             auto pCon = pair.second;
             // ID, NodeID, Dir, Value
             stream << FmtInt(pCon->m_Id, 10, true) << " "
-                   << FmtInt(pCon->m_pNode.lock() ? pCon->m_pNode.lock()->m_Id : 0) << " "
-                   << FmtInt(static_cast<int>(pCon->m_Direction)) << " "
-                   << FmtDouble(pCon->m_Value) << "\n";
+                << FmtInt(pCon->m_pNode.lock() ? pCon->m_pNode.lock()->m_Id : 0) << " "
+                << FmtInt(static_cast<int>(pCon->m_Direction)) << " "
+                << FmtDouble(pCon->m_Value) << "\n";
         }
     }
 
@@ -347,34 +426,34 @@ void Outputter::SaveModel(const QString& fileName, StructureData* pData)
             {
                 auto pL = std::dynamic_pointer_cast<Force_Node>(pLoad);
                 stream << FmtInt(pL->m_Id, 10, true) << " "
-                       << FmtInt(pL->m_pNode.lock() ? pL->m_pNode.lock()->m_Id : 0) << " "
-                       << FmtInt(static_cast<int>(pL->m_Direction)) << " "
-                       << FmtDouble(pL->m_Value) << " "
-                       << FmtInt(pL->m_StepId) << "\n";
+                    << FmtInt(pL->m_pNode.lock() ? pL->m_pNode.lock()->m_Id : 0) << " "
+                    << FmtInt(static_cast<int>(pL->m_Direction)) << " "
+                    << FmtDouble(pL->m_Value) << " "
+                    << FmtInt(pL->m_StepId) << "\n";
             }
             else if (group.first == "FORCE_ELEMENT")
             {
                 auto pL = std::dynamic_pointer_cast<Force_Element>(pLoad);
                 stream << FmtInt(pL->m_Id, 10, true) << " "
-                       << FmtInt(pL->m_pElement.lock() ? pL->m_pElement.lock()->m_Id : 0) << " "
-                       << FmtInt(static_cast<int>(pL->m_Direction)) << " "
-                       << FmtDouble(pL->m_Value) << "\n";
+                    << FmtInt(pL->m_pElement.lock() ? pL->m_pElement.lock()->m_Id : 0) << " "
+                    << FmtInt(static_cast<int>(pL->m_Direction)) << " "
+                    << FmtDouble(pL->m_Value) << "\n";
             }
             else if (group.first == "FORCE_GRAVITY")
             {
                 auto pL = std::dynamic_pointer_cast<Force_Gravity>(pLoad);
                 stream << FmtInt(pL->m_Id, 10, true) << " "
-                       << FmtInt(static_cast<int>(pL->m_Direction)) << " "
-                       << FmtDouble(pL->m_g) << " "
-                       << FmtInt(pL->m_StepId) << "\n";
+                    << FmtInt(static_cast<int>(pL->m_Direction)) << " "
+                    << FmtDouble(pL->m_g) << " "
+                    << FmtInt(pL->m_StepId) << "\n";
             }
             else if (group.first == "FORCE_WIND")
             {
                 auto pL = std::dynamic_pointer_cast<Force_Wind>(pLoad);
                 stream << FmtInt(pL->m_Id, 10, true) << " "
-                       << FmtInt(static_cast<int>(pL->m_Direction)) << " "
-                       << FmtDouble(pL->m_velocity) << " "
-                       << FmtInt(pL->m_StepId) << "\n";
+                    << FmtInt(static_cast<int>(pL->m_Direction)) << " "
+                    << FmtDouble(pL->m_velocity) << " "
+                    << FmtInt(pL->m_StepId) << "\n";
             }
         }
     }
@@ -399,11 +478,11 @@ void Outputter::SaveModel(const QString& fileName, StructureData* pData)
         {
             auto pStep = pair.second;
             stream << FmtInt(pStep->m_Id, 10, true) << " "
-                   << FmtStr(pStep->GetTypeName()) << " "
-                   << FmtDouble(pStep->m_Time) << " "
-                   << FmtDouble(pStep->m_StepSize) << " "
-                   << FmtDouble(pStep->m_Tolerance) << " "
-                   << FmtInt(pStep->m_MaxIterations) << "\n";
+                << FmtStr(pStep->GetTypeName()) << " "
+                << FmtDouble(pStep->m_Time) << " "
+                << FmtDouble(pStep->m_StepSize) << " "
+                << FmtDouble(pStep->m_Tolerance) << " "
+                << FmtInt(pStep->m_MaxIterations) << "\n";
         }
     }
 

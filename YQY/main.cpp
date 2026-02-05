@@ -26,10 +26,10 @@ int main(int argc, char* argv[])
         solver.SetStructure(pStructure);
         solver.RunAll();  // 运行所有分析步
 
-        std::vector<int> nodeIds = {  26 };
-        std::vector<DataType> types = { DataType::U1, DataType::U2, DataType::U3, DataType::F1, DataType::F2, DataType::F3 };
+        //std::vector<int> nodeIds = {  26 };
+        //std::vector<DataType> types = { DataType::U1, DataType::U2, DataType::U3, DataType::F1, DataType::F2, DataType::F3 };
 
-        pStructure->GetOutputter().ExportNodes(OutputPath, nodeIds, types);
+        //pStructure->GetOutputter().ExportNodes(OutputPath, nodeIds, types);
     }
 
     //ConductorLib::Config cfg;
@@ -82,7 +82,7 @@ int main(int argc, char* argv[])
     //QString OutputPath = QString("Export/ExportFile/ceshi_TEP.bdf");
     //pStructure->GetOutputter().ExportNodes(OutputPath, nodeIds, types);
 
-    //pStructure->GetOutputter().SaveModel("Export/ExportFile/Conductor_TEP.bdf", pStructure.get());
+    //pStructure->GetOutputter().SaveModel("Export/ExportFile/123456.bdf", pStructure.get());
     YQY window;
     //window.show();
     return app.exec();
