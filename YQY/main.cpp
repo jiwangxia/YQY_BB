@@ -12,8 +12,8 @@ int main(int argc, char* argv[])
 
     Input_Model importer;
 
-    QString BaseName = "Conductor";
-    QString InputPath = QString("Import/ImportFile/%1.txt").arg(BaseName);
+    QString BaseName = "1111";
+    QString InputPath = QString("Import/ImportFile/%1.bdf").arg(BaseName);
     QString OutputPath = QString("Export/ExportFile/%1_TEP.bdf").arg(BaseName);
 
     qDebug().noquote() << QStringLiteral("\n读取文件为:") << InputPath << "\n";
@@ -21,12 +21,12 @@ int main(int argc, char* argv[])
     {
         qDebug() << "\n=====Model loaded successfully!=====";
 
-        // 使用 Solver 运行分析
+    //     使用 Solver 运行分析
         Solver solver;
         solver.SetStructure(pStructure);
         solver.RunAll();  // 运行所有分析步
 
-        std::vector<int> nodeIds = {  3 };
+        std::vector<int> nodeIds = {  26 };
         std::vector<DataType> types = { DataType::U1, DataType::U2, DataType::U3, DataType::F1, DataType::F2, DataType::F3 };
 
         pStructure->GetOutputter().ExportNodes(OutputPath, nodeIds, types);
@@ -35,9 +35,11 @@ int main(int argc, char* argv[])
     //ConductorLib::Config cfg;
     //cfg.nBundle = 4; // 四分裂
     //cfg.segments = 50;
+    //cfg.numSpacers = 4;
+    //cfg.spacing = 0.5656;
     //cfg.mode = ConductorLib::ConnectionMode::Parallel;
     //std::vector<double> startPt = { 0.0, 0.0, 0.0 };
-    //std::vector<double> endPt = { 200.0, 0.0, 0.0 };
+    //std::vector<double> endPt = { 100.0, 0.0, 0.0 };
     //// 2. 生成数据
     //auto result = ConductorLib::Generator::CreateBundle(startPt.data(), endPt.data(), cfg);
 

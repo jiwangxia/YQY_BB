@@ -586,12 +586,13 @@ void AnalysisStep::Solve_Static()
                 qDebug().noquote() << QStringLiteral("\n达最大迭代次数\n");
             }
         }
+        // 保存结果到输出器 (直接从节点读取所有数据)
+        if (m_pData)
+        {
+            m_pData->GetOutputter().SaveDataFromNodes(m_StepSize * inc, m_pData);
+        }
     } 
-    // 保存结果到输出器 (直接从节点读取所有数据)
-    if (m_pData)
-    {
-        m_pData->GetOutputter().SaveDataFromNodes(m_Time, m_pData);
-    }
+
     qDebug().noquote() << QStringLiteral("\n静力求解完成 ");
 }
 
