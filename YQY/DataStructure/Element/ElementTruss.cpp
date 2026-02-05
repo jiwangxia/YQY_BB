@@ -90,7 +90,7 @@ void ElementTruss::Get_ke_non(MatrixXd& ke)
     B_matrix << -dirCos_x, -dirCos_y, -dirCos_z, dirCos_x, dirCos_y, dirCos_z;
 
     // 选择应变公式: true = 对数应变(体积不变), false = 工程应变
-    bool bUseLogStrain = true;
+    bool bUseLogStrain = false;
 
     if (!bUseLogStrain)
     {
