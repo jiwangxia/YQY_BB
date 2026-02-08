@@ -22,10 +22,11 @@ public:
      * @brief 计算单元刚度矩阵
      * @param [out] ke 单元刚度矩阵（12x12）
      */
-    void Get_ke(MatrixXd& ke);
-    void Get_ke_non(MatrixXd& ke);
-    void Get_me_Lumped(MatrixXd& me);         //集中质量矩阵
-    void Get_me_Consistent(MatrixXd& me);     //一致质量矩阵
+    void Get_ke();
+    void Get_ke_non();
+    void Get_me_Lumped();         //集中质量矩阵
+    void Get_me_Consistent();     //一致质量矩阵
     void Get_L0();
+    void Assemble(double trans_m = 0.0, double trans_k = 0.0, double rot_m = 0.0, double rot_k = 0.0);
 };
 

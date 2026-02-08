@@ -34,6 +34,6 @@
 
 
 
-*Analysis_Step,1
+*Analysis_Step,2
 1	 Static	     1	    0.05 	 1e-5	 32
-**2    Dynamic     400    0.002    1e-5    32
+2    Dynamic     400    0.002    1e-5    32

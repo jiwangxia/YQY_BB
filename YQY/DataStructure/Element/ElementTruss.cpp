@@ -5,7 +5,7 @@ ElementTruss::ElementTruss()
     m_pNode.resize(2);
 }
 
-void ElementTruss::Get_ke(MatrixXd& ke)
+void ElementTruss::Get_ke()
 {
     auto pProperty = m_pProperty.lock();
     auto pSection = pProperty->m_pSection.lock();
@@ -48,7 +48,7 @@ void ElementTruss::Get_ke(MatrixXd& ke)
     ke = B_matrix * B_matrix.transpose() * materialStiffness;
 }
 
-void ElementTruss::Get_ke_non(MatrixXd& ke)
+void ElementTruss::Get_ke_non()
 {
     auto pProperty = m_pProperty.lock();
     auto pSection = pProperty->m_pSection.lock();
@@ -66,11 +66,7 @@ void ElementTruss::Get_ke_non(MatrixXd& ke)
         return;
     }
 
-    //// 计算初始长度 L0
-    //double dx0 = pNode1->m_X - pNode0->m_X;
-    //double dy0 = pNode1->m_Y - pNode0->m_Y;
-    //double dz0 = pNode1->m_Z - pNode0->m_Z;
-    //L0 = sqrt(dx0 * dx0 + dy0 * dy0 + dz0 * dz0);
+    //Get_L0();
 
     // 计算当前变形后的方向向量 (考虑位移)
     double dx_current = pNode1->m_X + pNode1->m_Displacement[0] - pNode0->m_X - pNode0->m_Displacement[0];
@@ -153,7 +149,7 @@ void ElementTruss::Get_ke_non(MatrixXd& ke)
     }
 }
 
-void ElementTruss::Get_me_Lumped(MatrixXd& me)//集中质量矩阵
+void ElementTruss::Get_me_Lumped()//集中质量矩阵
 {
     auto pProperty = m_pProperty.lock();
     auto pSection = pProperty->m_pSection.lock();
@@ -161,13 +157,12 @@ void ElementTruss::Get_me_Lumped(MatrixXd& me)//集中质量矩阵
 
     double Density = pMaterial->m_Density;
     double A = pSection->m_Area;
-    Get_L0();
 
     double mass = L0 * A * Density;
     me = MatrixXd::Identity(6, 6) * (mass / 2.0);
 }
 
-void ElementTruss::Get_me_Consistent(MatrixXd& me) //一致质量矩阵
+void ElementTruss::Get_me_Consistent() //一致质量矩阵
 {
     auto pProperty = m_pProperty.lock();
     auto pSection = pProperty->m_pSection.lock();
@@ -175,7 +170,6 @@ void ElementTruss::Get_me_Consistent(MatrixXd& me) //一致质量矩阵
 
     double Density = pMaterial->m_Density;
     double A = pSection->m_Area;
-    Get_L0();
 
     double mass = L0 * A * Density;
     me = MatrixXd::Identity(6, 6) * (mass / 3.0);
@@ -201,10 +195,28 @@ void ElementTruss::Get_L0()
         return;
     }
 
-    // 计算初始长度 L0
     double dx0 = pNode1->m_X - pNode0->m_X;
     double dy0 = pNode1->m_Y - pNode0->m_Y;
     double dz0 = pNode1->m_Z - pNode0->m_Z;
-    L0 = sqrt(dx0 * dx0 + dy0 * dy0 + dz0 * dz0);
+
+    double L = sqrt(dx0 * dx0 + dy0 * dy0 + dz0 * dz0);
+    // 计算初始长度 L0
+    if (m_InitStress == 0)
+    {
+        L0 = L;
+    }
+    else
+    {
+        L0 = E * L / (m_InitStress + E);
+    }
+}
+
+void ElementTruss::Assemble(double trans_m, double trans_k, double rot_m, double rot_k)
+{
+    Get_L0();
+    Get_ke_non();
+    Get_me_Consistent();//一致质量矩阵
+
+    ce = trans_m * me + trans_k * ke;
 }
 

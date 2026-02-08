@@ -1,7 +1,7 @@
 ﻿#pragma once
 #include "Base/Base.h"
 #include <memory>
-
+#include <Eigen/SparseLU>
 typedef Eigen::SparseMatrix<double> SpMat;
 typedef Eigen::Triplet<double> Tri;
 
@@ -18,14 +18,16 @@ class AnalysisStep : public Base
 {
 public:
     EnumKeyword::StepType m_Type = EnumKeyword::StepType::UNKNOWN;
-    double m_Time = 0.0;           ///< 总时间
-    double m_StepSize = 0.0;       ///< 每步大小
-    double m_Tolerance = 1e-5;     ///< 容差
-    int m_MaxIterations = 32;      ///< 最大迭代次数
+    double m_Time = 0.0;           // 总时间
+    double m_StepSize = 0.0;       // 每步大小
+    double m_Tolerance = 1e-5;     // 容差
+    int m_MaxIterations = 32;      // 最大迭代次数
 
-    int m_nFixed = 0;              ///< 约束自由度个数
-    int m_nFree = 0;               ///< 自由自由度个数
+    int m_nFixed = 0;              // 约束自由度个数
+    int m_nFree = 0;               // 自由自由度个数
     SpMat m_K11, m_K21, m_K22;
+    SpMat m_M11, m_M21, m_M22;
+    SpMat m_C11, m_C21, m_C22;
 
     /**
      * @brief 获取分析步类型名称
@@ -70,8 +72,24 @@ public:
     void Solve_Dynamic();
 
 private:
-    std::weak_ptr<StructureData> m_pStructure;  ///< 结构数据的弱引用
-    StructureData* m_pData = nullptr;           ///< 结构数据的缓存指针
+    std::weak_ptr<StructureData> m_pStructure;  // 结构数据的弱引用
+    StructureData* m_pData = nullptr;           // 结构数据的缓存指针
+
+    struct SolverCache 
+    {
+        Eigen::SimplicialLDLT<SpMat> ldlt; // 首选 (快)
+        Eigen::SparseLU<SpMat> lu;         // 备选 (稳)
+        bool use_ldlt = true;              // 当前策略
+        bool pattern_analyzed = false;     // 模式是否已分析
+
+        void reset() 
+        {
+            use_ldlt = true;
+            pattern_analyzed = false;
+        }
+    };
+
+    SolverCache m_solverCache;
 
     /**
      * @brief 准备数据，缓存结构指针
@@ -92,9 +110,10 @@ private:
     void Get_ElementLength();
 
     /**
-     * @brief 组装整体刚度矩阵
+     * @brief 静力组装整体刚度矩阵
      */
-    void AssembleKs();
+    void AssembleKs_Static();
+    void Assemble_Matrix();
 
     /**
      * @brief 将单元刚度矩阵组装到整体刚度矩阵
@@ -119,6 +138,8 @@ private:
      * @return 当前时刻的力向量
      */
     void UpData(VectorXd& x1, VectorXd& x2, VectorXd& F1, VectorXd* v2 = nullptr, VectorXd* a2 = nullptr);
+
+    void Update_Newmark_State(const VectorXd& delta_u, double a0, double a1, double a2, double a3, double a4, double a5);
 
     void Get_CurrentInforce(VectorXd& Inforce);
 
@@ -164,4 +185,12 @@ private:
      * @param [out] x1 约束位移向量
      */
     void Assemble_Constraint(VectorXd& x1);
+
+    void GetCurrentStepState(VectorXd& U, VectorXd& V, VectorXd& A);
+
+    /**
+     * @brief 步末结算：根据总位移增量计算最终速度和加速度，并更新回节点
+     */
+    void FinalizeStepState(const VectorXd& total_du, const VectorXd& Un, const VectorXd& Vn, const VectorXd& An,
+        double a0, double a1, double a2, double a3, double a4, double a5);
 };

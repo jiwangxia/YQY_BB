@@ -12,8 +12,8 @@ int main(int argc, char* argv[])
 
     Input_Model importer;
 
-    QString BaseName = "1111";
-    QString InputPath = QString("Import/ImportFile/%1.bdf").arg(BaseName);
+    QString BaseName = "daoxian";
+    QString InputPath = QString("Import/ImportFile/%1.txt").arg(BaseName);
     QString OutputPath = QString("Export/ExportFile/%1_TEP.bdf").arg(BaseName);
 
     qDebug().noquote() << QStringLiteral("\n读取文件为:") << InputPath << "\n";
@@ -26,10 +26,10 @@ int main(int argc, char* argv[])
         solver.SetStructure(pStructure);
         solver.RunAll();  // 运行所有分析步
 
-        //std::vector<int> nodeIds = {  26 };
-        //std::vector<DataType> types = { DataType::U1, DataType::U2, DataType::U3, DataType::F1, DataType::F2, DataType::F3 };
+        std::vector<int> nodeIds = {  2 };
+        std::vector<DataType> types = { DataType::U1, DataType::U2, DataType::U3, DataType::F1, DataType::F2, DataType::F3 };
 
-        //pStructure->GetOutputter().ExportNodes(OutputPath, nodeIds, types);
+        pStructure->GetOutputter().ExportNodes(OutputPath, nodeIds, types);
     }
 
     //ConductorLib::Config cfg;

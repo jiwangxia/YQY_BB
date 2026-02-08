@@ -1,7 +1,6 @@
 ﻿#include "AnalysisStep.h"
 #include "DataStructure/Structure/StructureData.h"
 #include "DataStructure/Element/ElementBase.h"
-#include "Solver/SolverNewmark.h"
 #include <Eigen/SparseCholesky>
 
 void AnalysisStep::SetStructure(std::shared_ptr<StructureData> pStructure)
@@ -119,7 +118,7 @@ void AnalysisStep::Get_ElementLength()
     }
 }
 
-void AnalysisStep::AssembleKs()
+void AnalysisStep::AssembleKs_Static()
 {
     std::list<Tri> L11, L21, L22;
 
@@ -134,7 +133,9 @@ void AnalysisStep::AssembleKs()
     {
         auto pelement = element.second;
         //pelement->Get_ke(ke);
-        pelement->Get_ke_non(ke);
+        pelement->Get_ke_non();
+        ke = pelement->ke;
+        //std::cout << MatrixXd(ke) << "\n";
         pelement->GetDOFs(DOFs);
         Assemble(DOFs, ke, L11, L21, L22);
     }
@@ -153,6 +154,52 @@ void AnalysisStep::AssembleKs()
 
     qDebug();
     //std::cout << MatrixXd(m_K22);
+}
+
+void AnalysisStep::Assemble_Matrix()
+{
+    std::list<Tri> m11, m21, m22;
+    std::list<Tri> k11, k21, k22;
+    std::list<Tri> c11, c21, c22;
+
+    m_M11.resize(m_nFixed, m_nFixed);
+    m_M21.resize(m_nFree, m_nFixed);
+    m_M22.resize(m_nFree, m_nFree);
+
+    m_K11.resize(m_nFixed, m_nFixed);
+    m_K21.resize(m_nFree, m_nFixed);
+    m_K22.resize(m_nFree, m_nFree);
+
+    m_C11.resize(m_nFixed, m_nFixed);
+    m_C21.resize(m_nFree, m_nFixed);
+    m_C22.resize(m_nFree, m_nFree);
+
+    std::vector<int> DOFs;
+    double alpha_m = 0.0; double beta_m = 0.0;
+    double alpha_k = 0.0; double beta_k = 0.0;
+
+    for (auto& element : m_pData->m_Elements)
+    {
+        auto pelement = element.second;
+        pelement->Assemble(alpha_m, alpha_k, beta_m, beta_k);
+
+        pelement->GetDOFs(DOFs);
+        Assemble(DOFs, pelement->me, m11, m21, m22);
+        Assemble(DOFs, pelement->ke, k11, k21, k22);
+        Assemble(DOFs, pelement->ce, c11, c21, c22);
+    }
+
+    m_M11.setFromTriplets(m11.begin(), m11.end());
+    m_M21.setFromTriplets(m21.begin(), m21.end());
+    m_M22.setFromTriplets(m22.begin(), m22.end());
+
+    m_K11.setFromTriplets(k11.begin(), k11.end());
+    m_K21.setFromTriplets(k21.begin(), k21.end());
+    m_K22.setFromTriplets(k22.begin(), k22.end());
+
+    m_C11.setFromTriplets(c11.begin(), c11.end());
+    m_C21.setFromTriplets(c21.begin(), c21.end());
+    m_C22.setFromTriplets(c22.begin(), c22.end());
 }
 
 void AnalysisStep::Assemble(std::vector<int>& DOFs, Eigen::MatrixXd& T, std::list<Tri>& L11, std::list<Tri>& L21, std::list<Tri>& L22)
@@ -531,14 +578,14 @@ void AnalysisStep::Solve_Static()
     for (int inc = 1; inc <= numIncrements; ++inc)
     {
         double currentFactor = (double)inc / numIncrements;
-        //组装外荷载和
+        //组装外荷载
         Assemble_AllLoads(F1, F2, currentFactor);
         //std::cout << "\nF2:" << VectorXd(F2).transpose();
         // Newton-Raphson 迭代
         for (int iter = 0; iter < m_MaxIterations; iter++)
         {
             // 1. 组装刚度矩阵 (基于当前变形状态)
-            AssembleKs();
+            AssembleKs_Static();
             //std::cout << "\nK22:\n" << MatrixXd(m_K22);
 
             // 2. 清零节点内力，然后计算单元内力并累加到节点
@@ -553,7 +600,7 @@ void AnalysisStep::Solve_Static()
             // 3. 检查收敛性
             if (Check_Rhs(F2, internalForce, residual) && iter > 0)
             {
-                qDebug().noquote() << QStringLiteral("迭代在第 %1 步收敛").arg(iter);
+                //qDebug().noquote() << QStringLiteral("迭代在第 %1 步收敛").arg(iter);
                 break;
             }
 
@@ -586,71 +633,250 @@ void AnalysisStep::Solve_Static()
                 qDebug().noquote() << QStringLiteral("\n达最大迭代次数\n");
             }
         }
-        // 保存结果到输出器 (直接从节点读取所有数据)
-        if (m_pData)
-        {
-            m_pData->GetOutputter().SaveDataFromNodes(m_StepSize * inc, m_pData);
-        }
-    } 
+    }
+    // 保存结果到输出器 (直接从节点读取所有数据)
+    if (m_pData)
+    {
+        m_pData->GetOutputter().SaveDataFromNodes(m_Time, m_pData);
+    }
 
     qDebug().noquote() << QStringLiteral("\n静力求解完成 ");
 }
 
 void AnalysisStep::Solve_Dynamic()
 {
-    //using namespace Dynamics;
+    qDebug().noquote() << QStringLiteral("开始 Newmark 动力非线性求解...");
 
-    //qDebug().noquote() << QStringLiteral("开始动力求解...");
+    // 1. 初始化 Newmark 参数
+    double beta = 0.25;
+    double gamma = 0.5;
+    double dt = m_StepSize;
 
-    //// 1. 初始化
-    //Init_DOF();
-    //AssembleKs();
+    if (dt <= 0.0) {
+        qDebug() << "Error: Time step size <= 0";
+        return;
+    }
 
-    //// 2. 创建通用模型
-    //GeneralModel model(m_nFree);
+    double a0 = 1.0 / (beta * dt * dt);
+    double a1 = gamma / (beta * dt);
+    double a2 = 1.0 / (beta * dt);
+    double a3 = 1.0 / (2.0 * beta) - 1.0;
+    double a4 = gamma / beta - 1.0;
+    double a5 = dt * 0.5 * (gamma / beta - 2.0);
 
-    //// 绑定刚度矩阵
-    //model.SetFuncK([this](const State& s, SpMat& buffer) -> const SpMat& {
-    //    return this->m_K22;
-    //    });
+    // 准备向量
+    VectorXd F1, F2, x1;
+    VectorXd residual(m_nFree), internalForce(m_nFree);
 
-    //// 绑定质量矩阵 (TODO: 需要实现 AssembleMs)
-    //// model.SetFuncM([this](const State& s, SpMat& buffer) -> const SpMat& {
-    ////     return this->m_M22;
-    //// });
+    // 状态备份向量 (上一时刻 t)
+    VectorXd U_n(m_nFree), V_n(m_nFree), A_n(m_nFree);
 
-    //// 绑定阻尼矩阵 (TODO: 需要实现 AssembleCs)
-    //// model.SetFuncC([this](const State& s, SpMat& buffer) -> const SpMat& {
-    ////     return this->m_C22;
-    //// });
+    // 过程向量
+    VectorXd total_du_step(m_nFree); // 当前步的总位移增量
+    VectorXd dx2(m_nFree);           // 每轮迭代的位移修正量
 
-    //// 绑定残差计算
-    //model.SetResidualFunc([this](const State& s, Vec& R_out) {
-    //    // 计算残差 R = M*a + C*v + K*x - F(t)
-    //    // TODO: 实现完整的残差计算
-    //    R_out = this->m_K22 * s.x;
-    //    });
+    // 重置求解器缓存
+    m_solverCache.reset();
 
-    //// 3. 配置求解器
-    //SolverNewmark::Parameters params;
-    //params.dt = m_StepSize > 0 ? m_StepSize : 0.01;
-    //params.bAdaptive = true;
+    Assemble_Constraint(x1);
+    Get_ElementLength();
 
-    //SolverNewmark solver(params);
+    int numSteps = (int)(m_Time / m_StepSize);
 
-    //// 4. 初始状态
-    //State state(m_nFree);
+    for (int step = 1; step <= numSteps; ++step)
+    {
+        double currentTime = step * m_StepSize;
 
-    //// 5. 观察者回调 (每步保存结果)
-    //auto observer = [this](const State& s) {
-    //    // 增量保存当前时刻数据
-    //    m_Outputter.SaveData(s.t, m_pData, m_nFixed, s.x, &s.v, &s.a);
-    //    qDebug().noquote() << QStringLiteral("t = ") << s.t
-    //        << QStringLiteral(", frame = ") << m_Outputter.GetFrameCount();
-    //    };
+        // --- 步骤 1: 备份上一时刻 (t) 状态 ---
+        GetCurrentStepState(U_n, V_n, A_n);
 
-    //// 6. 求解
-    //// solver.solve(model, state, m_Time, observer);
+        // 初始化当前步累积增量
+        total_du_step.setZero();
 
-    //qDebug().noquote() << QStringLiteral("动力求解完成 (框架已就绪，需要实现质量/阻尼矩阵组装)");
+        // 动力分析通常施加全额荷载
+        double factor = 1.0;
+        Assemble_AllLoads(F1, F2, factor);
+
+        bool converged = false;
+
+        // --- Newton-Raphson 迭代 ---
+        for (int iter = 0; iter < m_MaxIterations; iter++)
+        {
+            // A. 组装 M, C, K
+            Assemble_Matrix();
+
+            // B. 计算有效刚度矩阵: K_eff = K + a0*M + a1*C
+            SpMat K_eff = m_K22 + a0 * m_M22 + a1 * m_C22;
+
+            // C. 计算内力 (基于当前迭代后的总位移)
+            internalForce.setZero();
+            Get_CurrentInforce(internalForce);
+
+            // D. 根据 Newmark 公式计算当前 (t+dt) 试探状态
+            // A_{t+dt} = a0 * ΔU - a2 * V_n - a3 * A_n
+            // V_{t+dt} = V_n + a4 * A_n + a5 * A_{t+dt}
+            VectorXd A_curr = a0 * total_du_step - a2 * V_n - a3 * A_n;
+            VectorXd V_curr = V_n + a4 * A_n + a5 * A_curr;
+
+            // E. 计算动力残差: R = F_ext - F_int - (M*A + C*V)
+            VectorXd dynamicInertia = m_M22 * A_curr + m_C22 * V_curr;
+            residual = F2 - internalForce - dynamicInertia;
+
+            // F. 检查收敛
+            double resNorm = residual.norm();
+            if (resNorm < m_Tolerance)
+            {
+                converged = true;
+                // qDebug() << "Step" << step << "converged at iter" << iter;
+                break;
+            }
+
+            // G. 求解线性方程组 (集成 LDLT/LU 自动切换)
+            bool solved = false;
+
+            // G.1 尝试 LDLT
+            if (m_solverCache.use_ldlt)
+            {
+                if (!m_solverCache.pattern_analyzed) 
+                {
+                    m_solverCache.ldlt.analyzePattern(K_eff);
+                }
+                // 只有当 pattern 已分析后才进行 factorize
+                m_solverCache.ldlt.factorize(K_eff);
+
+                if (m_solverCache.ldlt.info() == Eigen::Success)
+                {
+                    dx2 = m_solverCache.ldlt.solve(residual);
+                    if (m_solverCache.ldlt.info() == Eigen::Success) 
+                    {
+                        solved = true;
+                        m_solverCache.pattern_analyzed = true; // 标记分析成功，下一次可复用
+                    }
+                }
+
+                if (!solved)
+                {
+                    qDebug() << "LDLT failed at step" << step << "iter" << iter << ", switching to LU...";
+                    m_solverCache.use_ldlt = false;
+                    m_solverCache.pattern_analyzed = false; // 切换求解器，模式需重置
+                }
+            }
+
+            // G.2 如果 LDLT 失败或已禁用，尝试 LU
+            if (!solved)
+            {
+                if (!m_solverCache.pattern_analyzed) 
+                {
+                    m_solverCache.lu.analyzePattern(K_eff);
+                    m_solverCache.pattern_analyzed = true;
+                }
+                m_solverCache.lu.factorize(K_eff);
+
+                if (m_solverCache.lu.info() == Eigen::Success)
+                {
+                    dx2 = m_solverCache.lu.solve(residual);
+                    solved = true;
+                }
+                else
+                {
+                    qDebug() << "LU factorization failed!";
+                    // 这里可以尝试重置 pattern 再试一次，或者直接报错
+                    m_solverCache.pattern_analyzed = false;
+                }
+            }
+
+            if (!solved)
+            {
+                qDebug() << "Error: Matrix solver failed completely.";
+                return;
+            }
+
+            // H. 累加总位移增量
+            total_du_step += dx2;
+
+            // I. 更新节点位移 (仅位移)
+            // UpData 负责将 dx2 累加到 m_Displacement，从而影响下一次 Assemble_Matrix 和 Get_CurrentInforce
+            UpData(x1, dx2, F1);
+        }
+
+        if (!converged) 
+        {
+            qDebug() << "Warning: Dynamics did not converge at step" << step;
+        }
+
+        // --- 步骤 2: 步末结算 ---
+        // 利用最终收敛的 total_du_step 计算准确的 V 和 A，并写回节点
+        FinalizeStepState(total_du_step, U_n, V_n, A_n, a0, a1, a2, a3, a4, a5);
+
+        // 保存输出
+        if (m_pData) m_pData->GetOutputter().SaveDataFromNodes(currentTime, m_pData);
+    }
+
+    qDebug().noquote() << QStringLiteral("动力求解完成");
+}
+
+// ==========================================
+// 新增辅助函数实现
+// ==========================================
+
+void AnalysisStep::GetCurrentStepState(VectorXd& U, VectorXd& V, VectorXd& A)
+{
+    // 调整向量大小
+    if (U.size() != m_nFree) U.resize(m_nFree);
+    if (V.size() != m_nFree) V.resize(m_nFree);
+    if (A.size() != m_nFree) A.resize(m_nFree);
+
+    U.setZero(); V.setZero(); A.setZero();
+
+    // 遍历节点提取自由自由度数据
+    for (auto& nodePair : m_pData->m_Nodes)
+    {
+        auto pNode = nodePair.second;
+        int numDOF = pNode->m_DOF.size();
+
+        for (int i = 0; i < numDOF; ++i)
+        {
+            int globalDof = pNode->m_DOF[i];
+
+            // 仅提取自由自由度 (>= m_nFixed)
+            if (globalDof >= m_nFixed && globalDof < (m_nFixed + m_nFree))
+            {
+                int idx = globalDof - m_nFixed;
+
+                if (i < pNode->m_Displacement.size()) U[idx] = pNode->m_Displacement[i];
+                if (i < pNode->m_Velocity.size())     V[idx] = pNode->m_Velocity[i];
+                if (i < pNode->m_Acceleration.size()) A[idx] = pNode->m_Acceleration[i];
+            }
+        }
+    }
+}
+
+void AnalysisStep::FinalizeStepState(const VectorXd& total_du, const VectorXd& Un, const VectorXd& Vn, const VectorXd& An,
+    double a0, double a1, double a2, double a3, double a4, double a5)
+{
+    // 根据 Newmark 公式计算最终的加速度和速度
+    VectorXd A_final = a0 * total_du - a2 * Vn - a3 * An;
+    VectorXd V_final = Vn + a4 * An + a5 * A_final;
+
+    // 将计算结果写回节点
+    for (auto& nodePair : m_pData->m_Nodes)
+    {
+        auto pNode = nodePair.second;
+        int numDOF = pNode->m_DOF.size();
+
+        for (int i = 0; i < numDOF; ++i)
+        {
+            int globalDof = pNode->m_DOF[i];
+
+            if (globalDof >= m_nFixed && globalDof < (m_nFixed + m_nFree))
+            {
+                int idx = globalDof - m_nFixed;
+
+                // 更新节点速度和加速度
+                // 注意：位移已经在迭代中使用 UpData 累加过了，此处无需更新
+                if (i < pNode->m_Velocity.size())     pNode->m_Velocity[i] = V_final[idx];
+                if (i < pNode->m_Acceleration.size()) pNode->m_Acceleration[i] = A_final[idx];
+            }
+        }
+    }
 }

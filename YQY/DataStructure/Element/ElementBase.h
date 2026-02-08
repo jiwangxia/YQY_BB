@@ -18,6 +18,10 @@ public:
     double m_InitStress = 0.0;                  // 初始应力
     double m_Stress = 0.0;                      // 单元应力
 
+    MatrixXd me;             // 单元质量矩阵
+    MatrixXd ke;             // 单元刚度矩阵
+    MatrixXd ce;             // 单元阻尼矩阵
+
     /**
      * @brief 获取单元每个节点的自由度个数
      * @return 节点自由度个数
@@ -36,9 +40,10 @@ public:
      * @brief 获取单元刚度矩阵
      * @param [out] ke 单元刚度矩阵
      */
-    virtual void Get_ke(MatrixXd& ke) = 0;
-    virtual void Get_ke_non(MatrixXd& ke) = 0;
-    virtual void Get_me_Lumped(MatrixXd& me) = 0;       //集中质量矩阵
-    virtual void Get_me_Consistent(MatrixXd& me) = 0;   //一致质量矩阵
+    virtual void Get_ke() = 0;
+    virtual void Get_ke_non() = 0;
+    virtual void Get_me_Lumped() = 0;       //集中质量矩阵
+    virtual void Get_me_Consistent() = 0;   //一致质量矩阵
     virtual void Get_L0() = 0;
+    virtual void Assemble(double trans_m = 0.0, double trans_k = 0.0, double rot_m = 0.0, double rot_k = 0.0) = 0;
 };
