@@ -1,5 +1,7 @@
 ﻿#pragma once
 #include "Base/Base.h"
+#include "Solver/Interface/IAnalysisModel.h"
+#include "Solver/Interface/ISolver.h"
 #include <memory>
 #include <Eigen/SparseLU>
 typedef Eigen::SparseMatrix<double> SpMat;
@@ -13,8 +15,10 @@ class Force_Wind;
 
 /**
  * @brief 分析步类 - 负责单次分析的完整流程
+ * 
+ * 实现 SolverNS::IAnalysisModel 接口，可以使用独立的求解器进行求解
  */
-class AnalysisStep : public Base
+class AnalysisStep : public Base, public SolverNS::IAnalysisModel
 {
 public:
     EnumKeyword::StepType m_Type = EnumKeyword::StepType::UNKNOWN;
@@ -22,6 +26,11 @@ public:
     double m_StepSize = 0.0;       // 每步大小
     double m_Tolerance = 1e-5;     // 容差
     int m_MaxIterations = 32;      // 最大迭代次数
+
+    /// @brief 动力求解器类型（仅动力分析时有效）
+    /// 可选: Newmark, CentralDifference, HHT
+    /// 目前只实现了 Newmark，其他为预留
+    SolverNS::SolverType m_DynamicSolverType = SolverNS::SolverType::Newmark;
 
     int m_nFixed = 0;              // 约束自由度个数
     int m_nFree = 0;               // 自由自由度个数
@@ -70,6 +79,16 @@ public:
      * @brief 动力求解 (调用 SolverNewmark)
      */
     void Solve_Dynamic();
+
+    // ============ IAnalysisModel 接口实现 ============
+    int GetFreeDofs() const override { return m_nFree; }
+    int GetFixedDofs() const override { return m_nFixed; }
+    void ApplyIncrement(const SolverNS::Vec& dx, Phase phase) override;
+    void SetTrialKinematics(const SolverNS::Vec& v, const SolverNS::Vec& a) override;
+    void GetState(SolverNS::Vec& u, SolverNS::Vec& v, SolverNS::Vec& a) const override;
+    void AssembleMatrices(SolverNS::SpMat& K, SolverNS::SpMat* M = nullptr, SolverNS::SpMat* C = nullptr) override;
+    void ComputeResidual(double time, double loadFactor, SolverNS::Vec& R) override;
+    void OnStepCompleted(double time) override;
 
 private:
     std::weak_ptr<StructureData> m_pStructure;  // 结构数据的弱引用
@@ -184,6 +203,10 @@ private:
      */
     void Assemble_Constraint(VectorXd& x1);
 
-    void Get_CurrentStepState(VectorXd& U, VectorXd& V, VectorXd& A);
+    void Get_CurrentStepState(VectorXd& U, VectorXd& V, VectorXd& A) const;
+
+    // ============ IAnalysisModel 接口辅助函数 ============
+    VectorXd GetCurrentVelocity() const;
+    VectorXd GetCurrentAcceleration() const;
 
 };

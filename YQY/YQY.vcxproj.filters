@@ -100,15 +100,6 @@
     <ClCompile Include="Utility\ModelManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Solver\Solver.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Solver\ModelBase.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Solver\SolverNewmark.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="Export\Outputter.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -116,6 +107,15 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Conductor\ConductorLib.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Solver\Dynamic\SolverNewmark.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Solver\Static\SolverStatic.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Solver\Solver.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -180,15 +180,6 @@
     <ClInclude Include="Utility\ModelManager.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Solver\Solver.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Solver\ModelBase.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Solver\SolverNewmark.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="Export\Outputter.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -196,6 +187,21 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Conductor\ConductorLib.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Solver\Dynamic\SolverNewmark.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Solver\Interface\IAnalysisModel.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Solver\Interface\ISolver.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Solver\Static\SolverStatic.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Solver\Solver.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

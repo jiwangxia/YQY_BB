@@ -1,6 +1,9 @@
 ﻿#include "AnalysisStep.h"
 #include "DataStructure/Structure/StructureData.h"
 #include "DataStructure/Element/ElementBase.h"
+#include "Solver/Interface/ISolver.h"
+#include "Solver/Static/SolverStatic.h"
+#include "Solver/Dynamic/SolverNewmark.h"
 #include <Eigen/SparseCholesky>
 
 void AnalysisStep::SetStructure(std::shared_ptr<StructureData> pStructure)
@@ -536,18 +539,85 @@ void AnalysisStep::Assemble_Constraint(VectorXd& x1)
 void AnalysisStep::Solve()
 {
     if (!PrepareData()) return;
+    Init();
+
+    // 初始化约束和单元长度
+    VectorXd x1;
+    Assemble_Constraint(x1);
+    Get_ElementLength();
+
+    // 使用工厂模式创建求解器
+    std::unique_ptr<SolverNS::ISolver> solver;
 
     switch (m_Type)
     {
     case EnumKeyword::StepType::STATIC:
-        Solve_Static();
+    {
+        SolverNS::SolverStatic::Params p;
+        p.numIncrements = static_cast<int>(m_Time / m_StepSize);
+        if (p.numIncrements < 1) p.numIncrements = 1;
+        p.maxIter = m_MaxIterations;
+        p.tol = m_Tolerance;
+        solver = std::make_unique<SolverNS::SolverStatic>(p);
         break;
+    }
     case EnumKeyword::StepType::DYNAMIC:
-        Solve_Dynamic();
+    {
+        // 根据 m_DynamicSolverType 选择动力求解器
+        switch (m_DynamicSolverType)
+        {
+        case SolverNS::SolverType::Newmark:
+        {
+            SolverNS::SolverNewmark::Params p;
+            p.dt = m_StepSize;
+            p.maxIter = m_MaxIterations;
+            p.tol = m_Tolerance;
+            solver = std::make_unique<SolverNS::SolverNewmark>(p);
+            break;
+        }
+        case SolverNS::SolverType::CentralDifference:
+            qDebug().noquote() << QStringLiteral("警告: CentralDifference 求解器尚未实现，使用 Newmark");
+            // TODO: solver = std::make_unique<SolverNS::SolverCentralDiff>(p);
+            {
+                SolverNS::SolverNewmark::Params p;
+                p.dt = m_StepSize;
+                p.maxIter = m_MaxIterations;
+                p.tol = m_Tolerance;
+                solver = std::make_unique<SolverNS::SolverNewmark>(p);
+            }
+            break;
+        case SolverNS::SolverType::HHT:
+            qDebug().noquote() << QStringLiteral("警告: HHT 求解器尚未实现，使用 Newmark");
+            // TODO: solver = std::make_unique<SolverNS::SolverHHT>(p);
+            {
+                SolverNS::SolverNewmark::Params p;
+                p.dt = m_StepSize;
+                p.maxIter = m_MaxIterations;
+                p.tol = m_Tolerance;
+                solver = std::make_unique<SolverNS::SolverNewmark>(p);
+            }
+            break;
+        default:
+        {
+            SolverNS::SolverNewmark::Params p;
+            p.dt = m_StepSize;
+            p.maxIter = m_MaxIterations;
+            p.tol = m_Tolerance;
+            solver = std::make_unique<SolverNS::SolverNewmark>(p);
+            break;
+        }
+        }
         break;
+    }
     default:
-        break;
         qDebug().noquote() << QStringLiteral("警告: 未知的分析步类型，无法求解");
+        return;
+    }
+
+    // 执行求解
+    if (solver && !solver->Solve(*this, m_Time))
+    {
+        qDebug().noquote() << QStringLiteral("求解失败: %1").arg(solver->GetName());
     }
 }
 
@@ -631,7 +701,7 @@ void AnalysisStep::Solve_Static()
             if (iter == m_MaxIterations - 1)
             {
                 qDebug().noquote() << QStringLiteral("\n达最大迭代次数\n");
-                exit;
+                exit(1);
             }
         }
     }
@@ -823,7 +893,7 @@ void AnalysisStep::Solve_Dynamic()
 // 新增辅助函数实现
 // ==========================================
 
-void AnalysisStep::Get_CurrentStepState(VectorXd& U, VectorXd& V, VectorXd& A)
+void AnalysisStep::Get_CurrentStepState(VectorXd& U, VectorXd& V, VectorXd& A) const
 {
     // 调整向量大小
     if (U.size() != m_nFree) U.resize(m_nFree);
@@ -853,4 +923,166 @@ void AnalysisStep::Get_CurrentStepState(VectorXd& U, VectorXd& V, VectorXd& A)
             }
         }
     }
+}
+
+// ==========================================
+// IAnalysisModel 接口实现
+// ==========================================
+
+void AnalysisStep::ApplyIncrement(const SolverNS::Vec& dx, Phase phase)
+{
+    // 将位移增量应用到节点
+    for (auto& nodePair : m_pData->m_Nodes)
+    {
+        auto pNode = nodePair.second;
+        int numDOF = pNode->m_DOF.size();
+
+        for (int dofIdx = 0; dofIdx < numDOF; ++dofIdx)
+        {
+            int dof = pNode->m_DOF[dofIdx];
+
+            // 只处理自由自由度
+            if (dof >= m_nFixed && dof < m_nFixed + m_nFree)
+            {
+                int idx = dof - m_nFixed;
+                pNode->m_Displacement[dofIdx] += dx[idx];
+            }
+        }
+    }
+}
+
+void AnalysisStep::SetTrialKinematics(const SolverNS::Vec& v, const SolverNS::Vec& a)
+{
+    // 将速度和加速度设置到节点
+    for (auto& nodePair : m_pData->m_Nodes)
+    {
+        auto pNode = nodePair.second;
+        int numDOF = pNode->m_DOF.size();
+
+        // 确保向量大小足够
+        if (pNode->m_Velocity.size() < numDOF)
+            pNode->m_Velocity.resize(numDOF, 0.0);
+        if (pNode->m_Acceleration.size() < numDOF)
+            pNode->m_Acceleration.resize(numDOF, 0.0);
+
+        for (int dofIdx = 0; dofIdx < numDOF; ++dofIdx)
+        {
+            int dof = pNode->m_DOF[dofIdx];
+
+            if (dof >= m_nFixed && dof < m_nFixed + m_nFree)
+            {
+                int idx = dof - m_nFixed;
+                pNode->m_Velocity[dofIdx] = v[idx];
+                pNode->m_Acceleration[dofIdx] = a[idx];
+            }
+        }
+    }
+}
+
+void AnalysisStep::GetState(SolverNS::Vec& u, SolverNS::Vec& v, SolverNS::Vec& a) const
+{
+    // 直接调用现有的 Get_CurrentStepState
+    Get_CurrentStepState(u, v, a);
+}
+
+void AnalysisStep::AssembleMatrices(SolverNS::SpMat& K, SolverNS::SpMat* M, SolverNS::SpMat* C)
+{
+    if (M && C)
+    {
+        // 动力学：组装 K, M, C
+        Assemble_Matrix();
+        K = m_K22;
+        *M = m_M22;
+        *C = m_C22;
+    }
+    else
+    {
+        // 静力：只组装 K
+        AssembleKs_Static();
+        K = m_K22;
+    }
+}
+
+void AnalysisStep::ComputeResidual(double time, double loadFactor, SolverNS::Vec& R)
+{
+    VectorXd F1, F2;
+    double factor = loadFactor;  // Assemble_AllLoads 需要引用
+    Assemble_AllLoads(F1, F2, factor);
+
+    // 计算内力
+    VectorXd f_int(m_nFree);
+    f_int.setZero();
+
+    // 清零节点内力
+    for (auto& nodePair : m_pData->m_Nodes)
+    {
+        std::fill(nodePair.second->m_Force.begin(), nodePair.second->m_Force.end(), 0.0);
+    }
+    Get_CurrentInforce(f_int);
+
+    // 动力学：加上惯性力和阻尼力
+    if (m_Type == EnumKeyword::StepType::DYNAMIC)
+    {
+        VectorXd v_curr = GetCurrentVelocity();
+        VectorXd a_curr = GetCurrentAcceleration();
+        f_int += m_M22 * a_curr + m_C22 * v_curr;
+    }
+
+    R = F2 - f_int;
+}
+
+void AnalysisStep::OnStepCompleted(double time)
+{
+    if (m_pData)
+    {
+        m_pData->GetOutputter().SaveDataFromNodes(time, m_pData);
+    }
+}
+
+VectorXd AnalysisStep::GetCurrentVelocity() const
+{
+    VectorXd v(m_nFree);
+    v.setZero();
+
+    for (auto& nodePair : m_pData->m_Nodes)
+    {
+        auto pNode = nodePair.second;
+        int numDOF = pNode->m_DOF.size();
+
+        for (int i = 0; i < numDOF; ++i)
+        {
+            int dof = pNode->m_DOF[i];
+            if (dof >= m_nFixed && dof < m_nFixed + m_nFree)
+            {
+                int idx = dof - m_nFixed;
+                if (i < pNode->m_Velocity.size())
+                    v[idx] = pNode->m_Velocity[i];
+            }
+        }
+    }
+    return v;
+}
+
+VectorXd AnalysisStep::GetCurrentAcceleration() const
+{
+    VectorXd a(m_nFree);
+    a.setZero();
+
+    for (auto& nodePair : m_pData->m_Nodes)
+    {
+        auto pNode = nodePair.second;
+        int numDOF = pNode->m_DOF.size();
+
+        for (int i = 0; i < numDOF; ++i)
+        {
+            int dof = pNode->m_DOF[i];
+            if (dof >= m_nFixed && dof < m_nFixed + m_nFree)
+            {
+                int idx = dof - m_nFixed;
+                if (i < pNode->m_Acceleration.size())
+                    a[idx] = pNode->m_Acceleration[i];
+            }
+        }
+    }
+    return a;
 }
