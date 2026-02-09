@@ -137,9 +137,7 @@ private:
      * @param [in] current_time 当前时间
      * @return 当前时刻的力向量
      */
-    void UpData(VectorXd& x1, VectorXd& x2, VectorXd& F1, VectorXd* v2 = nullptr, VectorXd* a2 = nullptr);
-
-    void Update_Newmark_State(const VectorXd& delta_u, double a0, double a1, double a2, double a3, double a4, double a5);
+    void Updata_NodeData(VectorXd& x1, VectorXd& x2, VectorXd& F1, VectorXd* v2 = nullptr, VectorXd* a2 = nullptr);
 
     void Get_CurrentInforce(VectorXd& Inforce);
 
@@ -186,11 +184,6 @@ private:
      */
     void Assemble_Constraint(VectorXd& x1);
 
-    void GetCurrentStepState(VectorXd& U, VectorXd& V, VectorXd& A);
+    void Get_CurrentStepState(VectorXd& U, VectorXd& V, VectorXd& A);
 
-    /**
-     * @brief 步末结算：根据总位移增量计算最终速度和加速度，并更新回节点
-     */
-    void FinalizeStepState(const VectorXd& total_du, const VectorXd& Un, const VectorXd& Vn, const VectorXd& An,
-        double a0, double a1, double a2, double a3, double a4, double a5);
 };

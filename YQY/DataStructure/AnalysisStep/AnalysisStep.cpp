@@ -306,7 +306,7 @@ void AnalysisStep::Assemble_AllLoads(VectorXd& F1, VectorXd& F2, double& Factor)
     //std::cout << "F2:\n" << VectorXd(F2);
 }
 
-void AnalysisStep::UpData(VectorXd& x1, VectorXd& x2, VectorXd& F1, VectorXd* v2, VectorXd* a2)
+void AnalysisStep::Updata_NodeData(VectorXd& x1, VectorXd& x2, VectorXd& F1, VectorXd* v2, VectorXd* a2)
 {
     for (auto& nodePair : m_pData->m_Nodes)
     {
@@ -340,11 +340,11 @@ void AnalysisStep::UpData(VectorXd& x1, VectorXd& x2, VectorXd& F1, VectorXd* v2
                 pNode->m_Displacement[dofIdx] += x2[dof - m_nFixed];
                 if (v2)
                 {
-                    pNode->m_Velocity[dofIdx] += (*v2)[dof - m_nFixed];
+                    pNode->m_Velocity[dofIdx] = (*v2)[dof - m_nFixed];
                 }
                 if (a2)
                 {
-                    pNode->m_Acceleration[dofIdx] += (*a2)[dof - m_nFixed];
+                    pNode->m_Acceleration[dofIdx] = (*a2)[dof - m_nFixed];
                 }
             }
         }
@@ -625,12 +625,13 @@ void AnalysisStep::Solve_Static()
             totalx2 += x2;
 
             // 7. 更新节点位移
-            UpData(x1, x2, F1);
+            Updata_NodeData(x1, x2, F1);
 
             // 8. 检查是否达到最大迭代次数
             if (iter == m_MaxIterations - 1)
             {
                 qDebug().noquote() << QStringLiteral("\n达最大迭代次数\n");
+                exit;
             }
         }
     }
@@ -652,7 +653,8 @@ void AnalysisStep::Solve_Dynamic()
     double gamma = 0.5;
     double dt = m_StepSize;
 
-    if (dt <= 0.0) {
+    if (dt <= 0.0) 
+    {
         qDebug() << "Error: Time step size <= 0";
         return;
     }
@@ -663,6 +665,8 @@ void AnalysisStep::Solve_Dynamic()
     double a3 = 1.0 / (2.0 * beta) - 1.0;
     double a4 = gamma / beta - 1.0;
     double a5 = dt * 0.5 * (gamma / beta - 2.0);
+    double a6 = dt * (1.0 - gamma);
+    double a7 = gamma * dt;
 
     // 准备向量
     VectorXd F1, F2, x1;
@@ -672,7 +676,7 @@ void AnalysisStep::Solve_Dynamic()
     VectorXd U_n(m_nFree), V_n(m_nFree), A_n(m_nFree);
 
     // 过程向量
-    VectorXd total_du_step(m_nFree); // 当前步的总位移增量
+    VectorXd total_x2(m_nFree);      // 当前步的总位移增量
     VectorXd dx2(m_nFree);           // 每轮迭代的位移修正量
 
     // 重置求解器缓存
@@ -687,21 +691,22 @@ void AnalysisStep::Solve_Dynamic()
     {
         double currentTime = step * m_StepSize;
 
+
         // --- 步骤 1: 备份上一时刻 (t) 状态 ---
-        GetCurrentStepState(U_n, V_n, A_n);
+        Get_CurrentStepState(U_n, V_n, A_n);
+
 
         // 初始化当前步累积增量
-        total_du_step.setZero();
+        total_x2.setZero();
 
         // 动力分析通常施加全额荷载
         double factor = 1.0;
         Assemble_AllLoads(F1, F2, factor);
 
-        bool converged = false;
-
         // --- Newton-Raphson 迭代 ---
         for (int iter = 0; iter < m_MaxIterations; iter++)
         {
+
             // A. 组装 M, C, K
             Assemble_Matrix();
 
@@ -714,20 +719,17 @@ void AnalysisStep::Solve_Dynamic()
 
             // D. 根据 Newmark 公式计算当前 (t+dt) 试探状态
             // A_{t+dt} = a0 * ΔU - a2 * V_n - a3 * A_n
-            // V_{t+dt} = V_n + a4 * A_n + a5 * A_{t+dt}
-            VectorXd A_curr = a0 * total_du_step - a2 * V_n - a3 * A_n;
-            VectorXd V_curr = V_n + a4 * A_n + a5 * A_curr;
+            // V_{t+dt} = a1 * ΔU - a4 * V_n - a5 * A_n = V_n + a6 * A_n + a7 * A_{t+dt}
+            VectorXd A_curr = a0 * total_x2 - a2 * V_n - a3 * A_n;
+            VectorXd V_curr = V_n + a6 * A_n + a7 * A_curr;
 
-            // E. 计算动力残差: R = F_ext - F_int - (M*A + C*V)
-            VectorXd dynamicInertia = m_M22 * A_curr + m_C22 * V_curr;
-            residual = F2 - internalForce - dynamicInertia;
+            // E. 计算动力残差: R = F_ext - (F_int + (M*A + C*V))
+            VectorXd dynamicInertia = internalForce + m_M22 * A_curr + m_C22 * V_curr;
 
             // F. 检查收敛
-            double resNorm = residual.norm();
-            if (resNorm < m_Tolerance)
+            if (Check_Rhs(F2, dynamicInertia, residual) && iter > 0)
             {
-                converged = true;
-                // qDebug() << "Step" << step << "converged at iter" << iter;
+                //qDebug().noquote() << QStringLiteral("迭代在第 %1 步收敛").arg(iter);
                 break;
             }
 
@@ -787,27 +789,29 @@ void AnalysisStep::Solve_Dynamic()
 
             if (!solved)
             {
-                qDebug() << "Error: Matrix solver failed completely.";
-                return;
+                throw std::runtime_error("矩阵分解失败！");
+            }
+
+            if (iter == m_MaxIterations - 1)
+            {
+                throw std::runtime_error("Newton-Raphson迭代未收敛，已达最大迭代次数！");
             }
 
             // H. 累加总位移增量
-            total_du_step += dx2;
+            total_x2 += dx2;
 
             // I. 更新节点位移 (仅位移)
-            // UpData 负责将 dx2 累加到 m_Displacement，从而影响下一次 Assemble_Matrix 和 Get_CurrentInforce
-            UpData(x1, dx2, F1);
+            // Updata_NodeData 负责将 dx2 累加到 m_Displacement，从而影响下一次 Assemble_Matrix 和 Get_CurrentInforce
+            Updata_NodeData(x1, dx2, F1);
         }
 
-        if (!converged) 
-        {
-            qDebug() << "Warning: Dynamics did not converge at step" << step;
-        }
+        VectorXd A_final = a0 * total_x2 - a2 * V_n - a3 * A_n;
+        VectorXd V_final = V_n + a6 * A_n + a7 * A_final;
 
-        // --- 步骤 2: 步末结算 ---
-        // 利用最终收敛的 total_du_step 计算准确的 V 和 A，并写回节点
-        FinalizeStepState(total_du_step, U_n, V_n, A_n, a0, a1, a2, a3, a4, a5);
+        VectorXd zero_dx(m_nFree);
+        zero_dx.setZero();
 
+        Updata_NodeData(x1, zero_dx, F1, &V_final, &A_final);
         // 保存输出
         if (m_pData) m_pData->GetOutputter().SaveDataFromNodes(currentTime, m_pData);
     }
@@ -819,7 +823,7 @@ void AnalysisStep::Solve_Dynamic()
 // 新增辅助函数实现
 // ==========================================
 
-void AnalysisStep::GetCurrentStepState(VectorXd& U, VectorXd& V, VectorXd& A)
+void AnalysisStep::Get_CurrentStepState(VectorXd& U, VectorXd& V, VectorXd& A)
 {
     // 调整向量大小
     if (U.size() != m_nFree) U.resize(m_nFree);
@@ -846,36 +850,6 @@ void AnalysisStep::GetCurrentStepState(VectorXd& U, VectorXd& V, VectorXd& A)
                 if (i < pNode->m_Displacement.size()) U[idx] = pNode->m_Displacement[i];
                 if (i < pNode->m_Velocity.size())     V[idx] = pNode->m_Velocity[i];
                 if (i < pNode->m_Acceleration.size()) A[idx] = pNode->m_Acceleration[i];
-            }
-        }
-    }
-}
-
-void AnalysisStep::FinalizeStepState(const VectorXd& total_du, const VectorXd& Un, const VectorXd& Vn, const VectorXd& An,
-    double a0, double a1, double a2, double a3, double a4, double a5)
-{
-    // 根据 Newmark 公式计算最终的加速度和速度
-    VectorXd A_final = a0 * total_du - a2 * Vn - a3 * An;
-    VectorXd V_final = Vn + a4 * An + a5 * A_final;
-
-    // 将计算结果写回节点
-    for (auto& nodePair : m_pData->m_Nodes)
-    {
-        auto pNode = nodePair.second;
-        int numDOF = pNode->m_DOF.size();
-
-        for (int i = 0; i < numDOF; ++i)
-        {
-            int globalDof = pNode->m_DOF[i];
-
-            if (globalDof >= m_nFixed && globalDof < (m_nFixed + m_nFree))
-            {
-                int idx = globalDof - m_nFixed;
-
-                // 更新节点速度和加速度
-                // 注意：位移已经在迭代中使用 UpData 累加过了，此处无需更新
-                if (i < pNode->m_Velocity.size())     pNode->m_Velocity[i] = V_final[idx];
-                if (i < pNode->m_Acceleration.size()) pNode->m_Acceleration[i] = A_final[idx];
             }
         }
     }

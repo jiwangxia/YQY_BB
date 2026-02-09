@@ -182,4 +182,4 @@
 
 
 *Analysis_Step,1
-1	 Static	     1	    0.05 	 1e-6	 1000
+1	 Static	     1	    0.05 	 1e-5	 32

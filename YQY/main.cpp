@@ -12,8 +12,8 @@ int main(int argc, char* argv[])
 
     Input_Model importer;
 
-    QString BaseName = "daoxian";
-    QString InputPath = QString("Import/ImportFile/%1.txt").arg(BaseName);
+    QString BaseName = "斜杆一端受压";
+    QString InputPath = QString("Import/ImportFile/%1.bdf").arg(BaseName);
     QString OutputPath = QString("Export/ExportFile/%1_TEP.bdf").arg(BaseName);
 
     qDebug().noquote() << QStringLiteral("\n读取文件为:") << InputPath << "\n";
