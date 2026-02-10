@@ -9,6 +9,8 @@
 
 namespace ConductorLib 
 {
+    const double Math_PI = 3.1415926535897932;
+
     enum class ConnectionMode 
     {
         VerticalTriangle = 0,          // Vertical=左右分组
@@ -48,5 +50,8 @@ namespace ConductorLib
     {
     public:
         static BundleResult CreateBundle(const double start[3], const double end[3], const Config& cfg);
+
+    private:
+        static void Offset(const Config& cfg, const double& dx, const double& dy, std::vector<RawNode>& offsets);
     };
 }
