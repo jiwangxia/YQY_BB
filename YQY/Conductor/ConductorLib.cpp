@@ -305,6 +305,7 @@ namespace ConductorLib
         }
         return Result;
     }
+
     void Generator::Offset(const Config& cfg, const double& dx, const double& dy, std::vector<RawNode>& offsets)
     {
         double horiz = std::sqrt(dx * dx + dy * dy);
