@@ -109,9 +109,11 @@
     <ClCompile Include="DataStructure\Element\ElementBeam.cpp" />
     <ClCompile Include="DataStructure\Element\ElementCable.cpp" />
     <ClCompile Include="DataStructure\Load\Force_Wind.cpp" />
+    <ClCompile Include="Import\AeroManager.cpp" />
     <ClCompile Include="Import\Input_Model.cpp" />
     <ClCompile Include="DataStructure\Structure\StructureData.cpp" />
     <ClCompile Include="DataStructure\Section\SectionCircular.cpp" />
+    <ClCompile Include="DataStructure\Section\Section_Ice.cpp" />
     <ClCompile Include="Solver\Dynamic\SolverNewmark.cpp" />
     <ClCompile Include="Solver\Solver.cpp" />
     <ClCompile Include="Solver\Static\SolverStatic.cpp" />
@@ -145,9 +147,11 @@
     <ClInclude Include="DataStructure\Element\ElementBeam.h" />
     <ClInclude Include="DataStructure\Element\ElementCable.h" />
     <ClInclude Include="DataStructure\Load\Force_Wind.h" />
+    <ClInclude Include="Import\AeroManager.h" />
     <ClInclude Include="Import\Input_Model.h" />
     <ClInclude Include="DataStructure\Structure\StructureData.h" />
     <ClInclude Include="DataStructure\Section\SectionCircular.h" />
+    <ClInclude Include="DataStructure\Section\Section_Ice.h" />
     <ClInclude Include="Solver\Dynamic\SolverNewmark.h" />
     <ClInclude Include="Solver\Interface\IAnalysisModel.h" />
     <ClInclude Include="Solver\Interface\ISolver.h" />

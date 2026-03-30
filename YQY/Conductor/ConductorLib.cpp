@@ -4,67 +4,105 @@
 #include <algorithm>
 #include <vector>
 
+#include <iostream>
 namespace ConductorLib
 {
 
     // =====================================================================
-    // [内部类] CatenaryEngine: 负责悬链线数学计算
+    // [内部类] Catenarymodel: 负责悬链线数学计算
     // =====================================================================
-    class CatenaryEngine
+    class CatenaryModel
     {
     public:
-        double L, h, a, length, lx, ly, gamma, s0, x0, y0, z0;
+        double L, h, ArcLength, lx, ly, gamma, Minstress;
+        double x1, y1; // 起点坐标
+        double a;//应力比容重
+        double X0;//最低点位置（水平距离起点的距离）
+        double C;//悬链线公式的 常数项
 
-        CatenaryEngine(const double p1[3], const double p2[3], double g, double stress) : gamma(g), s0(stress), x0(p1[0]), y0(p1[1]), z0(p1[2])
+        /**
+        * @param Point1 起点坐标 [x, y, z]
+        * @param Point2 终点坐标 [x, y, z]
+        * @param gama   线材容重
+        * @param stress 线材最低点应力(水平应力)
+        */
+        CatenaryModel(const double Point1[3], const double Point2[3], const double gama, const double stress) :x1(Point1[0]), y1(Point1[1]), gamma(gama), Minstress(stress)
         {
-            double dx = p2[0] - p1[0], dy = p2[1] - p1[1], dz = p2[2] - p1[2];
+            double dx = Point2[0] - Point1[0], dy = Point2[1] - Point1[1], dz = Point2[2] - Point1[2];
             h = dz;
             L = std::sqrt(dx * dx + dy * dy);
-            lx = (L < 1e-6) ? 0 : dx / L;
-            ly = (L < 1e-6) ? 0 : dy / L;
+            if (L < 1e-7)
+            {
+                lx = 0; ly = 0;
+            }
+            else
+            {
+                lx = dx / L;
+                ly = dy / L;
+            }
 
-            double b = s0 / gamma;
-            double c = std::sinh(L / (2.0 * b));
-            a = L / 2.0 - b * std::asinh(h / (2.0 * b * c));
-            length = b * (std::sinh((L - a) / b) + std::sinh(a / b));
+            a = stress / gama;
+            double hsinhLa = h / (2 * a * std::sinh(L / 2.0 / a));
+            X0 = L / 2.0 - a * std::asinh(hsinhLa);
+            ArcLength = a * (std::sinh((L - X0) / a) + std::sinh(X0 / a));
+            C = Point1[2] - a * cosh((Point1[0] - X0) / a);
         }
 
-        void GetPoints(double s1, double s2, int nPT, std::vector<RawNode>& outPts, std::vector<double>& outStress)
+        /**
+        * @param s1        左侧耐张串长度 (扣除长度)
+        * @param s2        右侧耐张串长度 (扣除长度)
+        * @param nPT       分段数
+        * @param outPts    输出节点集合 （不包括挂点）
+        * @param outStress 输出各点全应力 （不包括挂点）
+        */
+        bool GetPoints(double s1, double s2, int nPT, std::vector<RawNode>& outPts, std::vector<double>& outStress)
         {
             outPts.resize(nPT + 1);
             outStress.resize(nPT + 1);
-            double b = s0 / gamma;
-            double chab = std::cosh(a / b), shab = std::sinh(a / b);
-            double ds = (length - s1 - s2) / (nPT);
+            double sinhXa = std::sinh(X0 / a);
 
+            double effectiveLength = ArcLength - s1 - s2;
+            if (effectiveLength < 0)
+            {
+                std::cerr << "[错误] 弧长校验失败: "
+                    << "总弧长(" << ArcLength << ") < "
+                    << "耐张串总长(" << s1 + s2 << ")\n"
+                    << "请检查应力值或档距配置。" << std::endl;
+                return false;
+            }
+
+            double ds = effectiveLength / nPT;
             for (int i = 0; i < nPT + 1; ++i)
             {
-                double si = s1 + i * ds;
-                double xi = a + b * std::asinh(si / b - shab);
-                double cx = std::cosh((xi - a) / b);
-                outPts[i] = { x0 + xi * lx, y0 + xi * ly, z0 + b * (cx - chab) };
-                outStress[i] = s0 * cx;
+                double si = s1 + i * ds;  //用当前弧长反推水平X
+                double X = X0 + a * std::asinh(si / a - sinhXa);
+                double Z = a * cosh((X - X0) / a) + C;
+
+                outPts[i] = { x1 + X * lx,y1 + X * ly,Z };
+                outStress[i] = Minstress * std::cosh((X - X0) / a);
             }
+            return true;
         }
+
     };
 
     // =====================================================================
     // [核心逻辑] 导线模型生成器
     // =====================================================================
-    BundleResult Generator::CreateBundle(const double start[3], const double end[3], const Config& cfg)
+    BundleResult Generator::CreateBundle(const double start[3], const double end[3], const double& s1, const double& s2, const ConductorConfig& cfg)
     {
         BundleResult Result;
 
         // --- 1. 基础悬链线路径 ---
-        CatenaryEngine engine(start, end, cfg.unitWeight, cfg.stress0);
+        CatenaryModel model(start, end, cfg.unitWeight, cfg.stress0);
         std::vector<RawNode> baseCurve;
-        std::vector<double> baseStress;
-        if(cfg.mode == ConnectionMode::Parallel)
+        std::vector<double>  baseStress;
+        if (cfg.mode == ConnectionMode::Parallel)
         {
-            engine.GetPoints(0.0, 0.0, cfg.segments, baseCurve, baseStress);
+            model.GetPoints(s1, s2, cfg.segments, baseCurve, baseStress);
         }
         else//竖直三角形连接
-        engine.GetPoints(cfg.insulatorL, cfg.insulatorL, cfg.segments, baseCurve, baseStress);
+            model.GetPoints(cfg.insulatorL, cfg.insulatorL, cfg.segments, baseCurve, baseStress);
 
         std::vector<RawNode> offsets;                // 偏置
 
@@ -82,7 +120,7 @@ namespace ConductorLib
 
         }
 
-        if(cfg.mode == ConnectionMode::Parallel)
+        if (cfg.mode == ConnectionMode::Parallel)
         {
             for (int i = 0; i < nBundle; ++i)
             {
@@ -98,7 +136,7 @@ namespace ConductorLib
                 }
             }
         }
-        else if(cfg.mode == ConnectionMode::VerticalTriangle)
+        else if (cfg.mode == ConnectionMode::VerticalTriangle)
         {
             if (nBundle == 1)
             {
@@ -134,14 +172,14 @@ namespace ConductorLib
                 // N > 1 通用逻辑 (分组连接 yoke)
                 // 1. 创建端部 yoke 结构
                 // 上向量 (默认竖直)
-                double vvx = 0, vvy = 0, vvz = 1.0; 
+                double vvx = 0, vvy = 0, vvz = 1.0;
                 // 如果需要水平，可以用 V_offset_h_dir (但这不在Config里，暂默认竖直)
-                
+
                 // A端 Yoke Nodes
                 // 0: yokeA_upper, 1: midA_upper, 2: yokeA_lower, 3: midA_lower
                 RawNode yokeA_upper = { start[0] + vvx * yokeH, start[1] + vvy * yokeH, start[2] + vvz * yokeH };
                 RawNode yokeA_lower = { start[0] - vvx * yokeH, start[1] - vvy * yokeH, start[2] - vvz * yokeH };
-                
+
                 // 计算 midA (过渡点)
                 // midA_upper = (yokeA_upper + (baseCurve[0]+offset[0])) / 2 ? 不，这是 ApplyQuadBundleModification 的逻辑
                 // 简化为：midA 是 yokeA 和 第一根导线起始点 的中点?
@@ -151,14 +189,14 @@ namespace ConductorLib
                 // 这里我们简化：yoke -> mid -> conductor。
                 // midA_upper = yokeA_upper (简化)
                 // 实际上用户代码是用 midPoint 来过渡。我们这里生成 4 个节点。
-                
+
                 // 为了简单且健壮，我们直接生成 4 个 yoke 节点，位置如下：
                 // yokeA_upper, midA_upper (yokeA_upper + small_dir?), ...
                 // 鉴于 ConductorLib 是通用库，我们用简单几何：
                 // yokeA_upper/lower 是挂点。
                 // midA_upper/lower 是 yoke 和 导线首点 的中间点。
                 // 但导线首点取决于 offsets[0]。
-                
+
                 // 我们先生成 yokeA_upper, yokeA_lower
                 Result.nodes.push_back(yokeA_upper); // Index 0
                 Result.nodes.push_back(yokeA_lower); // Index 1
@@ -169,7 +207,7 @@ namespace ConductorLib
                 // [0,1] A端 yoke
                 // [2..N*nPts+1] 导线点
                 // [end-1, end] B端 yoke
-                
+
                 int yokeA_upper_idx = 1; // 1-based
                 int yokeA_lower_idx = 2;
 
@@ -196,9 +234,9 @@ namespace ConductorLib
                 {
                     // 分组逻辑
                     bool isUpper = (i < nBundle / 2); // 前一半 Upper，后一半 Lower
-                    
+
                     int wireStart = conductor_start_idx + i * nPtsPerWire; // 1-based
-                    
+
                     // Start Yoke -> Wire Start (绝缘子)
                     int yokeA = isUpper ? yokeA_upper_idx : yokeA_lower_idx;
                     Result.elements.push_back({ yokeA, wireStart, baseStress.front(), 3 });
@@ -243,12 +281,12 @@ namespace ConductorLib
                     // Vertical: 2 + i * nPts + j
                     int idx1 = spacerNodeOffset + i * nPtsPerWire + j;
                     int idx2 = spacerNodeOffset + ((i + 1) % nBundle) * nPtsPerWire + j;
-                    
+
                     // Element indices are 1-based usually in this file logic above?
                     // Wait, Parallel l96: { (int)Result.nodes.size() - 1, (int)Result.nodes.size() }
                     // Result.nodes.size() is 1-based count.
                     // So element iNode/jNode should be 1-based indices.
-                    
+
                     // Parallel logic (L115 in original): { i*nPts+j, ... } -> This looks like 0-based?
                     // Let's check Parallel logic at L96:
                     // push_back node -> size increments.
@@ -283,12 +321,12 @@ namespace ConductorLib
                     // So `i*nPts+j` likely needs `+1`.
                     // I will add `+1` to be safe and consistent with standard FEA. 
                     // (Unless user's array uses 0-based mapping).
-                    
+
                     // Actually, L96 uses `size()-1`. If `size` is 2, `size-1` is 1. `size` is 2.
                     // So it connects 1 and 2.
                     // So the node at index 0 is referenced as "1".
                     // So `i*nPts+j` (index) corresponds to ID `i*nPts+j+1`.
-                    
+
                     Result.elements.push_back({ idx1 + 1, idx2 + 1, 0.0, 2 });
                 }
             }
@@ -306,7 +344,7 @@ namespace ConductorLib
         return Result;
     }
 
-    void Generator::Offset(const Config& cfg, const double& dx, const double& dy, std::vector<RawNode>& offsets)
+    void Generator::Offset(const ConductorConfig& cfg, const double& dx, const double& dy, std::vector<RawNode>& offsets)
     {
         double horiz = std::sqrt(dx * dx + dy * dy);
         double vrx = dy / horiz, vry = -dx / horiz; // 右向量 (V_right)
@@ -357,4 +395,4 @@ namespace ConductorLib
         }
 
     }
-} 
+}

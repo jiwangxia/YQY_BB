@@ -203,20 +203,33 @@ double AeroManager::getData(int modelIdx, CoefType type, double inputAngle) cons
     const std::vector<double>* vec = nullptr;
     switch (type)
     {
-    case LIFT:
-        vec = &models[modelIdx].lift;
-        break;
-    case DRAG:
-        vec = &models[modelIdx].drag;
-        break;
-    case MOMENT:
-        vec = &models[modelIdx].moment;
-        break;
-    default:
-        return 0.0;
+    case LIFT:   vec = &models[modelIdx].lift;   break;
+    case DRAG:   vec = &models[modelIdx].drag;   break;
+    case MOMENT: vec = &models[modelIdx].moment; break;
+    default:     return 0.0;
     }
 
-    return interpolate(*vec, inputAngle);
+    if (vec->empty()) return 0.0;
+
+    // 1. 将角度归一化到 [0, 360)
+    double angle = std::fmod(inputAngle, 360.0);
+    if (angle < 0) angle += 360.0;
+
+    size_t n = vec->size();
+    double maxAngle = (n - 1) * STEP;   // 数据覆盖的最大角度（本例中为355°）
+
+    // 2. 如果归一化角度在数据范围内，直接插值
+    if (angle <= maxAngle) 
+    {
+        return interpolate(*vec, angle);
+    }
+    // 3. 否则角度在 (maxAngle, 360)，利用周期性用 maxAngle 和 0° 插值
+    else {
+        double y_first = vec->front();   // 0° 对应的值
+        double y_last = vec->back();    // maxAngle 对应的值
+        double t = (angle - maxAngle) / (360.0 - maxAngle); // 归一化位置
+        return y_last + (y_first - y_last) * t;
+    }
 }
 
 int AeroManager::getModelCount() const

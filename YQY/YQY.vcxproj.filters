@@ -73,6 +73,9 @@
     <ClCompile Include="DataStructure\Section\SectionCircular.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="DataStructure\Section\Section_Ice.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="DataStructure\Constraint\Constraint.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -118,6 +121,9 @@
     <ClCompile Include="Solver\Solver.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Import\AeroManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Base\Base.h">
@@ -151,6 +157,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DataStructure\Section\SectionCircular.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DataStructure\Section\Section_Ice.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DataStructure\Constraint\Constraint.h">
@@ -202,6 +211,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Solver\Solver.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Import\AeroManager.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

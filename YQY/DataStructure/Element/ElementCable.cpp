@@ -48,19 +48,22 @@ void ElementCable::Get_me_Consistent() //一致质量矩阵
     double Density = pMaterial->m_Density;
     Get_L0();  //原长
     double Linear_density = A * Density;               //线性密度---单位长度质量
-    double I = 0.5 * Linear_density * Radius * Radius; //单位长度转动惯量
+    //double I = 0.5 * Linear_density * Radius * Radius; //单位长度转动惯量
 
     double Sy = 0.0, Sz = 0.0;//目前只考虑对称截面
-
+    double I = 0.0;
     me.setZero(8, 8);
-    me(0, 0) = me(1, 1) = me(2, 2) = me(4, 4) = me(5, 5) = me(6, 6) = 2.0 * Linear_density;
-    me(0, 4) = me(1, 5) = me(2, 6) = me(4, 0) = me(5, 1) = me(6, 2) = Linear_density;
-    me(3, 3) = me(7, 7) = 2.0 * I;
-    me(3, 7) = me(7, 3) = I;
-    me(1, 3) = me(3, 1) = me(5, 7) = me(7, 5) = -2.0 * Sy;
-    me(1, 7) = me(7, 1) = me(5, 3) = me(3, 5) = -Sy;
-    me(2, 3) = me(3, 2) = me(6, 7) = me(7, 6) = 2.0 * Sz;
-    me(2, 7) = me(7, 2) = me(6, 3) = me(3, 6) = Sz;
+
+    MatrixXd mu = MatrixXd::Zero(4, 4);
+    mu(0, 0) = mu(1, 1) = mu(2, 2) = Linear_density;
+    mu(3, 3) = I;
+    mu(1, 3) = mu(3, 1) = -Sy;
+    mu(2, 3) = mu(3, 2) =  Sz;
+
+    me.block<4, 4>(0, 0) = 2.0 * mu;
+    me.block<4, 4>(0, 4) = mu;
+    me.block<4, 4>(4, 4) = 2.0 * mu;
+    me.block<4, 4>(4, 0) = mu;
     me *= (L0 / 6.0);
 }
 

@@ -31,7 +31,7 @@ namespace ConductorLib
         std::vector<RawElement> elements;
     };
 
-    struct Config 
+    struct ConductorConfig 
     {
         int nBundle = 1;           // 分裂数
         double spacing = 0.4;      // 子导线间距 S
@@ -49,9 +49,9 @@ namespace ConductorLib
     class CONDUCTOR_API Generator 
     {
     public:
-        static BundleResult CreateBundle(const double start[3], const double end[3], const Config& cfg);
+        static BundleResult CreateBundle(const double start[3], const double end[3], const double& s1, const double& s2, const ConductorConfig& cfg);
 
     private:
-        static void Offset(const Config& cfg, const double& dx, const double& dy, std::vector<RawNode>& offsets);
+        static void Offset(const ConductorConfig& cfg, const double& dx, const double& dy, std::vector<RawNode>& offsets);
     };
 }

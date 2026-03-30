@@ -102,7 +102,7 @@ public:
         Scientific,      // 科学计数法
         FixedDecimal,    // 固定小数
         SmartFormat,     // 智能选择
-        Engineering      // 工程计数法
+        modelering      // 工程计数法
     };
 
     static QString Format(double value, FormatStyle style = SmartFormat, int width = 16, int precision = 6)
@@ -136,7 +136,7 @@ public:
             }
             break;
 
-        case Engineering:
+        case modelering:
             // 工程计数法（指数为3的倍数）
             // 这里简化为科学计数法，实际工程计数法需要更复杂的处理
             snprintf(buffer, sizeof(buffer), "%+*.*E", width, precision, value);

@@ -90,7 +90,7 @@ void ElementTruss::Get_ke_non()
 
     if (!bUseLogStrain)
     {
-        // ===== 工程应变公式 (Engineering Strain) =====
+        // ===== 工程应变公式 (modelering Strain) =====
         // ε = (L - L0) / L0
         double materialStiffness = E * A / L0;
         ke = B_matrix * B_matrix.transpose() * materialStiffness;

@@ -6,6 +6,9 @@
  */
 class ElementCable : public ElementBase
 {
+private:
+    double Sy = 0.0;
+    double Sz = 0.0;
 public:
     /**
      * @brief 构造函数
