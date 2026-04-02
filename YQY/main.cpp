@@ -11,7 +11,7 @@ int main(int argc, char* argv[])
 {
     QApplication app(argc, argv);
 
-    //auto pStructure = std::make_shared<StructureData>();
+    auto pStructure = std::make_shared<StructureData>();
 
     //Input_Model importer;
 
@@ -35,39 +35,58 @@ int main(int argc, char* argv[])
     //    pStructure->GetOutputter().ExportNodes(OutputPath, nodeIds, types);
     //}
 
-    //ConductorLib::Config cfg;
-    //cfg.nBundle = 4; // 四分裂
-    //cfg.segments = 50;
-    //cfg.numSpacers = 4;
-    //cfg.spacing = 0.5656;
-    //cfg.mode = ConductorLib::ConnectionMode::Parallel;
-    //std::vector<double> startPt = { 0.0, 0.0, 0.0 };
-    //std::vector<double> endPt = { 100.0, 0.0, 0.0 };
-    //// 2. 生成数据
-    //auto result = ConductorLib::Generator::CreateBundle(startPt.data(), endPt.data(), cfg);
+    ConductorLib::ConductorConfig Config;
+    Config.nBundle = 4; // 四分裂
+    Config.segments = 50;
+    Config.numSpacers = 4;
+    Config.spacing = 0.5656;
+    Config.connecttype = ConductorLib::ConnectionMode::Parallel;
+    std::vector<double> startPt = { 0.0, 0.0, 0.0 };
+    std::vector<double> endPt = { 100.0, 0.0, 0.0 };
+    // 2. 生成数据
+    auto result = ConductorLib::Generator::CreateBundle(startPt.data(), endPt.data(), 0.0, 0.0, Config);
 
-    //for (auto& node : result.nodes)
-    //{
-    //    auto pNode = std::make_shared<Node>();
-    //    pNode->m_X = node.x;
-    //    pNode->m_Y = node.y;
-    //    pNode->m_Z = node.z;
+    for (auto& [wireid, nodesVector] : result.wiresNode)
+    {
+        for (auto& node : nodesVector)
+        {
+            auto pNode = std::make_shared<Node>();
+            pNode->m_X = node.x;
+            pNode->m_Y = node.y;
+            pNode->m_Z = node.z;
 
-    //    auto maxid = int(pStructure->m_Nodes.size()) + 1;
-    //    pNode->m_Id = maxid;
-    //    pStructure->m_Nodes.insert(std::make_pair(static_cast<int>(maxid), pNode));
-    //}
-    //pStructure.get()->Add_Property(6.5E11, 3800, 0.005);
-    //for (auto& elem : result.elements)
-    //{
-    //    auto pElement = std::make_shared<ElementTruss>();
-    //    pElement->m_pNode[0] = pStructure->FindNode(static_cast<int>(elem.iNode));
-    //    pElement->m_pNode[1] = pStructure->FindNode(static_cast<int>(elem.jNode));
-    //    pElement->m_Id = int(pStructure->m_Elements.size()) + 1;
-    //    pElement->m_InitStress = elem.stress0;
-    //    pElement->m_pProperty = pStructure->Create_Property(1, 1);
-    //    pStructure->m_Elements.insert(std::make_pair(static_cast<int>(pElement->m_Id), pElement));
-    //}
+            auto maxid = int(pStructure->m_Nodes.size()) + 1;
+
+            pNode->m_Id = maxid;
+            pStructure->m_Nodes.insert(std::make_pair(maxid, pNode));
+
+            node.id = maxid; // 更新原始节点的ID，记录全局id
+        }
+    }
+
+    pStructure.get()->Add_Property(6.5E11, 3800, 0.005);
+
+    for (auto& [wireid, elementsVector] : result.wiresElement)
+    {
+        auto& currentWireNodes = result.wiresNode[wireid];
+
+        for (auto& elem : elementsVector)
+        {
+            auto pElement = std::make_shared<ElementTruss>();
+
+            int global0 = currentWireNodes[elem.iNode - 1].id; // 获取全局节点ID
+            int global1 = currentWireNodes[elem.jNode - 1].id;
+
+            pElement->m_pNode[0] = pStructure->FindNode(global0);
+            pElement->m_pNode[1] = pStructure->FindNode(global1);
+
+            pElement->m_Id = int(pStructure->m_Elements.size()) + 1;
+            pElement->m_InitStress = elem.stress0;
+            pElement->m_pProperty = pStructure->Create_Property(1, 1);
+            pStructure->m_Elements.insert(std::make_pair(static_cast<int>(pElement->m_Id), pElement));
+
+        }
+    }
     //std::vector<int> node{ 1,51,52,102,103,153,154,204 };
     //std::vector<int> direaction{ 0,1,2 };
     //std::vector<double> value{ 0, 0, 0 };
@@ -85,7 +104,7 @@ int main(int argc, char* argv[])
     //QString OutputPath = QString("Export/ExportFile/ceshi_TEP.bdf");
     //pStructure->GetOutputter().ExportNodes(OutputPath, nodeIds, types);
 
-    //pStructure->GetOutputter().SaveModel("Export/ExportFile/123456.bdf", pStructure.get());
+    pStructure->GetOutputter().SaveModel("Export/ExportFile/分裂导线.bdf", pStructure.get());
 
 
 
@@ -94,42 +113,42 @@ int main(int argc, char* argv[])
     enableConsoleColor();
 
     // 设置控制台输出编码为UTF-8
-    SetConsoleOutputCP(CP_UTF8);
+    //SetConsoleOutputCP(CP_UTF8);
 
-    AeroManager manager;
+    //AeroManager manager;
 
-    std::string Filename = "1-14ms-12mm.csv";
-    //读取CSV文件，然后输出读取的数据到另一个CSV文件
-    bool success = manager.loadCSV("Import/Aero_Data/Input_Data/" + Filename);
+    //std::string Filename = "1-14ms-12mm.csv";
+    ////读取CSV文件，然后输出读取的数据到另一个CSV文件
+    //bool success = manager.loadCSV("Import/Aero_Data/Input_Data/" + Filename);
 
-    if (!success)
-    {
-        std::cerr << "\n 无法加载测试数据，程序终止。\n";
-        return -1;
-    }
-    //
-    //manager.exportToCSV("C_Data/Output_Data/" + Filename, 6);
-
-    //for (double i = 1.5; i <= 7; i += 5)
+    //if (!success)
     //{
-    //    std::cout << "\nLift = " << manager.getData(0, CoefType::LIFT, i); // 测试插值
-    //    std::cout << "\nDrag = " << manager.getData(0, CoefType::DRAG, i); // 测试插值
-    //    std::cout << "\nMoment = " << manager.getData(0, CoefType::MOMENT, i); // 测试插值
-
+    //    std::cerr << "\n 无法加载测试数据，程序终止。\n";
+    //    return -1;
     //}
+    ////
+    ////manager.exportToCSV("C_Data/Output_Data/" + Filename, 6);
+
+    ////for (double i = 1.5; i <= 7; i += 5)
+    ////{
+    ////    std::cout << "\nLift = " << manager.getData(0, CoefType::LIFT, i); // 测试插值
+    ////    std::cout << "\nDrag = " << manager.getData(0, CoefType::DRAG, i); // 测试插值
+    ////    std::cout << "\nMoment = " << manager.getData(0, CoefType::MOMENT, i); // 测试插值
+
+    ////}
 
 
-    // 自动扫描Output_Data文件夹，与C_Data中的同名文件对比 
-    //验证气动参数读取是否有问题
+    //// 自动扫描Output_Data文件夹，与C_Data中的同名文件对比 
+    ////验证气动参数读取是否有问题
 
-    bool allPassed = manager.ValiDateAllCSV(
-        "Import/Aero_Data/Output_Data",   // 输出文件夹
-        "Import/Aero_Data/Input_Data",    // 标准文件夹
-        0.000001                // 误差容限
-    );
+    //bool allPassed = manager.ValiDateAllCSV(
+    //    "Import/Aero_Data/Output_Data",   // 输出文件夹
+    //    "Import/Aero_Data/Input_Data",    // 标准文件夹
+    //    0.000001                // 误差容限
+    //);
 
 
-    YQY window;
+    //YQY window;
     //window.show();
     return app.exec();
 

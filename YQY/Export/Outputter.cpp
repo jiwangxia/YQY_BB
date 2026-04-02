@@ -94,10 +94,10 @@ void Outputter::SaveDataFromNodes(double time, StructureData* pData)
 }
 
 // 智能格式化类实现
-class OutputFormatter 
+class OutputFormatter
 {
 public:
-    enum FormatStyle 
+    enum FormatStyle
     {
         Scientific,      // 科学计数法
         FixedDecimal,    // 固定小数
@@ -111,12 +111,12 @@ public:
 
         // 新增判断：如果绝对值小于1e-7，则视为0
         const double ZERO_THRESHOLD = 1e-7;
-        if (std::fabs(value) < ZERO_THRESHOLD) 
+        if (std::fabs(value) < ZERO_THRESHOLD)
         {
             value = 0.0;
         }
 
-        switch (style) 
+        switch (style)
         {
         case Scientific:
             // 科学计数法，保留正号对齐
@@ -125,12 +125,12 @@ public:
 
         case FixedDecimal:
             // 固定小数格式
-            if (value >= 0) 
+            if (value >= 0)
             {
                 // 正数前加空格对齐负号
                 snprintf(buffer, sizeof(buffer), " %*.*f", width - 1, precision, value);
             }
-            else 
+            else
             {
                 snprintf(buffer, sizeof(buffer), "%*.*f", width, precision, value);
             }
@@ -145,19 +145,19 @@ public:
         case SmartFormat:
         default:
             // 智能选择：当数值绝对值在 [1e-4, 1e6] 范围内用固定小数，否则用科学计数法
-            if (fabs(value) >= 1e6 || (fabs(value) <= 1e-4 && value != 0.0)) 
+            if (fabs(value) >= 1e6 || (fabs(value) <= 1e-4 && value != 0.0))
             {
                 // 太大或太小时用科学计数法
                 snprintf(buffer, sizeof(buffer), "%+*.*E", width, precision, value);
             }
-            else 
+            else
             {
                 // 正常范围内用固定小数
-                if (value >= 0) 
+                if (value >= 0)
                 {
                     snprintf(buffer, sizeof(buffer), " %*.*f", width - 1, precision, value);
                 }
-                else 
+                else
                 {
                     snprintf(buffer, sizeof(buffer), "%*.*f", width, precision, value);
                 }
@@ -167,7 +167,7 @@ public:
 
         // 如果字符串长度小于width，右对齐
         QString result(buffer);
-        if (result.length() < width) 
+        if (result.length() < width)
         {
             result = result.rightJustified(width, ' ');
         }
@@ -308,6 +308,7 @@ void Outputter::SaveModel(const QString& fileName, StructureData* pData)
     if (!pData->m_Material.empty())
     {
         stream << "*MATERIAL, " << pData->m_Material.size() << "\n";
+        stream << "** ID  弹性模量  泊松比  密度  许用应力  膨胀系数\n";
         for (const auto& pair : pData->m_Material)
         {
             auto pMat = pair.second;
@@ -325,6 +326,7 @@ void Outputter::SaveModel(const QString& fileName, StructureData* pData)
     if (!pData->m_Section.empty())
     {
         stream << "\n*SECTION, " << pData->m_Section.size() << "\n";
+        stream << "** ID  面积\n";
         for (const auto& pair : pData->m_Section)
         {
             auto pSec = pair.second;
@@ -337,6 +339,7 @@ void Outputter::SaveModel(const QString& fileName, StructureData* pData)
     if (!pData->m_Nodes.empty())
     {
         stream << "\n*NODE, " << pData->m_Nodes.size() << "\n";
+        stream << "** ID  X  Y  Z\n";
         for (const auto& pair : pData->m_Nodes)
         {
             auto pNode = pair.second;
@@ -365,6 +368,7 @@ void Outputter::SaveModel(const QString& fileName, StructureData* pData)
         if (group.first == "UNKNOWN" || group.second.empty()) continue;
 
         stream << "\n*ELEMENT, " << group.first << ", " << group.second.size() << "\n";
+        stream << "** ID  Node1  Node2  MaterialID  SectionID\n";
         for (const auto& pElem : group.second)
         {
             int nodeId1 = pElem->m_pNode[0].lock() ? pElem->m_pNode[0].lock()->m_Id : 0;
@@ -391,6 +395,7 @@ void Outputter::SaveModel(const QString& fileName, StructureData* pData)
     if (!pData->m_Constraint.empty())
     {
         stream << "\n*CONSTRAINT, " << pData->m_Constraint.size() << "\n";
+        stream << "** ID  NodeID  Direction  Value\n";
         for (const auto& pair : pData->m_Constraint)
         {
             auto pCon = pair.second;
@@ -420,6 +425,7 @@ void Outputter::SaveModel(const QString& fileName, StructureData* pData)
         if (group.first == "UNKNOWN" || group.second.empty()) continue;
 
         stream << "\n*LOAD, " << group.first << ", " << group.second.size() << "\n";
+        stream << "** ID  NodeID/ElementID  Direction  Value\n";
         for (const auto& pLoad : group.second)
         {
             if (group.first == "FORCE_NODE")
@@ -462,6 +468,8 @@ void Outputter::SaveModel(const QString& fileName, StructureData* pData)
     if (!pData->m_Elements.empty())
     {
         stream << "\n*STRESS, " << pData->m_Elements.size() << "\n";
+        stream << "** 单元编号  应力\n";
+
         for (auto& pair : pData->m_Elements)
         {
             auto pElem = pair.second;
@@ -474,6 +482,7 @@ void Outputter::SaveModel(const QString& fileName, StructureData* pData)
     if (!pData->m_AnalysisStep.empty())
     {
         stream << "\n*ANALYSIS_STEP, " << pData->m_AnalysisStep.size() << "\n";
+        stream << "** ID  Type  Time  StepSize  Tolerance  MaxIterations\n";
         for (const auto& pair : pData->m_AnalysisStep)
         {
             auto pStep = pair.second;
