@@ -136,8 +136,8 @@ void AnalysisStep::AssembleKs_Static()
     {
         auto pelement = element.second;
         //pelement->Get_ke(ke);
-        pelement->Get_ke_non();
-        ke = pelement->ke;
+        pelement->Get_ke_non(ke);
+
         //std::cout << MatrixXd(ke) << "\n";
         pelement->GetDOFs(DOFs);
         Assemble(DOFs, ke, L11, L21, L22);
@@ -178,18 +178,20 @@ void AnalysisStep::Assemble_Matrix()
     m_C22.resize(m_nFree, m_nFree);
 
     std::vector<int> DOFs;
-    double alpha_m = 0.0; double beta_m = 0.0;
-    double alpha_k = 0.0; double beta_k = 0.0;
-
+    std::vector<double> damping{ 0.0 ,0.0 ,0.0 ,0.0 };
+    
+    MatrixXd me, ke, ce;
     for (auto& element : m_pData->m_Elements)
     {
         auto pelement = element.second;
-        pelement->Assemble(alpha_m, alpha_k, beta_m, beta_k);
+        pelement->Get_ke_non(ke);
+        pelement->Get_me_Consistent(me);
+        pelement->Assemble(damping,ce);
 
         pelement->GetDOFs(DOFs);
-        Assemble(DOFs, pelement->me, m11, m21, m22);
-        Assemble(DOFs, pelement->ke, k11, k21, k22);
-        Assemble(DOFs, pelement->ce, c11, c21, c22);
+        Assemble(DOFs, me, m11, m21, m22);
+        Assemble(DOFs, ke, k11, k21, k22);
+        Assemble(DOFs, ce, c11, c21, c22);
     }
 
     m_M11.setFromTriplets(m11.begin(), m11.end());

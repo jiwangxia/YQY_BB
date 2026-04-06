@@ -13,98 +13,107 @@ int main(int argc, char* argv[])
 
     auto pStructure = std::make_shared<StructureData>();
 
-    //Input_Model importer;
+    Input_Model importer;
 
-    //QString BaseName = "斜杆一端受压";
-    //QString InputPath = QString("Import/ImportFile/%1.bdf").arg(BaseName);
-    //QString OutputPath = QString("Export/ExportFile/%1_TEP.bdf").arg(BaseName);
+    QString BaseName = "两维梁";
+    QString InputPath = QString("Import/ImportFile/%1.bdf").arg(BaseName);
+    QString OutputPath = QString("Export/ExportFile/%1_TEP.bdf").arg(BaseName);
 
-    //qDebug().noquote() << QStringLiteral("\n读取文件为:") << InputPath << "\n";
-    //if (importer.InputData(InputPath, pStructure))
+    qDebug().noquote() << QStringLiteral("\n读取文件为:") << InputPath << "\n";
+    if (importer.InputData(InputPath, pStructure))
+    {
+        qDebug() << "\n=====Model loaded successfully!=====";
+
+    //     使用 Solver 运行分析
+        Solver solver;
+        solver.SetStructure(pStructure);
+        solver.RunAll();  // 运行所有分析步
+
+        std::vector<int> nodeIds = {  2 };
+        std::vector<DataType> types = { DataType::U1, DataType::U2, DataType::M1 };
+        //std::vector<DataType> types = { DataType::U1, DataType::U2, DataType::U3, DataType::F1, DataType::F2, DataType::F3 };
+
+        pStructure->GetOutputter().ExportNodes(OutputPath, nodeIds, types);
+    }
+
+    //ConductorLib::ConductorConfig Config;
+    //Config.nBundle = 1; // 四分裂
+    //Config.segments = 50;
+    //Config.numSpacers = 4;
+    //Config.spacing = 0.5656;
+    //Config.connecttype = ConductorLib::ConnectionMode::Parallel;
+    //std::vector<double> startPt = { 0.0, 0.0, 0.0 };
+    //std::vector<double> endPt = { 100.0, 0.0, 0.0 };
+    //// 2. 生成数据
+    //auto result = ConductorLib::Generator::CreateBundle(startPt.data(), endPt.data(), 0.0, 0.0, Config);
+
+    //for (auto& [wireid, nodesVector] : result.wiresNode)
     //{
-    //    qDebug() << "\n=====Model loaded successfully!=====";
+    //    for (auto& node : nodesVector)
+    //    {
+    //        auto pNode = std::make_shared<Node>();
+    //        pNode->m_X = node.x;
+    //        pNode->m_Y = node.y;
+    //        pNode->m_Z = node.z;
 
-    ////     使用 Solver 运行分析
-    //    Solver solver;
-    //    solver.SetStructure(pStructure);
-    //    solver.RunAll();  // 运行所有分析步
+    //        auto maxid = int(pStructure->m_Nodes.size()) + 1;
 
-    //    std::vector<int> nodeIds = {  2 };
-    //    std::vector<DataType> types = { DataType::U1, DataType::U2, DataType::U3, DataType::F1, DataType::F2, DataType::F3 };
+    //        pNode->m_Id = maxid;
+    //        pStructure->m_Nodes.insert(std::make_pair(maxid, pNode));
 
-    //    pStructure->GetOutputter().ExportNodes(OutputPath, nodeIds, types);
+    //        node.id = maxid; // 更新原始节点的ID，记录全局id
+    //    }
     //}
 
-    ConductorLib::ConductorConfig Config;
-    Config.nBundle = 4; // 四分裂
-    Config.segments = 50;
-    Config.numSpacers = 4;
-    Config.spacing = 0.5656;
-    Config.connecttype = ConductorLib::ConnectionMode::Parallel;
-    std::vector<double> startPt = { 0.0, 0.0, 0.0 };
-    std::vector<double> endPt = { 100.0, 0.0, 0.0 };
-    // 2. 生成数据
-    auto result = ConductorLib::Generator::CreateBundle(startPt.data(), endPt.data(), 0.0, 0.0, Config);
+    //pStructure.get()->Add_Property(6.5E11, 3800, 0.005);
 
-    for (auto& [wireid, nodesVector] : result.wiresNode)
-    {
-        for (auto& node : nodesVector)
-        {
-            auto pNode = std::make_shared<Node>();
-            pNode->m_X = node.x;
-            pNode->m_Y = node.y;
-            pNode->m_Z = node.z;
+    //for (auto& [wireid, elementsVector] : result.wiresElement)
+    //{
+    //    auto& currentWireNodes = result.wiresNode[wireid];
 
-            auto maxid = int(pStructure->m_Nodes.size()) + 1;
+    //    for (auto& elem : elementsVector)
+    //    {
+    //        auto pElement = std::make_shared<ElementTruss>();
 
-            pNode->m_Id = maxid;
-            pStructure->m_Nodes.insert(std::make_pair(maxid, pNode));
+    //        int global0 = currentWireNodes[elem.iNode - 1].id; // 获取全局节点ID
+    //        int global1 = currentWireNodes[elem.jNode - 1].id;
 
-            node.id = maxid; // 更新原始节点的ID，记录全局id
-        }
-    }
+    //        pElement->m_pNode[0] = pStructure->FindNode(global0);
+    //        pElement->m_pNode[1] = pStructure->FindNode(global1);
 
-    pStructure.get()->Add_Property(6.5E11, 3800, 0.005);
+    //        pElement->m_Id = int(pStructure->m_Elements.size()) + 1;
+    //        pElement->m_InitStress = elem.stress0;
+    //        pElement->m_pProperty = pStructure->Create_Property(1, 1);
+    //        pStructure->m_Elements.insert(std::make_pair(static_cast<int>(pElement->m_Id), pElement));
 
-    for (auto& [wireid, elementsVector] : result.wiresElement)
-    {
-        auto& currentWireNodes = result.wiresNode[wireid];
-
-        for (auto& elem : elementsVector)
-        {
-            auto pElement = std::make_shared<ElementTruss>();
-
-            int global0 = currentWireNodes[elem.iNode - 1].id; // 获取全局节点ID
-            int global1 = currentWireNodes[elem.jNode - 1].id;
-
-            pElement->m_pNode[0] = pStructure->FindNode(global0);
-            pElement->m_pNode[1] = pStructure->FindNode(global1);
-
-            pElement->m_Id = int(pStructure->m_Elements.size()) + 1;
-            pElement->m_InitStress = elem.stress0;
-            pElement->m_pProperty = pStructure->Create_Property(1, 1);
-            pStructure->m_Elements.insert(std::make_pair(static_cast<int>(pElement->m_Id), pElement));
-
-        }
-    }
-    //std::vector<int> node{ 1,51,52,102,103,153,154,204 };
-    //std::vector<int> direaction{ 0,1,2 };
+    //    }
+    //}
+    //// 添加约束：固定导线两端节点的所有自由度
+    //std::vector<int> constrainedNodes{ 1, 53 };  // 假设第一根导线的起点和终点节点ID
+    //std::vector<int> direction{ 0, 1, 2 };  // 固定X, Y, Z三个方向
     //std::vector<double> value{ 0, 0, 0 };
 
-    //pStructure.get()->Add_Constraint(node, direaction, value);
-    //pStructure.get()->Add_Gravity(2, 1);
-    //pStructure.get()->Add_AnalysisStep("Static", 1, 0.5, 1e-4, 1000);
+    //pStructure.get()->Add_Constraint(constrainedNodes, direction, value);
 
+    //// 添加重力荷载（Z方向，重力加速度系数为1）
+    //pStructure.get()->Add_Gravity(2, 1);
+
+    //// 添加动力学分析步
+    //// 参数：类型, 总时间, 时间步长, 收敛容差, 最大迭代次数
+    //pStructure.get()->Add_AnalysisStep("Dynamic", 10.0, 0.01, 1e-4, 1000);
+
+    //// 运行求解器
     //Solver solver;
     //solver.SetStructure(pStructure);
-    //solver.RunAll();  // 运行所有分析步
+    //solver.RunAll();
 
-    //std::vector<int> nodeIds = { 26 };
+    //// 输出中间节点的结果
+    //std::vector<int> nodeIds = { 26 };  // 导线中点节点
     //std::vector<DataType> types = { DataType::U1, DataType::U2, DataType::U3, DataType::F1, DataType::F2, DataType::F3 };
-    //QString OutputPath = QString("Export/ExportFile/ceshi_TEP.bdf");
+    //QString OutputPath = QString("Export/ExportFile/dynamic_result.bdf");
     //pStructure->GetOutputter().ExportNodes(OutputPath, nodeIds, types);
 
-    pStructure->GetOutputter().SaveModel("Export/ExportFile/分裂导线.bdf", pStructure.get());
+    //pStructure->GetOutputter().SaveModel("Export/ExportFile/分裂导线.bdf", pStructure.get());
 
 
 

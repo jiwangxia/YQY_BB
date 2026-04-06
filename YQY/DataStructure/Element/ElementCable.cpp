@@ -4,17 +4,17 @@ ElementCable::ElementCable()
 {
     m_pNode.resize(2);
 }
-void ElementCable::Get_ke()
+void ElementCable::Get_ke(MatrixXd& ke)
 {
 
 }
 
-void ElementCable::Get_ke_non()
+void ElementCable::Get_ke_non(MatrixXd& ke)
 {
 
 }
 
-void ElementCable::Get_me_Lumped()//集中质量矩阵
+void ElementCable::Get_me_Lumped(MatrixXd& me)//集中质量矩阵
 {
     auto pMaterial = m_pProperty.lock()->m_pMaterial.lock();
     auto pSection = m_pProperty.lock()->m_pSection.lock();
@@ -38,7 +38,7 @@ void ElementCable::Get_me_Lumped()//集中质量矩阵
     me *= (L0 / 2.0);
 }
 
-void ElementCable::Get_me_Consistent() //一致质量矩阵
+void ElementCable::Get_me_Consistent(MatrixXd& me) //一致质量矩阵
 {
     auto pMaterial = m_pProperty.lock()->m_pMaterial.lock();
     auto pSection = m_pProperty.lock()->m_pSection.lock();
@@ -72,21 +72,28 @@ void ElementCable::Get_L0()
 
 }
 
-void ElementCable::Assemble(double trans_m, double trans_k, double rot_m, double rot_k)
+void ElementCable::Assemble(const std::vector<double>& damping, MatrixXd& _OUT ce)
 {
-    Get_ke_non();
-    Get_me_Consistent();//一致质量矩阵
+    if (damping.size() < 4) 
+    {
+        // 处理错误：抛出异常或设置空矩阵并返回
+        throw std::invalid_argument("damping vector must have at least 4 elements");
+    }
 
-    ce = trans_m * me + trans_k * ke;
+    MatrixXd ke, me;
+    Get_ke_non(ke);
+    Get_me_Consistent(me);//一致质量矩阵
+
+    ce = damping[0] * me + damping[1] * ke;
 
     // 平动对角块
-    ce.block<3, 3>(0, 0) = trans_m * me.block<3, 3>(0, 0) + trans_k * ke.block<3, 3>(0, 0);
-    ce.block<3, 3>(4, 4) = trans_m * me.block<3, 3>(4, 4) + trans_k * ke.block<3, 3>(4, 4);
+    ce.block<3, 3>(0, 0) = damping[0] * me.block<3, 3>(0, 0) + damping[1] * ke.block<3, 3>(0, 0);
+    ce.block<3, 3>(4, 4) = damping[0] * me.block<3, 3>(4, 4) + damping[1] * ke.block<3, 3>(4, 4);
 
     // 扭转对角块
-    ce(3, 3) = rot_m * me(3, 3) + rot_k * ke(3, 3);
-    ce(7, 7) = rot_m * me(7, 7) + rot_k * ke(7, 7);
-    ce(3, 7) = rot_m * me(3, 7) + rot_k * ke(3, 7);
+    ce(3, 3) = damping[2] * me(3, 3) + damping[3] * ke(3, 3);
+    ce(7, 7) = damping[2] * me(7, 7) + damping[3] * ke(7, 7);
+    ce(3, 7) = damping[2] * me(3, 7) + damping[3] * ke(3, 7);
     ce(7, 3) = ce(3, 7);
 }
 

@@ -5,7 +5,7 @@ ElementTruss::ElementTruss()
     m_pNode.resize(2);
 }
 
-void ElementTruss::Get_ke()
+void ElementTruss::Get_ke(MatrixXd& ke)
 {
     auto pProperty = m_pProperty.lock();
     auto pSection = pProperty->m_pSection.lock();
@@ -48,7 +48,7 @@ void ElementTruss::Get_ke()
     ke = B_matrix * B_matrix.transpose() * materialStiffness;
 }
 
-void ElementTruss::Get_ke_non()
+void ElementTruss::Get_ke_non(MatrixXd& ke)
 {
     auto pProperty = m_pProperty.lock();
     auto pSection = pProperty->m_pSection.lock();
@@ -149,7 +149,7 @@ void ElementTruss::Get_ke_non()
     }
 }
 
-void ElementTruss::Get_me_Lumped()//集中质量矩阵
+void ElementTruss::Get_me_Lumped(MatrixXd& me)//集中质量矩阵
 {
     auto pProperty = m_pProperty.lock();
     auto pSection = pProperty->m_pSection.lock();
@@ -162,7 +162,7 @@ void ElementTruss::Get_me_Lumped()//集中质量矩阵
     me = MatrixXd::Identity(6, 6) * (mass / 2.0);
 }
 
-void ElementTruss::Get_me_Consistent() //一致质量矩阵
+void ElementTruss::Get_me_Consistent(MatrixXd& me) //一致质量矩阵
 {
     auto pProperty = m_pProperty.lock();
     auto pSection = pProperty->m_pSection.lock();
@@ -211,12 +211,20 @@ void ElementTruss::Get_L0()
     }
 }
 
-void ElementTruss::Assemble(double trans_m, double trans_k, double rot_m, double rot_k)
+void ElementTruss::Assemble(const std::vector<double>& damping, MatrixXd& _OUT ce)
 {
-    Get_L0();
-    Get_ke_non();
-    Get_me_Consistent();//一致质量矩阵
+    if (damping.size() < 4) 
+    {
+        // 处理错误：抛出异常或设置空矩阵并返回
+        throw std::invalid_argument("damping vector must have at least 4 elements");
+    }
 
-    ce = trans_m * me + trans_k * ke;
+    MatrixXd ke;
+    MatrixXd me;
+    Get_L0();
+    Get_ke_non(ke);
+    Get_me_Consistent(me);//一致质量矩阵
+    
+    ce = damping[0] * me + damping[1] * ke;
 }
 

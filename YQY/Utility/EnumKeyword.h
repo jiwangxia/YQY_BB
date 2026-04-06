@@ -48,7 +48,8 @@ public:
         UNKNOWN,  ///< 未知
         T3D2,     ///< 桁架单元
         CABLE,    ///< 索单元
-        B31       ///< 梁单元
+        B31,     ///< 梁单元
+        CR2D      ///< 2维CR梁单元
     };
     static const QMap<QString, ElementType> MapElementType;  ///< 单元类型字符串到枚举的映射
 

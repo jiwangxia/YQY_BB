@@ -26,7 +26,9 @@ const QMap<QString, EnumKeyword::ElementType> EnumKeyword::MapElementType =
 {
     {"T3D2",  EnumKeyword::ElementType::T3D2},
     {"CABLE", EnumKeyword::ElementType::CABLE},
-    {"B31",   EnumKeyword::ElementType::B31}
+    {"B31",   EnumKeyword::ElementType::B31},
+    {"CR2D",  EnumKeyword::ElementType::CR2D},
+
 };
 
 const QMap<QString, EnumKeyword::SectionType> EnumKeyword::MapSectionType = 

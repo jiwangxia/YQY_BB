@@ -5,19 +5,19 @@ ElementBeam::ElementBeam()
     m_pNode.resize(2);
 }
 
-void ElementBeam::Get_ke()
+void ElementBeam::Get_ke(MatrixXd& ke)
 {
 }
 
-void ElementBeam::Get_ke_non()
+void ElementBeam::Get_ke_non(MatrixXd& ke)
 {
 }
 
-void ElementBeam::Get_me_Lumped()//集中质量矩阵
+void ElementBeam::Get_me_Lumped(MatrixXd& me)//集中质量矩阵
 {
 }
 
-void ElementBeam::Get_me_Consistent() //一致质量矩阵
+void ElementBeam::Get_me_Consistent(MatrixXd& me) //一致质量矩阵
 {
 }
 
@@ -25,7 +25,7 @@ void ElementBeam::Get_L0()
 {
 }
 
-void ElementBeam::Assemble(double trans_m, double trans_k, double rot_m, double rot_k)
+void ElementBeam::Assemble(const std::vector<double>& damping, MatrixXd& _OUT ce)
 {
 }
 

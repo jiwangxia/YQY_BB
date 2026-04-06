@@ -124,6 +124,9 @@
     <ClCompile Include="Import\AeroManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="DataStructure\Element\ElementBeam_CR2D.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Base\Base.h">
@@ -216,6 +219,9 @@
     <ClInclude Include="Import\AeroManager.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="DataStructure\Element\ElementBeam_CR2D.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Text Include="Import\ImportFile\ce.txt" />
@@ -230,5 +236,6 @@
     <None Include="Import\FileFormat.md" />
     <None Include="Import\ImportFile\竖直杆受轴和水平力.bdf" />
     <None Include="Import\ImportFile\斜杆一端受压.bdf" />
+    <None Include="Import\ImportFile\两维梁.bdf" />
   </ItemGroup>
 </Project>

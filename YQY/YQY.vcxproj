@@ -111,6 +111,7 @@
     <ClCompile Include="DataStructure\Element\ElementBeam.cpp" />
     <ClCompile Include="DataStructure\Element\ElementCable.cpp" />
     <ClCompile Include="DataStructure\Load\Force_Wind.cpp" />
+    <ClCompile Include="DataStructure\Element\ElementBeam_CR2D.cpp" />
     <ClCompile Include="Import\AeroManager.cpp" />
     <ClCompile Include="Import\Input_Model.cpp" />
     <ClCompile Include="DataStructure\Structure\StructureData.cpp" />
@@ -149,6 +150,7 @@
     <ClInclude Include="DataStructure\Element\ElementBeam.h" />
     <ClInclude Include="DataStructure\Element\ElementCable.h" />
     <ClInclude Include="DataStructure\Load\Force_Wind.h" />
+    <ClInclude Include="DataStructure\Element\ElementBeam_CR2D.h" />
     <ClInclude Include="Import\AeroManager.h" />
     <ClInclude Include="Import\Input_Model.h" />
     <ClInclude Include="DataStructure\Structure\StructureData.h" />
@@ -175,6 +177,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Import\FileFormat.md" />
+    <None Include="Import\ImportFile\两维梁.bdf" />
     <None Include="Import\ImportFile\斜杆一端受压.bdf" />
     <None Include="Import\ImportFile\竖直杆受轴和水平力.bdf" />
   </ItemGroup>
