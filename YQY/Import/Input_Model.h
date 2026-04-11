@@ -73,6 +73,15 @@ private:
 	bool InputElementCable(QTextStream& flow, const QStringList& list_str, int nElement);
 
 	/**
+	 * @brief 读取索单元数据
+	 * @param [in] flow 文本流
+	 * @param [in] list_str 关键字行解析后的字符串列表
+	 * @param [in] nElement 单元数量
+	 * @return 读取成功返回 true
+	 */
+	bool InputElementBeam_CR2D(QTextStream& flow, const QStringList& list_str, int nElement);
+
+	/**
 	 * @brief 读取梁单元数据
 	 * @param [in] flow 文本流
 	 * @param [in] list_str 关键字行解析后的字符串列表

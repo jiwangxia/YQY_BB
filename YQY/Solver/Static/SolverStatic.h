@@ -36,6 +36,7 @@ namespace SolverNS
 
         // ============ ISolver 接口实现 ============
         bool Solve(IAnalysisModel& model, double duration) override;
+        //bool Solve(IAnalysisModel& model, double duration) override; //测试线性
         const char* GetName() const override { return "Newton-Raphson Static"; }
         SolverType GetType() const override { return SolverType::Static; }
         void SetStepCallback(StepCallback callback) override { m_callback = std::move(callback); }

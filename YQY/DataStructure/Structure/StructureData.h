@@ -8,6 +8,7 @@
 #include "DataStructure/Element/ElementTruss.h"
 #include "DataStructure/Element/ElementCable.h"
 #include "DataStructure/Element/ElementBeam.h"
+#include "DataStructure/Element/ElementBeam_CR2D.h"
 #include "DataStructure/Property/Property.h"
 #include "DataStructure/Constraint/Constraint.h"
 #include "DataStructure/Load/LoadBase.h"

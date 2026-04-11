@@ -97,6 +97,7 @@ bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureDa
         if (dynamic_cast<ElementTruss*>(pair.second.get())) typeName = "T3D2";
         else if (dynamic_cast<ElementCable*>(pair.second.get())) typeName = "CABLE";
         else if (dynamic_cast<ElementBeam*>(pair.second.get())) typeName = "B31";
+        else if (dynamic_cast<ElementBeam_CR2D*>(pair.second.get())) typeName = "CR2D";
         elementTypeCount[typeName]++;
     }
     if (0 != m_Structure->m_Elements.size())
@@ -232,6 +233,7 @@ const QMap<EnumKeyword::ElementType, Input_Model::ElementHandler> Input_Model::s
     { EnumKeyword::ElementType::T3D2, [](Input_Model* self, QTextStream& flow, const QStringList& list_str, int nElement) { return self->InputElementTruss(flow, list_str, nElement); } },
     { EnumKeyword::ElementType::CABLE, [](Input_Model* self, QTextStream& flow, const QStringList& list_str, int nElement) { return self->InputElementCable(flow, list_str, nElement); } },
     { EnumKeyword::ElementType::B31,  [](Input_Model* self, QTextStream& flow, const QStringList& list_str, int nElement) { return self->InputElementBeam(flow, list_str, nElement); } },
+    { EnumKeyword::ElementType::CR2D,  [](Input_Model* self, QTextStream& flow, const QStringList& list_str, int nElement) { return self->InputElementBeam_CR2D(flow, list_str, nElement); } },
 };
 
 // 桁架单元处理
@@ -310,6 +312,49 @@ bool Input_Model::InputElementCable(QTextStream& flow, const QStringList& list_s
         int idSection = strlist_ele[4].toInt();
 
         auto pElement_Truss = std::make_shared<ElementCable>();
+        pElement_Truss->m_Id = idElement;
+        pElement_Truss->m_pNode[0] = m_Structure->FindNode(idNode0);
+        pElement_Truss->m_pNode[1] = m_Structure->FindNode(idNode1);
+        auto Property = m_Structure->Create_Property(idMaterial, idSection);
+        pElement_Truss->m_pProperty = Property;
+
+        m_Structure->m_Elements.insert(std::make_pair(idElement, pElement_Truss));
+    }
+    return true;
+}
+
+bool Input_Model::InputElementBeam_CR2D(QTextStream& flow, const QStringList& list_str, int nElement)
+{
+    QString strdata;
+    for (int i = 0; i < nElement; i++)
+    {
+        if (!ReadLine(flow, strdata))
+        {
+            qDebug().noquote() << QStringLiteral("Error: CR2D单元数据不够");
+            return false;
+        }
+
+        if (strdata.startsWith("*"))
+        {
+            qDebug().noquote() << QStringLiteral("Error: CR2D单元数据不足，遇到下一个关键字: ") << strdata;
+            return false;
+        }
+
+        QStringList strlist_ele = strdata.split(QRegularExpression("[\t, ]"), Qt::SkipEmptyParts);
+        // ID, Node1, Node2, Material, Section (5字段)
+        if (strlist_ele.size() != 5)
+        {
+            qDebug().noquote() << QStringLiteral("Error: 桁架单元数据格式错误: ") << strdata;
+            return false;
+        }
+
+        int idElement = static_cast<int>(m_Structure->m_Elements.size()) + 1;
+        int idNode0 = strlist_ele[1].toInt();
+        int idNode1 = strlist_ele[2].toInt();
+        int idMaterial = strlist_ele[3].toInt();
+        int idSection = strlist_ele[4].toInt();
+
+        auto pElement_Truss = std::make_shared<ElementBeam_CR2D>();
         pElement_Truss->m_Id = idElement;
         pElement_Truss->m_pNode[0] = m_Structure->FindNode(idNode0);
         pElement_Truss->m_pNode[1] = m_Structure->FindNode(idNode1);

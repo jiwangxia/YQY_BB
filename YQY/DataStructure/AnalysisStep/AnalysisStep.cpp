@@ -135,7 +135,7 @@ void AnalysisStep::AssembleKs_Static()
     for (auto& element : m_pData->m_Elements)
     {
         auto pelement = element.second;
-        //pelement->Get_ke(ke);
+        //pelement->Get_ke(ke);//无内力，目前会出错
         pelement->Get_ke_non(ke);
 
         //std::cout << MatrixXd(ke) << "\n";
