@@ -127,6 +127,12 @@
     <ClCompile Include="DataStructure\Element\ElementBeam_CR2D.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="DataStructure\Element\ElementBeam_CR.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Utility\CR.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Base\Base.h">
@@ -222,6 +228,12 @@
     <ClInclude Include="DataStructure\Element\ElementBeam_CR2D.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="DataStructure\Element\ElementBeam_CR.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Utility\CR.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Text Include="Import\ImportFile\ce.txt" />
@@ -237,5 +249,6 @@
     <None Include="Import\ImportFile\竖直杆受轴和水平力.bdf" />
     <None Include="Import\ImportFile\斜杆一端受压.bdf" />
     <None Include="Import\ImportFile\两维梁.bdf" />
+    <None Include="packages.config" />
   </ItemGroup>
 </Project>

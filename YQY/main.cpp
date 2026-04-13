@@ -5,10 +5,12 @@
 #include "Solver/Solver.h"
 #include "Conductor/ConductorLib.h"
 #include <Windows.h>
+#include "gtest/gtest.h"
 
 #include "Import/AeroManager.h"
 int main(int argc, char* argv[])
 {
+
     QApplication app(argc, argv);
 
     auto pStructure = std::make_shared<StructureData>();
@@ -24,12 +26,12 @@ int main(int argc, char* argv[])
     {
         qDebug() << "\n=====Model loaded successfully!=====";
 
-    //     使用 Solver 运行分析
+        //     使用 Solver 运行分析
         Solver solver;
         solver.SetStructure(pStructure);
         solver.RunAll();  // 运行所有分析步
 
-        std::vector<int> nodeIds = {2 };
+        std::vector<int> nodeIds = { 2 };
         std::vector<DataType> types = { DataType::U1, DataType::U2, DataType::U3 , DataType::M1 };
         //std::vector<DataType> types = { DataType::U1, DataType::U2, DataType::U3, DataType::F1, DataType::F2, DataType::F3 };
 
@@ -160,5 +162,4 @@ int main(int argc, char* argv[])
     //YQY window;
     //window.show();
     return app.exec();
-
 }

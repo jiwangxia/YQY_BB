@@ -99,6 +99,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Conductor\ConductorLib.cpp" />
+    <ClCompile Include="Utility\CR.cpp" />
     <ClCompile Include="DataStructure\AnalysisStep\AnalysisStep.cpp" />
     <ClCompile Include="DataStructure\Constraint\Constraint.cpp" />
     <ClCompile Include="DataStructure\Load\LoadBase.cpp" />
@@ -112,6 +113,7 @@
     <ClCompile Include="DataStructure\Element\ElementCable.cpp" />
     <ClCompile Include="DataStructure\Load\Force_Wind.cpp" />
     <ClCompile Include="DataStructure\Element\ElementBeam_CR2D.cpp" />
+    <ClCompile Include="DataStructure\Element\ElementBeam_CR.cpp" />
     <ClCompile Include="Import\AeroManager.cpp" />
     <ClCompile Include="Import\Input_Model.cpp" />
     <ClCompile Include="DataStructure\Structure\StructureData.cpp" />
@@ -135,6 +137,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Conductor\ConductorLib.h" />
+    <ClInclude Include="Utility\CR.h" />
     <ClInclude Include="DataStructure\AnalysisStep\AnalysisStep.h" />
     <ClInclude Include="Base\Base.h" />
     <ClInclude Include="DataStructure\Constraint\Constraint.h" />
@@ -151,6 +154,7 @@
     <ClInclude Include="DataStructure\Element\ElementCable.h" />
     <ClInclude Include="DataStructure\Load\Force_Wind.h" />
     <ClInclude Include="DataStructure\Element\ElementBeam_CR2D.h" />
+    <ClInclude Include="DataStructure\Element\ElementBeam_CR.h" />
     <ClInclude Include="Import\AeroManager.h" />
     <ClInclude Include="Import\Input_Model.h" />
     <ClInclude Include="DataStructure\Structure\StructureData.h" />
@@ -180,11 +184,19 @@
     <None Include="Import\ImportFile\两维梁.bdf" />
     <None Include="Import\ImportFile\斜杆一端受压.bdf" />
     <None Include="Import\ImportFile\竖直杆受轴和水平力.bdf" />
+    <None Include="packages.config" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Condition="Exists('$(QtMsBuild)\qt.targets')">
     <Import Project="$(QtMsBuild)\qt.targets" />
   </ImportGroup>
   <ImportGroup Label="ExtensionTargets">
+    <Import Project="..\packages\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.1.8.1.8\build\native\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.targets" Condition="Exists('..\packages\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.1.8.1.8\build\native\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.targets')" />
   </ImportGroup>
+  <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
+    <PropertyGroup>
+      <ErrorText>这台计算机上缺少此项目引用的 NuGet 程序包。使用“NuGet 程序包还原”可下载这些程序包。有关更多信息，请参见 http://go.microsoft.com/fwlink/?LinkID=322105。缺少的文件是 {0}。</ErrorText>
+    </PropertyGroup>
+    <Error Condition="!Exists('..\packages\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.1.8.1.8\build\native\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.1.8.1.8\build\native\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.targets'))" />
+  </Target>
 </Project>
