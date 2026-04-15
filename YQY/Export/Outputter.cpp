@@ -178,7 +178,7 @@ public:
 // 辅助格式化函数：使用智能格式
 static QString FormatValue(double val, int width = 16)
 {
-    return OutputFormatter::Format(val, OutputFormatter::SmartFormat, width, 6);
+    return OutputFormatter::Format(val, OutputFormatter::SmartFormat, width, 8);
 }
 
 void Outputter::ExportNodes(const QString& fileName,

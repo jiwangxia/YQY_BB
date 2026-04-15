@@ -1021,7 +1021,8 @@ void AnalysisStep::ComputeResidual(double time, double loadFactor, SolverNS::Vec
         std::fill(nodePair.second->m_Force.begin(), nodePair.second->m_Force.end(), 0.0);
     }
     Get_CurrentInforce(f_int);
-
+    //std::cout <<"F2:" << VectorXd(F2).transpose() << "\n\n";
+    //std::cout << "f_int:" << VectorXd(f_int).transpose() << "\n\n";
     // 动力学：加上惯性力和阻尼力
     if (m_Type == EnumKeyword::StepType::DYNAMIC)
     {

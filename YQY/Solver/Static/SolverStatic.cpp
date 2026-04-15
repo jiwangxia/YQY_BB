@@ -34,7 +34,7 @@ namespace SolverNS
             {
                 // 1. 组装刚度矩阵 (只需要 K)
                 model.AssembleMatrices(m_K, nullptr, nullptr);
-
+                //std::cout << "k" << Eigen::MatrixXd(m_K) << std::endl;
                 // 2. 计算残差: R = F_ext - F_int
                 model.ComputeResidual(currentTime, factor, m_R);
 
@@ -42,7 +42,7 @@ namespace SolverNS
                 double error = m_R.norm();
                 if (error < m_param.tol && iter > 0)
                 {
-                    //qDebug().noquote() << QStringLiteral("  增量步 %1: 迭代 %2 次收敛").arg(inc).arg(iter);
+                    qDebug().noquote() << QStringLiteral("  增量步 %1: 迭代 %2 次收敛").arg(inc).arg(iter);
                     break;
                 }
 
@@ -60,7 +60,7 @@ namespace SolverNS
                     qDebug().noquote() << QStringLiteral("错误: 线性求解失败");
                     return false;
                 }
-
+                //std::cout << "m_dx" << m_dx.transpose() << std::endl;
                 // 6. 更新试探状态
                 model.ApplyIncrement(m_dx, IAnalysisModel::Phase::Trial);
             }

@@ -417,11 +417,16 @@ namespace Utility
 
             // Km1
             Eigen::MatrixXd Km1 = Eigen::MatrixXd::Zero(12, 12);
-            const double N_L = N / L;
-            Km1(1, 1) = N_L;  Km1(1, 7) = -N_L;
-            Km1(2, 2) = N_L;  Km1(2, 8) = -N_L;
-            Km1(7, 1) = -N_L;  Km1(7, 7) = N_L;
-            Km1(8, 2) = -N_L;  Km1(8, 8) = N_L;
+            Eigen::Matrix3d Z = (N / L) * (Eigen::Matrix3d::Identity() - r1 * r1.transpose());
+            Km1.block<3, 3>(0, 0) = Z;
+            Km1.block<3, 3>(0, 6) = -Z;
+            Km1.block<3, 3>(6, 0) = -Z;
+            Km1.block<3, 3>(6, 6) = Z;
+            //const double N_L = N / L;
+            //Km1(1, 1) = N_L;  Km1(1, 7) = -N_L;
+            //Km1(2, 2) = N_L;  Km1(2, 8) = -N_L;
+            //Km1(7, 1) = -N_L;  Km1(7, 7) = N_L;
+            //Km1(8, 2) = -N_L;  Km1(8, 8) = N_L;
 
             // Km2
             Eigen::MatrixXd Q = Eigen::MatrixXd::Zero(12, 3);

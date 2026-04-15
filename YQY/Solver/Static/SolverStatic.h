@@ -54,12 +54,12 @@ namespace SolverNS
         {
             Eigen::SimplicialLDLT<SpMat> ldlt;  // 首选（快）
             Eigen::SparseLU<SpMat> lu;           // 备选（稳）
-            bool useLdlt = true;
+            bool useLdlt = false;
             bool patternAnalyzed = false;
 
             void reset()
             {
-                useLdlt = true;
+                useLdlt = false;
                 patternAnalyzed = false;
             }
         };

@@ -46,9 +46,9 @@ void ElementBeam_CR2D::Get_ke(MatrixXd& ke)
     ke.setZero(3, 3);
     ke(0, 0) = E * A / L0; ke(1, 1) = 4 * E * I / L0; ke(2, 2) = 4 * E * I / L0;
     ke(1, 2) = ke(2, 1) = 2 * E * I / L0;
-    std::cout << MatrixXd(ke) << "\n";
+    //std::cout << MatrixXd(ke) << "\n";
     ke = B_matrix.transpose() * ke * B_matrix;
-    std::cout << MatrixXd(ke) << "\n";
+    //std::cout << MatrixXd(ke) << "\n";
 }
 
 void ElementBeam_CR2D::Get_ke_non(MatrixXd& ke)

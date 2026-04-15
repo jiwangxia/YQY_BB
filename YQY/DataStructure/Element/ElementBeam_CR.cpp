@@ -15,6 +15,7 @@ void ElementBeam_CR::Get_ke_non(MatrixXd& ke)
     Vector3d def_p1, def_p2;
     Matrix3d Rg_1, Rg_2;
     Vector3d q1, q2, q;
+    //std::cout << (VectorXd(q0).transpose()) << std::endl;
     ComputeDeformedState(def_p1, def_p2, Rg_1, Rg_2, q1, q2, q);
 
     // ---- 局部坐标系 ----
@@ -42,6 +43,7 @@ void ElementBeam_CR::Get_ke_non(MatrixXd& ke)
 
     // ---- 总刚度矩阵 ----
     ke = K_material + K_sigma;
+    //ke = 0.5 * (ke + ke.transpose());
 }
 
 void ElementBeam_CR::Get_me_Lumped(MatrixXd& me)//集中质量矩阵
@@ -236,6 +238,14 @@ void ElementBeam_CR::ComputeDeformedState(Vector3d& def_p1, Vector3d& def_p2,
 
     // 截面方向向量
     q0.normalize(); // 确保初始截面方向向量是单位向量
+    Vector3d beam_axis = init_p2 - init_p1;
+    beam_axis.normalize();
+    if (q0.cross(beam_axis).norm() < 1e-6)
+    {
+        qDebug().noquote() << QStringLiteral("初始截面向量与轴线重合");
+        q0 = Vector3d(0, 0, 1); // 如果重合，选择一个默认的垂直向量
+    }
+
     q1 = Rg_1 * q0;
     q2 = Rg_2 * q0;
     q = 0.5 * (q1 + q2);
