@@ -354,6 +354,26 @@ void AnalysisStep::Updata_NodeData(VectorXd& x1, VectorXd& x2, VectorXd& F1, Vec
             }
         }
     }
+
+    // 输出特定节点的位移（用于调试和监控）
+    // 可以根据需要修改节点 ID
+    int monitorNodeId = 11;  // 监控节点 11
+    auto it = m_pData->m_Nodes.find(monitorNodeId);
+    if (it != m_pData->m_Nodes.end())
+    {
+        auto pNode = it->second;
+        if (pNode->m_Displacement.size() >= 6)
+        {
+            qDebug().noquote() << QStringLiteral("      节点 %1: u1=%2, u2=%3, u3=%4, θ1=%5, θ2=%6, θ3=%7")
+                .arg(monitorNodeId)
+                .arg(pNode->m_Displacement[0], 8, 'e', 2)
+                .arg(pNode->m_Displacement[1], 8, 'e', 2)
+                .arg(pNode->m_Displacement[2], 8, 'e', 2)
+                .arg(pNode->m_Displacement[3], 8, 'e', 2)
+                .arg(pNode->m_Displacement[4], 8, 'e', 2)
+                .arg(pNode->m_Displacement[5], 8, 'e', 2);
+        }
+    }
 }
 
 void AnalysisStep::Get_CurrentInforce(VectorXd& Inforce)
@@ -559,7 +579,11 @@ void AnalysisStep::Solve()
         p.numIncrements = static_cast<int>(m_Time / m_StepSize);
         if (p.numIncrements < 1) p.numIncrements = 1;
         p.maxIter = m_MaxIterations;
-        p.tol = m_Tolerance;
+        p.tol = m_Tolerance;           // 保留向后兼容
+        p.tol_R = 1e-3;                // 相对残差容差（0.1%）
+        p.tol_dx = 1e-4;               // 位移增量容差（进一步放松到 100微米）
+        p.use_relative = true;         // 使用相对残差判据
+        p.verbose = false;             // 详细输出
         solver = std::make_unique<SolverNS::SolverStatic>(p);
         break;
     }

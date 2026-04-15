@@ -246,7 +246,7 @@ namespace Utility
             double eta, c2, c3;
 
             // 同样必须使用泰勒展开防止极小角度下的除零奇异性
-            if (theta < 0.1)
+            if (theta < 0.001)
             {
                 double t2 = theta * theta;
                 double t4 = t2 * t2;
@@ -402,13 +402,11 @@ namespace Utility
             double q1x = q1_l(0), q1y = q1_l(1);
             double q2x = q2_l(0), q2y = q2_l(1);
 
-            const double eta = q_x / (L * q_y);
+            const double eta = q_x / q_y;
             const double eta11 = q1x / q_y;
             const double eta12 = q1y / q_y;
             const double eta21 = q2x / q_y;
             const double eta22 = q2y / q_y;
-
-            const double N = fa(0);
 
             Eigen::MatrixXd E = Eigen::MatrixXd::Zero(12, 12);
             E.block<3, 3>(0, 0) = Rr;  E.block<3, 3>(3, 3) = Rr;
@@ -416,20 +414,15 @@ namespace Utility
             Eigen::MatrixXd ET = E.transpose();
 
             // Km1
+            const double N = fa(0);
             Eigen::MatrixXd Km1 = Eigen::MatrixXd::Zero(12, 12);
-            Eigen::Matrix3d Z = (N / L) * (Eigen::Matrix3d::Identity() - r1 * r1.transpose());
-            Km1.block<3, 3>(0, 0) = Z;
-            Km1.block<3, 3>(0, 6) = -Z;
-            Km1.block<3, 3>(6, 0) = -Z;
-            Km1.block<3, 3>(6, 6) = Z;
-            //const double N_L = N / L;
-            //Km1(1, 1) = N_L;  Km1(1, 7) = -N_L;
-            //Km1(2, 2) = N_L;  Km1(2, 8) = -N_L;
-            //Km1(7, 1) = -N_L;  Km1(7, 7) = N_L;
-            //Km1(8, 2) = -N_L;  Km1(8, 8) = N_L;
+            Eigen::Matrix3d D3 = (N / L) * (Eigen::Matrix3d::Identity() - r1 * r1.transpose());
+            Km1.block<3, 3>(0, 0) = D3;
+            Km1.block<3, 3>(0, 6) = -D3;
+            Km1.block<3, 3>(6, 0) = -D3;
+            Km1.block<3, 3>(6, 6) = D3;
 
             // Km2
-            Eigen::MatrixXd Q = Eigen::MatrixXd::Zero(12, 3);
             VectorXd m(6);
             m << fa(1), fa(2), fa(3), fa(4), fa(5), fa(6);
             
@@ -447,6 +440,7 @@ namespace Utility
             SkewSymmetric(n2, skew_n2);
             SkewSymmetric(m2, skew_m2);
 
+            Eigen::MatrixXd Q = Eigen::MatrixXd::Zero(12, 3);
             Q.block<3, 3>(0, 0) = skew_n1;
             Q.block<3, 3>(3, 0) = skew_m1;
             Q.block<3, 3>(6, 0) = skew_n2;

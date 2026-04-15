@@ -31,7 +31,11 @@ int main(int argc, char* argv[])
         solver.SetStructure(pStructure);
         solver.RunAll();  // 运行所有分析步
 
-        std::vector<int> nodeIds = { 11 };
+        std::vector<int> nodeIds;// = { 1, 2,3,4,5,6,7,8,9,10,11 };
+        for (auto& nodePair : pStructure->m_Nodes)
+        {
+            nodeIds.push_back(nodePair.first);
+        }
         std::vector<DataType> types = { DataType::U1, DataType::U2, DataType::U3 , DataType::UR1 ,DataType::UR2,DataType::UR3 };
         //std::vector<DataType> types = { DataType::U1, DataType::U2, DataType::U3, DataType::F1, DataType::F2, DataType::F3 };
 
