@@ -7,7 +7,6 @@ public:
      * @brief 构造函数
      */
     ElementBeam_CR2D();
-
     /**
      * @brief 获取单元每个节点的自由度个数
      * @return 3（平移自由度 X, Y, X轴扭转 RX）

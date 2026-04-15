@@ -5,14 +5,15 @@ ElementBeam_CR2D::ElementBeam_CR2D()
     m_pNode.resize(2);
 }
 
+
 void ElementBeam_CR2D::Get_ke(MatrixXd& ke)
 {
     auto pProperty = m_pProperty.lock();
-    auto pSection = pProperty->m_pSection.lock();
+    auto pSectI0n = pProperty->m_pSection.lock();
     auto pMaterial = pProperty->m_pMaterial.lock();
 
     double E = pMaterial->m_Young;
-    double A = pSection->m_Area;  //I=A/16
+    double A = pSectI0n->m_Area;  //I=A/16
     double I = A * A / 4.0 / PI;
 
     auto pNode0 = m_pNode[0].lock();
@@ -32,7 +33,7 @@ void ElementBeam_CR2D::Get_ke(MatrixXd& ke)
     L0 = sqrt(dx * dx + dy * dy);
     double length = L0;
 
-    // 方向余弦 (direction cosines)
+    // 方向余弦 (directI0n cosines)
     double dirCos_x = dx / length;
     double dirCos_y = dy / length;
 
@@ -53,11 +54,11 @@ void ElementBeam_CR2D::Get_ke(MatrixXd& ke)
 void ElementBeam_CR2D::Get_ke_non(MatrixXd& ke)
 {
     auto pProperty = m_pProperty.lock();
-    auto pSection = pProperty->m_pSection.lock();
+    auto pSectI0n = pProperty->m_pSection.lock();
     auto pMaterial = pProperty->m_pMaterial.lock();
 
     double E = pMaterial->m_Young;
-    double A = pSection->m_Area;
+    double A = pSectI0n->m_Area;
 
     auto pNode0 = m_pNode[0].lock();
     auto pNode1 = m_pNode[1].lock();
@@ -104,11 +105,11 @@ void ElementBeam_CR2D::Get_me_Consistent(MatrixXd& me)
 void ElementBeam_CR2D::Get_L0()
 {
     auto pProperty = m_pProperty.lock();
-    auto pSection = pProperty->m_pSection.lock();
+    auto pSectI0n = pProperty->m_pSection.lock();
     auto pMaterial = pProperty->m_pMaterial.lock();
 
     double E = pMaterial->m_Young;
-    double A = pSection->m_Area;
+    double A = pSectI0n->m_Area;
 
     auto pNode0 = m_pNode[0].lock();
     auto pNode1 = m_pNode[1].lock();

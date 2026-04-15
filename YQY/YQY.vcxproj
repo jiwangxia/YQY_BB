@@ -99,6 +99,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Conductor\ConductorLib.cpp" />
+    <ClCompile Include="DataStructure\Section\SectionRectangle.cpp" />
     <ClCompile Include="Utility\CR.cpp" />
     <ClCompile Include="DataStructure\AnalysisStep\AnalysisStep.cpp" />
     <ClCompile Include="DataStructure\Constraint\Constraint.cpp" />
@@ -137,6 +138,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Conductor\ConductorLib.h" />
+    <ClInclude Include="DataStructure\Section\SectionRectangle.h" />
     <ClInclude Include="Utility\CR.h" />
     <ClInclude Include="DataStructure\AnalysisStep\AnalysisStep.h" />
     <ClInclude Include="Base\Base.h" />
@@ -183,6 +185,7 @@
     <None Include="Import\FileFormat.md" />
     <None Include="Import\ImportFile\两维梁.bdf" />
     <None Include="Import\ImportFile\斜杆一端受压.bdf" />
+    <None Include="Import\ImportFile\测试梁.bdf" />
     <None Include="Import\ImportFile\竖直杆受轴和水平力.bdf" />
     <None Include="packages.config" />
   </ItemGroup>

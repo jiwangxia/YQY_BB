@@ -5,6 +5,7 @@ ElementTruss::ElementTruss()
     m_pNode.resize(2);
 }
 
+
 void ElementTruss::Get_ke(MatrixXd& ke)
 {
     auto pProperty = m_pProperty.lock();

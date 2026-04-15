@@ -4,6 +4,7 @@ ElementCable::ElementCable()
 {
     m_pNode.resize(2);
 }
+
 void ElementCable::Get_ke(MatrixXd& ke)
 {
 
@@ -17,10 +18,10 @@ void ElementCable::Get_ke_non(MatrixXd& ke)
 void ElementCable::Get_me_Lumped(MatrixXd& me)//集中质量矩阵
 {
     auto pMaterial = m_pProperty.lock()->m_pMaterial.lock();
-    auto pSection = m_pProperty.lock()->m_pSection.lock();
+    auto pSectI0n = m_pProperty.lock()->m_pSection.lock();
 
-    double A = pSection->m_Area;
-    double Radius = pSection->m_Radius;
+    double A = pSectI0n->m_Area;
+    double Radius = pSectI0n->m_Radius;
     double Density = pMaterial->m_Density;
     Get_L0();  // 获取原长 L
 
@@ -41,10 +42,10 @@ void ElementCable::Get_me_Lumped(MatrixXd& me)//集中质量矩阵
 void ElementCable::Get_me_Consistent(MatrixXd& me) //一致质量矩阵
 {
     auto pMaterial = m_pProperty.lock()->m_pMaterial.lock();
-    auto pSection = m_pProperty.lock()->m_pSection.lock();
+    auto pSectI0n = m_pProperty.lock()->m_pSection.lock();
 
-    double A = pSection->m_Area;
-    double Radius = pSection->m_Radius;
+    double A = pSectI0n->m_Area;
+    double Radius = pSectI0n->m_Radius;
     double Density = pMaterial->m_Density;
     Get_L0();  //原长
     double Linear_density = A * Density;               //线性密度---单位长度质量

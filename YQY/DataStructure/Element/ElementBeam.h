@@ -11,7 +11,6 @@ public:
      * @brief 构造函数
      */
     ElementBeam();
-
     /**
      * @brief 获取单元每个节点的自由度个数
      * @return 6（平移 X, Y, Z + 转动 RX, RY, RZ）

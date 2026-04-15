@@ -4,6 +4,7 @@
 #include "DataStructure/Section/SectionBase.h"
 #include "DataStructure/Material/Material.h"
 #include "DataStructure/Node/Node.h"
+#include "Utility/CR.h"
 
 /**
  * @brief 单元基类 - 所有单元类型的公共基类

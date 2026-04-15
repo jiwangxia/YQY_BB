@@ -79,7 +79,7 @@ private:
 	 * @param [in] nElement 单元数量
 	 * @return 读取成功返回 true
 	 */
-	bool InputElementBeam_CR2D(QTextStream& flow, const QStringList& list_str, int nElement);
+	bool InputElementBeam_CR3D(QTextStream& flow, const QStringList& list_str, int nElement);
 
 	/**
 	 * @brief 读取梁单元数据

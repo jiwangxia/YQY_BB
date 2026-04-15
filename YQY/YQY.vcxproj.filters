@@ -133,6 +133,9 @@
     <ClCompile Include="Utility\CR.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="DataStructure\Section\SectionRectangle.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Base\Base.h">
@@ -234,6 +237,9 @@
     <ClInclude Include="Utility\CR.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="DataStructure\Section\SectionRectangle.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Text Include="Import\ImportFile\ce.txt" />
@@ -250,5 +256,6 @@
     <None Include="Import\ImportFile\斜杆一端受压.bdf" />
     <None Include="Import\ImportFile\两维梁.bdf" />
     <None Include="packages.config" />
+    <None Include="Import\ImportFile\测试梁.bdf" />
   </ItemGroup>
 </Project>
