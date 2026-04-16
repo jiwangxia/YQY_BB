@@ -136,6 +136,12 @@
     <ClCompile Include="DataStructure\Section\SectionRectangle.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Solver\Dynamic\SolverTSSBN.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Solver\Dynamic\SolverAdaptiveTSSBN.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Base\Base.h">
@@ -238,6 +244,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DataStructure\Section\SectionRectangle.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Solver\Dynamic\SolverTSSBN.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Solver\Dynamic\SolverAdaptiveTSSBN.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

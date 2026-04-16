@@ -19,6 +19,8 @@ namespace SolverNS
     {
         Static,             ///< 静力 Newton-Raphson
         Newmark,            ///< Newmark-β 隐式动力
+        TSSBN,              ///< TSSBN 隐式动力（两阶段单步方法）
+        AdaptiveTSSBN,      ///< 自适应TSSBN 隐式动力（带误差估计和步长控制）
         CentralDifference,  ///< 中心差分 显式动力（未来扩展）
         HHT                 ///< HHT-α 隐式动力（未来扩展）
     };

@@ -91,8 +91,9 @@ void ElementBeam_CR::Get_kl(const VectorXd& pl, const double& L, MatrixXd& _OUT 
     double E = pMaterial->m_Young;
     double G = E / (2. * (1 + pMaterial->m_Poisson));
 
-    double Iy = 0.0, Iz = 0.0, J = 0.0;
-    pSection->Calculate_I(Iy, Iz, J);
+    //double Iy = 0.0, Iz = 0.0, J = 0.0;
+    double Iy = 0.01, Iz = 0.01, J = 0.01;
+    //pSection->Calculate_I(Iy, Iz, J);
     const double Io = Iy + Iz;
 
     double Irr = 0.0;
