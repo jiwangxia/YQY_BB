@@ -179,14 +179,14 @@ void AnalysisStep::Assemble_Matrix()
 
     std::vector<int> DOFs;
     std::vector<double> damping{ 0.0 ,0.0 ,0.0 ,0.0 };
-    
+
     MatrixXd me, ke, ce;
     for (auto& element : m_pData->m_Elements)
     {
         auto pelement = element.second;
         pelement->Get_ke_non(ke);
         pelement->Get_me_Consistent(me);
-        pelement->Assemble(damping,ce);
+        pelement->Assemble(damping, ce);
 
         pelement->GetDOFs(DOFs);
         Assemble(DOFs, me, m11, m21, m22);
@@ -749,7 +749,7 @@ void AnalysisStep::Solve_Dynamic()
     double gamma = 0.5;
     double dt = m_StepSize;
 
-    if (dt <= 0.0) 
+    if (dt <= 0.0)
     {
         qDebug() << "Error: Time step size <= 0";
         return;
@@ -835,7 +835,7 @@ void AnalysisStep::Solve_Dynamic()
             // G.1 尝试 LDLT
             if (m_solverCache.use_ldlt)
             {
-                if (!m_solverCache.pattern_analyzed) 
+                if (!m_solverCache.pattern_analyzed)
                 {
                     m_solverCache.ldlt.analyzePattern(K_eff);
                 }
@@ -845,7 +845,7 @@ void AnalysisStep::Solve_Dynamic()
                 if (m_solverCache.ldlt.info() == Eigen::Success)
                 {
                     dx2 = m_solverCache.ldlt.solve(residual);
-                    if (m_solverCache.ldlt.info() == Eigen::Success) 
+                    if (m_solverCache.ldlt.info() == Eigen::Success)
                     {
                         solved = true;
                         m_solverCache.pattern_analyzed = true; // 标记分析成功，下一次可复用
@@ -863,7 +863,7 @@ void AnalysisStep::Solve_Dynamic()
             // G.2 如果 LDLT 失败或已禁用，尝试 LU
             if (!solved)
             {
-                if (!m_solverCache.pattern_analyzed) 
+                if (!m_solverCache.pattern_analyzed)
                 {
                     m_solverCache.lu.analyzePattern(K_eff);
                     m_solverCache.pattern_analyzed = true;
@@ -963,15 +963,61 @@ void AnalysisStep::ApplyIncrement(const SolverNS::Vec& dx, Phase phase)
         auto pNode = nodePair.second;
         int numDOF = pNode->m_DOF.size();
 
-        for (int dofIdx = 0; dofIdx < numDOF; ++dofIdx)
+        // 对于6自由度节点（梁单元）
+        if (numDOF == 6)
         {
-            int dof = pNode->m_DOF[dofIdx];
-
-            // 只处理自由自由度
-            if (dof >= m_nFixed && dof < m_nFixed + m_nFree)
+            // ========== 平动自由度 (0, 1, 2)
+            for (int dofIdx = 0; dofIdx < 3; ++dofIdx)
             {
-                int idx = dof - m_nFixed;
-                pNode->m_Displacement[dofIdx] += dx[idx];
+                int dof = pNode->m_DOF[dofIdx];
+                if (dof >= m_nFixed && dof < m_nFixed + m_nFree)
+                {
+                    int idx = dof - m_nFixed;
+                    pNode->m_Displacement[dofIdx] += dx[idx];
+                }
+            }
+
+            // ========== 旋转自由度 (3, 4, 5) - 矩阵乘法更新
+            // 1. 提取当前旋转向量
+            Eigen::Vector3d theta_old(pNode->m_Displacement[3], pNode->m_Displacement[4], pNode->m_Displacement[5]);
+
+            // 2. 提取旋转增量
+            Eigen::Vector3d delta_theta = Eigen::Vector3d::Zero();
+            for (int dofIdx = 3; dofIdx < 6; ++dofIdx)
+            {
+                int dof = pNode->m_DOF[dofIdx];
+                if (dof >= m_nFixed && dof < m_nFixed + m_nFree)
+                {
+                    int idx = dof - m_nFixed;
+                    delta_theta(dofIdx - 3) = dx[idx];
+                }
+            }
+
+            // 3. 矩阵乘法更新
+            Eigen::Matrix3d R_old, R_new;
+            Utility::CR::Calculate_RotationMatrix(theta_old, R_old);
+            Utility::CR::Update_NodalRotation(delta_theta, R_old, R_new);
+
+            // 4. 提取新的旋转向量
+            Eigen::Vector3d theta_new;
+            Utility::CR::Extract_RotationVector(R_new, theta_new);
+
+            // 5. 更新节点旋转向量
+            pNode->m_Displacement[3] = theta_new(0);
+            pNode->m_Displacement[4] = theta_new(1);
+            pNode->m_Displacement[5] = theta_new(2);
+        }
+        else
+        {
+            // 其他类型节点（如3自由度节点）- 直接加
+            for (int dofIdx = 0; dofIdx < numDOF; ++dofIdx)
+            {
+                int dof = pNode->m_DOF[dofIdx];
+                if (dof >= m_nFixed && dof < m_nFixed + m_nFree)
+                {
+                    int idx = dof - m_nFixed;
+                    pNode->m_Displacement[dofIdx] += dx[idx];
+                }
             }
         }
     }
