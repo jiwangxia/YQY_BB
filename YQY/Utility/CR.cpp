@@ -182,7 +182,7 @@ namespace Utility
 
             // 2. 矩阵左乘更新姿态 (基于全局坐标系的增量)
             R_new = delta_R * R_old;
-
+            //Orthonormalize_SVD(R_new);
             // (注意：如果你需要覆盖旧的旋转向量，外部调用完这个函数后，
             // 记得调用 Extract_RotationVector(R_new, theta_new) 把向量也更新了)
         }
@@ -466,6 +466,27 @@ namespace Utility
             Eigen::MatrixXd Km3 = E * G.transpose() * a * r.transpose();  // 12x12
 
             result = Km1 - Km2 + Km3;
+        }
+
+        void Orthonormalize_SVD(Eigen::Matrix3d& R)
+        {
+            // 使用SVD方法对旋转矩阵进行正交化，确保其为合法的旋转矩阵
+            // ComputeFullU | ComputeFullV 表示我们需要计算 U 和 V 矩阵
+            Eigen::JacobiSVD<Eigen::Matrix3d> svd(R, Eigen::ComputeFullU | Eigen::ComputeFullV);
+
+            // 重构正交矩阵
+            Eigen::Matrix3d R_ortho = svd.matrixU() * svd.matrixV().transpose();
+
+            // 安全检查：确保行列式为 +1（防止因为数值噪音变成反射矩阵，即 det=-1）
+            if (R_ortho.determinant() < 0)
+            {
+                // 如果变成了镜像，反转最后一列（这种情况在微小漂移中极少发生，但在崩坏时可能出现）
+                Eigen::Matrix3d U = svd.matrixU();
+                U.col(2) *= -1.0;
+                R_ortho = U * svd.matrixV().transpose();
+            }
+
+            R = R_ortho;
         }
     }
 }

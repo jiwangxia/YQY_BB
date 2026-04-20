@@ -113,5 +113,8 @@ namespace Utility
         * @param[out] result  输出的终极全局刚度矩阵 ke (12x12)
         */
         void Assemble_stress_k(double L, const Eigen::VectorXd& fa, const Eigen::MatrixXd& G, const Eigen::MatrixXd& P, const Eigen::Matrix3d& Rr, const Eigen::Vector3d& q1_global, const Eigen::Vector3d& q2_global, const Eigen::Vector3d& r1, Eigen::MatrixXd& _OUT result);
-    }
+    
+        void Orthonormalize_SVD(Eigen::Matrix3d& R);
+
+}
 }

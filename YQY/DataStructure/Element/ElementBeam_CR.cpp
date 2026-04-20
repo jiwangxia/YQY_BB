@@ -91,9 +91,9 @@ void ElementBeam_CR::Get_kl(const VectorXd& pl, const double& L, MatrixXd& _OUT 
     double E = pMaterial->m_Young;
     double G = E / (2. * (1 + pMaterial->m_Poisson));
 
-    //double Iy = 0.0, Iz = 0.0, J = 0.0;
-    double Iy = 0.01, Iz = 0.01, J = 0.01;
-    //pSection->Calculate_I(Iy, Iz, J);
+    double Iy = 0.0, Iz = 0.0, J = 0.0;
+    pSection->Calculate_I(Iy, Iz, J);
+    //double Iy = 0.01, Iz = 0.01, J = 0.01;
     const double Io = Iy + Iz;
 
     double Irr = 0.0;
@@ -115,19 +115,16 @@ void ElementBeam_CR::Get_kl(const VectorXd& pl, const double& L, MatrixXd& _OUT 
     const double t3_41 = 4.0 * t31 - t32;
     const double t3_14 = t31 - 4.0 * t32;
 
-    // 常用多项式项 (弓弦效应耦合项)
     const double poly_y = 2.0 * t21 * t21 - t21 * t22 + 2.0 * t22 * t22;
     const double poly_z = 2.0 * t31 * t31 - t31 * t32 + 2.0 * t32 * t32;
     const double poly_yz = poly_y + poly_z;
 
     const double axial_strain_term = L * poly_yz + 30.0 * u;
 
-    // 提取非线性耦合内核 (这是 fl 和 kl 共享的最复杂的项)
     const double N_nonlin_core = 15.0 * Io * dt1_sq + A * L * axial_strain_term;
 
 
     // 计算局部内力向量 fl (7 x 1)
-
     fl.resize(7);
     fl.setZero();
     const double E_900L = E / (900.0 * L);
@@ -226,17 +223,18 @@ void ElementBeam_CR::ComputeDeformedState(Vector3d& def_p1, Vector3d& def_p2,
     Vector3d ug_p2(pNode1->m_Displacement[0], pNode1->m_Displacement[1], pNode1->m_Displacement[2]);
 
     // 转动位移（旋转向量）
-    Vector3d thetag_1(pNode0->m_Displacement[3], pNode0->m_Displacement[4], pNode0->m_Displacement[5]);
-    Vector3d thetag_2(pNode1->m_Displacement[3], pNode1->m_Displacement[4], pNode1->m_Displacement[5]);
+    //Vector3d thetag_1(pNode0->m_Displacement[3], pNode0->m_Displacement[4], pNode0->m_Displacement[5]);
+    //Vector3d thetag_2(pNode1->m_Displacement[3], pNode1->m_Displacement[4], pNode1->m_Displacement[5]);
 
     // 变形后坐标
     def_p1 = init_p1 + ug_p1;
     def_p2 = init_p2 + ug_p2;
 
     // 全局旋转矩阵
-    Utility::CR::Calculate_RotationMatrix(thetag_1, Rg_1);
-    Utility::CR::Calculate_RotationMatrix(thetag_2, Rg_2);
-
+    //Utility::CR::Calculate_RotationMatrix(thetag_1, Rg_1);
+    //Utility::CR::Calculate_RotationMatrix(thetag_2, Rg_2);
+    Rg_1 = pNode0->m_Rg_Trial;
+    Rg_2 = pNode1->m_Rg_Trial;
     // 截面方向向量
     q0.normalize(); // 确保初始截面方向向量是单位向量
     Vector3d beam_axis = init_p2 - init_p1;

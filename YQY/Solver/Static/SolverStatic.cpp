@@ -69,8 +69,8 @@ namespace SolverNS
                     // 如果初始残差已经很小，直接收敛
                     if (norm_R0 < 1e-12)
                     {
-                        qDebug().noquote() << QStringLiteral("  增量步 %1: 初始残差已满足要求 (|R0|=%2)")
-                            .arg(inc).arg(norm_R0, 0, 'e', 2);
+                        //qDebug().noquote() << QStringLiteral("  增量步 %1: 初始残差已满足要求 (|R0|=%2)")
+                        //    .arg(inc).arg(norm_R0, 0, 'e', 2);
                         break;
                     }
                 }
