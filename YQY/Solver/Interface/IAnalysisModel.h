@@ -27,13 +27,6 @@ namespace SolverNS
     public:
         virtual ~IAnalysisModel() = default;
 
-        /**
-         * @brief 状态更新阶段
-         * Trial: 迭代中的试探更新
-         * Commit: 步末确认更新
-         */
-        enum class Phase { Trial, Commit };
-
         // ============ 基本信息 ============
         /** @brief 获取自由自由度数量 */
         virtual int GetFreeDofs() const = 0;
@@ -47,7 +40,7 @@ namespace SolverNS
          * @param[in] dx 位移增量向量 (大小为 FreeDofs)
          * @param[in] phase Trial=迭代中试探, Commit=步末确认
          */
-        virtual void ApplyIncrement(const Vec& dx, Phase phase) = 0;
+        virtual void ApplyIncrement(const Vec& dx) = 0;
 
         /**
          * @brief 设置当前试探的速度和加速度（动力学求解器使用）

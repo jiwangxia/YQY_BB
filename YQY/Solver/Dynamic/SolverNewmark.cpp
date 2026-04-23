@@ -128,7 +128,7 @@ namespace SolverNS
                 m_totalDx += m_dx;
 
                 // 10. 更新模型的位移状态 (试探)
-                model.ApplyIncrement(m_dx, IAnalysisModel::Phase::Trial);
+                model.ApplyIncrement(m_dx);
             }
 
             // 步末计算最终的 V 和 A
@@ -140,7 +140,7 @@ namespace SolverNS
 
             // 提交状态
             Vec zero = Vec::Zero(nDofs);
-            model.ApplyIncrement(zero, IAnalysisModel::Phase::Commit);
+            model.ApplyIncrement(zero);
 
             // 更新上一时刻状态为下一步做准备
             m_Un += m_totalDx;  // 注意：实际位移已在模型中更新

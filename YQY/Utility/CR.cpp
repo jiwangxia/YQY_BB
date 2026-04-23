@@ -19,26 +19,27 @@ namespace Utility
         // ========================================================================
         // 2. 计算 Ts 矩阵
         // ========================================================================
-        void Calculate_Ts(const Eigen::Vector3d& vartheta, Eigen::Matrix3d& _OUT  result)
+        void Calculate_Ts(const Eigen::Vector3d& vartheta, Eigen::Matrix3d& _OUT result)
         {
             double theta = vartheta.norm();
-
+            Eigen::Vector3d n;
             double c1, c2;
 
             // 泰勒展开防止极小角度下的除零奇异性
-            if (theta < 1e-3)
+            if (theta < 1e-8)
             {
+                n = Eigen::Vector3d(1, 0, 0);
                 double t2 = theta * theta;
                 double t4 = t2 * t2;
 
                 c1 = 1.0 - t2 / 6.0 + t4 / 120.0;
-                c2 = 0.5 - t2 / 24.0 + t4 / 720.0;
+                c2 = 0.5 * theta - t2 * theta / 24.0 + t4 * theta / 720.0;
             }
             else
             {
-                double half_theta = theta / 2.0;
+                n = vartheta / theta;
                 c1 = std::sin(theta) / theta;
-                c2 = 0.5 * pow(sin(half_theta) / half_theta, 2);
+                c2 = 2.0 * pow(sin(theta / 2.0), 2) / theta;
             }
 
             // 调用刚才写的反对称矩阵函数
@@ -46,9 +47,11 @@ namespace Utility
             SkewSymmetric(vartheta, skew_v);
 
             // 组装最终结果存入 result
-            result = Eigen::Matrix3d::Identity()
-                + c1 * skew_v
-                + c2 * (vartheta * vartheta.transpose());
+            Eigen::Matrix3d nnT = n * n.transpose();
+            Eigen::Matrix3d n_skew;
+            Calculate_RotationMatrix(n, n_skew);
+
+            result = nnT + c1 * (Eigen::Matrix3d::Identity() - nnT) + c2 * n_skew;
         }
 
         // ========================================================================
@@ -57,25 +60,23 @@ namespace Utility
         void Calculate_Ts_Inv(const Eigen::Vector3d& vartheta, Eigen::Matrix3d& _OUT  result)
         {
             double theta = vartheta.norm();
-
-            double c1, eta;
+            Eigen::Vector3d n;
+            double c;
 
             // 泰勒展开防止极小角度下的除零奇异性
-            if (theta < 1e-3)
+            if (theta < 1e-8)
             {
+                n = Eigen::Vector3d(1, 0, 0);
                 double t2 = theta * theta;
                 double t4 = t2 * t2;
 
-                c1 = 1.0 - t2 / 12.0 - t4 / 720.0;
-                eta = 1.0 / 12.0 + t2 / 720.0 + t4 / 30240.0;
+                c = 1.0 - t2 / 12.0 - t4 / 720.0;
             }
             else
             {
-                double half_theta = 0.5 * theta;
-                double cot_half = 1.0 / std::tan(half_theta);
-
-                c1 = half_theta * cot_half;
-                eta = (1.0 - c1) / (theta * theta);
+                n = vartheta / theta;
+                double half_angle = theta / 2.0;
+                c = (half_angle) / tan(half_angle);
             }
 
             // 调用刚才写的反对称矩阵函数
@@ -83,9 +84,7 @@ namespace Utility
             SkewSymmetric(vartheta, skew_v);
 
             // 组装最终结果存入 result
-            result = c1 * Eigen::Matrix3d::Identity()
-                - 0.5 * skew_v
-                + eta * (vartheta * vartheta.transpose());
+            result = c * Eigen::Matrix3d::Identity() - 0.5 * skew_v + (1 - c) * (n * n.transpose());
         }
 
         // ========================================================================
@@ -98,7 +97,7 @@ namespace Utility
             Eigen::Matrix3d skew_v;
             SkewSymmetric(vartheta, skew_v);
 
-            if (theta < 1e-4)
+            if (theta < 1e-8)
             {
                 // 泰勒展开防奇异
                 double t2 = theta * theta;
@@ -125,7 +124,19 @@ namespace Utility
             Eigen::Vector3d r1 = d.normalized();
 
             // 2. 局部 z 轴 (r3)：垂直于 r1 和 q 构成的平面
-            Eigen::Vector3d r3 = r1.cross(q).normalized();
+            Eigen::Vector3d r3_temp = r1.cross(q);
+            double r3_norm = r3_temp.norm();
+
+            // 数值保护：如果 r1 和 q 接近平行，叉乘结果接近零
+            if (r3_norm < 1e-10)
+            {
+                // 选择一个与 r1 不平行的向量
+                Eigen::Vector3d arbitrary = (std::abs(r1(0)) < 0.9) ? Eigen::Vector3d(1, 0, 0) : Eigen::Vector3d(0, 1, 0);
+                r3_temp = r1.cross(arbitrary);
+                r3_norm = r3_temp.norm();
+            }
+
+            Eigen::Vector3d r3 = r3_temp / r3_norm;
 
             // 3. 局部 y 轴 (r2)：利用右手定则闭合
             // 两个正交单位向量的叉乘必然是单位向量，无需再次 normalize()
@@ -146,9 +157,7 @@ namespace Utility
             double trace = R.trace();
             double cos_theta = 0.5 * (trace - 1.0);
 
-            // 数值保护：防止舍入误差导致 cos_theta 超出 [-1, 1] 范围触发 acos 错误 (NaN)
-            if (cos_theta > 1.0) cos_theta = 1.0;
-            if (cos_theta < -1.0) cos_theta = -1.0;
+            cos_theta = std::min(1.0, std::max(-1.0, cos_theta));
 
             double theta = std::acos(cos_theta);
 
@@ -156,7 +165,7 @@ namespace Utility
             Eigen::Matrix3d skew_part = R - R.transpose();
             Eigen::Vector3d spin_vec(skew_part(2, 1), skew_part(0, 2), skew_part(1, 0));
 
-            if (theta < 1e-4)
+            if (theta < 1e-8)
             {
                 // 当转角极小，sin(theta) 近似为 theta。
                 double theta2 = theta * theta;
@@ -242,46 +251,39 @@ namespace Utility
         void Calculate_Khi(const Eigen::Vector3d& v, const Eigen::Vector3d& m, Eigen::Matrix3d& _OUT result)
         {
             double theta = v.norm();
-            double eta, c2, c3;
+            double c1, c2, c3;
+
+            double t2 = theta * theta;
+            double t4 = t2 * t2;
+
 
             // 同样必须使用泰勒展开防止极小角度下的除零奇异性
-            if (theta < 0.001)
+            if (theta < 1e-8)
             {
-                double t2 = theta * theta;
-                double t4 = t2 * t2;
-
-                // eta: 1/12 + t2/720 + t4/30240
-                eta = 1.0 / 12.0 + t2 / 720.0 + t4 / 30240.0;
-
-                // c2 的三阶泰勒展开
-                c2 = -1.0 / 6.0 - t2 / 180.0 - t4 / 5040.0;
-
-                // c3 的三阶泰勒展开
+                c1 = -1.0 / 6.0 - t2 / 180.0 - t4 / 5040.0;
+                c2 = 1.0 / 12.0 + t2 / 720.0 + t4 / 30240.0;
                 c3 = 1.0 / 360.0 + t2 / 7560.0 + t4 / 201600.0;
             }
             else
             {
-                // 精确公式 (大角度时无相消危险)
-                double half_theta = 0.5 * theta;
-                double cot_half = 1.0 / std::tan(half_theta);
-                double c1 = half_theta * cot_half;
+                double sin_angle = sin(theta);
+                double cos_angle = cos(theta);
+                double sin_half = sin(theta * 0.5);
+                double sin2_half = sin_half * sin_half;
 
-                eta = (1.0 - c1) / (theta * theta);
-                c2 = (0.5 * cot_half - 0.25 * theta / (std::sin(half_theta) * std::sin(half_theta))) / theta;
-                c3 = -(c2 + 2.0 * eta) / (theta * theta);
+                c1 = (sin_angle - theta) / (4.0 * theta * sin2_half);
+                c2 = (2.0 * sin_angle - theta * (1.0 + cos_angle)) / (2.0 * t2* sin_angle);
+                c3 = (theta * (theta + sin_angle) - 8.0 * sin2_half) / (4.0 * t4 * sin2_half);
             }
 
             // 内力弯矩的反对称矩阵
             Eigen::Matrix3d skew_m;
             SkewSymmetric(m, skew_m);
-
-            double v_dot_m = v.dot(m);
-
-            // 组装极度复杂的解析微积分解析解 (注意这是非对称阵)
-            result = c2 * m * v.transpose()
-                - 0.5 * skew_m
-                + eta * (v * m.transpose() + v_dot_m * Eigen::Matrix3d::Identity())
-                + c3 * v_dot_m * (v * v.transpose());
+            Eigen::RowVector3d vT = v.transpose();
+            result = c1 * m * vT
+                + c3 * vT * m * v * vT
+                + c2 * (vT * m * Eigen::Matrix3d::Identity() + v * m.transpose())
+                - 0.5 * skew_m;
         }
 
         // ========================================================================

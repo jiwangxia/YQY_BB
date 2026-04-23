@@ -14,5 +14,7 @@ void SectionRectangle::Calculate_I(double& Iy, double& Iz,double& J)
     double a = std::max(m_Width, m_Height);
     double b = std::min(m_Width, m_Height);
     double ratio = b / a;
-    J = a * b * b * b * (1.0 / 3.0 - 0.21 * ratio * (1.0 - std::pow(ratio, 4) / 12.0));
+    J = Iy + Iz;
+    Io = J;
+    Irr = (9 * pow(m_Width, 5) * m_Height + 9 * pow(m_Height, 5) * m_Width + 10 * pow(m_Height, 3) * pow(m_Width, 3)) / 720.0;
 }

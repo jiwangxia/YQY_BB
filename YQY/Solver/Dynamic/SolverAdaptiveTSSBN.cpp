@@ -232,7 +232,7 @@ namespace SolverNS
                     Vec totalDx = u_order2 - m_Un;
 
                     // 更新模型状态
-                    model.ApplyIncrement(totalDx, IAnalysisModel::Phase::Trial);
+                    model.ApplyIncrement(totalDx);
                     model.SetTrialKinematics(v_order2, m_An);
 
                     // 计算最终加速度
@@ -250,7 +250,7 @@ namespace SolverNS
 
                     // 提交状态
                     Vec zero = Vec::Zero(nDofs);
-                    model.ApplyIncrement(zero, IAnalysisModel::Phase::Commit);
+                    model.ApplyIncrement(zero);
 
                     // 更新状态
                     m_Un = u_order2;
@@ -326,7 +326,7 @@ namespace SolverNS
 
             m_totalDx_c1 += m_dx;
             m_Uc1 += m_dx;
-            model.ApplyIncrement(m_dx, IAnalysisModel::Phase::Trial);
+            model.ApplyIncrement(m_dx);
         }
 
         return true;
@@ -375,7 +375,7 @@ namespace SolverNS
 
             m_totalDx_c2 += m_dx;
             m_Uc2 += m_dx;
-            model.ApplyIncrement(m_dx, IAnalysisModel::Phase::Trial);
+            model.ApplyIncrement(m_dx);
         }
 
         return true;
@@ -428,7 +428,7 @@ namespace SolverNS
 
             m_totalDx_eld += m_dx;
             m_Ueld += m_dx;
-            model.ApplyIncrement(m_dx, IAnalysisModel::Phase::Trial);
+            model.ApplyIncrement(m_dx);
         }
 
         return true;

@@ -83,7 +83,7 @@ public:
     // ============ IAnalysisModel 接口实现 ============
     int GetFreeDofs() const override { return m_nFree; }
     int GetFixedDofs() const override { return m_nFixed; }
-    void ApplyIncrement(const SolverNS::Vec& dx, Phase phase) override;
+    void ApplyIncrement(const SolverNS::Vec& dx) override;
     void SetTrialKinematics(const SolverNS::Vec& v, const SolverNS::Vec& a) override;
     void GetState(SolverNS::Vec& u, SolverNS::Vec& v, SolverNS::Vec& a) const override;
     void AssembleMatrices(SolverNS::SpMat& K, SolverNS::SpMat* M = nullptr, SolverNS::SpMat* C = nullptr) override;
