@@ -682,7 +682,7 @@ void AnalysisStep::Solve_Static()
         {
             // 1. 组装刚度矩阵 (基于当前变形状态)
             AssembleKs_Static();
-            //std::cout << "\nK22:\n" << MatrixXd(m_K22);
+            std::cout << "\nK22:\n" << MatrixXd(m_K22);
 
             // 2. 清零节点内力，然后计算单元内力并累加到节点
             for (auto& nodePair : m_pData->m_Nodes)
@@ -957,70 +957,6 @@ void AnalysisStep::Get_CurrentStepState(VectorXd& U, VectorXd& V, VectorXd& A) c
 
 void AnalysisStep::ApplyIncrement(const SolverNS::Vec& dx, Phase phase)
 {
-    //// 将位移增量应用到节点
-    //for (auto& nodePair : m_pData->m_Nodes)
-    //{
-    //    auto pNode = nodePair.second;
-    //    int numDOF = pNode->m_DOF.size();
-
-    //    // 对于6自由度节点（梁单元）
-    //    if (numDOF == 6)
-    //    {
-    //        // ========== 平动自由度 (0, 1, 2)
-    //        for (int dofIdx = 0; dofIdx < 3; ++dofIdx)
-    //        {
-    //            int dof = pNode->m_DOF[dofIdx];
-    //            if (dof >= m_nFixed && dof < m_nFixed + m_nFree)
-    //            {
-    //                int idx = dof - m_nFixed;
-    //                pNode->m_Displacement[dofIdx] += dx[idx];
-    //            }
-    //        }
-
-    //        // ========== 旋转自由度 (3, 4, 5) - 矩阵乘法更新
-    //        // 1. 提取当前旋转向量
-    //        Eigen::Vector3d theta_old(pNode->m_Displacement[3], pNode->m_Displacement[4], pNode->m_Displacement[5]);
-
-    //        // 2. 提取旋转增量
-    //        Eigen::Vector3d delta_theta = Eigen::Vector3d::Zero();
-    //        for (int dofIdx = 3; dofIdx < 6; ++dofIdx)
-    //        {
-    //            int dof = pNode->m_DOF[dofIdx];
-    //            if (dof >= m_nFixed && dof < m_nFixed + m_nFree)
-    //            {
-    //                int idx = dof - m_nFixed;
-    //                delta_theta(dofIdx - 3) = dx[idx];
-    //            }
-    //        }
-
-    //        // 3. 矩阵乘法更新
-    //        Eigen::Matrix3d R_old, R_new;
-    //        Utility::CR::Calculate_RotationMatrix(theta_old, R_old);
-    //        Utility::CR::Update_NodalRotation(delta_theta, R_old, R_new);
-
-    //        // 4. 提取新的旋转向量
-    //        Eigen::Vector3d theta_new;
-    //        Utility::CR::Extract_RotationVector(R_new, theta_new);
-
-    //        // 5. 更新节点旋转向量
-    //        pNode->m_Displacement[3] = theta_new(0);
-    //        pNode->m_Displacement[4] = theta_new(1);
-    //        pNode->m_Displacement[5] = theta_new(2);
-    //    }
-    //    else
-    //    {
-    //        // 其他类型节点（如3自由度节点）- 直接加
-    //        for (int dofIdx = 0; dofIdx < numDOF; ++dofIdx)
-    //        {
-    //            int dof = pNode->m_DOF[dofIdx];
-    //            if (dof >= m_nFixed && dof < m_nFixed + m_nFree)
-    //            {
-    //                int idx = dof - m_nFixed;
-    //                pNode->m_Displacement[dofIdx] += dx[idx];
-    //            }
-    //        }
-    //    }
-    //}
     // 将位移增量应用到节点
     for (auto& nodePair : m_pData->m_Nodes)
     {

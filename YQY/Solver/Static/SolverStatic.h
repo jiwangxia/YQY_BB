@@ -28,7 +28,7 @@ namespace SolverNS
             double tol = 1e-5;        //  收敛容差（残差范数）
             double tol_R = 1e-3;      //  相对残差容差（力平衡判据）
             double tol_dx = 1e-5;     //  位移增量容差（绝对值）
-            bool use_relative = true; //  是否使用相对残差判据
+            bool use_relative = false; //  是否使用相对残差判据
             bool verbose = false;     //  是否输出详细迭代信息
         };
 

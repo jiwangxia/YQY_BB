@@ -8,6 +8,7 @@ public:
     Vector3d q0;    // 单元参考向量,截面向量
 
     int Get_NodeDOF() const override { return 6; };
+    Eigen::Matrix3d R0 = Matrix3d::Identity();
 
     void Get_ke(MatrixXd& ke);
     void Get_ke_non(MatrixXd& ke);
@@ -28,8 +29,7 @@ private:
 
     // 计算局部变形向量 pl (7x1)
     VectorXd ComputeLocalDeformation(const Vector3d& def_p1, const Vector3d& def_p2,
-        const Matrix3d& Rr, const Matrix3d& Rg_1, const Matrix3d& Rg_2,
-        double L0);
+        const Matrix3d& Rr, const Matrix3d& Rg_1, const Matrix3d& Rg_2);
 
     // 计算局部材料刚度与内力 (kl, fl, fa, ka)
     void ComputeMaterialStiffness(const VectorXd& pl, const double& L,
@@ -41,6 +41,6 @@ private:
         const Vector3d& q1, const Vector3d& q2,
         const Matrix3d& Rr, const MatrixXd& ka, const VectorXd& fa,
         MatrixXd& K_material, VectorXd& fp,
-        MatrixXd& P, MatrixXd& G, MatrixXd& E);
+        MatrixXd& P, MatrixXd& G);
 }; 
 

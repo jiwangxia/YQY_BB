@@ -11,6 +11,8 @@ public:
 
     double m_Area = 0.0;  ///< 截面面积
     double m_Radius = 0.0;  ///< 半径
+    double Io = 0.0;
+    double Irr = 0.0;
     /**
      * @brief 计算截面面积（纯虚函数）
      */

@@ -43,7 +43,7 @@ namespace SolverNS
                 else printf(" ");
             }
             printf("] %d%% (%d/%d) t=%.4fs",
-                   int(factor * 100.0), inc, m_param.numIncrements, currentTime);
+                int(factor * 100.0), inc, m_param.numIncrements, currentTime);
             fflush(stdout);  // 强制刷新输出
 
             // 初始残差范数（用于相对判据）
@@ -54,10 +54,10 @@ namespace SolverNS
             {
                 // 1. 组装刚度矩阵 (只需要 K)
                 model.AssembleMatrices(m_K, nullptr, nullptr);
-
+                //std::cout << "\nK22:\n" << Eigen::MatrixXd(m_K);
                 // 2. 计算残差: R = F_ext - F_int
                 model.ComputeResidual(currentTime, factor, m_R);
-
+                //std::cout << "\nR:\n" << Eigen::VectorXd(m_R).transpose() << std::endl;
                 // 3. 收敛检查
                 double norm_R = m_R.norm();
 
@@ -110,7 +110,7 @@ namespace SolverNS
                     qDebug().noquote() << QStringLiteral("错误: 线性求解失败");
                     return false;
                 }
-
+                //std::cout << "\nx2 " << m_dx.transpose() << std::endl;
                 // 6. 更新试探状态
                 model.ApplyIncrement(m_dx, IAnalysisModel::Phase::Trial);
 
