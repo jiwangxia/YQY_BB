@@ -15,18 +15,12 @@ namespace ConductorLib
     {
     public:
         double L, h, ArcLength, lx, ly, gamma, Minstress;
-        double x1, y1; // 起点坐标
-        double a;//应力比容重
+        double x1, y1, z1; // 起点坐标
+        double b;//应力比容重
         double X0;//最低点位置（水平距离起点的距离）
         double C;//悬链线公式的 常数项
 
-        /**
-        * @param Point1 起点坐标 [x, y, z]
-        * @param Point2 终点坐标 [x, y, z]
-        * @param gama   线材容重
-        * @param stress 线材最低点应力(水平应力)
-        */
-        CatenaryModel(const double Point1[3], const double Point2[3], const double gama, const double stress) :x1(Point1[0]), y1(Point1[1]), gamma(gama), Minstress(stress)
+        CatenaryModel(const double Point1[3], const double Point2[3], const double gama, const double stress) :x1(Point1[0]), y1(Point1[1]), z1(Point1[2]), gamma(gama), Minstress(stress)
         {
             double dx = Point2[0] - Point1[0], dy = Point2[1] - Point1[1], dz = Point2[2] - Point1[2];
             h = dz;
@@ -41,26 +35,21 @@ namespace ConductorLib
                 ly = dy / L;
             }
 
-            a = stress / gama;
-            double hsinhLa = h / (2 * a * std::sinh(L / 2.0 / a));
-            X0 = L / 2.0 - a * std::asinh(hsinhLa);
-            ArcLength = a * (std::sinh((L - X0) / a) + std::sinh(X0 / a));
-            C = Point1[2] - a * cosh((Point1[0] - X0) / a);
+            b = stress / gama;
+            double c = sinh(L / 2 / b);
+            X0 = L / 2 - b * asinh(h / (2 * b * c));
+            ArcLength = b * (sinh((L - X0) / b) + sinh(X0 / b));
+
+            //C = Point1[2] - a * cosh((Point1[0] - X0) / a);
         }
 
-        /**
-        * @param s1         左侧耐张串长度 (扣除长度)
-        * @param s2         右侧耐张串长度 (扣除长度)
-        * @param nPT        分段数
-        * @param OutNode    输出节点集合  （不包括挂点）
-        * @param NodeStress 输出各点全应力（不包括挂点）
-        */
-        bool GetPoints(double s1, double s2, int nPT, std::vector<RawNode>& _OUT OutNode, std::vector<double>& _OUT NodeStress)
+        bool GetPoints(double s1, double s2, int nPT, std::vector<RawNode>& OutNode, std::vector<double>& NodeStress)
         {
             double eps = 1e-4;
             s1 = std::max(s1, eps);
             s2 = std::max(s2, eps);
-            double sinhXa = std::sinh(X0 / a);
+            double sinhXa = std::sinh(X0 / b);
+            double coshXa = std::cosh(X0 / b);
 
             double effectiveLength = ArcLength - s1 - s2;
             if (effectiveLength < 0)
@@ -79,11 +68,12 @@ namespace ConductorLib
             for (int i = 0; i < nPT + 1; ++i)
             {
                 double si = s1 + i * ds;  //用当前弧长反推水平X
-                double X = X0 + a * std::asinh(si / a - sinhXa);
-                double Z = a * cosh((X - X0) / a) + C;
+                double xi = X0 + b * std::asinh(si / b - sinhXa);
+                double cx = std::cosh((xi - X0) / b);
+                OutNode[i] = { x1 + xi * lx,y1 + xi * ly,z1 + b * (cx - coshXa) };
 
-                OutNode[i] = { x1 + X * lx,y1 + X * ly,Z };
-                NodeStress[i] = Minstress * std::cosh((X - X0) / a);
+                NodeStress[i] = Minstress * cx;
+                //std::cout << "Node[" << i << "]: (" << OutNode[i].x << ", " << OutNode[i].y << ", " << OutNode[i].z << ")" << std::endl;
             }
             return true;
         }

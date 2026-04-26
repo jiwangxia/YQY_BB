@@ -36,15 +36,14 @@ void ElementBeam_CR::Get_ke_non(MatrixXd& ke)
     VectorXd fg;
     ComputeGlobalProjection(def_p1, def_p2, q1, q2, Rr, ka, fa, K_material, fg, P, G);
     m_inforce = fg;
-    //std::cout << VectorXd(fg).transpose() << std::endl<< std::endl;
+
     // ---- 应力刚度矩阵（几何刚度） ----
     MatrixXd K_sigma;
     Utility::CR::Assemble_stress_k(L, fa, G, P, Rr, q1, q2, r1, K_sigma);
 
     // ---- 总刚度矩阵 ----
     ke = K_material + K_sigma;
-    //std::cout << "ke " << MatrixXd(ke) << std::endl << std::endl;
-    //ke = 0.5 * (ke + ke.transpose());
+
 }
 
 void ElementBeam_CR::Get_me_Lumped(MatrixXd& me)//集中质量矩阵
@@ -276,17 +275,10 @@ void ElementBeam_CR::ComputeDeformedState(Vector3d& def_p1, Vector3d& def_p2,
     Vector3d ug_p1(pNode0->m_Displacement[0], pNode0->m_Displacement[1], pNode0->m_Displacement[2]);
     Vector3d ug_p2(pNode1->m_Displacement[0], pNode1->m_Displacement[1], pNode1->m_Displacement[2]);
 
-    // 转动位移（旋转向量）
-    //Vector3d thetag_1(pNode0->m_Displacement[3], pNode0->m_Displacement[4], pNode0->m_Displacement[5]);
-    //Vector3d thetag_2(pNode1->m_Displacement[3], pNode1->m_Displacement[4], pNode1->m_Displacement[5]);
-
     // 变形后坐标
     def_p1 = init_p1 + ug_p1;
     def_p2 = init_p2 + ug_p2;
 
-    // 全局旋转矩阵
-    //Utility::CR::Calculate_RotationMatrix(thetag_1, Rg_1);
-    //Utility::CR::Calculate_RotationMatrix(thetag_2, Rg_2);
     Rg_1 = pNode0->m_Rg_Trial;
     Rg_2 = pNode1->m_Rg_Trial;
     // 截面方向向量

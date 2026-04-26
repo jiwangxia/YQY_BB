@@ -17,7 +17,7 @@ int main(int argc, char* argv[])
 
     Input_Model importer;
 
-    QString BaseName = "测试梁弯曲1";
+    QString BaseName = "测试梁轴拉";
     QString InputPath = QString("Import/ImportFile/%1.bdf").arg(BaseName);
     QString OutputPath = QString("Export/ExportFile/%1_TEP.bdf").arg(BaseName);
 
@@ -36,8 +36,8 @@ int main(int argc, char* argv[])
         {
             nodeIds.push_back(nodePair.first);
         }
-        std::vector<DataType> types = { DataType::U1, DataType::U2, DataType::U3 , DataType::UR1 ,DataType::UR2,DataType::UR3 };
-        //std::vector<DataType> types = { DataType::U1, DataType::U2, DataType::U3, DataType::F1, DataType::F2, DataType::F3 };
+        std::vector<DataType> types = { DataType::U1, DataType::U2, DataType::U3};
+        //std::vector<DataType> types = { DataType::U1, DataType::U2, DataType::U3, DataType::F1, DataType::F2, DataType::F3 }; , DataType::UR1 ,DataType::UR2,DataType::UR3 
 
         pStructure->GetOutputter().ExportNodes(OutputPath, nodeIds, types);
     }
