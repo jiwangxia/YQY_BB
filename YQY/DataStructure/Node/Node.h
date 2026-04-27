@@ -18,7 +18,6 @@ public:
 
     void SetNumDOFs(int num_dofs);
 
-    Eigen::Matrix3d m_Rg_Commit = Eigen::Matrix3d::Identity(); // 已收敛的绝对姿态
-    Eigen::Matrix3d m_Rg_Trial = Eigen::Matrix3d::Identity(); // 迭代试探中的绝对姿态
+    Eigen::Matrix3d m_Rg = Eigen::Matrix3d::Identity();
 };
 

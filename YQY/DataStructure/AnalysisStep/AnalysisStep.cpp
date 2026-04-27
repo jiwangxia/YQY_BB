@@ -241,10 +241,10 @@ void AnalysisStep::Assemble_AllLoads(VectorXd& F1, VectorXd& F2, double& Factor)
     F1.setZero();
     F2.resize(m_nFree);
     F2.setZero();
+    double currentScale = 0.0;
     for (auto& Load : m_pData->m_Load)
     {
         auto pLoadBase = Load.second;
-        double currentScale = 0.0;
 
         if (pLoadBase->m_StepId < this->m_Id)
         {
@@ -271,7 +271,6 @@ void AnalysisStep::Assemble_AllLoads(VectorXd& F1, VectorXd& F2, double& Factor)
             if (!pForceNode) continue;
 
             Assemble_ForceNode(pForceNode.get(), F1, F2, m_Time);
-            F2 *= currentScale;
             break;
         }
         case EnumKeyword::LoadType::FORCE_ELEMENT:
@@ -281,7 +280,6 @@ void AnalysisStep::Assemble_AllLoads(VectorXd& F1, VectorXd& F2, double& Factor)
             if (!pForceElement) continue;
 
             Assemble_ForceElement(pForceElement.get(), F1, F2, m_Time);
-            F2 *= currentScale;
             break;
         }
         case EnumKeyword::LoadType::FORCE_GRAVITY:
@@ -291,7 +289,6 @@ void AnalysisStep::Assemble_AllLoads(VectorXd& F1, VectorXd& F2, double& Factor)
             if (!pForceGravity) continue;
 
             Assemble_ForceGravity(pForceGravity.get(), F1, F2, m_Time);
-            F2 *= currentScale;
             break;
         }
         case EnumKeyword::LoadType::FORCE_WIND:
@@ -301,13 +298,13 @@ void AnalysisStep::Assemble_AllLoads(VectorXd& F1, VectorXd& F2, double& Factor)
             if (!pForceWind) continue;
 
             Assemble_ForceWind(pForceWind.get(), F1, F2, m_Time);
-            F2 *= currentScale;
             break;
         }
         default:
             break;
         }
     }
+    F2 *= currentScale;
     //std::cout << "F2:\n" << VectorXd(F2);
 }
 
@@ -957,70 +954,6 @@ void AnalysisStep::Get_CurrentStepState(VectorXd& U, VectorXd& V, VectorXd& A) c
 
 void AnalysisStep::ApplyIncrement(const SolverNS::Vec& dx, Phase phase)
 {
-    //// 将位移增量应用到节点
-    //for (auto& nodePair : m_pData->m_Nodes)
-    //{
-    //    auto pNode = nodePair.second;
-    //    int numDOF = pNode->m_DOF.size();
-
-    //    // 对于6自由度节点（梁单元）
-    //    if (numDOF == 6)
-    //    {
-    //        // ========== 平动自由度 (0, 1, 2)
-    //        for (int dofIdx = 0; dofIdx < 3; ++dofIdx)
-    //        {
-    //            int dof = pNode->m_DOF[dofIdx];
-    //            if (dof >= m_nFixed && dof < m_nFixed + m_nFree)
-    //            {
-    //                int idx = dof - m_nFixed;
-    //                pNode->m_Displacement[dofIdx] += dx[idx];
-    //            }
-    //        }
-
-    //        // ========== 旋转自由度 (3, 4, 5) - 矩阵乘法更新
-    //        // 1. 提取当前旋转向量
-    //        Eigen::Vector3d theta_old(pNode->m_Displacement[3], pNode->m_Displacement[4], pNode->m_Displacement[5]);
-
-    //        // 2. 提取旋转增量
-    //        Eigen::Vector3d delta_theta = Eigen::Vector3d::Zero();
-    //        for (int dofIdx = 3; dofIdx < 6; ++dofIdx)
-    //        {
-    //            int dof = pNode->m_DOF[dofIdx];
-    //            if (dof >= m_nFixed && dof < m_nFixed + m_nFree)
-    //            {
-    //                int idx = dof - m_nFixed;
-    //                delta_theta(dofIdx - 3) = dx[idx];
-    //            }
-    //        }
-
-    //        // 3. 矩阵乘法更新
-    //        Eigen::Matrix3d R_old, R_new;
-    //        Utility::CR::Calculate_RotationMatrix(theta_old, R_old);
-    //        Utility::CR::Update_NodalRotation(delta_theta, R_old, R_new);
-
-    //        // 4. 提取新的旋转向量
-    //        Eigen::Vector3d theta_new;
-    //        Utility::CR::Extract_RotationVector(R_new, theta_new);
-
-    //        // 5. 更新节点旋转向量
-    //        pNode->m_Displacement[3] = theta_new(0);
-    //        pNode->m_Displacement[4] = theta_new(1);
-    //        pNode->m_Displacement[5] = theta_new(2);
-    //    }
-    //    else
-    //    {
-    //        // 其他类型节点（如3自由度节点）- 直接加
-    //        for (int dofIdx = 0; dofIdx < numDOF; ++dofIdx)
-    //        {
-    //            int dof = pNode->m_DOF[dofIdx];
-    //            if (dof >= m_nFixed && dof < m_nFixed + m_nFree)
-    //            {
-    //                int idx = dof - m_nFixed;
-    //                pNode->m_Displacement[dofIdx] += dx[idx];
-    //            }
-    //        }
-    //    }
-    //}
     // 将位移增量应用到节点
     for (auto& nodePair : m_pData->m_Nodes)
     {
@@ -1029,64 +962,51 @@ void AnalysisStep::ApplyIncrement(const SolverNS::Vec& dx, Phase phase)
 
         if (numDOF == 6) // 针对 6 自由度空间节点
         {
-            if (phase == Phase::Trial)
+            for (int dofIdx = 0; dofIdx < 3; ++dofIdx)
             {
-                // ========== 1. 平动自由度 (0, 1, 2) —— 纯线性相加
-                for (int dofIdx = 0; dofIdx < 3; ++dofIdx)
+                int dof = pNode->m_DOF[dofIdx];
+                if (dof >= m_nFixed && dof < m_nFixed + m_nFree)
                 {
-                    int dof = pNode->m_DOF[dofIdx];
-                    if (dof >= m_nFixed && dof < m_nFixed + m_nFree)
-                    {
-                        int idx = dof - m_nFixed;
-                        pNode->m_Displacement[dofIdx] += dx[idx];
-                    }
+                    int idx = dof - m_nFixed;
+                    pNode->m_Displacement[dofIdx] += dx[idx];
                 }
-
-                // ========== 2. 旋转自由度 (3, 4, 5) —— 矩阵乘法更新
-                // 提取本次迭代产生的微小旋转增量 delta_theta
-                Eigen::Vector3d delta_theta = Eigen::Vector3d::Zero();
-                for (int dofIdx = 3; dofIdx < 6; ++dofIdx)
-                {
-                    int dof = pNode->m_DOF[dofIdx];
-                    if (dof >= m_nFixed && dof < m_nFixed + m_nFree)
-                    {
-                        int idx = dof - m_nFixed;
-                        delta_theta(dofIdx - 3) = dx[idx];
-                    }
-                }
-
-                // 核心心法：Trial 矩阵 = exp(delta_theta) * Commit 矩阵
-                // 注意：这里用的是你 CR.cpp 里写好的完美函数，直接更新 m_Rg_Trial
-                Eigen::Matrix3d R_temp;
-                Utility::CR::Update_NodalRotation(delta_theta, pNode->m_Rg_Trial, R_temp);
-                pNode->m_Rg_Trial = R_temp;
-
-                Eigen::Vector3d theta_trial;
-                Utility::CR::Extract_RotationVector(pNode->m_Rg_Trial, theta_trial);
-                pNode->m_Displacement[3] = theta_trial(0);
-                pNode->m_Displacement[4] = theta_trial(1);
-                pNode->m_Displacement[5] = theta_trial(2);
             }
-            else if (phase == Phase::Commit)
+
+            // 提取本次迭代产生的微小旋转增量 delta_theta
+            Eigen::Vector3d delta_theta = Eigen::Vector3d::Zero();
+            for (int dofIdx = 3; dofIdx < 6; ++dofIdx)
             {
-                // 本荷载步收敛！将 Trial 状态正式固化为 Commit 状态
-                pNode->m_Rg_Commit = pNode->m_Rg_Trial;
+                int dof = pNode->m_DOF[dofIdx];
+                if (dof >= m_nFixed && dof < m_nFixed + m_nFree)
+                {
+                    int idx = dof - m_nFixed;
+                    delta_theta(dofIdx - 3) = dx[idx];
+                }
             }
+
+            Eigen::Matrix3d R_temp;
+            Utility::CR::Update_NodalRotation(delta_theta, pNode->m_Rg, R_temp);
+            pNode->m_Rg = R_temp;
+            Eigen::Vector3d theta;
+            Utility::CR::Extract_RotationVector(R_temp, theta);
+            pNode->m_Displacement[3] = theta(0);
+            pNode->m_Displacement[4] = theta(1);
+            pNode->m_Displacement[5] = theta(2);
+            //std::cout << "\ntheta:" << theta.transpose() << std::endl;
         }
         else // 对于非 6 自由度的普通节点（保留你原有的逻辑）
         {
-            if (phase == Phase::Trial)
+
+            for (int dofIdx = 0; dofIdx < numDOF; ++dofIdx)
             {
-                for (int dofIdx = 0; dofIdx < numDOF; ++dofIdx)
+                int dof = pNode->m_DOF[dofIdx];
+                if (dof >= m_nFixed && dof < m_nFixed + m_nFree)
                 {
-                    int dof = pNode->m_DOF[dofIdx];
-                    if (dof >= m_nFixed && dof < m_nFixed + m_nFree)
-                    {
-                        int idx = dof - m_nFixed;
-                        pNode->m_Displacement[dofIdx] += dx[idx];
-                    }
+                    int idx = dof - m_nFixed;
+                    pNode->m_Displacement[dofIdx] += dx[idx];
                 }
             }
+
         }
     }
 }
@@ -1159,8 +1079,7 @@ void AnalysisStep::ComputeResidual(double time, double loadFactor, SolverNS::Vec
         std::fill(nodePair.second->m_Force.begin(), nodePair.second->m_Force.end(), 0.0);
     }
     Get_CurrentInforce(f_int);
-    //std::cout <<"F2:" << VectorXd(F2).transpose() << "\n\n";
-    //std::cout << "f_int:" << VectorXd(f_int).transpose() << "\n\n";
+
     // 动力学：加上惯性力和阻尼力
     if (m_Type == EnumKeyword::StepType::DYNAMIC)
     {
