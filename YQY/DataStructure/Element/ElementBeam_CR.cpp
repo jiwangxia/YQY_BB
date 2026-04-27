@@ -42,54 +42,11 @@ void ElementBeam_CR::Get_ke_non(MatrixXd& ke)
     Matrix3d R1_ = Rr.transpose() * Rg_1 * R0;
     Matrix3d R2_ = Rr.transpose() * Rg_2 * R0;
 
-    Vector3d vartheta1, vartheta2;
-    Utility::CR::Extract_RotationVector(R1_, vartheta1);
-    Utility::CR::Extract_RotationVector(R2_, vartheta2);
-
-    VectorXd pl(7);
-    pl(0) = u_;
-    pl.segment<3>(1) = vartheta1;
-    pl.segment<3>(4) = vartheta2;
-
-    // ---- 局部材料刚度与内力 (原 ComputeMaterialStiffness 内联，保留 Get_kl 调用) ----
-    MatrixXd kl;
-    VectorXd fl;
-    Get_kl(pl, L, kl, fl);  // 保留，不展开
-
-    MatrixXd Ba;
-    Utility::CR::Assemble_Matrix_Ba(vartheta1, vartheta2, Ba);
-    VectorXd fa = Ba.transpose() * fl;
-
-    if (fa.size() != 7) 
-    {
-        qDebug().noquote() << QStringLiteral("梁 内力向量 fa 大小不为 7");
-        return;
-    }
-
-    MatrixXd Kh;
-    Utility::CR::Assemble_Matrix_Kh(vartheta1, vartheta2, fl, Kh);
-    MatrixXd ka = Ba.transpose() * kl * Ba + Kh;
-
-    // ---- 全局投影与材料刚度贡献 (原 ComputeGlobalProjection 内联) ----
-    MatrixXd ET;
-    Utility::CR::Assemble_Matrix_E(Rr, ET);
-
-    MatrixXd P, G;
-    Utility::CR::Assemble_Matrix_PG(def_p1, def_p2, q1, q2, Rr, P, G);
-
-    VectorXd r = VectorXd::Zero(12);
-    Vector3d r1_vec = (def_p2 - def_p1).normalized();
-    r.segment<3>(0) = -r1_vec;
-    r.segment<3>(6) = r1_vec;
-    Eigen::Matrix<double, 7, 12> Bg;
-    Bg.setZero();
-    Bg.row(0) = r.transpose();
-    Bg.block<6, 12>(1, 0) = P * ET;
-
-    VectorXd fg = Bg.transpose() * fa;
+    // ---- 全局投影与材料刚度贡献 ----
+    MatrixXd K_material, P, G;
+    VectorXd fg;
+    ComputeGlobalProjection(def_p1, def_p2, q1, q2, Rr, ka, fa, K_material, fg, P, G);
     m_inforce = fg;
-
-    MatrixXd K_material = Bg.transpose() * ka * Bg;
 
     // ---- 应力刚度矩阵（几何刚度） ----
     MatrixXd K_sigma;
@@ -323,19 +280,13 @@ void ElementBeam_CR::ComputeDeformedState(Vector3d& def_p1, Vector3d& def_p2,
     Vector3d ug_p1(pNode0->m_Displacement[0], pNode0->m_Displacement[1], pNode0->m_Displacement[2]);
     Vector3d ug_p2(pNode1->m_Displacement[0], pNode1->m_Displacement[1], pNode1->m_Displacement[2]);
 
-    // 转动位移（旋转向量）
-    //Vector3d thetag_1(pNode0->m_Displacement[3], pNode0->m_Displacement[4], pNode0->m_Displacement[5]);
-    //Vector3d thetag_2(pNode1->m_Displacement[3], pNode1->m_Displacement[4], pNode1->m_Displacement[5]);
-
     // 变形后坐标
     def_p1 = init_p1 + ug_p1;
     def_p2 = init_p2 + ug_p2;
 
-    // 全局旋转矩阵
-    //Utility::CR::Calculate_RotationMatrix(thetag_1, Rg_1);
-    //Utility::CR::Calculate_RotationMatrix(thetag_2, Rg_2);
     Rg_1 = pNode0->m_Rg;
     Rg_2 = pNode1->m_Rg;
+
     // 截面方向向量
     q0.normalize(); // 确保初始截面方向向量是单位向量
     Vector3d beam_axis = init_p2 - init_p1;
@@ -421,17 +372,12 @@ void ElementBeam_CR::ComputeGlobalProjection(const Vector3d& def_p1, const Vecto
     Vector3d r1 = (def_p2 - def_p1).normalized();
     r.segment<3>(0) = -r1;
     r.segment<3>(6) = r1;
-
-    // Bg = P * E
     Eigen::Matrix<double, 7, 12> Bg;
     Bg.setZero();
     Bg.row(0) = r.transpose();
-
     Bg.block<6, 12>(1, 0) = P * ET;
 
-    // 全局内力向量 fp = Bg^T * fa
     fp = Bg.transpose() * fa;
 
-    // 全局材料刚度矩阵 K_material = Bg^T * ka * Bg
     K_material = Bg.transpose() * ka * Bg;
 }

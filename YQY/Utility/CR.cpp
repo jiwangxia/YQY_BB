@@ -26,7 +26,7 @@ namespace Utility
             double c1, c2;
 
             // 泰勒展开防止极小角度下的除零奇异性
-            if (theta < 1e-8)
+            if (theta < 1e-8) 
             {
                 n = Eigen::Vector3d(1, 0, 0);
                 double t2 = theta * theta;
@@ -64,7 +64,7 @@ namespace Utility
             double c;
 
             // 泰勒展开防止极小角度下的除零奇异性
-            if (theta < 1e-8)
+            if (theta < 1e-8) 
             {
                 n = Eigen::Vector3d(1, 0, 0);
                 double t2 = theta * theta;
@@ -97,7 +97,7 @@ namespace Utility
             Eigen::Matrix3d skew_v;
             SkewSymmetric(vartheta, skew_v);
 
-            if (theta < 1e-8)
+            if (theta < 1e-8) 
             {
                 // 泰勒展开防奇异
                 double t2 = theta * theta;
@@ -165,7 +165,7 @@ namespace Utility
             Eigen::Matrix3d skew_part = R - R.transpose();
             Eigen::Vector3d spin_vec(skew_part(2, 1), skew_part(0, 2), skew_part(1, 0));
 
-            if (theta < 1e-8)
+            if (theta < 1e-8) 
             {
                 // 当转角极小，sin(theta) 近似为 theta。
                 double theta2 = theta * theta;
@@ -333,7 +333,7 @@ namespace Utility
         {
             double Ln = (p2_def - p1_def).norm();
 
-            // 1. 将全局参考向量 q 转换到局部坐标系下
+            // 将全局参考向量 q 转换到局部坐标系下
             Eigen::Matrix3d Rr_T = Rr.transpose();
             Eigen::Vector3d q1l = Rr_T * q1;
             Eigen::Vector3d q2l = Rr_T * q2;
@@ -343,15 +343,13 @@ namespace Utility
             double q_y = q(1);
             if (std::abs(q_y) < 1e-12) q_y = (q_y < 0 ? -1e-12 : 1e-12);
 
-            // 2. 计算扭转自旋系数
+            // 计算扭转自旋系数
             double eta = q_x / (Ln * q_y);
             Eigen::Vector3d nu1(q1l(1) / (2.0 * q_y), -q1l(0) / (2.0 * q_y), 0.0);
             Eigen::Vector3d nu2(q2l(1) / (2.0 * q_y), -q2l(0) / (2.0 * q_y), 0.0);
 
-            // 构建局部空间自旋矩阵 G (3x12)
             G_result = Eigen::MatrixXd::Zero(3, 12);
 
-            // 极其关键的修正：这里才是绝对正确的空间物理自旋符号！
             // G_u1: 节点1平移带来的自旋
             G_result(0, 2) = eta;
             G_result(1, 2) = 1.0 / Ln;
@@ -414,7 +412,7 @@ namespace Utility
             // Km2
             VectorXd m(6);
             m << fa(1), fa(2), fa(3), fa(4), fa(5), fa(6);
-
+            
             Eigen::VectorXd PTm = P.transpose() * m;   // 12x1 结果
 
             Vector3d n1 = PTm.segment<3>(0);
@@ -437,11 +435,6 @@ namespace Utility
             Eigen::MatrixXd Km2 = E * Q * G * E.transpose();
 
             // Km3
-            //Eigen::Vector3d a;
-            //a(0) = 0.0;
-            //a(1) = (eta / L) * (fa(1) + fa(4)) - (1.0 / L) * (fa(2) + fa(5));
-            //a(2) = (1.0 / L) * (fa(3) + fa(6));
-
             Eigen::VectorXd Ga = VectorXd::Zero(12);
             Ga(1) = -(fa(3) + fa(6)) / L / L;
             Ga(2) = (fa(1) + fa(4)) / L / L * eta + (fa(2) + fa(5)) / L / L;

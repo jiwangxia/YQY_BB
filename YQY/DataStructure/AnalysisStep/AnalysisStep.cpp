@@ -271,8 +271,6 @@ void AnalysisStep::Assemble_AllLoads(VectorXd& F1, VectorXd& F2, double& Factor)
             if (!pForceNode) continue;
 
             Assemble_ForceNode(pForceNode.get(), F1, F2, m_Time);
-            //F2 *= currentScale;
-            //std::cout << "\nF2" << VectorXd(F2) << "\n";
             break;
         }
         case EnumKeyword::LoadType::FORCE_ELEMENT:
@@ -282,7 +280,6 @@ void AnalysisStep::Assemble_AllLoads(VectorXd& F1, VectorXd& F2, double& Factor)
             if (!pForceElement) continue;
 
             Assemble_ForceElement(pForceElement.get(), F1, F2, m_Time);
-            //F2 *= currentScale;
             break;
         }
         case EnumKeyword::LoadType::FORCE_GRAVITY:
@@ -292,7 +289,6 @@ void AnalysisStep::Assemble_AllLoads(VectorXd& F1, VectorXd& F2, double& Factor)
             if (!pForceGravity) continue;
 
             Assemble_ForceGravity(pForceGravity.get(), F1, F2, m_Time);
-            //F2 *= currentScale;
             break;
         }
         case EnumKeyword::LoadType::FORCE_WIND:
@@ -302,7 +298,6 @@ void AnalysisStep::Assemble_AllLoads(VectorXd& F1, VectorXd& F2, double& Factor)
             if (!pForceWind) continue;
 
             Assemble_ForceWind(pForceWind.get(), F1, F2, m_Time);
-            //F2 *= currentScale;
             break;
         }
         default:
