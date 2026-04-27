@@ -5,7 +5,6 @@
 #include "Solver/Solver.h"
 #include "Conductor/ConductorLib.h"
 #include <Windows.h>
-#include "gtest/gtest.h"
 
 #include "Import/AeroManager.h"
 int main(int argc, char* argv[])
