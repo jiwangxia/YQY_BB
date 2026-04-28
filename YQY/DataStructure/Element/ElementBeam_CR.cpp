@@ -11,36 +11,25 @@ void ElementBeam_CR::Get_ke(MatrixXd& ke)
 
 void ElementBeam_CR::Get_ke_non(MatrixXd& ke)
 {
-    // ---- 准备工作：获取节点指针与初始数据 ----
-    auto pNode0 = m_pNode[0].lock();
-    auto pNode1 = m_pNode[1].lock();
-    if (!pNode0 || !pNode1) return;
+    // ---- 计算变形状态 ----
+    Vector3d def_p1, def_p2;
+    Matrix3d Rg_1, Rg_2;
+    Vector3d q1, q2, q;
+    //std::cout << (VectorXd(q0).transpose()) << std::endl;
+    ComputeDeformedState(def_p1, def_p2, Rg_1, Rg_2, q1, q2, q);
 
-    Vector3d init_p1(pNode0->m_X, pNode0->m_Y, pNode0->m_Z);
-    Vector3d init_p2(pNode1->m_X, pNode1->m_Y, pNode1->m_Z);
-    Vector3d ug_p1(pNode0->m_Displacement[0], pNode0->m_Displacement[1], pNode0->m_Displacement[2]);
-    Vector3d ug_p2(pNode1->m_Displacement[0], pNode1->m_Displacement[1], pNode1->m_Displacement[2]);
-
-    Vector3d def_p1 = init_p1 + ug_p1;
-    Vector3d def_p2 = init_p2 + ug_p2;
-
-    Matrix3d Rg_1 = pNode0->m_Rg;
-    Matrix3d Rg_2 = pNode1->m_Rg;
-
-    Vector3d ey(0, 1, 0);
-    Vector3d q1 = Rg_1 * R0 * ey;
-    Vector3d q2 = Rg_2 * R0 * ey;
-    Vector3d q = 0.5 * (q1 + q2);
-
-    Matrix3d Rr;
-    Utility::CR::Calculate_Rr(def_p1, def_p2, q, Rr);
+    // ---- 局部坐标系 ----
+    Matrix3d Rr = ComputeLocalFrame(def_p1, def_p2, q);
     Vector3d r1 = (def_p2 - def_p1).normalized();
 
+    // ---- 局部变形向量 pl ----
+    VectorXd pl = ComputeLocalDeformation(def_p1, def_p2, Rr, Rg_1, Rg_2);
     double L = (def_p2 - def_p1).norm();
-    double u_ = L - L0;
 
-    Matrix3d R1_ = Rr.transpose() * Rg_1 * R0;
-    Matrix3d R2_ = Rr.transpose() * Rg_2 * R0;
+    // ---- 局部材料刚度与内力 ----
+    MatrixXd kl, ka;
+    VectorXd fl, fa;
+    ComputeMaterialStiffness(pl, L, kl, fl, fa, ka);
 
     // ---- 全局投影与材料刚度贡献 ----
     MatrixXd K_material, P, G;
@@ -50,7 +39,7 @@ void ElementBeam_CR::Get_ke_non(MatrixXd& ke)
 
     // ---- 应力刚度矩阵（几何刚度） ----
     MatrixXd K_sigma;
-    Utility::CR::Assemble_stress_k(L, fa, G, P, Rr, q1, q2, r1_vec, K_sigma);
+    Utility::CR::Assemble_stress_k(L, fa, G, P, Rr, q1, q2, r1, K_sigma);
 
     // ---- 总刚度矩阵 ----
     ke = K_material + K_sigma;
@@ -111,13 +100,13 @@ void ElementBeam_CR::Get_kl(const VectorXd& pl, const double& L, MatrixXd& _OUT 
     double E = pMaterial->m_Young;
     double G = E / (2. * (1 + pMaterial->m_Poisson));
 
-    //double Iy = 0.0, Iz = 0.0, J = 0.0;
-    //pSection->Calculate_I(Iy, Iz, J);
-    //const double Io = pSection->Io;
-    //double Irr = pSection->Irr;
-    double Iy = 1, Iz = 1, J = 1;
-    double Irr = 1.5045055561273500985282118708287;
-    double Io = 2;
+    double Iy = 0.0, Iz = 0.0, J = 0.0;
+    pSection->Calculate_I(Iy, Iz, J);
+    const double Io = pSection->Io;
+    double Irr = pSection->Irr;
+    //double Iy = 1, Iz = 1, J = 1;
+    //double Irr = 1.5045055561273500985282118708287;
+    //double Io = 2;
 
     double EA_L = E * A / L;
     double GJ_L = G * J / L;

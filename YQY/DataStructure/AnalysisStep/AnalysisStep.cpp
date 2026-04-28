@@ -577,8 +577,6 @@ void AnalysisStep::Solve()
         if (p.numIncrements < 1) p.numIncrements = 1;
         p.maxIter = m_MaxIterations;
         p.tol = m_Tolerance;           // 保留向后兼容
-        p.tol_R = 1e-3;                // 相对残差容差（0.1%）
-        p.tol_dx = 1e-3;               // 位移增量容差（放松到 0.1%）
         p.use_relative = true;         // 使用相对残差判据
         p.verbose = false;             // 详细输出
         solver = std::make_unique<SolverNS::SolverStatic>(p);

@@ -269,5 +269,6 @@
     <None Include="Import\ImportFile\两维梁.bdf" />
     <None Include="packages.config" />
     <None Include="Import\ImportFile\测试梁.bdf" />
+    <None Include="Import\ImportFile\45梁.bdf" />
   </ItemGroup>
 </Project>

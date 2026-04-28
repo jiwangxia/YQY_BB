@@ -53,6 +53,7 @@ namespace SolverNS
             double norm_R0 = 0.0;
 
             // Newton-Raphson 迭代
+            double energy0 = 0.0; // 初始能量
             for (int iter = 0; iter < m_param.maxIter; ++iter)
             {
                 model.AssembleMatrices(m_K, nullptr, nullptr);
@@ -73,9 +74,6 @@ namespace SolverNS
                     }
                 }
 
-                // 计算相对残差
-                //double relative_R = (m_param.use_relative && norm_R0 > 1e-12) ? (norm_R / norm_R0) : norm_R;
-
                 // 收敛判据检查（第一次迭代跳过）
                 if (iter > 0)
                 {
@@ -88,16 +86,22 @@ namespace SolverNS
 
                     // 计算能量范数：dx · R
                     double energy = std::abs(m_dx.dot(m_R));
-                    double energy0 = (iter == 1) ? energy : energy;  // 第一次迭代的能量
+                    if(1 == iter)
+                    {
+                        energy0 = energy;  // 第一次迭代的能量
+                    }
                     double relative_energy = (energy0 > 1e-12) ? (energy / energy0) : energy;
 
                     // 多重收敛判据
                     bool disp_converged = (relative_dx < m_param.tol_dx);
                     bool force_converged = (norm_R < m_param.tol_R * norm_R0) || (norm_R < 1e-6);
-                    bool energy_converged = (energy < 1e-6);
+                    bool energy_converged = (energy < m_param.tol_energy);
 
-                    // 任意一个判据满足即认为收敛
-                    bool converged = disp_converged || force_converged || energy_converged;
+                    // 方案1：经典双判据法（位移和力同时满足）
+                    bool converged = disp_converged && force_converged;
+
+                    // 方案2：保守三判据法（位移、力、能量同时满足）- 备用
+                    // bool converged = disp_converged && force_converged && energy_converged;
 
                     // 调试输出：如果不收敛，打印详细信息
                     if (!converged && iter > 5)
@@ -130,8 +134,6 @@ namespace SolverNS
 
                 // 更新试探状态
                 model.ApplyIncrement(m_dx);
-               // std::cout << "\nR:\n" << Eigen::VectorXd(m_R).transpose() << std::endl;
-               // std::cout << "\ndx2:" << m_x2[594] << " " << m_x2[596] << " " << m_x2[596] << " " << m_x2[597] << " " << m_x2[598] << " " << m_x2[599] << std::endl;
             }
 
             //// 输出当前增量步的位移信息
