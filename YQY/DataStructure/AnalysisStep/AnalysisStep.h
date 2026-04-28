@@ -16,9 +16,9 @@ class Force_Wind;
 /**
  * @brief 分析步类 - 负责单次分析的完整流程
  * 
- * 实现 SolverNS::IAnalysisModel 接口，可以使用独立的求解器进行求解
+ * 实现 SolverNameSpace::IAnalysisModel 接口，可以使用独立的求解器进行求解
  */
-class AnalysisStep : public Base, public SolverNS::IAnalysisModel
+class AnalysisStep : public Base, public SolverNameSpace::IAnalysisModel
 {
 public:
     EnumKeyword::StepType m_Type = EnumKeyword::StepType::UNKNOWN;
@@ -30,7 +30,7 @@ public:
     /// @brief 动力求解器类型（仅动力分析时有效）
     /// 可选: Newmark, CentralDifference, HHT
     /// 目前只实现了 Newmark，其他为预留
-    SolverNS::SolverType m_DynamicSolverType = SolverNS::SolverType::Newmark;
+    SolverNameSpace::SolverType m_DynamicSolverType = SolverNameSpace::SolverType::Newmark;
 
     int m_nFixed = 0;              // 约束自由度个数
     int m_nFree = 0;               // 自由自由度个数
@@ -83,11 +83,11 @@ public:
     // ============ IAnalysisModel 接口实现 ============
     int GetFreeDofs() const override { return m_nFree; }
     int GetFixedDofs() const override { return m_nFixed; }
-    void ApplyIncrement(const SolverNS::Vec& dx) override;
-    void SetTrialKinematics(const SolverNS::Vec& v, const SolverNS::Vec& a) override;
-    void GetState(SolverNS::Vec& u, SolverNS::Vec& v, SolverNS::Vec& a) const override;
-    void AssembleMatrices(SolverNS::SpMat& K, SolverNS::SpMat* M = nullptr, SolverNS::SpMat* C = nullptr) override;
-    void ComputeResidual(double time, double loadFactor, SolverNS::Vec& R) override;
+    void ApplyIncrement(const SolverNameSpace::Vec& dx) override;
+    void SetTrialKinematics(const SolverNameSpace::Vec& v, const SolverNameSpace::Vec& a) override;
+    void GetState(SolverNameSpace::Vec& u, SolverNameSpace::Vec& v, SolverNameSpace::Vec& a) const override;
+    void AssembleMatrices(SolverNameSpace::SpMat& K, SolverNameSpace::SpMat* M = nullptr, SolverNameSpace::SpMat* C = nullptr) override;
+    void ComputeResidual(double time, double loadFactor, SolverNameSpace::Vec& R) override;
     void OnStepCompleted(double time) override;
 
 private:

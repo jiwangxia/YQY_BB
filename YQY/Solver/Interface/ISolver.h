@@ -9,7 +9,7 @@
 #include "IAnalysisModel.h"
 #include <memory>
 
-namespace SolverNS
+namespace SolverNameSpace
 {
     /**
      * @brief 求解器类型枚举

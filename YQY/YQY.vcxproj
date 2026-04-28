@@ -98,7 +98,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="Conductor\ConductorLib.cpp" />
+    <ClCompile Include="Conductor\Conductor.cpp" />
     <ClCompile Include="DataStructure\Section\SectionRectangle.cpp" />
     <ClCompile Include="Solver\Dynamic\SolverAdaptiveTSSBN.cpp" />
     <ClCompile Include="Solver\Dynamic\SolverTSSBN.cpp" />
@@ -139,7 +139,7 @@
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Conductor\ConductorLib.h" />
+    <ClInclude Include="Conductor\Conductor.h" />
     <ClInclude Include="DataStructure\Section\SectionRectangle.h" />
     <ClInclude Include="Solver\Dynamic\SolverAdaptiveTSSBN.h" />
     <ClInclude Include="Solver\Dynamic\SolverTSSBN.h" />

@@ -7,7 +7,7 @@
 #include <Eigen/SparseCholesky>
 #include <Eigen/SparseLU>
 
-namespace SolverNS
+namespace SolverNameSpace
 {
     /**
      * @brief 静力求解器
@@ -25,12 +25,9 @@ namespace SolverNS
         {
             int numIncrements = 10;       //  荷载增量步数
             int maxIter       = 32;       //  每个增量步的最大 N-R 迭代次数
-            double tol        = 1e-5;     //  通用容差
-            double tol_R      = 1e-9;     //  相对残差容差
-            double tol_dx     = 1e-9;     //  位移增量容差
-            double tol_energy = 1e-9;     //  能量增量容差
-            bool use_relative = false;    //  是否使用相对残差判据
-            bool verbose = false;         //  是否输出详细迭代信息
+            double tol_R      = 1e-4;     //  相对残差容差
+            double tol_dx     = 1e-6;     //  位移增量容差
+            double tol_energy;            //  能量增量容差
         };
 
         /**

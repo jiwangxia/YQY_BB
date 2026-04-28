@@ -1,11 +1,10 @@
-﻿#define CONDUCTOR_EXPORTS
-#include "ConductorLib.h"
+﻿#include "Conductor.h"
 #include <cmath>
 #include <algorithm>
 #include <vector>
 
 #include <iostream>
-namespace ConductorLib
+namespace Conductor
 {
 
     // =====================================================================

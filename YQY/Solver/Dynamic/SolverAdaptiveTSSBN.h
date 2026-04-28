@@ -7,7 +7,7 @@
 #include <Eigen/SparseCholesky>
 #include <Eigen/SparseLU>
 
-namespace SolverNS
+namespace SolverNameSpace
 {
     /**
      * @brief 自适应TSSBN动力求解器

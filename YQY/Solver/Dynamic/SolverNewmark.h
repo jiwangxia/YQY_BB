@@ -7,7 +7,7 @@
 #include <Eigen/SparseCholesky>
 #include <Eigen/SparseLU>
 
-namespace SolverNS
+namespace SolverNameSpace
 {
     /**
      * @brief Newmark-β 动力求解器

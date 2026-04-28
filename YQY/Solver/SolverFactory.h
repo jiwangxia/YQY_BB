@@ -10,7 +10,7 @@
 #include "Dynamic/SolverAdaptiveTSSBN.h"
 #include <memory>
 
-namespace SolverNS
+namespace SolverNameSpace
 {
     /**
      * @brief 求解器工厂类

@@ -9,7 +9,7 @@
 #include <algorithm>
 #include <Eigen/Dense>  // 添加 Eigen Dense 模块，包含 QR 分解
 
-namespace SolverNS
+namespace SolverNameSpace
 {
     SolverAdaptiveTSSBN::SolverAdaptiveTSSBN(Params p) : m_param(p)
     {

@@ -3,7 +3,7 @@
 #include "Import/Input_Model.h"
 #include "DataStructure/Structure/StructureData.h"
 #include "Solver/Solver.h"
-#include "Conductor/ConductorLib.h"
+#include "Conductor/Conductor.h"
 #include <Windows.h>
 
 #include "Import/AeroManager.h"
@@ -42,16 +42,16 @@ int main(int argc, char* argv[])
         pStructure->GetOutputter().ExportNodes(OutputPath, nodeIds, types);
     }
 
-    //ConductorLib::ConductorConfig Config;
+    //Conductor::ConductorConfig Config;
     //Config.nBundle = 1; // 四分裂
     //Config.segments = 50;
     //Config.numSpacers = 4;
     //Config.spacing = 0.5656;
-    //Config.connecttype = ConductorLib::ConnectionMode::Parallel;
+    //Config.connecttype = Conductor::ConnectionMode::Parallel;
     //std::vector<double> startPt = { 0.0, 0.0, 0.0 };
     //std::vector<double> endPt = { 100.0, 0.0, 0.0 };
     //// 2. 生成数据
-    //auto result = ConductorLib::Generator::CreateBundle(startPt.data(), endPt.data(), 0.0, 0.0, Config);
+    //auto result = Conductor::Generator::CreateBundle(startPt.data(), endPt.data(), 0.0, 0.0, Config);
 
     //for (auto& [wireid, nodesVector] : result.wiresNode)
     //{

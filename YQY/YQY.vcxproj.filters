@@ -109,7 +109,7 @@
     <ClCompile Include="DataStructure\Load\Force_Wind.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Conductor\ConductorLib.cpp">
+    <ClCompile Include="Conductor\Conductor.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Solver\Dynamic\SolverNewmark.cpp">
@@ -213,7 +213,7 @@
     <ClInclude Include="DataStructure\Load\Force_Wind.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Conductor\ConductorLib.h">
+    <ClInclude Include="Conductor\Conductor.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Solver\Dynamic\SolverNewmark.h">

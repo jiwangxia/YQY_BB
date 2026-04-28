@@ -11,7 +11,7 @@
 #include <Eigen/Sparse>
 #include <functional>
 
-namespace SolverNS
+namespace SolverNameSpace
 {
     using SpMat = Eigen::SparseMatrix<double>;
     using Vec = Eigen::VectorXd;

@@ -7,7 +7,7 @@
 #include <stdexcept>
 #include <cmath>
 
-namespace SolverNS
+namespace SolverNameSpace
 {
     SolverTSSBN::SolverTSSBN(Params p) : m_param(p)
     {

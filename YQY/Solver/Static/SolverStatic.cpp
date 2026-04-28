@@ -5,7 +5,7 @@
 #include "SolverStatic.h"
 #include <QDebug>
 #include <iostream>
-namespace SolverNS
+namespace SolverNameSpace
 {
     bool SolverStatic::Solve(IAnalysisModel& model, double duration)
     {
@@ -97,10 +97,10 @@ namespace SolverNS
                     bool force_converged = (norm_R < m_param.tol_R * norm_R0) || (norm_R < 1e-6);
                     bool energy_converged = (energy < m_param.tol_energy);
 
-                    // 方案1：经典双判据法（位移和力同时满足）
+                    // 位移和力同时满足
                     bool converged = disp_converged && force_converged;
 
-                    // 方案2：保守三判据法（位移、力、能量同时满足）- 备用
+                    // 位移、力、能量同时满足  此处后续界面上增加一个选择按钮
                     // bool converged = disp_converged && force_converged && energy_converged;
 
                     // 调试输出：如果不收敛，打印详细信息

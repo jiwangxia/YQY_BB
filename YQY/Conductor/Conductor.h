@@ -2,17 +2,11 @@
 #include <vector>
 #include <map>
 
-#ifdef CONDUCTOR_EXPORTS
-#define CONDUCTOR_API __declspec(dllexport) // 生成 DLL 时使用
-#else
-#define CONDUCTOR_API __declspec(dllimport) // 其他项目使用 DLL 时使用
-#endif
-
 #ifndef _OUT
 #define _OUT // 定义为空宏
 #endif
 
-namespace ConductorLib
+namespace Conductor
 {
     const double Math_PI = 3.1415926535897932;
 
@@ -37,8 +31,6 @@ namespace ConductorLib
 
     struct BundleResult
     {
-        //std::vector<RawNode> nodes;
-        //std::vector<RawElement> elements;
         std::map<int, std::vector<RawNode>> wiresNode;
         std::map<int, std::vector<RawElement>> wiresElement;
     };
@@ -58,7 +50,7 @@ namespace ConductorLib
         bool   ToYUP = false;                              // 转换Y轴向上（默认Z轴）
     };
 
-    class CONDUCTOR_API Generator
+    class Generator
     {
     public:
         static BundleResult CreateBundle(const double start[3], const double end[3], const double& s1, const double& s2, const ConductorConfig& Config);

@@ -6,7 +6,7 @@
 #include <QDebug>
 #include <stdexcept>
 
-namespace SolverNS
+namespace SolverNameSpace
 {
     SolverNewmark::SolverNewmark(Params p) : m_param(p)
     {
