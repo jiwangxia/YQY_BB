@@ -18,6 +18,9 @@ public:
     void Assemble(const std::vector<double>& damping, MatrixXd& _OUT ce);
 
 private:
+    Vector3d def_p1, def_p2;  //当前节点坐标
+    Matrix3d Rr;  // 局部随动坐标系
+
     void Get_kl(const VectorXd& pl, const double& L, MatrixXd& _OUT kl, VectorXd& _OUT fl); // 局部刚度矩阵
     void ComputeDeformedState(Vector3d& def_p1, Vector3d& def_p2,
         Matrix3d& Rg_1, Matrix3d& Rg_2,

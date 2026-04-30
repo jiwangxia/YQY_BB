@@ -12,14 +12,13 @@ void ElementBeam_CR::Get_ke(MatrixXd& ke)
 void ElementBeam_CR::Get_ke_non(MatrixXd& ke)
 {
     // ---- 计算变形状态 ----
-    Vector3d def_p1, def_p2;
     Matrix3d Rg_1, Rg_2;
     Vector3d q1, q2, q;
     //std::cout << (VectorXd(q0).transpose()) << std::endl;
     ComputeDeformedState(def_p1, def_p2, Rg_1, Rg_2, q1, q2, q);
 
     // ---- 局部坐标系 ----
-    Matrix3d Rr = ComputeLocalFrame(def_p1, def_p2, q);
+    Rr = ComputeLocalFrame(def_p1, def_p2, q);
     Vector3d r1 = (def_p2 - def_p1).normalized();
 
     // ---- 局部变形向量 pl ----
@@ -51,6 +50,148 @@ void ElementBeam_CR::Get_me_Lumped(MatrixXd& me)//集中质量矩阵
 
 void ElementBeam_CR::Get_me_Consistent(MatrixXd& me) //一致质量矩阵
 {
+    me.setZero(12, 12);
+
+    double L = (def_p2 - def_p1).norm();//当前长度
+
+    //获取材料和截面属性
+    auto pProperty = m_pProperty.lock();
+    auto pMaterial = pProperty->m_pMaterial.lock();
+    auto pSection = pProperty->m_pSection.lock();
+
+    double A = pSection->m_Area;
+    double E = pMaterial->m_Young;
+    double density = pMaterial->m_Density;
+
+    double Iyy = 0.0, Izz = 0.0, J = 0.0;
+    pSection->Calculate_I(Iyy, Izz, J);
+    const double Io = pSection->Io;
+    double Sy = pSection->Sy;
+    double Sz = pSection->Sz;
+
+    double mu = density * A;             // 线质量密度 (kg/m)
+
+    double mass_Iy = density * Iyy;
+    double mass_Iz = density * Izz;
+    double mass_Io = density * Io;
+    double mass_Sy = density * Sy;
+    double mass_Sz = density * Sz; 
+    double mass_Iyz = 0.0;
+
+    // 预计算公共项以极致优化执行速度
+    double muL = mu * L;
+    double L2 = L * L;
+    double L3 = L2 * L;
+
+    // ==========================================
+    // 3. 填充一致质量矩阵上三角部分
+    // ==========================================
+
+    // 第 1 行 (u1)
+    me(0, 0) = muL / 3.0;
+    me(0, 1) = 0.5 * mass_Sz;
+    me(0, 2) = 0.5 * mass_Sy;
+    me(0, 4) = mass_Sy * L / 12.0;
+    me(0, 5) = -mass_Sz * L / 12.0;
+    me(0, 6) = muL / 6.0;
+    me(0, 7) = -0.5 * mass_Sz;
+    me(0, 8) = -0.5 * mass_Sy;
+    me(0, 10) = -mass_Sy * L / 12.0;
+    me(0, 11) = mass_Sz * L / 12.0;
+
+    // 第 2 行 (v1)
+    me(1, 1) = (13.0 / 35.0) * muL + (6.0 / (5.0 * L)) * mass_Iz;
+    me(1, 2) = (6.0 / (5.0 * L)) * mass_Iyz;
+    me(1, 3) = -(7.0 / 20.0) * mass_Sy * L;
+    me(1, 4) = 0.1 * mass_Iyz;
+    me(1, 5) = (11.0 / 210.0) * mu * L2 + 0.1 * mass_Iz;
+    me(1, 6) = 0.5 * mass_Sz;
+    me(1, 7) = (9.0 / 70.0) * muL - (6.0 / (5.0 * L)) * mass_Iz;
+    me(1, 8) = -(6.0 / (5.0 * L)) * mass_Iyz;
+    me(1, 9) = -(3.0 / 20.0) * mass_Sy * L;
+    me(1, 10) = 0.1 * mass_Iyz;
+    me(1, 11) = -(13.0 / 420.0) * mu * L2 + 0.1 * mass_Iz;
+    // 第 3 行 (w1)
+    me(2, 2) = (13.0 / 35.0) * muL + (6.0 / (5.0 * L)) * mass_Iy;
+    me(2, 3) = (7.0 / 20.0) * mass_Sz * L;
+    me(2, 4) = -(11.0 / 210.0) * mu * L2 - 0.1 * mass_Iy;
+    me(2, 5) = -0.1 * mass_Iyz;
+    me(2, 6) = 0.5 * mass_Sy;
+    me(2, 7) = -(6.0 / (5.0 * L)) * mass_Iyz;
+    me(2, 8) = (9.0 / 70.0) * muL - (6.0 / (5.0 * L)) * mass_Iy;
+    me(2, 9) = (3.0 / 20.0) * mass_Sz * L;
+    me(2, 10) = -(13.0 / 420.0) * mu * L2 - 0.1 * mass_Iy;
+    me(2, 11) = 0.1 * mass_Iyz;
+
+    // 第 4 行 (theta_x1)
+    me(3, 3) = mass_Io * L / 3.0;
+    me(3, 4) = -mass_Sz * L2 / 20.0;
+    me(3, 5) = -mass_Sy * L2 / 20.0;
+    me(3, 7) = -3.0 * mass_Sy * L / 20.0;
+    me(3, 8) = 3.0 * mass_Sz * L / 20.0;
+    me(3, 9) = mass_Io * L / 6.0;
+    me(3, 10) = mass_Sz * L2 / 30.0;
+    me(3, 11) = mass_Sy * L2 / 30.0;
+
+    // 第 5 行 (theta_y1)
+    me(4, 4) = mu * L3 / 105.0 + (2.0 / 15.0) * mass_Iy * L;
+    me(4, 5) = -(2.0 / 15.0) * mass_Iyz * L;
+    me(4, 6) = -mass_Sy * L / 12.0;
+    me(4, 7) = 0.1 * mass_Iyz;
+    me(4, 8) = -(13.0 / 420.0) * mu * L2 + 0.1 * mass_Iy;
+    me(4, 9) = -mass_Sz * L2 / 30.0;
+    me(4, 10) = -mu * L3 / 140.0 - (1.0 / 30.0) * mass_Iy * L;
+    me(4, 11) = mass_Iyz * L / 30.0;
+
+    // 第 6 行 (theta_z1)
+    me(5, 5) = mu * L3 / 105.0 + (2.0 / 15.0) * mass_Iz * L;
+    me(5, 6) = -mass_Sz * L / 12.0;
+    me(5, 7) = (13.0 / 420.0) * mu * L2 - 0.1 * mass_Iz;
+    me(5, 8) = -0.1 * mass_Iyz;
+    me(5, 9) = -mass_Sy * L2 / 30.0;
+    me(5, 10) = mass_Iyz * L / 30.0;
+    me(5, 11) = -mu * L3 / 140.0 - (1.0 / 30.0) * mass_Iz * L;
+
+    // 第 7 行 (u2)
+    me(6, 6) = muL / 3.0;
+    me(6, 7) = -0.5 * mass_Sz;
+    me(6, 8) = -0.5 * mass_Sy;
+    me(6, 10) = mass_Sy * L / 12.0;
+    me(6, 11) = -mass_Sz * L / 12.0;
+
+    // 第 8 行 (v2)
+    me(7, 7) = (13.0 / 35.0) * muL + (6.0 / (5.0 * L)) * mass_Iz;
+    me(7, 8) = (6.0 / (5.0 * L)) * mass_Iyz;
+    me(7, 9) = -(7.0 / 20.0) * mass_Sy * L;
+    me(7, 10) = 0.1 * mass_Iyz;
+    me(7, 11) = -(11.0 / 210.0) * mu * L2 - 0.1 * mass_Iz;
+
+    // 第 9 行 (w2)
+    me(8, 8) = (13.0 / 35.0) * muL + (6.0 / (5.0 * L)) * mass_Iy;
+    me(8, 9) = (7.0 / 20.0) * mass_Sz * L;
+    me(8, 10) = (11.0 / 210.0) * mu * L2 + 0.1 * mass_Iy;
+    me(8, 11) = -0.1 * mass_Iyz;
+
+    // 第 10 行 (theta_x2)
+    me(9, 9) = mass_Io * L / 3.0;
+    me(9, 10) = mass_Sz * L2 / 20.0;
+    me(9, 11) = mass_Sy * L2 / 20.0;
+
+    // 第 11 行 (theta_y2)
+    me(10, 10) = mu * L3 / 105.0 + (2.0 / 15.0) * mass_Iy * L;
+    me(10, 11) = -(2.0 / 15.0) * mass_Iyz * L;
+
+    // 第 12 行 (theta_z2)
+    me(11, 11) = mu * L3 / 105.0 + (2.0 / 15.0) * mass_Iz * L;
+
+    // ==========================================
+    // 4. 强制对称化映射（将上三角复制到下三角）
+    // ==========================================
+    me.triangularView<Eigen::StrictlyLower>() = me.transpose();
+
+    MatrixXd ET;
+    Utility::CR::Assemble_Matrix_E(Rr, ET);
+    me = ET * me * ET.transpose();
 }
 
 void ElementBeam_CR::Get_L0()

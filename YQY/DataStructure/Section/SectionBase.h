@@ -13,6 +13,8 @@ public:
     double m_Radius = 0.0;  ///< 半径
     double Io = 0.0;
     double Irr = 0.0;
+    double Sy = 0.0;
+    double Sz = 0.0;
     /**
      * @brief 计算截面面积（纯虚函数）
      */
