@@ -87,17 +87,32 @@ namespace SolverNameSpace
 
             // 用不平衡力求解初始加速度
             m_An = ldlt_init.solve(R_init);
-
-            qDebug().noquote() << QStringLiteral("初始加速度已计算，范数: %1").arg(m_An.norm());
-            qDebug().noquote() << QStringLiteral("初始不平衡残差范数: %1").arg(R_init.norm());
         }
 
         int numSteps = static_cast<int>(duration / dt);
+        qDebug().noquote() << QStringLiteral("总时间步数: %1, 时间步长: %2 s, 总时间: %3 s").arg(numSteps).arg(dt).arg(duration);
+
+        // 进度条参数
+        const int barWidth = 50;  // 进度条宽度
 
         // 时间步循环
         for (int step = 1; step <= numSteps; ++step)
         {
             double currentTime = step * dt;
+            double progress = static_cast<double>(step) / numSteps;
+
+            // 显示进度条（使用 printf 支持 \r 动态刷新）
+            int pos = static_cast<int>(barWidth * progress);
+            printf("\rProgress: [");
+            for (int i = 0; i < barWidth; ++i)
+            {
+                if (i < pos) printf("=");
+                else if (i == pos) printf(">");
+                else printf(" ");
+            }
+            printf("] %d%% (%d/%d) t=%.4fs",
+                int(progress * 100.0), step, numSteps, currentTime);
+            fflush(stdout);  // 强制刷新输出
 
             model.BackupStepState();
             // 第一步时 m_Un, m_Vn, m_An 已由 GetState 初始化
@@ -128,24 +143,12 @@ namespace SolverNameSpace
                 m_Keff = m_K + m_c.a0 * m_M + m_c.a1 * m_C;
 
                 // 5. 计算残差: R = F_ext - F_int - M*a - C*v
-                // 使用已组装好的外荷载 F2
                 model.ComputeResidual(F2, m_R);
-                //std::cout << "\nR:" << m_R.transpose() << "\n";
-
-                // 调试输出：第一步第一次迭代
-                if (step == 1 && iter == 0)
-                {
-                    qDebug().noquote() << QStringLiteral("第1步第0次迭代:");
-                    qDebug().noquote() << QStringLiteral("  外力范数: %1").arg(F2.norm());
-                    qDebug().noquote() << QStringLiteral("  残差范数: %1").arg(m_R.norm());
-                    qDebug().noquote() << QStringLiteral("  m_An范数: %1").arg(m_An.norm());
-                }
 
                 // 6. 收敛检查
                 double error = m_R.norm();
                 if (error < m_param.tol && iter > 0)
                 {
-                    //qDebug().noquote() << QStringLiteral("  时间步 %1: 迭代 %2 次收敛").arg(step).arg(iter);
                     break;
                 }
 
@@ -196,6 +199,9 @@ namespace SolverNameSpace
             // 步结束回调（保存结果等）
             model.OnStepCompleted(currentTime);
         }
+
+        // 进度条完成后换行
+        printf("\n");
 
         qDebug().noquote() << QStringLiteral("动力求解完成");
         return true;

@@ -24,8 +24,8 @@ namespace SolverNameSpace
         struct Params
         {
             double dt = 0.01;         ///< 时间步长
-            double beta = 0.3025;       ///< Newmark β 参数 (默认: 平均加速度法)
-            double gamma = 0.6;       ///< Newmark γ 参数
+            double beta = 0.25;       ///< Newmark β 参数 (默认: 平均加速度法)
+            double gamma = 0.5;       ///< Newmark γ 参数
             int maxIter = 10;         ///< 每个时间步的最大 N-R 迭代次数
             double tol = 1e-6;        ///< 收敛容差
         };

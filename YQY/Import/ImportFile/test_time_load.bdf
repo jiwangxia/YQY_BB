@@ -37,13 +37,13 @@
 ** Direction: 1=X, 2=Y, 3=Z
 
 ** 荷载1：节点3，Y方向，1000N，只在0-2s作用
-*LOAD, FORCE_NODE, 2
-1, 3, 2, 1000.0, 1, 0.0, 1.0
-2, 3, 2, 500.0,  1, 0.0, 3.0
+*LOAD, FORCE_NODE, 1
+1, 3, 2, 1000.0, 1, 0.0, 1.0  RAMP  0.0 0.5
+**2, 3, 2, 500.0,  1, 0.0, 3.0
 ** 荷载2：节点2，Y方向，500N，全程作用（0-3s）
 
 
 ** 分析步定义：动力分析，总时间3s，步长0.1s
 ** 格式：ID, Type, Time, StepSize, Tolerance, MaxIterations
 *ANALYSIS_STEP, 1
-1, DYNAMIC, 3.0, 0.0001, 1e-4, 100
+1, DYNAMIC, 1.0, 0.01, 1e-4, 100

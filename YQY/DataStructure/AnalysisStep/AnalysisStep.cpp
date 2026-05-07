@@ -311,7 +311,7 @@ void AnalysisStep::Assemble_AllLoads(VectorXd& F1, VectorXd& F2, double& Factor,
             break;
         }
     }
-    //std::cout << "F2:\n" << VectorXd(F2);
+    //std::cout << "F2:\n" << F2[55] << "\n";
 }
 
 void AnalysisStep::Updata_NodeData(VectorXd& x1, VectorXd& x2, VectorXd& F1, VectorXd* v2, VectorXd* a2)
@@ -444,7 +444,9 @@ void AnalysisStep::Assemble_ForceNode(Force_Node* pForceNode, VectorXd& F1, Vect
 
     int dof = pNode->m_DOF[iDirection];
 
-    double actualValue = pForceNode->m_Value * loadScale;
+    // 计算时间函数的缩放因子
+    double timeFactor = pForceNode->GetScaleFactor(current_time);
+    double actualValue = pForceNode->m_Value * loadScale * timeFactor;
 
     // 根据 DOF，加到对应向量
     if (dof >= 0 && dof < m_nFixed)

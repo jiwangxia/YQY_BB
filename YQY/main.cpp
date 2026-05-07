@@ -16,7 +16,7 @@ int main(int argc, char* argv[])
 
     Input_Model importer;
 
-    QString BaseName = "test_time_load";
+    QString BaseName = "直角梁2";
     QString InputPath = QString("Import/ImportFile/%1.bdf").arg(BaseName);
     QString OutputPath = QString("Export/ExportFile/%1_TEP.bdf").arg(BaseName);
 
@@ -30,13 +30,13 @@ int main(int argc, char* argv[])
         solver.SetStructure(pStructure);
         solver.RunAll();  // 运行所有分析步
 
-        std::vector<int> nodeIds = { 3};
+        std::vector<int> nodeIds = { 21 };
         //for (auto& nodePair : pStructure->m_Nodes)
         //{
         //    nodeIds.push_back(nodePair.first);
         //}
-        //std::vector<DataType> types = { DataType::U1, DataType::U2, DataType::U3};
-        std::vector<DataType> types = { DataType::U3};
+        std::vector<DataType> types = { DataType::U1, DataType::U2, DataType::U3};
+        //std::vector<DataType> types = { DataType::U3};
         //std::vector<DataType> types = { DataType::U1, DataType::U2, DataType::U3, DataType::F1, DataType::F2, DataType::F3 };
 
         pStructure->GetOutputter().ExportNodes(OutputPath, nodeIds, types);

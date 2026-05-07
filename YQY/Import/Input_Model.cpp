@@ -527,8 +527,9 @@ bool Input_Model::InputForceNode(QTextStream& flow, const QStringList& /*list_st
         }
 
         QStringList strlist_load = strdata.split(QRegularExpression("[\\t, ]"), Qt::SkipEmptyParts);
-        // ID, NodeID, Direction, Value, StepID   starttime    endtime
-        if (strlist_load.size() != 7)
+        // 基本格式：ID, NodeID, Direction, Value, StepID, StartTime, EndTime
+        // 扩展格式：ID, NodeID, Direction, Value, StepID, StartTime, EndTime, FunctionType, Params...
+        if (strlist_load.size() < 7)
         {
             qDebug().noquote() << QStringLiteral("Error: 节点力荷载数据格式错误: ") << strdata;
             return false;
@@ -551,6 +552,74 @@ bool Input_Model::InputForceNode(QTextStream& flow, const QStringList& /*list_st
         pLoad->m_StepId = stepid;
         pLoad->m_StartTime = startTime;
         pLoad->m_EndTime = endTime;
+
+        // 解析时间函数
+        if (strlist_load.size() >= 8)
+        {
+            QString funcType = strlist_load[7].trimmed().toUpper();
+
+            if (funcType == "SIN" && strlist_load.size() >= 12)
+            {
+                pLoad->m_FunctionType = TimeFunctionType::SIN;
+                pLoad->m_Amplitude = strlist_load[8].toDouble();
+                pLoad->m_Frequency = strlist_load[9].toDouble();
+                pLoad->m_Phase = strlist_load[10].toDouble();
+                pLoad->m_Offset = strlist_load[11].toDouble();
+                qDebug().noquote() << QStringLiteral("  荷载 %1: 正弦函数 (幅值=%2, 频率=%3 Hz)")
+                    .arg(autoId).arg(pLoad->m_Amplitude).arg(pLoad->m_Frequency);
+            }
+            else if (funcType == "COS" && strlist_load.size() >= 12)
+            {
+                pLoad->m_FunctionType = TimeFunctionType::COS;
+                pLoad->m_Amplitude = strlist_load[8].toDouble();
+                pLoad->m_Frequency = strlist_load[9].toDouble();
+                pLoad->m_Phase = strlist_load[10].toDouble();
+                pLoad->m_Offset = strlist_load[11].toDouble();
+                qDebug().noquote() << QStringLiteral("  荷载 %1: 余弦函数 (幅值=%2, 频率=%3 Hz)")
+                    .arg(autoId).arg(pLoad->m_Amplitude).arg(pLoad->m_Frequency);
+            }
+            else if (funcType == "RAMP" && strlist_load.size() >= 10)
+            {
+                pLoad->m_FunctionType = TimeFunctionType::RAMP;
+                pLoad->m_RampT0 = strlist_load[8].toDouble();
+                pLoad->m_RampT1 = strlist_load[9].toDouble();
+                qDebug().noquote() << QStringLiteral("  荷载 %1: 斜坡函数 (t0=%2, t1=%3)")
+                    .arg(autoId).arg(pLoad->m_RampT0).arg(pLoad->m_RampT1);
+            }
+            else if (funcType == "EXPONENTIAL" && strlist_load.size() >= 9)
+            {
+                pLoad->m_FunctionType = TimeFunctionType::EXPONENTIAL;
+                pLoad->m_Decay = strlist_load[8].toDouble();
+                qDebug().noquote() << QStringLiteral("  荷载 %1: 指数衰减函数 (衰减系数=%2)")
+                    .arg(autoId).arg(pLoad->m_Decay);
+            }
+            else if (funcType == "TRIANGULAR" && strlist_load.size() >= 9)
+            {
+                pLoad->m_FunctionType = TimeFunctionType::TRIANGULAR;
+                pLoad->m_Period = strlist_load[8].toDouble();
+                qDebug().noquote() << QStringLiteral("  荷载 %1: 三角波函数 (周期=%2)")
+                    .arg(autoId).arg(pLoad->m_Period);
+            }
+            else if (funcType == "SQUARE" && strlist_load.size() >= 10)
+            {
+                pLoad->m_FunctionType = TimeFunctionType::SQUARE;
+                pLoad->m_Period = strlist_load[8].toDouble();
+                pLoad->m_DutyCycle = strlist_load[9].toDouble();
+                qDebug().noquote() << QStringLiteral("  荷载 %1: 方波函数 (周期=%2, 占空比=%3)")
+                    .arg(autoId).arg(pLoad->m_Period).arg(pLoad->m_DutyCycle);
+            }
+            else if (funcType == "CONSTANT" || funcType.isEmpty())
+            {
+                pLoad->m_FunctionType = TimeFunctionType::CONSTANT;
+                qDebug().noquote() << QStringLiteral("  荷载 %1: 常数荷载").arg(autoId);
+            }
+            else
+            {
+                qDebug().noquote() << QStringLiteral("警告: 未知的时间函数类型 '%1'，使用常数荷载").arg(funcType);
+                pLoad->m_FunctionType = TimeFunctionType::CONSTANT;
+            }
+        }
+
         m_Structure->m_Load.insert(std::make_pair(autoId, pLoad));
     }
     return true;

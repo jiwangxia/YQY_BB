@@ -249,9 +249,9 @@ void ElementBeam_CR::Get_kl(const VectorXd& pl, const double& L, MatrixXd& _OUT 
     pSection->Calculate_I(Iy, Iz, J);
     const double Io = pSection->Io;
     double Irr = pSection->Irr;
-    //double Iy = 1, Iz = 1, J = 1;
-    //double Irr = 1.5045055561273500985282118708287;
-    //double Io = 2;
+    //double Iy = 0.001, Iz = 0.001, J = 0.001;
+    //double Irr = 0.001;//1.5045055561273500985282118708287;
+    //double Io = 0.002;
 
     double EA_L = E * A / L;
     double GJ_L = G * J / L;
@@ -335,7 +335,7 @@ void ElementBeam_CR::Get_kl(const VectorXd& pl, const double& L, MatrixXd& _OUT 
     //// Z轴弯矩（绕 z 轴弯曲，用 Iy）
     //fl(3) = E_900L * (1800.0 * Iy * (2.0 * t31 + t32) + t3_41 * N_nonlin_core);
     //fl(6) = E_900L * (1800.0 * Iy * (t31 + 2.0 * t32) - t3_14 * N_nonlin_core);
-
+    //m_Stress = fl(0) / A; // 轴向应力
 
     //// 计算局部切线刚度矩阵 kl (7 x 7)
 
