@@ -68,16 +68,25 @@ namespace SolverNameSpace
 
         // ============ 力计算 ============
         /**
-         * @brief 计算残差向量
-         * 
-         * 静力学: R = F_ext * loadFactor - F_int
-         * 动力学: R = F_ext - F_int - M*a - C*v
-         * 
+         * @brief 计算外荷载向量
+         *
          * @param[in] time 当前时间
          * @param[in] loadFactor 荷载因子（静力增量时使用）
+         * @param[out] F1 约束自由度对应的外力向量
+         * @param[out] F2 自由自由度对应的外力向量
+         */
+        virtual void ComputeExternalForce(double time, double loadFactor, Vec& F1, Vec& F2) = 0;
+
+        /**
+         * @brief 计算残差向量
+         *
+         * 静力学: R = F_ext - F_int
+         * 动力学: R = F_ext - F_int - M*a - C*v
+         *
+         * @param[in] F_ext 外荷载向量（自由自由度）
          * @param[out] R 残差向量
          */
-        virtual void ComputeResidual(double time, double loadFactor, Vec& R) = 0;
+        virtual void ComputeResidual(const Vec& F_ext, Vec& R) = 0;
 
         // ============ 回调 ============
         /**
@@ -86,6 +95,10 @@ namespace SolverNameSpace
          * @param[in] time 当前时间
          */
         virtual void OnStepCompleted(double time) = 0;
+
+
+        virtual void BackupStepState() = 0;
+        virtual void GetStepIncrement(SolverNameSpace::Vec& dx_step) const = 0;
     };
 
     /** @brief 步回调函数类型 */

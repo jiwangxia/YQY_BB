@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tee run_output.log)",
+      "Bash(grep -E \"\\\\.\\(cpp|h\\)$\")"
+    ]
+  }
+}

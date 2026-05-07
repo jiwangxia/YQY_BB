@@ -237,7 +237,7 @@ namespace SolverNameSpace
 
                     // 计算最终加速度
                     model.AssembleMatrices(m_K, &m_M, &m_C);
-                    model.ComputeResidual(currentTime + dt_try, 1.0, m_R);
+                    //model.ComputeResidual(currentTime + dt_try, 1.0, m_R);
 
                     Vec An_new;
                     if (!SolveLinear(m_M, m_R, An_new))
@@ -305,7 +305,7 @@ namespace SolverNameSpace
             model.AssembleMatrices(m_K, &m_M, &m_C);
 
             m_Keff = m_K + (1.0 / c1_dt2) * m_M + (1.0 / c1_dt) * m_C;
-            model.ComputeResidual(currentTime + c1_dt, 1.0, m_R);
+            //model.ComputeResidual(currentTime + c1_dt, 1.0, m_R);
 
             double error = m_R.norm();
             if (error < m_param.tol && iter > 0)
@@ -354,7 +354,7 @@ namespace SolverNameSpace
             model.AssembleMatrices(m_K, &m_M, &m_C);
 
             m_Keff = m_K + (1.0 / alpha_c2_dt2) * m_M + (1.0 / alpha_c2_dt) * m_C;
-            model.ComputeResidual(currentTime + c2_dt, 1.0, m_R);
+            //model.ComputeResidual(currentTime + c2_dt, 1.0, m_R);
 
             double error = m_R.norm();
             if (error < m_param.tol && iter > 0)
@@ -407,7 +407,7 @@ namespace SolverNameSpace
             model.AssembleMatrices(m_K, &m_M, &m_C);
 
             m_Keff = m_K + (1.0 / alpha_c3_dt2) * m_M + (1.0 / alpha_c3_dt) * m_C;
-            model.ComputeResidual(currentTime + c3_dt, 1.0, m_R);
+            //model.ComputeResidual(currentTime + c3_dt, 1.0, m_R);
 
             double error = m_R.norm();
             if (error < m_param.tol && iter > 0)

@@ -5,6 +5,7 @@
 #include "SolverNewmark.h"
 #include <QDebug>
 #include <stdexcept>
+#include <iostream>
 
 namespace SolverNameSpace
 {
@@ -66,6 +67,31 @@ namespace SolverNameSpace
         // 获取初始状态
         model.GetState(m_Un, m_Vn, m_An);
 
+        // 简化为：A_0 = M^(-1) * F_ext(t=0)
+        Vec F1_init, F2_init;
+        model.ComputeExternalForce(0.0, 1.0, F1_init, F2_init);
+
+        // 组装质量矩阵
+        SpMat M_init, C_init;
+        model.AssembleMatrices(m_K, &M_init, &C_init);
+
+        // 求解 M * A_0 = F_ext(t=0)
+        Eigen::SimplicialLDLT<SpMat> ldlt_init;
+        ldlt_init.compute(M_init);
+        if (ldlt_init.info() == Eigen::Success)
+        {
+            // 【修改这部分】
+            Vec R_init;
+            // 让模型计算 t=0 时刻的真实不平衡力
+            model.ComputeResidual(F2_init, R_init);
+
+            // 用不平衡力求解初始加速度
+            m_An = ldlt_init.solve(R_init);
+
+            qDebug().noquote() << QStringLiteral("初始加速度已计算，范数: %1").arg(m_An.norm());
+            qDebug().noquote() << QStringLiteral("初始不平衡残差范数: %1").arg(R_init.norm());
+        }
+
         int numSteps = static_cast<int>(duration / dt);
 
         // 时间步循环
@@ -73,8 +99,12 @@ namespace SolverNameSpace
         {
             double currentTime = step * dt;
 
-            // 备份上一时刻状态 (已在循环末尾更新)
+            model.BackupStepState();
             // 第一步时 m_Un, m_Vn, m_An 已由 GetState 初始化
+
+            // 组装外荷载（时间步开始时做一次）
+            Vec F1, F2;
+            model.ComputeExternalForce(currentTime, 1.0, F1, F2);
 
             // 当前步累计位移增量清零
             m_totalDx.setZero();
@@ -98,8 +128,18 @@ namespace SolverNameSpace
                 m_Keff = m_K + m_c.a0 * m_M + m_c.a1 * m_C;
 
                 // 5. 计算残差: R = F_ext - F_int - M*a - C*v
-                // 模型的 ComputeResidual 应该已经包含了惯性力和阻尼力
-                model.ComputeResidual(currentTime, 1.0, m_R);
+                // 使用已组装好的外荷载 F2
+                model.ComputeResidual(F2, m_R);
+                //std::cout << "\nR:" << m_R.transpose() << "\n";
+
+                // 调试输出：第一步第一次迭代
+                if (step == 1 && iter == 0)
+                {
+                    qDebug().noquote() << QStringLiteral("第1步第0次迭代:");
+                    qDebug().noquote() << QStringLiteral("  外力范数: %1").arg(F2.norm());
+                    qDebug().noquote() << QStringLiteral("  残差范数: %1").arg(m_R.norm());
+                    qDebug().noquote() << QStringLiteral("  m_An范数: %1").arg(m_An.norm());
+                }
 
                 // 6. 收敛检查
                 double error = m_R.norm();
@@ -124,11 +164,9 @@ namespace SolverNameSpace
                     return false;
                 }
 
-                // 9. 累加位移增量
-                m_totalDx += m_dx;
-
                 // 10. 更新模型的位移状态 (试探)
                 model.ApplyIncrement(m_dx);
+                model.GetStepIncrement(m_totalDx);
             }
 
             // 步末计算最终的 V 和 A

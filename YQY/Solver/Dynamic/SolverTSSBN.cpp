@@ -122,7 +122,7 @@ namespace SolverNameSpace
 
             // 计算最终加速度（通过求解 M*a = F_ext - F_int - C*v）
             model.AssembleMatrices(m_K, &m_M, &m_C);
-            model.ComputeResidual(currentTime, 1.0, m_R);
+            //model.ComputeResidual(currentTime, 1.0, m_R);
 
             // 求解加速度: M * a = R (这里 R 应该是 F_ext - F_int - C*v)
             // 简化处理：假设 ComputeResidual 返回的是不含惯性项的残差
@@ -190,7 +190,7 @@ namespace SolverNameSpace
             m_Keff = m_K + (1.0 / c1_dt2) * m_M + (1.0 / c1_dt) * m_C;
 
             // 5. 计算残差
-            model.ComputeResidual(currentTime + c1_dt, 1.0, m_R);
+            //model.ComputeResidual(currentTime + c1_dt, 1.0, m_R);
 
             // 6. 收敛检查
             double error = m_R.norm();
@@ -258,7 +258,7 @@ namespace SolverNameSpace
             m_Keff = m_K + (1.0 / alpha_c2_dt2) * m_M + (1.0 / alpha_c2_dt) * m_C;
 
             // 5. 计算残差
-            model.ComputeResidual(currentTime + c2_dt, 1.0, m_R);
+            //model.ComputeResidual(currentTime + c2_dt, 1.0, m_R);
 
             // 6. 收敛检查
             double error = m_R.norm();

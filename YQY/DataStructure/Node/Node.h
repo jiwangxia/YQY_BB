@@ -19,5 +19,8 @@ public:
     void SetNumDOFs(int num_dofs);
 
     Eigen::Matrix3d m_Rg = Eigen::Matrix3d::Identity();
+
+    std::vector<double>  m_Displacement_n;                ///< 上一时间步初的位移备份
+    Eigen::Matrix3d m_Rg_n = Eigen::Matrix3d::Identity(); ///< 上一时间步初的旋转矩阵备份
 };
 

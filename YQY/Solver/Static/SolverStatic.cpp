@@ -33,6 +33,10 @@ namespace SolverNameSpace
             double factor = static_cast<double>(inc) / m_param.numIncrements;
             double currentTime = duration * factor;
 
+            // 组装外荷载（增量步开始时做一次）
+            Vec F1, F2;
+            model.ComputeExternalForce(currentTime, factor, F1, F2);
+
             // 显示进度条（使用 printf 支持 \r 动态刷新）
             int pos = static_cast<int>(barWidth * factor);
             printf("\rProgress: [");
@@ -58,7 +62,8 @@ namespace SolverNameSpace
             {
                 model.AssembleMatrices(m_K, nullptr, nullptr);
 
-                model.ComputeResidual(currentTime, factor, m_R);
+                // 使用已组装的外荷载计算残差
+                model.ComputeResidual(F2, m_R);
 
                 double norm_R = m_R.norm();
 

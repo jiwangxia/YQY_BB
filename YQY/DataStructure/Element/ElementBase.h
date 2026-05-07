@@ -11,6 +11,8 @@
  */
 class ElementBase : public Base
 {
+protected:
+    MatrixXd m_ke, m_me, m_ce;
 public:
     ElementBase();
     QVector<std::weak_ptr<Node>> m_pNode;       //节点指针数组

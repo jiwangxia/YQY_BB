@@ -87,7 +87,7 @@ public:
     void SetTrialKinematics(const SolverNameSpace::Vec& v, const SolverNameSpace::Vec& a) override;
     void GetState(SolverNameSpace::Vec& u, SolverNameSpace::Vec& v, SolverNameSpace::Vec& a) const override;
     void AssembleMatrices(SolverNameSpace::SpMat& K, SolverNameSpace::SpMat* M = nullptr, SolverNameSpace::SpMat* C = nullptr) override;
-    void ComputeResidual(double time, double loadFactor, SolverNameSpace::Vec& R) override;
+    void ComputeResidual(const SolverNameSpace::Vec& F_ext, SolverNameSpace::Vec& R) override;
     void OnStepCompleted(double time) override;
 
 private:
@@ -98,12 +98,12 @@ private:
     {
         Eigen::SimplicialLDLT<SpMat> ldlt; // 首选 (快)
         Eigen::SparseLU<SpMat> lu;         // 备选 (稳)
-        bool use_ldlt = true;              // 当前策略
+        bool use_ldlt = false;              // 当前策略
         bool pattern_analyzed = false;     // 模式是否已分析
 
         void reset() 
         {
-            use_ldlt = true;
+            use_ldlt = false;
             pattern_analyzed = false;
         }
     };
@@ -148,8 +148,19 @@ private:
      * @brief 组装所有荷载到力向量
      * @param [out] F1 约束自由度对应的力向量
      * @param [out] F2 自由自由度对应的力向量
+     * @param [in] Factor 荷载缩放系数
+     * @param [in] currentTime 当前时间
      */
-    void Assemble_AllLoads(VectorXd& F1, VectorXd& F2, double& Factor);
+    void Assemble_AllLoads(VectorXd& F1, VectorXd& F2, double& Factor, double currentTime);
+
+    /**
+     * @brief 计算外荷载（不包含内力和惯性力）
+     * @param [in] time 当前时间
+     * @param [in] loadFactor 荷载缩放系数
+     * @param [out] F1 约束自由度对应的外力向量
+     * @param [out] F2 自由自由度对应的外力向量
+     */
+    void ComputeExternalForce(double time, double loadFactor, VectorXd& F1, VectorXd& F2);
 
     /**
      * @brief 获取当前时刻的力向量
@@ -167,8 +178,9 @@ private:
      * @param [in,out] F1 约束自由度对应的力向量（累加）
      * @param [in,out] F2 自由自由度对应的力向量（累加）
      * @param [in] current_time 当前时间
+     * @param [in] loadScale 荷载缩放系数
      */
-    void Assemble_ForceNode(Force_Node* pForceNode, VectorXd& F1, VectorXd& F2, double& current_time);
+    void Assemble_ForceNode(Force_Node* pForceNode, VectorXd& F1, VectorXd& F2, double& current_time, double loadScale);
 
     /**
      * @brief 组装单元荷载
@@ -176,8 +188,9 @@ private:
      * @param [in,out] F1 约束自由度对应的力向量（累加）
      * @param [in,out] F2 自由自由度对应的力向量（累加）
      * @param [in] current_time 当前时间
+     * @param [in] loadScale 荷载缩放系数
      */
-    void Assemble_ForceElement(Force_Element* pForceElement, VectorXd& F1, VectorXd& F2, double& current_time);
+    void Assemble_ForceElement(Force_Element* pForceElement, VectorXd& F1, VectorXd& F2, double& current_time, double loadScale);
 
     /**
      * @brief 组装重力
@@ -185,8 +198,9 @@ private:
      * @param [in,out] F1 约束自由度对应的力向量（累加）
      * @param [in,out] F2 自由自由度对应的力向量（累加）
      * @param [in] current_time 当前时间
+     * @param [in] loadScale 荷载缩放系数
      */
-    void Assemble_ForceGravity(Force_Gravity* pForceGravity, VectorXd& F1, VectorXd& F2, double& current_time);
+    void Assemble_ForceGravity(Force_Gravity* pForceGravity, VectorXd& F1, VectorXd& F2, double& current_time, double loadScale);
 
     /**
      * @brief 组装风荷载
@@ -194,8 +208,9 @@ private:
      * @param [in,out] F1 约束自由度对应的力向量（累加）
      * @param [in,out] F2 自由自由度对应的力向量（累加）
      * @param [in] current_time 当前时间
+     * @param [in] loadScale 荷载缩放系数
      */
-    void Assemble_ForceWind(Force_Wind* pForceWind, VectorXd& F1, VectorXd& F2, double& current_time);
+    void Assemble_ForceWind(Force_Wind* pForceWind, VectorXd& F1, VectorXd& F2, double& current_time, double loadScale);
 
     /**
      * @brief 组装约束位移
@@ -209,4 +224,6 @@ private:
     VectorXd GetCurrentVelocity() const;
     VectorXd GetCurrentAcceleration() const;
 
+    void BackupStepState();
+    void GetStepIncrement(SolverNameSpace::Vec& dx_step) const;
 };

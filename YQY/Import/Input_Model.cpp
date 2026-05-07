@@ -527,8 +527,8 @@ bool Input_Model::InputForceNode(QTextStream& flow, const QStringList& /*list_st
         }
 
         QStringList strlist_load = strdata.split(QRegularExpression("[\\t, ]"), Qt::SkipEmptyParts);
-        // ID, NodeID, Direction, Value, StepID
-        if (strlist_load.size() != 5)
+        // ID, NodeID, Direction, Value, StepID   starttime    endtime
+        if (strlist_load.size() != 7)
         {
             qDebug().noquote() << QStringLiteral("Error: 节点力荷载数据格式错误: ") << strdata;
             return false;
@@ -538,6 +538,8 @@ bool Input_Model::InputForceNode(QTextStream& flow, const QStringList& /*list_st
         int direction = strlist_load[2].toInt();
         double value = strlist_load[3].toDouble();
         int stepid = strlist_load[4].toInt();
+        double startTime = strlist_load[5].toDouble();
+        double endTime = strlist_load[6].toDouble();
 
         int autoId = static_cast<int>(m_Structure->m_Load.size()) + 1;
 
@@ -547,6 +549,8 @@ bool Input_Model::InputForceNode(QTextStream& flow, const QStringList& /*list_st
         pLoad->m_Direction = static_cast<EnumKeyword::Direction>(direction);
         pLoad->m_Value = value;
         pLoad->m_StepId = stepid;
+        pLoad->m_StartTime = startTime;
+        pLoad->m_EndTime = endTime;
         m_Structure->m_Load.insert(std::make_pair(autoId, pLoad));
     }
     return true;

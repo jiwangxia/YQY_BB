@@ -42,6 +42,7 @@ void ElementBeam_CR::Get_ke_non(MatrixXd& ke)
 
     // ---- 总刚度矩阵 ----
     ke = K_material + K_sigma;
+    m_ke = ke;
 }
 
 void ElementBeam_CR::Get_me_Lumped(MatrixXd& me)//集中质量矩阵
@@ -192,6 +193,8 @@ void ElementBeam_CR::Get_me_Consistent(MatrixXd& me) //一致质量矩阵
     MatrixXd ET;
     Utility::CR::Assemble_Matrix_E(Rr, ET);
     me = ET * me * ET.transpose();
+
+    m_me = me;
 }
 
 void ElementBeam_CR::Get_L0()
@@ -224,6 +227,7 @@ void ElementBeam_CR::Get_L0()
 
 void ElementBeam_CR::Assemble(const std::vector<double>& damping, MatrixXd& _OUT ce)
 {
+    ce = damping[0] * m_me + damping[1] * m_ke;
 }
 
 void ElementBeam_CR::Get_kl(const VectorXd& pl, const double& L, MatrixXd& _OUT kl, VectorXd& _OUT fl)
