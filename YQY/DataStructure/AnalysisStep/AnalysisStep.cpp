@@ -311,7 +311,7 @@ void AnalysisStep::Assemble_AllLoads(VectorXd& F1, VectorXd& F2, double& Factor,
             break;
         }
     }
-    //std::cout << "F2:\n" << F2[55] << "\n";
+    //std::cout << "\nF2:" << F2[56] << "\n";
 }
 
 void AnalysisStep::Updata_NodeData(VectorXd& x1, VectorXd& x2, VectorXd& F1, VectorXd* v2, VectorXd* a2)

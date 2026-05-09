@@ -17,7 +17,7 @@ public:
     ElementBase();
     QVector<std::weak_ptr<Node>> m_pNode;       //节点指针数组
     std::weak_ptr<Property>      m_pProperty;   //所属属性（材料+截面）
-    double L0;  ///< 单元初始长度
+    double L0, L;  ///< 单元初始长度
     double m_InitStress = 0.0;                  // 初始应力
     double m_Stress = 0.0;                      // 单元应力
 

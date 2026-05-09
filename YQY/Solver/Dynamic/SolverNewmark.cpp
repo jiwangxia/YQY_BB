@@ -120,7 +120,7 @@ namespace SolverNameSpace
             // 组装外荷载（时间步开始时做一次）
             Vec F1, F2;
             model.ComputeExternalForce(currentTime, 1.0, F1, F2);
-
+            //std::cout << "\nF2:" << F2[56] << "\n";
             // 当前步累计位移增量清零
             m_totalDx.setZero();
 
@@ -166,7 +166,7 @@ namespace SolverNameSpace
                     qDebug().noquote() << QStringLiteral("错误: 线性求解失败");
                     return false;
                 }
-
+                //std::cout << "\nx2:" << m_dx[56] << "\n";
                 // 10. 更新模型的位移状态 (试探)
                 model.ApplyIncrement(m_dx);
                 model.GetStepIncrement(m_totalDx);
@@ -198,6 +198,7 @@ namespace SolverNameSpace
 
             // 步结束回调（保存结果等）
             model.OnStepCompleted(currentTime);
+            //std::cout << "\nx2: " << m_totalDx[56] << "\n";
         }
 
         // 进度条完成后换行
