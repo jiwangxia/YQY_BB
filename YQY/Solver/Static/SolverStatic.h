@@ -43,6 +43,8 @@ namespace SolverNameSpace
         SolverType GetType() const override { return SolverType::Static; }
         void SetStepCallback(StepCallback callback) override { m_callback = std::move(callback); }
 
+        
+
         // ============ 参数访问 ============
         Params& GetParams() { return m_param; }
         const Params& GetParams() const { return m_param; }

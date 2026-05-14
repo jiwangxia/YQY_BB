@@ -25,7 +25,8 @@ enum class DataType : int
     A1, A2, A3,                   // 加速度
     UR1, UR2, UR3,                // 转角
     F1, F2, F3,                   // 节点力 (内力)
-    M1, M2, M3                    // 单元内力
+    M1, M2, M3,                   // 单元内力
+    R1, R2, R3                    // 节点反力
 };
 
 /**
@@ -57,6 +58,7 @@ private:
     double m_ur1 = 0, m_ur2 = 0, m_ur3 = 0;    // 转角
     double m_f1 = 0, m_f2 = 0, m_f3 = 0;       // 节点力 (内力)
     double m_m1 = 0, m_m2 = 0, m_m3 = 0;       // 节点力 (扭转)
+    double m_r1 = 0, m_r2 = 0, m_r3 = 0;       // 节点反力
 };
 
 /**

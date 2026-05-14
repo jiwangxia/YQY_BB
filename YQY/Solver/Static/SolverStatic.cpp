@@ -33,6 +33,9 @@ namespace SolverNameSpace
             double factor = static_cast<double>(inc) / m_param.numIncrements;
             double currentTime = duration * factor;
 
+            // 施加约束（包括位移控制）
+            Eigen::VectorXd x1;
+            model.Assemble_Constraint(x1, factor);
             // 组装外荷载（增量步开始时做一次）
             Vec F1, F2;
             model.ComputeExternalForce(currentTime, factor, F1, F2);
@@ -141,6 +144,7 @@ namespace SolverNameSpace
                 model.ApplyIncrement(m_dx);
             }
 
+            model.CalculateReactions(F1);
             //// 输出当前增量步的位移信息
             Vec u, v, a;
             model.GetState(u, v, a);

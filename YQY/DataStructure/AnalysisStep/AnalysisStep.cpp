@@ -542,7 +542,7 @@ void AnalysisStep::Assemble_ForceWind(Force_Wind* pForceWind, VectorXd& F1, Vect
     }
 }
 
-void AnalysisStep::Assemble_Constraint(VectorXd& x1)
+void AnalysisStep::Assemble_Constraint(VectorXd& x1, double factor)
 {
     x1.resize(m_nFixed);
     for (auto& constraintPair : m_pData->m_Constraint)
@@ -557,8 +557,8 @@ void AnalysisStep::Assemble_Constraint(VectorXd& x1)
         int dof = pNode->m_DOF[iDirection];
         if (dof >= 0 && dof < m_nFixed)
         {
-            x1[dof] = pConstraint->m_Value;
-            pNode->m_Displacement[iDirection] = pConstraint->m_Value;
+            x1[dof] = pConstraint->m_Value * factor;
+            pNode->m_Displacement[iDirection] = pConstraint->m_Value * factor;
         }
     }
 }
@@ -572,9 +572,7 @@ void AnalysisStep::Solve()
     if (!PrepareData()) return;
     Init();
 
-    // 初始化约束和单元长度
-    VectorXd x1;
-    Assemble_Constraint(x1);
+    // 初始化单元长度
     Get_ElementLength();
 
     // 使用工厂模式创建求解器
@@ -667,8 +665,7 @@ void AnalysisStep::Solve_Static()
     VectorXd internalForce;
     internalForce.setZero(m_nFree);
 
-    // 组装约束
-    Assemble_Constraint(x1);
+    //获取长度
     Get_ElementLength();
     // 残差向量
     VectorXd residual;
@@ -680,6 +677,8 @@ void AnalysisStep::Solve_Static()
         double currentFactor = (double)inc / numIncrements;
         double currentTime = inc * m_StepSize;  // 当前时刻
 
+        // 组装约束
+        Assemble_Constraint(x1, currentFactor);
         // 组装外荷载（时间步开始时做一次）
         ComputeExternalForce(currentTime, currentFactor, F1, F2);
 
@@ -776,7 +775,7 @@ void AnalysisStep::Solve_Dynamic()
     // 重置求解器缓存
     m_solverCache.reset();
 
-    Assemble_Constraint(x1);
+    Assemble_Constraint(x1, 1.0);
     Get_ElementLength();
 
     int numSteps = (int)(m_Time / m_StepSize);
@@ -914,6 +913,40 @@ void AnalysisStep::Solve_Dynamic()
 // ==========================================
 // 新增辅助函数实现
 // ==========================================
+
+void AnalysisStep::CalculateReactions(VectorXd& F1)
+{
+    // 迭代已收敛，节点里的 m_Force 是结构处于平衡状态下的真实总内力
+    for (auto& nodePair : m_pData->m_Nodes)
+    {
+        auto pNode = nodePair.second;
+        int numDOF = pNode->m_DOF.size();
+
+        // 确保数组大小足够
+        if (pNode->m_ReactionForce.size() < numDOF)
+            pNode->m_ReactionForce.resize(numDOF, 0.0);
+
+        for (int i = 0; i < numDOF; ++i)
+        {
+            int dof = pNode->m_DOF[i];
+
+            if (dof >= 0 && dof < m_nFixed)
+            {
+                // 约束自由度：计算真实反力
+                // F1 是之前 ComputeExternalForce 存入的约束节点外荷载
+                double extForce = (dof < F1.size()) ? F1[dof] : 0.0;
+
+                // 公式：反力 = 内力 - 外力
+                pNode->m_ReactionForce[i] = pNode->m_Force[i] - extForce;
+            }
+            else
+            {
+                // 自由自由度：没有支座反力
+                pNode->m_ReactionForce[i] = 0.0;
+            }
+        }
+    }
+}
 
 void AnalysisStep::Get_CurrentStepState(VectorXd& U, VectorXd& V, VectorXd& A) const
 {

@@ -216,7 +216,13 @@ private:
      * @brief 组装约束位移
      * @param [out] x1 约束位移向量
      */
-    void Assemble_Constraint(VectorXd& x1);
+    void Assemble_Constraint(VectorXd& x1, double factor);
+
+    /**
+    * @brief 计算反力向量
+    * @param [out] F1 约束自由度对应的反力向量
+    */
+    void CalculateReactions(VectorXd& F1);
 
     void Get_CurrentStepState(VectorXd& U, VectorXd& V, VectorXd& A) const;
 

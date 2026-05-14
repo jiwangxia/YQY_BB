@@ -14,7 +14,8 @@ public:
     std::vector<double>  m_Displacement;
     std::vector<double>  m_Acceleration;
     std::vector<double>  m_Velocity;
-    std::vector<double>  m_Force;  ///< 节点力 (内力/反力)
+    std::vector<double>  m_Force;  ///< 节点力(内力)
+    std::vector<double>  m_ReactionForce;  ///< 节点力反力)
 
     void SetNumDOFs(int num_dofs);
 

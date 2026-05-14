@@ -77,6 +77,16 @@ namespace SolverNameSpace
          */
         virtual void ComputeExternalForce(double time, double loadFactor, Vec& F1, Vec& F2) = 0;
 
+        // ============ 约束位移计算 ============
+        /**
+         * @brief 计算位移向量
+         *
+         * @param[out] x1 约束自由度对应的位移向量
+         * @param[in] factor 位移因子（静力增量时使用）
+         * @param[out] x2 自由自由度对应的位移向量
+         */
+        virtual void Assemble_Constraint(Vec& x1, double factor) = 0;
+
         /**
          * @brief 计算残差向量
          *
@@ -87,6 +97,12 @@ namespace SolverNameSpace
          * @param[out] R 残差向量
          */
         virtual void ComputeResidual(const Vec& F_ext, Vec& R) = 0;
+
+        /**
+         * @brief 计算反力向量
+         * @param [out] F1 约束自由度对应的反力向量
+         */
+        virtual void CalculateReactions(Vec& F1) = 0;
 
         // ============ 回调 ============
         /**

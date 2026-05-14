@@ -24,7 +24,7 @@ void NodeData::ExtractFromNode(const Node* pNode)
     if (pNode->m_Acceleration.size() >= 2) m_a2 = pNode->m_Acceleration[1];
     if (pNode->m_Acceleration.size() >= 3) m_a3 = pNode->m_Acceleration[2];
 
-    // 直接从节点读取内力/反力
+    // 直接从节点读取内力
     if (pNode->m_Force.size() >= 1) m_f1 = pNode->m_Force[0];
     if (pNode->m_Force.size() >= 2) m_f2 = pNode->m_Force[1];
     if (pNode->m_Force.size() >= 3) m_f3 = pNode->m_Force[2];
@@ -33,6 +33,11 @@ void NodeData::ExtractFromNode(const Node* pNode)
     if (pNode->m_Displacement.size() >= 4) m_ur1 = pNode->m_Displacement[3];
     if (pNode->m_Displacement.size() >= 5) m_ur2 = pNode->m_Displacement[4];
     if (pNode->m_Displacement.size() >= 6) m_ur3 = pNode->m_Displacement[5];
+
+    // 读取反力
+    if (pNode->m_ReactionForce.size() >= 1) m_r1 = pNode->m_ReactionForce[0];
+    if (pNode->m_ReactionForce.size() >= 2) m_r2 = pNode->m_ReactionForce[1];
+    if (pNode->m_ReactionForce.size() >= 3) m_r3 = pNode->m_ReactionForce[2];
 }
 
 double NodeData::GetValue(DataType type) const
@@ -58,6 +63,9 @@ double NodeData::GetValue(DataType type) const
     case DataType::M1:         return m_m1;
     case DataType::M2:         return m_m2;
     case DataType::M3:         return m_m3;
+    case DataType::R1:         return m_r1;
+    case DataType::R2:         return m_r2;
+    case DataType::R3:         return m_r3;
     default:                   return 0.0;
     }
 }
@@ -249,9 +257,12 @@ QString Outputter::GetTypeName(DataType type)
 {
     switch (type)
     {
-    case DataType::U1:         return "T1";
-    case DataType::U2:         return "T2";
-    case DataType::U3:         return "T3";
+    case DataType::U1:         return "U1";
+    case DataType::U2:         return "U2";
+    case DataType::U3:         return "U3";
+    case DataType::UR1:        return "UR1";
+    case DataType::UR2:        return "UR2";
+    case DataType::UR3:        return "UR3";
     case DataType::MagnitudeU: return "MAG";
     case DataType::V1:         return "V1";
     case DataType::V2:         return "V2";
@@ -259,15 +270,15 @@ QString Outputter::GetTypeName(DataType type)
     case DataType::A1:         return "A1";
     case DataType::A2:         return "A2";
     case DataType::A3:         return "A3";
-    case DataType::UR1:        return "R1";
-    case DataType::UR2:        return "R2";
-    case DataType::UR3:        return "R3";
     case DataType::F1:         return "F1";
     case DataType::F2:         return "F2";
     case DataType::F3:         return "F3";
     case DataType::M1:         return "M1";
     case DataType::M2:         return "M2";
     case DataType::M3:         return "M3";
+    case DataType::R1:         return "R1";
+    case DataType::R2:         return "R2";
+    case DataType::R3:         return "R3";
     default:                   return "UNKNOWN";
     }
 }

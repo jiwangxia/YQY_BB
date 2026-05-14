@@ -16,5 +16,6 @@ void Node::SetNumDOFs(int num_dofs)
         m_Acceleration.resize(num_dofs, 0.0);
         m_Velocity.resize(num_dofs, 0.0);
         m_Force.resize(num_dofs, 0.0);
+        m_ReactionForce.resize(num_dofs, 0.0);
     }
 }
