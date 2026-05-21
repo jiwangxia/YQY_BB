@@ -27,7 +27,7 @@ namespace SolverNameSpace
             int maxIter       = 32;       //  每个增量步的最大 N-R 迭代次数
             double tol_R      = 1e-4;     //  相对残差容差
             double tol_dx     = 1e-6;     //  位移增量容差
-            double tol_energy;            //  能量增量容差
+            double tol_energy = 1e-6;     //  能量增量容差
         };
 
         /**
