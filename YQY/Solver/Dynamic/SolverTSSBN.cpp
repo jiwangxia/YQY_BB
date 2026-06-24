@@ -121,7 +121,7 @@ namespace SolverNameSpace
             model.SetTrialKinematics(Vn_new, m_An);  // 先用旧的加速度
 
             // 计算最终加速度（通过求解 M*a = F_ext - F_int - C*v）
-            model.AssembleMatrices(m_K, &m_M, &m_C);
+            //model.AssembleMatrices(m_K, &m_M, &m_C);
             //model.ComputeResidual(currentTime, 1.0, m_R);
 
             // 求解加速度: M * a = R (这里 R 应该是 F_ext - F_int - C*v)
@@ -184,7 +184,7 @@ namespace SolverNameSpace
             model.SetTrialKinematics(m_Vc1, m_Ac1);
 
             // 3. 组装矩阵
-            model.AssembleMatrices(m_K, &m_M, &m_C);
+            //model.AssembleMatrices(m_K, &m_M, &m_C);
 
             // 4. 有效刚度矩阵: K_eff = K + M/(c1*dt)^2 + C/(c1*dt)
             m_Keff = m_K + (1.0 / c1_dt2) * m_M + (1.0 / c1_dt) * m_C;
@@ -252,7 +252,7 @@ namespace SolverNameSpace
             model.SetTrialKinematics(m_Vc2, m_Ac2);
 
             // 3. 组装矩阵
-            model.AssembleMatrices(m_K, &m_M, &m_C);
+            //model.AssembleMatrices(m_K, &m_M, &m_C);
 
             // 4. 有效刚度矩阵: K_eff = K + M/(alpha*c2*dt)^2 + C/(alpha*c2*dt)
             m_Keff = m_K + (1.0 / alpha_c2_dt2) * m_M + (1.0 / alpha_c2_dt) * m_C;

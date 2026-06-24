@@ -121,92 +121,54 @@ void AnalysisStep::Get_ElementLength()
     }
 }
 
-void AnalysisStep::AssembleKs_Static()
-{
-    std::list<Tri> L11, L21, L22;
-
-    m_K11.resize(m_nFixed, m_nFixed);
-    m_K21.resize(m_nFree, m_nFixed);
-    m_K22.resize(m_nFree, m_nFree);
-
-    MatrixXd ke;
-    std::vector<int> DOFs;
-
-    for (auto& element : m_pData->m_Elements)
-    {
-        auto pelement = element.second;
-        //pelement->Get_ke(ke);//无内力，目前会出错
-        pelement->Get_ke_non(ke);
-
-        //std::cout << MatrixXd(ke) << "\n";
-        pelement->GetDOFs(DOFs);
-        Assemble(DOFs, ke, L11, L21, L22);
-    }
-
-    m_K11.setFromTriplets(L11.begin(), L11.end());
-    m_K21.setFromTriplets(L21.begin(), L21.end());
-    m_K22.setFromTriplets(L22.begin(), L22.end());
-
-    // Fix: 为了防止刚度矩阵奇异（例如竖直杆件受到横向力时初始切线刚度为0），
-    // 在对角线上添加一个极小值 epsilon
-    double epsilon = 1e-10;
-    for (int i = 0; i < m_nFree; ++i)
-    {
-        m_K22.coeffRef(i, i) += epsilon;
-    }
-
-    qDebug();
-    //std::cout << MatrixXd(m_K22);
-}
-
-void AnalysisStep::Assemble_Matrix()
-{
-    std::list<Tri> m11, m21, m22;
-    std::list<Tri> k11, k21, k22;
-    std::list<Tri> c11, c21, c22;
-
-    m_M11.resize(m_nFixed, m_nFixed);
-    m_M21.resize(m_nFree, m_nFixed);
-    m_M22.resize(m_nFree, m_nFree);
-
-    m_K11.resize(m_nFixed, m_nFixed);
-    m_K21.resize(m_nFree, m_nFixed);
-    m_K22.resize(m_nFree, m_nFree);
-
-    m_C11.resize(m_nFixed, m_nFixed);
-    m_C21.resize(m_nFree, m_nFixed);
-    m_C22.resize(m_nFree, m_nFree);
-
-    std::vector<int> DOFs;
-    std::vector<double> damping{ 0.0 ,0.0 ,0.0 ,0.0 };
-
-    MatrixXd me, ke, ce;
-    for (auto& element : m_pData->m_Elements)
-    {
-        auto pelement = element.second;
-        pelement->Get_ke_non(ke);
-        pelement->Get_me_Consistent(me);
-        //pelement->Get_me_Lumped(me);//杆单元用集中质量矩阵求解动力学与abaqus一致
-        pelement->Assemble(damping, ce);
-
-        pelement->GetDOFs(DOFs);
-        Assemble(DOFs, me, m11, m21, m22);
-        Assemble(DOFs, ke, k11, k21, k22);
-        Assemble(DOFs, ce, c11, c21, c22);
-    }
-
-    m_M11.setFromTriplets(m11.begin(), m11.end());
-    m_M21.setFromTriplets(m21.begin(), m21.end());
-    m_M22.setFromTriplets(m22.begin(), m22.end());
-
-    m_K11.setFromTriplets(k11.begin(), k11.end());
-    m_K21.setFromTriplets(k21.begin(), k21.end());
-    m_K22.setFromTriplets(k22.begin(), k22.end());
-
-    m_C11.setFromTriplets(c11.begin(), c11.end());
-    m_C21.setFromTriplets(c21.begin(), c21.end());
-    m_C22.setFromTriplets(c22.begin(), c22.end());
-}
+//void AnalysisStep::Assemble_Matrix()
+//{
+//    std::list<Tri> m11, m21, m22;
+//    std::list<Tri> k11, k21, k22;
+//    std::list<Tri> c11, c21, c22;
+//
+//    m_M11.resize(m_nFixed, m_nFixed);
+//    m_M21.resize(m_nFree, m_nFixed);
+//    m_M22.resize(m_nFree, m_nFree);
+//
+//    m_K11.resize(m_nFixed, m_nFixed);
+//    m_K21.resize(m_nFree, m_nFixed);
+//    m_K22.resize(m_nFree, m_nFree);
+//
+//    m_C11.resize(m_nFixed, m_nFixed);
+//    m_C21.resize(m_nFree, m_nFixed);
+//    m_C22.resize(m_nFree, m_nFree);
+//
+//    std::vector<int> DOFs;
+//    std::vector<double> damping{ 0.0 ,0.0 ,0.0 ,0.0 };
+//
+//    MatrixXd me, ke, ce;
+//    for (auto& element : m_pData->m_Elements)
+//    {
+//        auto pelement = element.second;
+//        pelement->Get_ke_non(ke);
+//        pelement->Get_me_Consistent(me);
+//        //pelement->Get_me_Lumped(me);//杆单元用集中质量矩阵求解动力学与abaqus一致
+//        pelement->Assemble(damping, ce);
+//
+//        pelement->GetDOFs(DOFs);
+//        Assemble(DOFs, me, m11, m21, m22);
+//        Assemble(DOFs, ke, k11, k21, k22);
+//        Assemble(DOFs, ce, c11, c21, c22);
+//    }
+//
+//    m_M11.setFromTriplets(m11.begin(), m11.end());
+//    m_M21.setFromTriplets(m21.begin(), m21.end());
+//    m_M22.setFromTriplets(m22.begin(), m22.end());
+//
+//    m_K11.setFromTriplets(k11.begin(), k11.end());
+//    m_K21.setFromTriplets(k21.begin(), k21.end());
+//    m_K22.setFromTriplets(k22.begin(), k22.end());
+//
+//    m_C11.setFromTriplets(c11.begin(), c11.end());
+//    m_C21.setFromTriplets(c21.begin(), c21.end());
+//    m_C22.setFromTriplets(c22.begin(), c22.end());
+//}
 
 void AnalysisStep::Assemble(std::vector<int>& DOFs, Eigen::MatrixXd& T, std::list<Tri>& L11, std::list<Tri>& L21, std::list<Tri>& L22)
 {
@@ -591,6 +553,7 @@ void AnalysisStep::Solve()
     }
     case EnumKeyword::StepType::DYNAMIC:
     {
+        isDynamic = true;
         // 根据 m_DynamicSolverType 选择动力求解器
         switch (m_DynamicSolverType)
         {
@@ -647,267 +610,6 @@ void AnalysisStep::Solve()
     {
         qDebug().noquote() << QStringLiteral("求解失败: %1").arg(solver->GetName());
     }
-}
-
-void AnalysisStep::Solve_Static()
-{
-    qDebug().noquote() << QStringLiteral("开始静力求解...");
-
-    // 定义力向量和约束向量
-    VectorXd F1, F2, x1;
-
-    // 定义位移向量
-    VectorXd x2, totalx2;
-    x2.setZero(m_nFree);
-    totalx2.setZero(m_nFree);
-
-    // 内力向量
-    VectorXd internalForce;
-    internalForce.setZero(m_nFree);
-
-    //获取长度
-    Get_ElementLength();
-    // 残差向量
-    VectorXd residual;
-
-    int numIncrements = m_Time / m_StepSize; // 可由用户在输入文件中定义
-    qDebug().noquote() << QStringLiteral("分%1步施加荷载").arg(numIncrements);
-    for (int inc = 1; inc <= numIncrements; ++inc)
-    {
-        double currentFactor = (double)inc / numIncrements;
-        double currentTime = inc * m_StepSize;  // 当前时刻
-
-        // 组装约束
-        Assemble_Constraint(x1, currentFactor);
-        // 组装外荷载（时间步开始时做一次）
-        ComputeExternalForce(currentTime, currentFactor, F1, F2);
-
-        //std::cout << "\nF2:" << VectorXd(F2).transpose();
-        // Newton-Raphson 迭代
-        for (int iter = 0; iter < m_MaxIterations; iter++)
-        {
-            // 1. 组装刚度矩阵 (基于当前变形状态)
-            AssembleKs_Static();
-            std::cout << "\nK22:\n" << MatrixXd(m_K22);
-
-            // 2. 计算残差（使用已组装的外荷载）
-            ComputeResidual(F2, residual);
-
-            // 3. 检查收敛性
-            if (residual.norm() < m_Tolerance && iter > 0)
-            {
-                //qDebug().noquote() << QStringLiteral("迭代在第 %1 步收敛").arg(iter);
-                break;
-            }
-
-            // 4. 求解线性方程组 K22 * Δu = residual
-            Eigen::SimplicialLDLT<SpMat> ldltSolver;
-            ldltSolver.analyzePattern(m_K22);
-            ldltSolver.factorize(m_K22);
-            if (ldltSolver.info() != Success)
-            {
-                qDebug().noquote() << QStringLiteral("LDLT分解失败!");
-                return;
-            }
-
-            x2 = ldltSolver.solve(residual);
-            //std::cout << "\nx2: " << VectorXd(x2).transpose();
-            F1 = m_K11 * x1 + m_K21.transpose() * x2;
-
-            // 5. 累加位移增量
-            totalx2 += x2;
-
-            // 6. 更新节点位移
-            Updata_NodeData(x1, x2, F1);
-
-            // 7. 检查是否达到最大迭代次数
-            if (iter == m_MaxIterations - 1)
-            {
-                qDebug().noquote() << QStringLiteral("\n达最大迭代次数\n");
-                exit(1);
-            }
-        }
-    }
-    // 保存结果到输出器 (直接从节点读取所有数据)
-    if (m_pData)
-    {
-        m_pData->GetOutputter().SaveDataFromNodes(m_Time, m_pData);
-    }
-
-    qDebug().noquote() << QStringLiteral("\n静力求解完成 ");
-}
-
-void AnalysisStep::Solve_Dynamic()
-{
-    qDebug().noquote() << QStringLiteral("开始 Newmark 动力非线性求解...");
-
-    // 1. 初始化 Newmark 参数
-    double beta = 0.25;
-    double gamma = 0.5;
-    double dt = m_StepSize;
-
-    if (dt <= 0.0)
-    {
-        qDebug() << "Error: Time step size <= 0";
-        return;
-    }
-
-    double a0 = 1.0 / (beta * dt * dt);
-    double a1 = gamma / (beta * dt);
-    double a2 = 1.0 / (beta * dt);
-    double a3 = 1.0 / (2.0 * beta) - 1.0;
-    double a4 = gamma / beta - 1.0;
-    double a5 = dt * 0.5 * (gamma / beta - 2.0);
-    double a6 = dt * (1.0 - gamma);
-    double a7 = gamma * dt;
-
-    // 准备向量
-    VectorXd F1, F2, x1;
-    VectorXd residual(m_nFree), internalForce(m_nFree);
-
-    // 状态备份向量 (上一时刻 t)
-    VectorXd U_n(m_nFree), V_n(m_nFree), A_n(m_nFree);
-
-    // 过程向量
-    VectorXd total_x2(m_nFree);      // 当前步的总位移增量
-    VectorXd dx2(m_nFree);           // 每轮迭代的位移修正量
-
-    // 重置求解器缓存
-    m_solverCache.reset();
-
-    Assemble_Constraint(x1, 1.0);
-    Get_ElementLength();
-
-    int numSteps = (int)(m_Time / m_StepSize);
-
-    for (int step = 1; step <= numSteps; ++step)
-    {
-        double currentTime = step * m_StepSize;
-
-
-        // --- 步骤 1: 备份上一时刻 (t) 状态 ---
-        Get_CurrentStepState(U_n, V_n, A_n);
-
-
-        // 初始化当前步累积增量
-        total_x2.setZero();
-
-        // 组装外荷载（时间步开始时做一次）
-        double factor = 1.0;
-        ComputeExternalForce(currentTime, factor, F1, F2);
-
-        // --- Newton-Raphson 迭代 ---
-        for (int iter = 0; iter < m_MaxIterations; iter++)
-        {
-
-            // A. 组装 M, C, K
-            Assemble_Matrix();
-
-            // B. 计算有效刚度矩阵: K_eff = K + a0*M + a1*C
-            SpMat K_eff = m_K22 + a0 * m_M22 + a1 * m_C22;
-
-            // C. 设置试探的速度和加速度
-            VectorXd A_curr = a0 * total_x2 - a2 * V_n - a3 * A_n;
-            VectorXd V_curr = V_n + a6 * A_n + a7 * A_curr;
-
-            // 将速度和加速度设置到节点（用于计算惯性力）
-            VectorXd zero_dx = VectorXd::Zero(m_nFree);
-            Updata_NodeData(x1, zero_dx, F1, &V_curr, &A_curr);
-
-            // D. 计算残差（使用已组装的外荷载）
-            ComputeResidual(F2, residual);
-
-            // E. 检查收敛
-            if (residual.norm() < m_Tolerance && iter > 0)
-            {
-                //qDebug().noquote() << QStringLiteral("迭代在第 %1 步收敛").arg(iter);
-                break;
-            }
-
-            // F. 求解线性方程组 (集成 LDLT/LU 自动切换)
-            bool solved = false;
-
-            // G.1 尝试 LDLT
-            if (m_solverCache.use_ldlt)
-            {
-                if (!m_solverCache.pattern_analyzed)
-                {
-                    m_solverCache.ldlt.analyzePattern(K_eff);
-                }
-                // 只有当 pattern 已分析后才进行 factorize
-                m_solverCache.ldlt.factorize(K_eff);
-
-                if (m_solverCache.ldlt.info() == Eigen::Success)
-                {
-                    dx2 = m_solverCache.ldlt.solve(residual);
-                    if (m_solverCache.ldlt.info() == Eigen::Success)
-                    {
-                        solved = true;
-                        m_solverCache.pattern_analyzed = true; // 标记分析成功，下一次可复用
-                    }
-                }
-
-                if (!solved)
-                {
-                    qDebug() << "LDLT failed at step" << step << "iter" << iter << ", switching to LU...";
-                    m_solverCache.use_ldlt = false;
-                    m_solverCache.pattern_analyzed = false; // 切换求解器，模式需重置
-                }
-            }
-
-            // G.2 如果 LDLT 失败或已禁用，尝试 LU
-            if (!solved)
-            {
-                if (!m_solverCache.pattern_analyzed)
-                {
-                    m_solverCache.lu.analyzePattern(K_eff);
-                    m_solverCache.pattern_analyzed = true;
-                }
-                m_solverCache.lu.factorize(K_eff);
-
-                if (m_solverCache.lu.info() == Eigen::Success)
-                {
-                    dx2 = m_solverCache.lu.solve(residual);
-                    solved = true;
-                }
-                else
-                {
-                    qDebug() << "LU factorization failed!";
-                    // 这里可以尝试重置 pattern 再试一次，或者直接报错
-                    m_solverCache.pattern_analyzed = false;
-                }
-            }
-
-            if (!solved)
-            {
-                throw std::runtime_error("矩阵分解失败！");
-            }
-
-            if (iter == m_MaxIterations - 1)
-            {
-                throw std::runtime_error("Newton-Raphson迭代未收敛，已达最大迭代次数！");
-            }
-
-            // H. 累加总位移增量
-            total_x2 += dx2;
-
-            // I. 更新节点位移 (仅位移)
-            // Updata_NodeData 负责将 dx2 累加到 m_Displacement，从而影响下一次 Assemble_Matrix 和 Get_CurrentInforce
-            Updata_NodeData(x1, dx2, F1);
-        }
-
-        VectorXd A_final = a0 * total_x2 - a2 * V_n - a3 * A_n;
-        VectorXd V_final = V_n + a6 * A_n + a7 * A_final;
-
-        VectorXd zero_dx(m_nFree);
-        zero_dx.setZero();
-
-        Updata_NodeData(x1, zero_dx, F1, &V_final, &A_final);
-        // 保存输出
-        if (m_pData) m_pData->GetOutputter().SaveDataFromNodes(currentTime, m_pData);
-    }
-
-    qDebug().noquote() << QStringLiteral("动力求解完成");
 }
 
 // ==========================================
@@ -1077,22 +779,43 @@ void AnalysisStep::GetState(SolverNameSpace::Vec& u, SolverNameSpace::Vec& v, So
     Get_CurrentStepState(u, v, a);
 }
 
-void AnalysisStep::AssembleMatrices(SolverNameSpace::SpMat& K, SolverNameSpace::SpMat* M, SolverNameSpace::SpMat* C)
+void AnalysisStep::Assemble_Matrix(SpMat& Keff, bool isDynamic)
 {
-    if (M && C)
+    std::list<Tri> L11, L21, L22;
+
+    m_Keff11.resize(m_nFixed, m_nFixed);
+    m_Keff21.resize(m_nFree, m_nFixed);
+    m_Keff22.resize(m_nFree, m_nFree);
+
+    MatrixXd ke;
+    std::vector<int> DOFs;
+
+    for (auto& element : m_pData->m_Elements)
     {
-        // 动力学：组装 K, M, C
-        Assemble_Matrix();
-        K = m_K22;
-        *M = m_M22;
-        *C = m_C22;
+        auto pelement = element.second;
+        //pelement->Get_ke(ke);//无内力，目前会出错
+        pelement->Get_ke(ke);
+
+        //std::cout << MatrixXd(ke) << "\n";
+        pelement->GetDOFs(DOFs);
+        Assemble(DOFs, ke, L11, L21, L22);
     }
-    else
-    {
-        // 静力：只组装 K
-        AssembleKs_Static();
-        K = m_K22;
-    }
+
+    m_Keff11.setFromTriplets(L11.begin(), L11.end());
+    m_Keff21.setFromTriplets(L21.begin(), L21.end());
+    m_Keff22.setFromTriplets(L22.begin(), L22.end());
+
+    Keff = m_Keff22;
+    // Fix: 为了防止刚度矩阵奇异（例如竖直杆件受到横向力时初始切线刚度为0），
+    // 在对角线上添加一个极小值 epsilon
+    //double epsilon = 1e-10;
+    //for (int i = 0; i < m_nFree; ++i)
+    //{
+    //    m_K22.coeffRef(i, i) += epsilon;
+    //}
+
+    //qDebug();
+    //std::cout << MatrixXd(Keff);
 }
 
 void AnalysisStep::ComputeExternalForce(double time, double loadFactor, VectorXd& F1, VectorXd& F2)
@@ -1113,13 +836,13 @@ void AnalysisStep::ComputeResidual(const SolverNameSpace::Vec& F_ext, SolverName
         std::fill(nodePair.second->m_Force.begin(), nodePair.second->m_Force.end(), 0.0);
     }
     Get_CurrentInforce(f_int);
-
+    //std::cout << "\nF:" << f_int.transpose() << "\n";
     // 动力学：加上惯性力和阻尼力
     if (m_Type == EnumKeyword::StepType::DYNAMIC)
     {
         VectorXd v_curr = GetCurrentVelocity();
         VectorXd a_curr = GetCurrentAcceleration();
-        f_int += m_M22 * a_curr + m_C22 * v_curr;
+        //f_int += m_M22 * a_curr + m_C22 * v_curr;
     }
 
     R = F_ext - f_int;

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "Base/Base.h"
 #include "DataStructure/Node/Node.h"
 #include "DataStructure/Material/Material.h"
@@ -8,7 +8,6 @@
 #include "DataStructure/Element/ElementBase.h"
 #include "DataStructure/Element/ElementTruss.h"
 #include "DataStructure/Element/ElementCable.h"
-#include "DataStructure/Element/ElementBeam.h"
 #include "DataStructure/Element/ElementBeam_CR.h"
 #include "DataStructure/Property/Property.h"
 #include "DataStructure/Constraint/Constraint.h"

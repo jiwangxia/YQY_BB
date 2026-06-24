@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file IAnalysisModel.h
  * @brief 分析模型接口 - 求解器通过此接口访问物理数据
  * 
@@ -26,6 +26,8 @@ namespace SolverNameSpace
     {
     public:
         virtual ~IAnalysisModel() = default;
+
+        bool isDynamic = false;
 
         // ============ 基本信息 ============
         /** @brief 获取自由自由度数量 */
@@ -60,11 +62,10 @@ namespace SolverNameSpace
         // ============ 矩阵组装 ============
         /**
          * @brief 组装系统矩阵
-         * @param[out] K 刚度矩阵 (必须)
-         * @param[out] M 质量矩阵 (动力学需要，静力可传nullptr)
-         * @param[out] C 阻尼矩阵 (动力学需要，静力可传nullptr)
+         * @param[out] K 等效刚度矩阵
+         * @param[out] isDynamic 是否为动力分析
          */
-        virtual void AssembleMatrices(SpMat& K, SpMat* M = nullptr, SpMat* C = nullptr) = 0;
+        virtual void Assemble_Matrix(SpMat& Keff, bool isDynamic) = 0;
 
         // ============ 力计算 ============
         /**

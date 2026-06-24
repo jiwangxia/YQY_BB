@@ -7,10 +7,6 @@ ElementBeam_CR::ElementBeam_CR()
 
 void ElementBeam_CR::Get_ke(MatrixXd& ke)
 {
-}
-
-void ElementBeam_CR::Get_ke_non(MatrixXd& ke)
-{
     // ---- 计算变形状态 ----
     Matrix3d Rg_1, Rg_2;
     Vector3d q1, q2, q;
@@ -547,8 +543,8 @@ void ElementBeam_CR::Get_kl(const VectorXd& pl, const double& L, MatrixXd& _OUT 
     //pSection->Calculate_I(Iy, Iz, J);
     //const double Io = pSection->Io;
     //double Irr = pSection->Irr;
-    double Iy = 0.001, Iz = 0.001, J = 0.001;
-    double Irr = 0.001;//1.5045055561273500985282118708287;
+    double Iy = 1e-7, Iz = 1e-7, J = 1e-7;
+    double Irr = 3.377e-14;//1.5045055561273500985282118708287;
     double Io = 0.002;
 
     double EA_L = E * A / L;
@@ -593,107 +589,168 @@ void ElementBeam_CR::Get_kl(const VectorXd& pl, const double& L, MatrixXd& _OUT 
     fl(6) = 2.0 * EIz_L * (t31 + 2.0 * t32);
 
     m_Stress = fl(0) / A; // 轴向应力
-    //const double L2 = L * L;
-    //const double L3 = L2 * L;
-
-    //const double dt1 = t11 - t12;
-    //const double dt1_sq = dt1 * dt1;
-
-    //// 常用线性组合
-    //const double t2_41 = 4.0 * t21 - t22;
-    //const double t2_14 = t21 - 4.0 * t22;
-    //const double t3_41 = 4.0 * t31 - t32;
-    //const double t3_14 = t31 - 4.0 * t32;
-
-    //const double poly_y = 2.0 * t21 * t21 - t21 * t22 + 2.0 * t22 * t22;
-    //const double poly_z = 2.0 * t31 * t31 - t31 * t32 + 2.0 * t32 * t32;
-    //const double poly_yz = poly_y + poly_z;
-
-    //const double axial_strain_term = L * poly_yz + 30.0 * u;
-
-    //const double N_nonlin_core = 15.0 * Io * dt1_sq + A * L * axial_strain_term;
 
 
-    //// 计算局部内力向量 fl (7 x 1)
-    //fl.resize(7);
-    //fl.setZero();
-    //const double E_900L = E / (900.0 * L);
-    //// 轴力
-    //fl(0) = (E / (30.0 * L2)) * N_nonlin_core;
 
-    //// 扭矩
-    //fl(1) = dt1 * (30.0 * G * J * L2 + 15.0 * E * Irr * dt1_sq + E * Io * L * axial_strain_term) / (30.0 * L3);
+
+
+    //kl.setZero(7, 7);
+    //fl.setZero(7);
+
+    //if (pl.size() != 7)
+    //{
+    //    qDebug().noquote() << QStringLiteral("ElementBeam_CR::Get_kl: pl 大小不为 7");
+    //    return;
+    //}
+
+    //if (std::abs(L) < 1e-12)
+    //{
+    //    qDebug().noquote() << QStringLiteral("ElementBeam_CR::Get_kl: 单元长度过小");
+    //    return;
+    //}
+
+    //// 提取 Pl 向量的分量
+    //const double u = pl(0);
+    //const double t11 = pl(1);
+    //const double t21 = pl(2);
+    //const double t31 = pl(3);
+    //const double t12 = pl(4);
+    //const double t22 = pl(5);
+    //const double t32 = pl(6);
+
+    //auto pProperty = m_pProperty.lock();
+    //auto pMaterial = pProperty->m_pMaterial.lock();
+    //auto pSection = pProperty->m_pSection.lock();
+
+    //double A = pSection->m_Area;
+    //double E = pMaterial->m_Young;
+    //double G = E / (2. * (1 + pMaterial->m_Poisson));
+
+    //double Iy = 0.0, Iz = 0.0, J = 0.0;
+    //pSection->Calculate_I(Iy, Iz, J);
+    //const double Io = pSection->Io;
+    //double Irr = pSection->Irr;
+
+    //double L0 = L;
+    //double L2 = L0 * L0;
+    //double L3 = L2 * L0;
+
+    //kl(0, 0) = (A * E) / L0;
+
+    //kl(1, 1) = (30 * G * J * L2 + 45 * E * Irr * (t11 - t12) * (t11 - t12) +
+    //    E * Io * L0 * (L0 * (2 * t21 * t21 - t21 * t22 + 2 * t22 * t22 + 2 * t31 * t31 - t31 * t32 +
+    //        2 * t32 * t32) + 30 * u)) / (30 * L3);
+    //kl(2, 2) = (E * (3600 * Iz + 60 * Io * (t11 - t12) * (t11 - t12) +
+    //    A * L0 * (L0 * (24 * t21 * t21 - 12 * t21 * t22 + 9 * t22 * t22 + 8 * t31 * t31 - 4 * t31 * t32 +
+    //        8 * t32 * t32) + 120 * u))) / (900 * L0);
+
+    //kl(3, 3) = (E * (3600 * Iy + 60 * Io * (t11 - t12) * (t11 - t12) +
+    //    A * L0 * (L0 * (8 * t21 * t21 - 4 * t21 * t22 + 8 * t22 * t22 + 24 * t31 * t31 - 12 * t31 * t32 +
+    //        9 * t32 * t32) + 120 * u))) / (900 * L0);
+
+    //kl(4, 4) = kl(1, 1);
+    //kl(5, 5) = (E * (3600 * Iz + 60 * Io * (t11 - t12) * (t11 - t12) +
+    //    A * L0 * (L0 * (9 * t21 * t21 - 12 * t21 * t22 + 24 * t22 * t22 + 8 * t31 * t31 - 4 * t31 * t32 +
+    //        8 * t32 * t32) + 120 * u))) / (900 * L0);
+
+    //kl(6, 6) = (E * (3600 * Iy + 60 * Io * (t11 - t12) * (t11 - t12) +
+    //    A * L0 * (L0 * (8 * t21 * t21 - 4 * t21 * t22 + 8 * t22 * t22 + 9 * t31 * t31 - 12 * t31 * t32 +
+    //        24 * t32 * t32) + 120 * u))) / (900 * L0);
+
+    //kl(0, 1) = (E * Io * (t11 - t12)) / L2;
+    //kl(1, 0) = kl(0, 1);
+
+    //kl(0, 2) = 1. / 30 * A * E * (4 * t21 - t22);
+    //kl(2, 0) = kl(0, 2);
+
+    //kl(0, 3) = 1. / 30 * A * E * (4 * t31 - t32);
+    //kl(3, 0) = kl(0, 3);
+
+    //kl(0, 4) = (E * Io * (t12 - t11)) / L2;
+    //kl(4, 0) = kl(0, 4);
+    //kl(0, 5) = -(1. / 30) * A * E * (t21 - 4 * t22);
+    //kl(5, 0) = kl(0, 5);
+
+    //kl(0, 6) = -(1. / 30) * A * E * (t31 - 4 * t32);
+    //kl(6, 0) = kl(0, 6);
+    //kl(1, 2) = (E * Io * (t11 - t12) * (4 * t21 - t22)) / (30 * L0);
+    //kl(2, 1) = kl(1, 2);
+
+    //kl(1, 3) = (E * Io * (t11 - t12) * (4 * t31 - t32)) / (30 * L0);
+    //kl(3, 1) = kl(1, 3);
+    //kl(1, 4) = -((G * J) / L0) - (E * (45 * Irr * (t11 - t12) * (t11 - t12) +
+    //    Io * L0 * (L0 * (2 * t21 * t21 - t21 * t22 + 2 * t22 * t22 + 2 * t31 * t31 - t31 * t32 +
+    //        2 * t32 * t32) + 30 * u))) / (30 * L3);
+    //kl(4, 1) = kl(1, 4);
+
+    //kl(1, 5) = -((E * Io * (t11 - t12) * (t21 - 4 * t22)) / (30 * L0));
+    //kl(5, 1) = kl(1, 5);
+
+    //kl(1, 6) = -((E * Io * (t11 - t12) * (t31 - 4 * t32)) / (30 * L0));
+    //kl(6, 1) = kl(1, 6);
+    //kl(2, 3) = 1. / 900 * A * E * L0 * (4 * t21 - t22) * (4 * t31 - t32);
+    //kl(3, 2) = kl(2, 3);
+
+    //kl(2, 4) = -((E * Io * (t11 - t12) * (4 * t21 - t22)) / (30 * L0));
+    //kl(4, 2) = kl(2, 4);
+
+    //kl(2, 5) = (E * (1800 * Iz - 15 * Io * (t11 - t12) * (t11 - t12) -
+    //    A * L0 * (L0 * (6 * t21 * t21 - 18 * t21 * t22 + 6 * t22 * t22 + 2 * t31 * t31 - t31 * t32 +
+    //        2 * t32 * t32) + 30 * u))) / (900 * L0);
+    //kl(5, 2) = kl(2, 5);
+
+    //kl(2, 6) = -(1. / 900) * A * E * L0 * (4 * t21 - t22) * (t31 - 4 * t32);
+    //kl(6, 2) = kl(2, 6);
+
+    //kl(3, 4) = -((E * Io * (t11 - t12) * (4 * t31 - t32)) / (30 * L0));
+    //kl(4, 3) = kl(3, 4);
+
+    //kl(3, 5) = -(1. / 900) * A * E * L0 * (t21 - 4 * t22) * (4 * t31 - t32);
+    //kl(5, 3) = kl(3, 5);
+
+    //kl(3, 6) = (E * (1800 * Iy - 15 * Io * (t11 - t12) * (t11 - t12) -
+    //    A * L0 * (L0 * (2 * t21 * t21 - t21 * t22 + 2 * t22 * t22 +
+    //        6 * (t31 * t31 - 3 * t31 * t32 + t32 * t32)) + 30 * u))) / (900 * L0);
+    //kl(6, 3) = kl(3, 6);
+
+    //kl(4, 5) = (E * Io * (t11 - t12) * (t21 - 4 * t22)) / (30 * L0);
+    //kl(5, 4) = kl(4, 5);
+
+    //kl(4, 6) = (E * Io * (t11 - t12) * (t31 - 4 * t32)) / (30 * L0);
+    //kl(6, 4) = kl(4, 6);
+
+    //kl(5, 6) = 1. / 900 * A * E * L0 * (t21 - 4 * t22) * (t31 - 4 * t32);
+    //kl(6, 5) = kl(5, 6);
+
+
+    ////内力向量计算:
+    //fl(0) = (E * (15 * Io * (t11 - t12) * (t11 - t12) +
+    //    A * L0 * (L0 * (2 * t21 * t21 - t21 * t22 + 2 * t22 * t22 + 2 * t31 * t31 - t31 * t32 +
+    //        2 * t32 * t32) + 30 * u))) / (30 * L2);
+
+    //fl(1) = ((t11 - t12) * (30 * G * J * L2 + 15 * E * Irr * (t11 - t12) * (t11 - t12) +
+    //    E * Io * L0 * (L0 * (2 * t21 * t21 - t21 * t22 + 2 * t22 * t22 + 2 * t31 * t31 - t31 * t32 +
+    //        2 * t32 * t32) + 30 * u))) / (30 * L3);
+
+    //fl(2) = (E * (1800 * Iz * (2 * t21 + t22) + (4 * t21 - t22) * (15 * Io * (t11 - t12) * (t11 - t12) +
+    //    A * L0 * (L0 * (2 * t21 * t21 - t21 * t22 + 2 * t22 * t22 + 2 * t31 * t31 - t31 * t32 +
+    //        2 * t32 * t32) + 30 * u)))) / (900 * L0);
+
+    //fl(3) = (E * (1800 * Iy * (2 * t31 + t32) + (4 * t31 - t32) * (15 * Io * (t11 - t12) * (t11 - t12) +
+    //    A * L0 * (L0 * (2 * t21 * t21 - t21 * t22 + 2 * t22 * t22 + 2 * t31 * t31 - t31 * t32 +
+    //        2 * t32 * t32) + 30 * u)))) / (900 * L0);
+
     //fl(4) = -fl(1);
 
-    //// Y轴弯矩（绕 y 轴弯曲，用 Iz）
+    //fl(5) = (E * (1800 * Iz * (t21 + 2 * t22) - (t21 - 4 * t22) * (15 * Io * (t11 - t12) * (t11 - t12) +
+    //    A * L0 * (L0 * (2 * t21 * t21 - t21 * t22 + 2 * t22 * t22 + 2 * t31 * t31 - t31 * t32 +
+    //        2 * t32 * t32) + 30 * u)))) / (900 * L0);
 
-    //fl(2) = E_900L * (1800.0 * Iz * (2.0 * t21 + t22) + t2_41 * N_nonlin_core);
-    //fl(5) = E_900L * (1800.0 * Iz * (t21 + 2.0 * t22) - t2_14 * N_nonlin_core);
+    //fl(6) = (E * (1800 * Iy * (t31 + 2 * t32) - (t31 - 4 * t32) * (15 * Io * (t11 - t12) * (t11 - t12) +
+    //    A * L0 * (L0 * (2 * t21 * t21 - t21 * t22 + 2 * t22 * t22 + 2 * t31 * t31 - t31 * t32 +
+    //        2 * t32 * t32) + 30 * u)))) / (900 * L0);
 
-    //// Z轴弯矩（绕 z 轴弯曲，用 Iy）
-    //fl(3) = E_900L * (1800.0 * Iy * (2.0 * t31 + t32) + t3_41 * N_nonlin_core);
-    //fl(6) = E_900L * (1800.0 * Iy * (t31 + 2.0 * t32) - t3_14 * N_nonlin_core);
-    //m_Stress = fl(0) / A; // 轴向应力
-
-    //// 计算局部切线刚度矩阵 kl (7 x 7)
-
-    //kl.resize(7, 7);
-    //kl.setZero();
-
-    //// 常用乘法系数
-    //const double AE_30 = A * E / 30.0;
-    //const double AE_L_900 = A * E * L / 900.0;
-    //const double EIo_L2 = E * Io / L2;
-    //const double EIo_30L = E * Io / (30.0 * L);
-
-    //// 填充上三角 (Upper Triangular Part) 
-
-    //// ----- 第 0 行 (轴向 u) -----
-    //kl(0, 0) = (A * E) / L;
-    //kl(0, 1) = EIo_L2 * dt1;
-    //kl(0, 2) = AE_30 * t2_41;
-    //kl(0, 3) = AE_30 * t3_41;
-    //kl(0, 4) = -kl(0, 1);
-    //kl(0, 5) = -AE_30 * t2_14;
-    //kl(0, 6) = -AE_30 * t3_14;
-
-    //// ----- 第 1 行 (扭转 t11) -----
-    //kl(1, 1) = (30.0 * G * J * L2 + 45.0 * E * Irr * dt1_sq + E * Io * L * (L * poly_yz + 30.0 * u)) / (30.0 * L3);
-    //kl(1, 2) = EIo_30L * dt1 * t2_41;
-    //kl(1, 3) = EIo_30L * dt1 * t3_41;
-    //kl(1, 4) = -(G * J) / L - (E * (45.0 * Irr * dt1_sq + Io * L * (L * poly_yz + 30.0 * u))) / (30.0 * L3);
-    //kl(1, 5) = -EIo_30L * dt1 * t2_14;
-    //kl(1, 6) = -EIo_30L * dt1 * t3_14;
-
-    //// ----- 第 2 行 (弯曲 t21) -----
-    //kl(2, 2) = (E * (3600.0 * Iz + 60.0 * Io * dt1_sq + A * L * (L * (24.0 * t21 * t21 - 12.0 * t21 * t22 + 9.0 * t22 * t22 + 4.0 * poly_z) + 120.0 * u))) / (900.0 * L);
-    //kl(2, 3) = AE_L_900 * t2_41 * t3_41;
-    //kl(2, 4) = -kl(1, 2);
-    //kl(2, 5) = (E * (1800.0 * Iz - 15.0 * Io * dt1_sq - A * L * (L * (6.0 * t21 * t21 - 18.0 * t21 * t22 + 6.0 * t22 * t22 + poly_z) + 30.0 * u))) / (900.0 * L);
-    //kl(2, 6) = -AE_L_900 * t2_41 * t3_14;
-
-    //// ----- 第 3 行 (弯曲 t31) -----
-    //kl(3, 3) = (E * (3600.0 * Iy + 60.0 * Io * dt1_sq + A * L * (L * (4.0 * poly_y + 24.0 * t31 * t31 - 12.0 * t31 * t32 + 9.0 * t32 * t32) + 120.0 * u))) / (900.0 * L);
-    //kl(3, 4) = -kl(1, 3);
-    //kl(3, 5) = -AE_L_900 * t2_14 * t3_41;
-    //kl(3, 6) = (E * (1800.0 * Iy - 15.0 * Io * dt1_sq - A * L * (L * (poly_y + 6.0 * (t31 * t31 - 3.0 * t31 * t32 + t32 * t32)) + 30.0 * u))) / (900.0 * L);
-
-    //// ----- 第 4 行 (扭转 t12) -----
-    //kl(4, 4) = kl(1, 1);
-    //kl(4, 5) = EIo_30L * dt1 * t2_14;
-    //kl(4, 6) = EIo_30L * dt1 * t3_14;
-
-    //// ----- 第 5 行 (弯曲 t22) -----
-    //kl(5, 5) = (E * (3600.0 * Iz + 60.0 * Io * dt1_sq + A * L * (L * (9.0 * t21 * t21 - 12.0 * t21 * t22 + 24.0 * t22 * t22 + 4.0 * poly_z) + 120.0 * u))) / (900.0 * L);
-    //kl(5, 6) = AE_L_900 * t2_14 * t3_14;
-
-    //// ----- 第 6 行 (弯曲 t32) -----
-    //kl(6, 6) = (E * (3600.0 * Iy + 60.0 * Io * dt1_sq + A * L * (L * (4.0 * poly_y + 9.0 * t31 * t31 - 12.0 * t31 * t32 + 24.0 * t32 * t32) + 120.0 * u))) / (900.0 * L);
-
-
-    ////利用 Eigen 的底层机制，把上三角的值自动复制到下三角
-
-    //kl.triangularView<Eigen::Lower>() = kl.transpose();
+    //m_Stress = fl(0) / A;
 }
 
 void ElementBeam_CR::ComputeDeformedState(Vector3d& def_p1, Vector3d& def_p2,

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file SolverNewmark.cpp
  * @brief Newmark-β 动力求解器实现
  */
@@ -73,21 +73,7 @@ namespace SolverNameSpace
 
         // 组装质量矩阵
         SpMat M_init, C_init;
-        model.AssembleMatrices(m_K, &M_init, &C_init);
-
-        // 求解 M * A_0 = F_ext(t=0)
-        Eigen::SimplicialLDLT<SpMat> ldlt_init;
-        ldlt_init.compute(M_init);
-        if (ldlt_init.info() == Eigen::Success)
-        {
-            // 【修改这部分】
-            Vec R_init;
-            // 让模型计算 t=0 时刻的真实不平衡力
-            model.ComputeResidual(F2_init, R_init);
-
-            // 用不平衡力求解初始加速度
-            m_An = ldlt_init.solve(R_init);
-        }
+        //model.AssembleMatrices(m_K, &M_init, &C_init);
 
         int numSteps = static_cast<int>(duration / dt);
         qDebug().noquote() << QStringLiteral("总时间步数: %1, 时间步长: %2 s, 总时间: %3 s").arg(numSteps).arg(dt).arg(duration);
@@ -137,7 +123,7 @@ namespace SolverNameSpace
                 model.SetTrialKinematics(m_Vcurr, m_Acurr);
 
                 // 3. 组装 K, M, C 矩阵
-                model.AssembleMatrices(m_K, &m_M, &m_C);
+                //model.AssembleMatrices(m_K, &m_M, &m_C);
 
                 // 4. 计算有效刚度矩阵: K_eff = K + a0*M + a1*C
                 m_Keff = m_K + m_c.a0 * m_M + m_c.a1 * m_C;

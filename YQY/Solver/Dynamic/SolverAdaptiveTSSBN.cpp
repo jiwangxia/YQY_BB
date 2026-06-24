@@ -236,7 +236,7 @@ namespace SolverNameSpace
                     model.SetTrialKinematics(v_order2, m_An);
 
                     // 计算最终加速度
-                    model.AssembleMatrices(m_K, &m_M, &m_C);
+                    //model.AssembleMatrices(m_K, &m_M, &m_C);
                     //model.ComputeResidual(currentTime + dt_try, 1.0, m_R);
 
                     Vec An_new;
@@ -302,7 +302,7 @@ namespace SolverNameSpace
             m_Ac1 = (m_Vc1 - m_Vn) / c1_dt;
 
             model.SetTrialKinematics(m_Vc1, m_Ac1);
-            model.AssembleMatrices(m_K, &m_M, &m_C);
+            //model.AssembleMatrices(m_K, &m_M, &m_C);
 
             m_Keff = m_K + (1.0 / c1_dt2) * m_M + (1.0 / c1_dt) * m_C;
             //model.ComputeResidual(currentTime + c1_dt, 1.0, m_R);
@@ -351,7 +351,7 @@ namespace SolverNameSpace
             m_Ac2 = (m_Vc2 - v_pred) / alpha_c2_dt;
 
             model.SetTrialKinematics(m_Vc2, m_Ac2);
-            model.AssembleMatrices(m_K, &m_M, &m_C);
+            //model.AssembleMatrices(m_K, &m_M, &m_C);
 
             m_Keff = m_K + (1.0 / alpha_c2_dt2) * m_M + (1.0 / alpha_c2_dt) * m_C;
             //model.ComputeResidual(currentTime + c2_dt, 1.0, m_R);
@@ -404,7 +404,7 @@ namespace SolverNameSpace
             m_Aeld = (m_Veld - v_pred) / alpha_c3_dt;
 
             model.SetTrialKinematics(m_Veld, m_Aeld);
-            model.AssembleMatrices(m_K, &m_M, &m_C);
+            //model.AssembleMatrices(m_K, &m_M, &m_C);
 
             m_Keff = m_K + (1.0 / alpha_c3_dt2) * m_M + (1.0 / alpha_c3_dt) * m_C;
             //model.ComputeResidual(currentTime + c3_dt, 1.0, m_R);

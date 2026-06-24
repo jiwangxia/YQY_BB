@@ -1,4 +1,4 @@
-#include "Outputter.h"
+﻿#include "Outputter.h"
 #include "DataStructure/Structure/StructureData.h"
 #include <iomanip>
 #include <sstream>
@@ -370,7 +370,7 @@ void Outputter::SaveModel(const QString& fileName, StructureData* pData)
         QString typeName = "UNKNOWN";
         if (std::dynamic_pointer_cast<ElementTruss>(pElem)) typeName = "T3D2";
         else if (std::dynamic_pointer_cast<ElementCable>(pElem)) typeName = "CABLE";
-        else if (std::dynamic_pointer_cast<ElementBeam>(pElem)) typeName = "B31";
+        else if (std::dynamic_pointer_cast<ElementBeam_CR>(pElem)) typeName = "CR3D";
         elemGroups[typeName].push_back(pElem);
     }
 

@@ -10,11 +10,6 @@ void ElementCable::Get_ke(MatrixXd& ke)
 
 }
 
-void ElementCable::Get_ke_non(MatrixXd& ke)
-{
-
-}
-
 void ElementCable::Get_me_Lumped(MatrixXd& me)//集中质量矩阵
 {
     auto pMaterial = m_pProperty.lock()->m_pMaterial.lock();
@@ -82,7 +77,7 @@ void ElementCable::Assemble(const std::vector<double>& damping, MatrixXd& _OUT c
     }
 
     MatrixXd ke, me;
-    Get_ke_non(ke);
+    Get_ke(ke);
     Get_me_Consistent(me);//一致质量矩阵
 
     ce = damping[0] * me + damping[1] * ke;

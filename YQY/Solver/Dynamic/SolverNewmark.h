@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file SolverNewmark.h
  * @brief 动力求解器 - Newmark-β 隐式时间积分法
  */

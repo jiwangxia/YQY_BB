@@ -94,9 +94,6 @@
     <ClCompile Include="DataStructure\AnalysisStep\AnalysisStep.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="DataStructure\Element\ElementBeam.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="DataStructure\Element\ElementCable.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -196,9 +193,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DataStructure\AnalysisStep\AnalysisStep.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="DataStructure\Element\ElementBeam.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DataStructure\Element\ElementCable.h">

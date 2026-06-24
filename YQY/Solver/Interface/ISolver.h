@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file ISolver.h
  * @brief 求解器统一接口
  * 

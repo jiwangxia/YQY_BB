@@ -27,6 +27,7 @@ public:
     double m_Tolerance = 1e-5;     // 容差
     int m_MaxIterations = 32;      // 最大迭代次数
 
+    bool isDynamic = false;        // 是否为动力分析
     /// @brief 动力求解器类型（仅动力分析时有效）
     /// 可选: Newmark, CentralDifference, HHT
     /// 目前只实现了 Newmark，其他为预留
@@ -34,9 +35,7 @@ public:
 
     int m_nFixed = 0;              // 约束自由度个数
     int m_nFree = 0;               // 自由自由度个数
-    SpMat m_K11, m_K21, m_K22;
-    SpMat m_M11, m_M21, m_M22;
-    SpMat m_C11, m_C21, m_C22;
+    SpMat m_Keff11, m_Keff21, m_Keff22;
 
     /**
      * @brief 获取分析步类型名称
@@ -66,27 +65,13 @@ public:
      */
     void Solve();
 
-    /**
-     * @brief 静力求解
-     */
-     /**
-      * @brief 静力求解
-      * @param [in] bResetState 是否重置状态（默认为 true，即从零开始求解；false 则在当前变形基础上继续求解）
-      */
-    void Solve_Static();
-
-    /**
-     * @brief 动力求解 (调用 SolverNewmark)
-     */
-    void Solve_Dynamic();
-
     // ============ IAnalysisModel 接口实现 ============
-    int GetFreeDofs() const override { return m_nFree; }
-    int GetFixedDofs() const override { return m_nFixed; }
+    int  GetFreeDofs() const override { return m_nFree; }
+    int  GetFixedDofs() const override { return m_nFixed; }
     void ApplyIncrement(const SolverNameSpace::Vec& dx) override;
     void SetTrialKinematics(const SolverNameSpace::Vec& v, const SolverNameSpace::Vec& a) override;
     void GetState(SolverNameSpace::Vec& u, SolverNameSpace::Vec& v, SolverNameSpace::Vec& a) const override;
-    void AssembleMatrices(SolverNameSpace::SpMat& K, SolverNameSpace::SpMat* M = nullptr, SolverNameSpace::SpMat* C = nullptr) override;
+    void Assemble_Matrix(SpMat& Keff, bool isDynamic);          //组装整体等效刚度矩阵
     void ComputeResidual(const SolverNameSpace::Vec& F_ext, SolverNameSpace::Vec& R) override;
     void OnStepCompleted(double time) override;
 
@@ -127,12 +112,6 @@ private:
     void Init_Nodevector();
 
     void Get_ElementLength();
-
-    /**
-     * @brief 静力组装整体刚度矩阵
-     */
-    void AssembleKs_Static();
-    void Assemble_Matrix();
 
     /**
      * @brief 将单元刚度矩阵组装到整体刚度矩阵

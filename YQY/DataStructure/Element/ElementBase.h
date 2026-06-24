@@ -40,7 +40,6 @@ public:
      * @param [out] ke 单元刚度矩阵
      */
     virtual void Get_ke(MatrixXd& _OUT ke) = 0;
-    virtual void Get_ke_non(MatrixXd& _OUT ke) = 0;
     virtual void Get_me_Lumped(MatrixXd& _OUT me) = 0;       //集中质量矩阵
     virtual void Get_me_Consistent(MatrixXd& _OUT me) = 0;   //一致质量矩阵
     virtual void Get_L0() = 0;

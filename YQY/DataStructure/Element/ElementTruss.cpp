@@ -5,51 +5,7 @@ ElementTruss::ElementTruss()
     m_pNode.resize(2);
 }
 
-
 void ElementTruss::Get_ke(MatrixXd& ke)
-{
-    auto pProperty = m_pProperty.lock();
-    auto pSection = pProperty->m_pSection.lock();
-    auto pMaterial = pProperty->m_pMaterial.lock();
-
-    double E = pMaterial->m_Young;
-    double A = pSection->m_Area;
-
-    auto pNode0 = m_pNode[0].lock();
-    auto pNode1 = m_pNode[1].lock();
-
-    if (pNode0 == nullptr || pNode1 == nullptr)
-    {
-        qDebug().noquote() << QStringLiteral("Error: ElementTruss 节点指针为空");
-        return;
-    }
-
-    // 计算单元方向向量分量
-    double dx = pNode1->m_X - pNode0->m_X;
-    double dy = pNode1->m_Y - pNode0->m_Y;
-    double dz = pNode1->m_Z - pNode0->m_Z;
-
-    // 初始长度
-    L0 = sqrt(dx * dx + dy * dy + dz * dz);
-    double length = L0;
-
-    // 方向余弦 (direction cosines)
-    double dirCos_x = dx / length;
-    double dirCos_y = dy / length;
-    double dirCos_z = dz / length;
-
-    // 应变-位移变换矩阵 B = [-l, -m, -n, l, m, n]
-    VectorXd B_matrix = VectorXd::Zero(6);
-    B_matrix << -dirCos_x, -dirCos_y, -dirCos_z, dirCos_x, dirCos_y, dirCos_z;
-
-    // 材料刚度系数 EA/L
-    double materialStiffness = E * A / length;
-
-    // 单元刚度矩阵 ke = B * B^T * (EA/L)
-    ke = B_matrix * B_matrix.transpose() * materialStiffness;
-}
-
-void ElementTruss::Get_ke_non(MatrixXd& ke)
 {
     auto pProperty = m_pProperty.lock();
     auto pSection = pProperty->m_pSection.lock();
@@ -223,7 +179,7 @@ void ElementTruss::Assemble(const std::vector<double>& damping, MatrixXd& _OUT c
     MatrixXd ke;
     MatrixXd me;
     Get_L0();
-    Get_ke_non(ke);
+    Get_ke(ke);
     Get_me_Consistent(me);//一致质量矩阵
     
     ce = damping[0] * me + damping[1] * ke;

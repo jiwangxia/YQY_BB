@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file SolverStatic.h
  * @brief 静力求解器 - Newton-Raphson 增量迭代法
  */
@@ -27,7 +27,6 @@ namespace SolverNameSpace
             int maxIter       = 32;       //  每个增量步的最大 N-R 迭代次数
             double tol_R      = 1e-4;     //  相对残差容差
             double tol_dx     = 1e-6;     //  位移增量容差
-            double tol_energy = 1e-6;     //  能量增量容差
         };
 
         /**
@@ -38,7 +37,6 @@ namespace SolverNameSpace
 
         // ============ ISolver 接口实现 ============
         bool Solve(IAnalysisModel& model, double duration) override;
-        //bool Solve(IAnalysisModel& model, double duration) override; //测试线性
         const char* GetName() const override { return "Newton-Raphson Static"; }
         SolverType GetType() const override { return SolverType::Static; }
         void SetStepCallback(StepCallback callback) override { m_callback = std::move(callback); }

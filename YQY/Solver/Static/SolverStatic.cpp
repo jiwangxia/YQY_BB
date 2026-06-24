@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file SolverStatic.cpp
  * @brief 静力求解器实现
  */
@@ -49,8 +49,7 @@ namespace SolverNameSpace
                 else if (i == pos) printf(">");
                 else printf(" ");
             }
-            printf("] %d%% (%d/%d) t=%.4fs",
-                int(factor * 100.0), inc, m_param.numIncrements, currentTime);
+            printf("] %d%% (%d/%d) t=%.4fs", int(factor * 100.0), inc, m_param.numIncrements, currentTime);
             fflush(stdout);  // 强制刷新输出
 
             // 当前增量步的累计位移（用于相对收敛判据）
@@ -60,11 +59,9 @@ namespace SolverNameSpace
             double norm_R0 = 0.0;
 
             // Newton-Raphson 迭代
-            double energy0 = 0.0; // 初始能量
             for (int iter = 0; iter < m_param.maxIter; ++iter)
             {
-                model.AssembleMatrices(m_K, nullptr, nullptr);
-
+                model.Assemble_Matrix(m_K, false);
                 // 使用已组装的外荷载计算残差
                 model.ComputeResidual(F2, m_R);
 
@@ -92,30 +89,19 @@ namespace SolverNameSpace
                     // 计算相对位移：dx / x2
                     double relative_dx = (norm_x2 > 1e-12) ? (norm_dx / norm_x2) : norm_dx;
 
-                    // 计算能量范数：dx · R
-                    double energy = std::abs(m_dx.dot(m_R));
-                    if(1 == iter)
-                    {
-                        energy0 = energy;  // 第一次迭代的能量
-                    }
-                    double relative_energy = (energy0 > 1e-12) ? (energy / energy0) : energy;
-
                     // 多重收敛判据
                     bool disp_converged = (relative_dx < m_param.tol_dx);
                     bool force_converged = (norm_R < m_param.tol_R * norm_R0) || (norm_R < 1e-6);
-                    bool energy_converged = (energy < m_param.tol_energy);
 
                     // 位移和力同时满足
                     bool converged = disp_converged && force_converged;
 
-                    // 位移、力、能量同时满足  此处后续界面上增加一个选择按钮
-                    // bool converged = disp_converged && force_converged && energy_converged;
 
                     // 调试输出：如果不收敛，打印详细信息
-                    if (!converged && iter > 5)
+                    if (!converged && iter > m_param.maxIter - 3)
                     {
-                        printf("  [t=%.4f, iter=%2d] norm_dx=%.3e, norm_x2=%.3e, relative_dx=%.3e, energy=%.3e\n",
-                            currentTime, iter, norm_dx, norm_x2, relative_dx, energy);
+                        printf("  [t=%.4f, iter=%2d] norm_dx=%.3e, norm_x2=%.3e, relative_dx=%.3e\n",
+                            currentTime, iter, norm_dx, norm_x2, relative_dx);
                     }
 
                     if (converged)
@@ -127,6 +113,7 @@ namespace SolverNameSpace
                 // 检查是否达到最大迭代次数
                 if (iter == m_param.maxIter - 1)
                 {
+                    qDebug().noquote() << QStringLiteral("失败: 达最大迭代次数");
                     return false;
                 }
 

@@ -23,7 +23,6 @@ public:
      * @param [out] ke 单元刚度矩阵（6x6）
      */
     void Get_ke(MatrixXd& ke);
-    void Get_ke_non(MatrixXd& ke);
     void Get_me_Lumped(MatrixXd& me);         //集中质量矩阵
     void Get_me_Consistent(MatrixXd& me);     //一致质量矩阵
     void Get_L0();

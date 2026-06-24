@@ -96,7 +96,6 @@ bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureDa
         QString typeName = "UNKNOWN";
         if (dynamic_cast<ElementTruss*>(pair.second.get())) typeName = "T3D2";
         else if (dynamic_cast<ElementCable*>(pair.second.get())) typeName = "CABLE";
-        else if (dynamic_cast<ElementBeam*>(pair.second.get())) typeName = "B31";
         else if (dynamic_cast<ElementBeam_CR*>(pair.second.get())) typeName = "CR3D";
         elementTypeCount[typeName]++;
     }
@@ -232,7 +231,6 @@ const QMap<EnumKeyword::ElementType, Input_Model::ElementHandler> Input_Model::s
 {
     { EnumKeyword::ElementType::T3D2, [](Input_Model* self, QTextStream& flow, const QStringList& list_str, int nElement) { return self->InputElementTruss(flow, list_str, nElement); } },
     { EnumKeyword::ElementType::CABLE, [](Input_Model* self, QTextStream& flow, const QStringList& list_str, int nElement) { return self->InputElementCable(flow, list_str, nElement); } },
-    { EnumKeyword::ElementType::B31,  [](Input_Model* self, QTextStream& flow, const QStringList& list_str, int nElement) { return self->InputElementBeam(flow, list_str, nElement); } },
     { EnumKeyword::ElementType::CR3D,  [](Input_Model* self, QTextStream& flow, const QStringList& list_str, int nElement) { return self->InputElementBeam_CR3D(flow, list_str, nElement); } },
 };
 
