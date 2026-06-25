@@ -1,8 +1,16 @@
-﻿#include "Outputter.h"
+#include "Outputter.h"
 #include "DataStructure/Structure/StructureData.h"
+#include "Export/Hdf5ResultIO.h"
 #include <iomanip>
 #include <sstream>
 #include <cmath>
+
+Outputter::Outputter() = default;
+
+Outputter::~Outputter()
+{
+    Clear();
+}
 
 void NodeData::ExtractFromNode(const Node* pNode)
 {
@@ -13,6 +21,9 @@ void NodeData::ExtractFromNode(const Node* pNode)
     if (pNode->m_Displacement.size() >= 2) m_u2 = pNode->m_Displacement[1];
     if (pNode->m_Displacement.size() >= 3) m_u3 = pNode->m_Displacement[2];
     m_magnitudeU = std::sqrt(m_u1 * m_u1 + m_u2 * m_u2 + m_u3 * m_u3);
+    m_cx = pNode->m_X + m_u1;
+    m_cy = pNode->m_Y + m_u2;
+    m_cz = pNode->m_Z + m_u3;
 
     // 直接从节点读取速度
     if (pNode->m_Velocity.size() >= 1) m_v1 = pNode->m_Velocity[0];
@@ -40,40 +51,99 @@ void NodeData::ExtractFromNode(const Node* pNode)
     if (pNode->m_ReactionForce.size() >= 3) m_r3 = pNode->m_ReactionForce[2];
 }
 
-double NodeData::GetValue(DataType type) const
+double NodeData::GetValue(EnumKeyword::NodeResultType type) const
 {
     switch (type)
     {
-    case DataType::U1:         return m_u1;
-    case DataType::U2:         return m_u2;
-    case DataType::U3:         return m_u3;
-    case DataType::MagnitudeU: return m_magnitudeU;
-    case DataType::V1:         return m_v1;
-    case DataType::V2:         return m_v2;
-    case DataType::V3:         return m_v3;
-    case DataType::A1:         return m_a1;
-    case DataType::A2:         return m_a2;
-    case DataType::A3:         return m_a3;
-    case DataType::UR1:        return m_ur1;
-    case DataType::UR2:        return m_ur2;
-    case DataType::UR3:        return m_ur3;
-    case DataType::F1:         return m_f1;
-    case DataType::F2:         return m_f2;
-    case DataType::F3:         return m_f3;
-    case DataType::M1:         return m_m1;
-    case DataType::M2:         return m_m2;
-    case DataType::M3:         return m_m3;
-    case DataType::R1:         return m_r1;
-    case DataType::R2:         return m_r2;
-    case DataType::R3:         return m_r3;
+    case EnumKeyword::NodeResultType::U1:         return m_u1;
+    case EnumKeyword::NodeResultType::U2:         return m_u2;
+    case EnumKeyword::NodeResultType::U3:         return m_u3;
+    case EnumKeyword::NodeResultType::MagnitudeU: return m_magnitudeU;
+    case EnumKeyword::NodeResultType::CX:         return m_cx;
+    case EnumKeyword::NodeResultType::CY:         return m_cy;
+    case EnumKeyword::NodeResultType::CZ:         return m_cz;
+    case EnumKeyword::NodeResultType::V1:         return m_v1;
+    case EnumKeyword::NodeResultType::V2:         return m_v2;
+    case EnumKeyword::NodeResultType::V3:         return m_v3;
+    case EnumKeyword::NodeResultType::A1:         return m_a1;
+    case EnumKeyword::NodeResultType::A2:         return m_a2;
+    case EnumKeyword::NodeResultType::A3:         return m_a3;
+    case EnumKeyword::NodeResultType::UR1:        return m_ur1;
+    case EnumKeyword::NodeResultType::UR2:        return m_ur2;
+    case EnumKeyword::NodeResultType::UR3:        return m_ur3;
+    case EnumKeyword::NodeResultType::F1:         return m_f1;
+    case EnumKeyword::NodeResultType::F2:         return m_f2;
+    case EnumKeyword::NodeResultType::F3:         return m_f3;
+    case EnumKeyword::NodeResultType::M1:         return m_m1;
+    case EnumKeyword::NodeResultType::M2:         return m_m2;
+    case EnumKeyword::NodeResultType::M3:         return m_m3;
+    case EnumKeyword::NodeResultType::R1:         return m_r1;
+    case EnumKeyword::NodeResultType::R2:         return m_r2;
+    case EnumKeyword::NodeResultType::R3:         return m_r3;
     default:                   return 0.0;
     }
 }
 
-double DataFrame::GetNodeData(int idNode, DataType type) const
+void ElementData::ExtractFromElement(const ElementBase* pElement)
+{
+    if (!pElement) return;
+
+    m_initStress = pElement->m_InitStress;
+    m_currentStress = pElement->m_Stress;
+    m_deltaStress = m_currentStress - m_initStress;
+
+    auto pProperty = pElement->m_pProperty.lock();
+    if (!pProperty) return;
+
+    auto pSection = pProperty->m_pSection.lock();
+    auto pMaterial = pProperty->m_pMaterial.lock();
+
+    const double area = pSection ? pSection->m_Area : 0.0;
+    const double young = pMaterial ? pMaterial->m_Young : 0.0;
+
+    if (std::fabs(area) > 0.0)
+    {
+        m_axialForce = m_currentStress * area;
+    }
+
+    if (std::fabs(young) > 0.0)
+    {
+        m_strain = m_deltaStress / young;
+    }
+}
+
+double ElementData::GetValue(EnumKeyword::ElementResultType type) const
+{
+    switch (type)
+    {
+    case EnumKeyword::ElementResultType::AxialForce:    return m_axialForce;
+    case EnumKeyword::ElementResultType::ShearY:        return m_shearY;
+    case EnumKeyword::ElementResultType::ShearZ:        return m_shearZ;
+    case EnumKeyword::ElementResultType::Torque:        return m_torque;
+    case EnumKeyword::ElementResultType::MomentY:       return m_momentY;
+    case EnumKeyword::ElementResultType::MomentZ:       return m_momentZ;
+    case EnumKeyword::ElementResultType::Strain:        return m_strain;
+    case EnumKeyword::ElementResultType::InitStress:    return m_initStress;
+    case EnumKeyword::ElementResultType::CurrentStress: return m_currentStress;
+    case EnumKeyword::ElementResultType::DeltaStress:   return m_deltaStress;
+    default:                             return 0.0;
+    }
+}
+
+double DataFrame::GetNodeData(int idNode, EnumKeyword::NodeResultType type) const
 {
     auto it = m_nodeDatas.find(idNode);
     if (it != m_nodeDatas.end())
+    {
+        return it->second.GetValue(type);
+    }
+    return 0.0;
+}
+
+double DataFrame::GetElementData(int idElement, EnumKeyword::ElementResultType type) const
+{
+    auto it = m_elementDatas.find(idElement);
+    if (it != m_elementDatas.end())
     {
         return it->second.GetValue(type);
     }
@@ -98,7 +168,35 @@ void Outputter::SaveDataFromNodes(double time, StructureData* pData)
         frame.m_nodeDatas[pNode->m_Id] = data;
     }
 
-    m_DataSet.push_back(frame);
+    for (auto& elementPair : pData->m_Elements)
+    {
+        auto pElement = elementPair.second;
+        if (!pElement) continue;
+
+        ElementData data;
+        data.ExtractFromElement(pElement.get());
+        frame.m_elementDatas[pElement->m_Id] = data;
+    }
+
+    if (m_stream)
+    {
+        WriteResultFrame(*m_stream, frame,
+            m_streamNodeIds, m_streamNodeTypes,
+            m_streamElementIds, m_streamElementTypes);
+        m_stream->flush();
+    }
+
+    if (m_hdf5Stream)
+    {
+        m_hdf5Stream->WriteResultFrame(m_hdf5NextDomainId, 0, m_hdf5NextIncrement, 0, time, frame);
+        ++m_hdf5NextDomainId;
+        ++m_hdf5NextIncrement;
+    }
+
+    if (m_keepFramesInMemory)
+    {
+        m_DataSet.push_back(frame);
+    }
 }
 
 // 智能格式化类实现
@@ -191,7 +289,7 @@ static QString FormatValue(double val, int width = 16)
 
 void Outputter::ExportNodes(const QString& fileName,
     const std::vector<int>& nodeIds,
-    const std::vector<DataType>& types) const
+    const std::vector<EnumKeyword::NodeResultType>& types) const
 {
     QFile file(fileName);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
@@ -209,7 +307,7 @@ void Outputter::ExportNodes(const QString& fileName,
 
     for (int nodeId : nodeIds)
     {
-        for (DataType type : types)
+        for (EnumKeyword::NodeResultType type : types)
         {
             QString header = QString("N%1-%2").arg(nodeId).arg(GetTypeName(type));
             // 确保表头不超长
@@ -240,7 +338,7 @@ void Outputter::ExportNodes(const QString& fileName,
                 qDebug() << "Warning: Node" << nodeId << "does not exist!";
                 return; // 或者 return;
             }
-            for (DataType type : types)
+            for (EnumKeyword::NodeResultType type : types)
             {
                 double val = frame.GetNodeData(nodeId, type);
                 stream << FormatValue(val, colWidth);
@@ -253,33 +351,228 @@ void Outputter::ExportNodes(const QString& fileName,
     qDebug().noquote() << QStringLiteral("\n输出至") << fileName;
 }
 
-QString Outputter::GetTypeName(DataType type)
+void Outputter::ExportElements(const QString& fileName,
+    const std::vector<int>& elementIds,
+    const std::vector<EnumKeyword::ElementResultType>& types) const
+{
+    QFile file(fileName);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+    {
+        qDebug() << "Failed to open file:" << fileName;
+        return;
+    }
+
+    QTextStream stream(&file);
+    WriteResultTableHeader(stream, {}, {}, elementIds, types);
+
+    for (const auto& frame : m_DataSet)
+    {
+        WriteResultFrame(stream, frame, {}, {}, elementIds, types);
+    }
+
+    file.close();
+    qDebug().noquote() << QStringLiteral("\n输出至") << fileName;
+}
+
+bool Outputter::BeginBdfResultStream(const QString& fileName,
+    const std::vector<int>& nodeIds,
+    const std::vector<EnumKeyword::NodeResultType>& nodeTypes,
+    const std::vector<int>& elementIds,
+    const std::vector<EnumKeyword::ElementResultType>& elementTypes)
+{
+    EndBdfResultStream();
+
+    m_streamFile = std::make_unique<QFile>(fileName);
+    if (!m_streamFile->open(QIODevice::WriteOnly | QIODevice::Text))
+    {
+        qDebug() << "Failed to open stream file:" << fileName;
+        m_streamFile.reset();
+        return false;
+    }
+
+    m_stream = std::make_unique<QTextStream>(m_streamFile.get());
+    m_streamNodeIds = nodeIds;
+    m_streamNodeTypes = nodeTypes;
+    m_streamElementIds = elementIds;
+    m_streamElementTypes = elementTypes;
+
+    WriteResultTableHeader(*m_stream,
+        m_streamNodeIds, m_streamNodeTypes,
+        m_streamElementIds, m_streamElementTypes);
+    m_stream->flush();
+    return true;
+}
+
+void Outputter::EndBdfResultStream()
+{
+    if (m_stream)
+    {
+        m_stream->flush();
+        m_stream.reset();
+    }
+
+    if (m_streamFile)
+    {
+        m_streamFile->close();
+        m_streamFile.reset();
+    }
+
+    m_streamNodeIds.clear();
+    m_streamNodeTypes.clear();
+    m_streamElementIds.clear();
+    m_streamElementTypes.clear();
+}
+
+bool Outputter::BeginHdf5ResultStream(const QString& fileName, StructureData* pData, const QString& sourceModelName)
+{
+    EndHdf5ResultStream();
+
+    m_hdf5Stream = std::make_unique<Hdf5ResultIO>();
+    if (!m_hdf5Stream->BeginResultStream(fileName, pData, sourceModelName))
+    {
+        m_hdf5Stream.reset();
+        return false;
+    }
+
+    m_hdf5NextDomainId = 1;
+    m_hdf5NextIncrement = 0;
+    return true;
+}
+
+void Outputter::EndHdf5ResultStream()
+{
+    if (m_hdf5Stream)
+    {
+        m_hdf5Stream->EndResultStream();
+        m_hdf5Stream.reset();
+    }
+}
+
+void Outputter::Clear()
+{
+    EndBdfResultStream();
+    EndHdf5ResultStream();
+    m_DataSet.clear();
+}
+
+void Outputter::WriteResultTableHeader(QTextStream& stream,
+    const std::vector<int>& nodeIds,
+    const std::vector<EnumKeyword::NodeResultType>& nodeTypes,
+    const std::vector<int>& elementIds,
+    const std::vector<EnumKeyword::ElementResultType>& elementTypes) const
+{
+    const int colWidth = 16;
+    const QChar padChar = ' ';
+
+    stream << QString("TIME").rightJustified(colWidth, padChar);
+
+    for (int nodeId : nodeIds)
+    {
+        for (EnumKeyword::NodeResultType type : nodeTypes)
+        {
+            QString header = QString("N%1-%2").arg(nodeId).arg(GetTypeName(type));
+            if (header.length() > colWidth) header = header.right(colWidth);
+            stream << header.rightJustified(colWidth, padChar);
+        }
+    }
+
+    for (int elementId : elementIds)
+    {
+        for (EnumKeyword::ElementResultType type : elementTypes)
+        {
+            QString header = QString("E%1-%2").arg(elementId).arg(GetTypeName(type));
+            if (header.length() > colWidth) header = header.right(colWidth);
+            stream << header.rightJustified(colWidth, padChar);
+        }
+    }
+
+    stream << "\n";
+
+    size_t totalWidth = colWidth
+        + nodeIds.size() * nodeTypes.size() * colWidth
+        + elementIds.size() * elementTypes.size() * colWidth;
+    QString line;
+    line.fill('-', totalWidth);
+    stream << line << "\n";
+}
+
+void Outputter::WriteResultFrame(QTextStream& stream, const DataFrame& frame,
+    const std::vector<int>& nodeIds,
+    const std::vector<EnumKeyword::NodeResultType>& nodeTypes,
+    const std::vector<int>& elementIds,
+    const std::vector<EnumKeyword::ElementResultType>& elementTypes) const
+{
+    const int colWidth = 16;
+
+    stream << FormatValue(frame.m_currentTime, colWidth);
+
+    for (int nodeId : nodeIds)
+    {
+        for (EnumKeyword::NodeResultType type : nodeTypes)
+        {
+            stream << FormatValue(frame.GetNodeData(nodeId, type), colWidth);
+        }
+    }
+
+    for (int elementId : elementIds)
+    {
+        for (EnumKeyword::ElementResultType type : elementTypes)
+        {
+            stream << FormatValue(frame.GetElementData(elementId, type), colWidth);
+        }
+    }
+
+    stream << "\n";
+}
+
+QString Outputter::GetTypeName(EnumKeyword::NodeResultType type)
 {
     switch (type)
     {
-    case DataType::U1:         return "U1";
-    case DataType::U2:         return "U2";
-    case DataType::U3:         return "U3";
-    case DataType::UR1:        return "UR1";
-    case DataType::UR2:        return "UR2";
-    case DataType::UR3:        return "UR3";
-    case DataType::MagnitudeU: return "MAG";
-    case DataType::V1:         return "V1";
-    case DataType::V2:         return "V2";
-    case DataType::V3:         return "V3";
-    case DataType::A1:         return "A1";
-    case DataType::A2:         return "A2";
-    case DataType::A3:         return "A3";
-    case DataType::F1:         return "F1";
-    case DataType::F2:         return "F2";
-    case DataType::F3:         return "F3";
-    case DataType::M1:         return "M1";
-    case DataType::M2:         return "M2";
-    case DataType::M3:         return "M3";
-    case DataType::R1:         return "R1";
-    case DataType::R2:         return "R2";
-    case DataType::R3:         return "R3";
+    case EnumKeyword::NodeResultType::U1:         return "U1";
+    case EnumKeyword::NodeResultType::U2:         return "U2";
+    case EnumKeyword::NodeResultType::U3:         return "U3";
+    case EnumKeyword::NodeResultType::CX:         return "CX";
+    case EnumKeyword::NodeResultType::CY:         return "CY";
+    case EnumKeyword::NodeResultType::CZ:         return "CZ";
+    case EnumKeyword::NodeResultType::UR1:        return "UR1";
+    case EnumKeyword::NodeResultType::UR2:        return "UR2";
+    case EnumKeyword::NodeResultType::UR3:        return "UR3";
+    case EnumKeyword::NodeResultType::MagnitudeU: return "MAG";
+    case EnumKeyword::NodeResultType::V1:         return "V1";
+    case EnumKeyword::NodeResultType::V2:         return "V2";
+    case EnumKeyword::NodeResultType::V3:         return "V3";
+    case EnumKeyword::NodeResultType::A1:         return "A1";
+    case EnumKeyword::NodeResultType::A2:         return "A2";
+    case EnumKeyword::NodeResultType::A3:         return "A3";
+    case EnumKeyword::NodeResultType::F1:         return "F1";
+    case EnumKeyword::NodeResultType::F2:         return "F2";
+    case EnumKeyword::NodeResultType::F3:         return "F3";
+    case EnumKeyword::NodeResultType::M1:         return "M1";
+    case EnumKeyword::NodeResultType::M2:         return "M2";
+    case EnumKeyword::NodeResultType::M3:         return "M3";
+    case EnumKeyword::NodeResultType::R1:         return "R1";
+    case EnumKeyword::NodeResultType::R2:         return "R2";
+    case EnumKeyword::NodeResultType::R3:         return "R3";
     default:                   return "UNKNOWN";
+    }
+}
+
+QString Outputter::GetTypeName(EnumKeyword::ElementResultType type)
+{
+    switch (type)
+    {
+    case EnumKeyword::ElementResultType::AxialForce:    return "AXIAL";
+    case EnumKeyword::ElementResultType::ShearY:        return "SHEARY";
+    case EnumKeyword::ElementResultType::ShearZ:        return "SHEARZ";
+    case EnumKeyword::ElementResultType::Torque:        return "TORQUE";
+    case EnumKeyword::ElementResultType::MomentY:       return "MY";
+    case EnumKeyword::ElementResultType::MomentZ:       return "MZ";
+    case EnumKeyword::ElementResultType::Strain:        return "STRAIN";
+    case EnumKeyword::ElementResultType::InitStress:    return "S0";
+    case EnumKeyword::ElementResultType::CurrentStress: return "S";
+    case EnumKeyword::ElementResultType::DeltaStress:   return "DS";
+    default:                             return "UNKNOWN";
     }
 }
 
@@ -302,18 +595,49 @@ static QString FmtStr(const QString& str, int width = 10, bool leftAlign = false
     return leftAlign ? str.leftJustified(width, ' ') : str.rightJustified(width, ' ');
 }
 
-void Outputter::SaveModel(const QString& fileName, StructureData* pData)
+bool Outputter::SaveBdfModel(const QString& fileName, StructureData* pData)
 {
-    if (!pData) return;
+    if (!pData) return false;
 
     QFile file(fileName);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
     {
         qDebug() << "Failed to open file for saving model:" << fileName;
-        return;
+        return false;
     }
 
     QTextStream stream(&file);
+
+    std::map<int, int> materialIdMap;
+    std::map<int, int> sectionIdMap;
+    std::map<int, int> nodeIdMap;
+    std::map<int, int> elementIdMap;
+    std::map<int, int> constraintIdMap;
+    std::map<int, int> loadIdMap;
+    std::map<int, int> stepIdMap;
+
+    auto buildIdMap = [](const auto& source, std::map<int, int>& target)
+        {
+            int id = 1;
+            for (const auto& pair : source)
+            {
+                target[pair.first] = id++;
+            }
+        };
+
+    auto mapId = [](const std::map<int, int>& idMap, int id)
+        {
+            auto iter = idMap.find(id);
+            return iter != idMap.end() ? iter->second : 0;
+        };
+
+    buildIdMap(pData->m_Material, materialIdMap);
+    buildIdMap(pData->m_Section, sectionIdMap);
+    buildIdMap(pData->m_Nodes, nodeIdMap);
+    buildIdMap(pData->m_Elements, elementIdMap);
+    buildIdMap(pData->m_Constraint, constraintIdMap);
+    buildIdMap(pData->m_Load, loadIdMap);
+    buildIdMap(pData->m_AnalysisStep, stepIdMap);
 
     // 1. 材料 *MATERIAL, N
     if (!pData->m_Material.empty())
@@ -324,7 +648,7 @@ void Outputter::SaveModel(const QString& fileName, StructureData* pData)
         {
             auto pMat = pair.second;
             // ID, E, v, Density, MaxStress, Expansion
-            stream << FmtInt(pMat->m_Id, 10, true) << " "
+            stream << FmtInt(mapId(materialIdMap, pair.first), 10, true) << " "
                 << FmtDouble(pMat->m_Young) << " "
                 << FmtDouble(pMat->m_Poisson) << " "
                 << FmtDouble(pMat->m_Density) << " "
@@ -337,12 +661,19 @@ void Outputter::SaveModel(const QString& fileName, StructureData* pData)
     if (!pData->m_Section.empty())
     {
         stream << "\n*SECTION, " << pData->m_Section.size() << "\n";
-        stream << "** ID  面积\n";
+        stream << "** ID  Area 或 Width Height\n";
         for (const auto& pair : pData->m_Section)
         {
             auto pSec = pair.second;
-            // ID, Area
-            stream << FmtInt(pSec->m_Id, 10, true) << " " << FmtDouble(pSec->m_Area) << "\n";
+            stream << FmtInt(mapId(sectionIdMap, pair.first), 10, true) << " ";
+            if (auto pRect = std::dynamic_pointer_cast<SectionRectangle>(pSec))
+            {
+                stream << FmtDouble(pRect->m_Width) << " " << FmtDouble(pRect->m_Height) << "\n";
+            }
+            else
+            {
+                stream << FmtDouble(pSec->m_Area) << "\n";
+            }
         }
     }
 
@@ -355,7 +686,7 @@ void Outputter::SaveModel(const QString& fileName, StructureData* pData)
         {
             auto pNode = pair.second;
             // ID, X, Y, Z
-            stream << FmtInt(pNode->m_Id, 10, true) << " "
+            stream << FmtInt(mapId(nodeIdMap, pair.first), 10, true) << " "
                 << FmtDouble(pNode->m_X) << " "
                 << FmtDouble(pNode->m_Y) << " "
                 << FmtDouble(pNode->m_Z) << "\n";
@@ -379,26 +710,42 @@ void Outputter::SaveModel(const QString& fileName, StructureData* pData)
         if (group.first == "UNKNOWN" || group.second.empty()) continue;
 
         stream << "\n*ELEMENT, " << group.first << ", " << group.second.size() << "\n";
-        stream << "** ID  Node1  Node2  MaterialID  SectionID\n";
+        if (group.first == "CR3D")
+        {
+            stream << "** ID  Node1  Node2  MaterialID  SectionID  q0x  q0y  q0z\n";
+        }
+        else
+        {
+            stream << "** ID  Node1  Node2  MaterialID  SectionID\n";
+        }
         for (const auto& pElem : group.second)
         {
-            int nodeId1 = pElem->m_pNode[0].lock() ? pElem->m_pNode[0].lock()->m_Id : 0;
-            int nodeId2 = pElem->m_pNode[1].lock() ? pElem->m_pNode[1].lock()->m_Id : 0;
+            int nodeId1 = pElem->m_pNode[0].lock() ? mapId(nodeIdMap, pElem->m_pNode[0].lock()->m_Id) : 0;
+            int nodeId2 = pElem->m_pNode[1].lock() ? mapId(nodeIdMap, pElem->m_pNode[1].lock()->m_Id) : 0;
 
             int matId = 0;
             int secId = 0;
             auto pProp = pElem->m_pProperty.lock();
             if (pProp)
             {
-                if (auto pMat = pProp->m_pMaterial.lock()) matId = pMat->m_Id;
-                if (auto pSec = pProp->m_pSection.lock())  secId = pSec->m_Id;
+                if (auto pMat = pProp->m_pMaterial.lock()) matId = mapId(materialIdMap, pMat->m_Id);
+                if (auto pSec = pProp->m_pSection.lock())  secId = mapId(sectionIdMap, pSec->m_Id);
             }
 
-            stream << FmtInt(pElem->m_Id, 10, true) << " "
+            stream << FmtInt(mapId(elementIdMap, pElem->m_Id), 10, true) << " "
                 << FmtInt(nodeId1) << " "
                 << FmtInt(nodeId2) << " "
                 << FmtInt(matId) << " "
-                << FmtInt(secId) << "\n";
+                << FmtInt(secId);
+
+            if (auto pBeam = std::dynamic_pointer_cast<ElementBeam_CR>(pElem))
+            {
+                stream << " "
+                    << FmtDouble(pBeam->q0.x()) << " "
+                    << FmtDouble(pBeam->q0.y()) << " "
+                    << FmtDouble(pBeam->q0.z());
+            }
+            stream << "\n";
         }
     }
 
@@ -411,8 +758,8 @@ void Outputter::SaveModel(const QString& fileName, StructureData* pData)
         {
             auto pCon = pair.second;
             // ID, NodeID, Dir, Value
-            stream << FmtInt(pCon->m_Id, 10, true) << " "
-                << FmtInt(pCon->m_pNode.lock() ? pCon->m_pNode.lock()->m_Id : 0) << " "
+            stream << FmtInt(mapId(constraintIdMap, pair.first), 10, true) << " "
+                << FmtInt(pCon->m_pNode.lock() ? mapId(nodeIdMap, pCon->m_pNode.lock()->m_Id) : 0) << " "
                 << FmtInt(static_cast<int>(pCon->m_Direction)) << " "
                 << FmtDouble(pCon->m_Value) << "\n";
         }
@@ -442,35 +789,37 @@ void Outputter::SaveModel(const QString& fileName, StructureData* pData)
             if (group.first == "FORCE_NODE")
             {
                 auto pL = std::dynamic_pointer_cast<Force_Node>(pLoad);
-                stream << FmtInt(pL->m_Id, 10, true) << " "
-                    << FmtInt(pL->m_pNode.lock() ? pL->m_pNode.lock()->m_Id : 0) << " "
+                stream << FmtInt(mapId(loadIdMap, pL->m_Id), 10, true) << " "
+                    << FmtInt(pL->m_pNode.lock() ? mapId(nodeIdMap, pL->m_pNode.lock()->m_Id) : 0) << " "
                     << FmtInt(static_cast<int>(pL->m_Direction)) << " "
                     << FmtDouble(pL->m_Value) << " "
-                    << FmtInt(pL->m_StepId) << "\n";
+                    << FmtInt(mapId(stepIdMap, pL->m_StepId)) << " "
+                    << FmtDouble(pL->m_StartTime) << " "
+                    << FmtDouble(pL->m_EndTime) << "\n";
             }
             else if (group.first == "FORCE_ELEMENT")
             {
                 auto pL = std::dynamic_pointer_cast<Force_Element>(pLoad);
-                stream << FmtInt(pL->m_Id, 10, true) << " "
-                    << FmtInt(pL->m_pElement.lock() ? pL->m_pElement.lock()->m_Id : 0) << " "
+                stream << FmtInt(mapId(loadIdMap, pL->m_Id), 10, true) << " "
+                    << FmtInt(pL->m_pElement.lock() ? mapId(elementIdMap, pL->m_pElement.lock()->m_Id) : 0) << " "
                     << FmtInt(static_cast<int>(pL->m_Direction)) << " "
                     << FmtDouble(pL->m_Value) << "\n";
             }
             else if (group.first == "FORCE_GRAVITY")
             {
                 auto pL = std::dynamic_pointer_cast<Force_Gravity>(pLoad);
-                stream << FmtInt(pL->m_Id, 10, true) << " "
+                stream << FmtInt(mapId(loadIdMap, pL->m_Id), 10, true) << " "
                     << FmtInt(static_cast<int>(pL->m_Direction)) << " "
                     << FmtDouble(pL->m_g) << " "
-                    << FmtInt(pL->m_StepId) << "\n";
+                    << FmtInt(mapId(stepIdMap, pL->m_StepId)) << "\n";
             }
             else if (group.first == "FORCE_WIND")
             {
                 auto pL = std::dynamic_pointer_cast<Force_Wind>(pLoad);
-                stream << FmtInt(pL->m_Id, 10, true) << " "
+                stream << FmtInt(mapId(loadIdMap, pL->m_Id), 10, true) << " "
                     << FmtInt(static_cast<int>(pL->m_Direction)) << " "
                     << FmtDouble(pL->m_velocity) << " "
-                    << FmtInt(pL->m_StepId) << "\n";
+                    << FmtInt(mapId(stepIdMap, pL->m_StepId)) << "\n";
             }
         }
     }
@@ -485,7 +834,7 @@ void Outputter::SaveModel(const QString& fileName, StructureData* pData)
         {
             auto pElem = pair.second;
             // 仅输出有初始应力的单元？目前全部输出
-            stream << FmtInt(pElem->m_Id, 10, true) << " " << FmtDouble(pElem->m_InitStress) << "\n";
+            stream << FmtInt(mapId(elementIdMap, pair.first), 10, true) << " " << FmtDouble(pElem->m_InitStress) << "\n";
         }
     }
 
@@ -497,7 +846,7 @@ void Outputter::SaveModel(const QString& fileName, StructureData* pData)
         for (const auto& pair : pData->m_AnalysisStep)
         {
             auto pStep = pair.second;
-            stream << FmtInt(pStep->m_Id, 10, true) << " "
+            stream << FmtInt(mapId(stepIdMap, pair.first), 10, true) << " "
                 << FmtStr(pStep->GetTypeName()) << " "
                 << FmtDouble(pStep->m_Time) << " "
                 << FmtDouble(pStep->m_StepSize) << " "
@@ -508,4 +857,28 @@ void Outputter::SaveModel(const QString& fileName, StructureData* pData)
 
     file.close();
     qDebug() << "Model saved to" << fileName;
+    return true;
+}
+
+bool Outputter::SaveHdf5File(const QString& fileName, StructureData* pData, const QString& sourceModelName)
+{
+    Hdf5ResultIO hdf5ResultIO;
+    return hdf5ResultIO.ExportHdf5(fileName, pData, sourceModelName);
+}
+
+bool Outputter::ExportBdfResultFromHdf5(const QString& hdf5FileName,
+    const QString& bdfFileName,
+    const std::vector<int>& nodeIds,
+    const std::vector<EnumKeyword::NodeResultType>& nodeTypes,
+    const std::vector<int>& elementIds,
+    const std::vector<EnumKeyword::ElementResultType>& elementTypes) const
+{
+    Hdf5ResultIO hdf5ResultIO;
+    return hdf5ResultIO.ExportBdfResultFromHdf5(hdf5FileName, bdfFileName,
+        nodeIds, nodeTypes, elementIds, elementTypes);
+}
+
+void Outputter::SaveModel(const QString& fileName, StructureData* pData)
+{
+    SaveBdfModel(fileName, pData);
 }

@@ -103,10 +103,16 @@
     <ClCompile Include="Export\Outputter.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Export\Hdf5ResultIO.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="DataStructure\Load\Force_Wind.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Conductor\Conductor.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Conductor\ConductorModelBuilder.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Solver\Dynamic\SolverNewmark.cpp">
@@ -204,10 +210,16 @@
     <ClInclude Include="Export\Outputter.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Export\Hdf5ResultIO.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="DataStructure\Load\Force_Wind.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Conductor\Conductor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Conductor\ConductorModelBuilder.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Solver\Dynamic\SolverNewmark.h">

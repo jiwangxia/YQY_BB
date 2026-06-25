@@ -99,6 +99,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Conductor\Conductor.cpp" />
+    <ClCompile Include="Conductor\ConductorModelBuilder.cpp" />
     <ClCompile Include="DataStructure\Section\SectionRectangle.cpp" />
     <ClCompile Include="Solver\Dynamic\SolverAdaptiveTSSBN.cpp" />
     <ClCompile Include="Solver\Dynamic\SolverTSSBN.cpp" />
@@ -134,11 +135,13 @@
     <ClCompile Include="DataStructure\Element\ElementBase.cpp" />
     <ClCompile Include="DataStructure\Element\ElementTruss.cpp" />
     <ClCompile Include="GUI\YQY.cpp" />
+    <ClCompile Include="Export\Hdf5ResultIO.cpp" />
     <ClCompile Include="Export\Outputter.cpp" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Conductor\Conductor.h" />
+    <ClInclude Include="Conductor\ConductorModelBuilder.h" />
     <ClInclude Include="DataStructure\Section\SectionRectangle.h" />
     <ClInclude Include="Solver\Dynamic\SolverAdaptiveTSSBN.h" />
     <ClInclude Include="Solver\Dynamic\SolverTSSBN.h" />
@@ -172,6 +175,7 @@
     <ClInclude Include="Utility\ModelManager.h" />
     <ClInclude Include="Utility\EnumKeyword.h" />
     <ClInclude Include="DataStructure\Section\SectionBase.h" />
+    <ClInclude Include="Export\Hdf5ResultIO.h" />
     <ClInclude Include="Export\Outputter.h" />
   </ItemGroup>
   <ItemGroup>

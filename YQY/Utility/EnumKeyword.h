@@ -21,7 +21,8 @@ public:
         CONSTRAINT,     ///< 约束
         LOAD,           ///< 荷载
         STRESS,         ///< 初始应力
-        ANALYSIS_STEP   ///< 分析步
+        ANALYSIS_STEP,  ///< 分析步
+        OUTPUT          ///< 输出控制
     };
     static const QMap<QString, KeyData> MapKeyData;  ///< 关键字字符串到枚举的映射
 
@@ -88,5 +89,37 @@ public:
         UNKNOWN   ///< 未知
     };
     static const QMap<QString, StepType> MapStepType;  ///< 分析步类型字符串到枚举的映射
+
+    /**
+     * @brief 节点结果数据类型枚举
+     */
+    enum class NodeResultType
+    {
+        U1, U2, U3, MagnitudeU,       ///< 位移及位移幅值
+        CX, CY, CZ,                   ///< 当前坐标 = 初始坐标 + 位移
+        V1, V2, V3,                   ///< 速度
+        A1, A2, A3,                   ///< 加速度
+        UR1, UR2, UR3,                ///< 转角
+        F1, F2, F3,                   ///< 节点内力
+        M1, M2, M3,                   ///< 节点力矩
+        R1, R2, R3                    ///< 节点反力
+    };
+
+    /**
+     * @brief 单元结果数据类型枚举
+     */
+    enum class ElementResultType
+    {
+        AxialForce,                   ///< 轴力
+        ShearY,                       ///< 局部 y 向剪力
+        ShearZ,                       ///< 局部 z 向剪力
+        Torque,                       ///< 扭矩
+        MomentY,                      ///< 绕局部 y 轴弯矩
+        MomentZ,                      ///< 绕局部 z 轴弯矩
+        Strain,                       ///< 应变
+        InitStress,                   ///< 初始应力
+        CurrentStress,                ///< 当前应力
+        DeltaStress                   ///< 应力增量
+    };
 };
 

@@ -9,7 +9,8 @@ const QMap<QString, EnumKeyword::KeyData> EnumKeyword::MapKeyData =
     {"CONSTRAINT",    EnumKeyword::KeyData::CONSTRAINT},
     {"LOAD",          EnumKeyword::KeyData::LOAD},
     {"STRESS",        EnumKeyword::KeyData::STRESS},
-    {"ANALYSIS_STEP", EnumKeyword::KeyData::ANALYSIS_STEP}
+    {"ANALYSIS_STEP", EnumKeyword::KeyData::ANALYSIS_STEP},
+    {"OUTPUT",        EnumKeyword::KeyData::OUTPUT}
 };
 
 const QMap<QString, EnumKeyword::Direction> EnumKeyword::MapDirection = 

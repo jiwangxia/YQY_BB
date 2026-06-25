@@ -32,6 +32,7 @@ public:
 
 private:
 	std::shared_ptr<StructureData> m_Structure;  ///< 结构数据指针
+	QString m_InputFileDir;                      ///< 输入文件所在目录
 
 	/**
 	 * @brief 读取节点数据
@@ -114,6 +115,14 @@ private:
 	 * @return 读取成功返回 true
 	 */
 	bool InputAnalysisStep(QTextStream& flow, const QStringList& list_str);
+
+	/**
+	 * @brief 读取输出控制数据
+	 * @param [in] flow 文本流
+	 * @param [in] list_str 关键字行解析后的字符串列表
+	 * @return 读取成功返回 true
+	 */
+	bool InputOutput(QTextStream& flow, const QStringList& list_str);
 
 	/// @name 荷载处理函数映射
 	/// @{

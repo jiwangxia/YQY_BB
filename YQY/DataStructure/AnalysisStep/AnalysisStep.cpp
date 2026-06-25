@@ -605,10 +605,38 @@ void AnalysisStep::Solve()
         return;
     }
 
+    const bool outputHdf5 = m_pData->m_OutputControl.m_EnableHdf5;
+    const bool dynamicAnalysis = (m_Type == EnumKeyword::StepType::DYNAMIC);
+    m_pData->GetOutputter().SetKeepFramesInMemory(!dynamicAnalysis);
+
+    if (dynamicAnalysis && outputHdf5)
+    {
+        if (!m_pData->GetOutputter().BeginHdf5ResultStream(
+            m_pData->m_OutputControl.m_Hdf5FileName,
+            m_pData,
+            m_pData->m_OutputControl.m_SourceModelName))
+        {
+            qDebug().noquote() << QStringLiteral("Error: H5/HDF5 动力结果流式输出初始化失败");
+            return;
+        }
+    }
+
     // 执行求解
     if (solver && !solver->Solve(*this, m_Time))
     {
         qDebug().noquote() << QStringLiteral("求解失败: %1").arg(solver->GetName());
+    }
+
+    if (dynamicAnalysis && outputHdf5)
+    {
+        m_pData->GetOutputter().EndHdf5ResultStream();
+    }
+    else if (!dynamicAnalysis && outputHdf5)
+    {
+        m_pData->GetOutputter().SaveHdf5File(
+            m_pData->m_OutputControl.m_Hdf5FileName,
+            m_pData,
+            m_pData->m_OutputControl.m_SourceModelName);
     }
 }
 

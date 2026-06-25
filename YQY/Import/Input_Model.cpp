@@ -2,6 +2,32 @@
 #include "DataStructure/Structure/StructureData.h"
 #include <QRegularExpression>
 #include <QElapsedTimer>
+#include <QFileInfo>
+#include <QDir>
+#include <QStringDecoder>
+
+namespace
+{
+QString GetDefaultHdf5FileName(const QString& inputFileName)
+{
+    const QFileInfo inputFileInfo(inputFileName);
+    QDir outputDir(QDir::current().filePath("Export/ExportFile"));
+    if (!outputDir.exists())
+    {
+        QDir().mkpath(outputDir.absolutePath());
+    }
+
+    return outputDir.filePath(inputFileInfo.completeBaseName() + ".h5");
+}
+
+QStringConverter::Encoding DetectTextEncoding(QFile& file)
+{
+    const QByteArray bytes = file.peek(file.size());
+    QStringDecoder utf8Decoder(QStringConverter::Utf8);
+    utf8Decoder.decode(bytes);
+    return utf8Decoder.hasError() ? QStringConverter::System : QStringConverter::Utf8;
+}
+}
 
 bool Input_Model::ReadLine(QTextStream& flow, QString& str)
 {
@@ -23,6 +49,12 @@ bool Input_Model::ReadLine(QTextStream& flow, QString& str)
 bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureData> pStructure)
 {
     m_Structure = pStructure;
+    m_Structure->m_OutputControl.m_SourceModelName = FileName;
+
+    QFileInfo inputFileInfo(FileName);
+    m_InputFileDir = inputFileInfo.absolutePath();
+    m_Structure->m_OutputControl.m_Hdf5FileName = GetDefaultHdf5FileName(FileName);
+
     QFile file(FileName);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
     {
@@ -31,6 +63,7 @@ bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureDa
     }
 
     QTextStream flow(&file);
+    flow.setEncoding(DetectTextEncoding(file));
     QString str;
     while (ReadLine(flow, str))
     {
@@ -70,6 +103,9 @@ bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureDa
             break;
         case EnumKeyword::KeyData::ANALYSIS_STEP:
             InputAnalysisStep(flow, list_str);
+            break;
+        case EnumKeyword::KeyData::OUTPUT:
+            InputOutput(flow, list_str);
             break;
 
         default:
@@ -871,6 +907,45 @@ bool Input_Model::InputAnalysisStep(QTextStream& flow, const QStringList& list_s
 
         m_Structure->m_AnalysisStep.insert(std::make_pair(autoId, pStep));
     }
+
+    return true;
+}
+
+bool Input_Model::InputOutput(QTextStream& flow, const QStringList& list_str)
+{
+    Q_UNUSED(flow);
+
+    // 格式：*OUTPUT, H5, 1[, fileName]
+    if (list_str.size() < 3)
+    {
+        qDebug().noquote() << QStringLiteral("Error: 输出控制格式错误，应为 *OUTPUT, H5, 0/1");
+        return false;
+    }
+
+    const QString outputType = list_str[1].trimmed().toUpper();
+    if (outputType != "H5" && outputType != "HDF5")
+    {
+        qDebug().noquote() << QStringLiteral("警告: 暂不支持的输出类型: ") << outputType;
+        return true;
+    }
+
+    const int enabled = list_str[2].toInt();
+    m_Structure->m_OutputControl.m_EnableHdf5 = (enabled != 0);
+    m_Structure->m_OutputControl.m_OutputModel = true;
+    m_Structure->m_OutputControl.m_OutputResult = true;
+    m_Structure->m_OutputControl.m_StreamResult = true;
+
+    if (list_str.size() >= 4)
+    {
+        QFileInfo hdf5FileInfo(list_str[3].trimmed());
+        m_Structure->m_OutputControl.m_Hdf5FileName = hdf5FileInfo.isRelative()
+            ? QDir(QDir::current().filePath("Export/ExportFile")).filePath(list_str[3].trimmed())
+            : hdf5FileInfo.absoluteFilePath();
+    }
+
+    qDebug().noquote() << QStringLiteral("H5 输出控制: ")
+        << (m_Structure->m_OutputControl.m_EnableHdf5 ? QStringLiteral("开启") : QStringLiteral("关闭"))
+        << QStringLiteral(", 文件: ") << m_Structure->m_OutputControl.m_Hdf5FileName;
 
     return true;
 }

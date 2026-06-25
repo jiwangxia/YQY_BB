@@ -3,7 +3,7 @@
   <ImportGroup Label="PropertySheets" />
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup>
-    <IncludePath>ThirdPartyLibrary\eigen-3.4.0;ThirdPartyLibrary\VTK9.4.2\Debug\include\vtk-9.4;$(IncludePath)</IncludePath>
+    <IncludePath>ThirdPartyLibrary\eigen-3.4.0;ThirdPartyLibrary\VTK9.4.2\Debug\include\vtk-9.4;ThirdPartyLibrary\VTK9.4.2\Debug\include\vtk-9.4\vtkhdf5;ThirdPartyLibrary\VTK9.4.2\Debug\include\vtk-9.4\vtkhdf5\src;$(IncludePath)</IncludePath>
     <LibraryPath>ThirdPartyLibrary\VTK9.4.2\Debug\lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Label="QtSettings">

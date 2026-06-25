@@ -20,6 +20,19 @@
 #include "Export/Outputter.h"
 
 /**
+ * @brief 输出控制参数 - 保存输入文件中定义的结果输出请求
+ */
+struct OutputControl
+{
+    bool m_EnableHdf5 = false;       ///< 是否输出 H5/HDF5 文件
+    bool m_OutputModel = true;       ///< 是否写入模型数据
+    bool m_OutputResult = true;      ///< 是否写入结果数据
+    bool m_StreamResult = true;      ///< 动力分析是否按时间步流式写入结果
+    QString m_Hdf5FileName;          ///< H5/HDF5 输出文件名
+    QString m_SourceModelName;       ///< 原始输入模型文件名
+};
+
+/**
  * @brief 结构数据类 - 存储和管理整个有限元模型的所有数据
  */
 class StructureData : public Base
@@ -36,6 +49,8 @@ public:
     std::map<int, std::shared_ptr<LoadBase>>          m_Load;         ///< 荷载集合
     std::map<int, std::shared_ptr<AnalysisStep>>      m_AnalysisStep; ///< 分析步集合
     /// @}
+
+    OutputControl m_OutputControl;                                      ///< 输出控制参数
 
     ~StructureData();
 
@@ -138,5 +153,5 @@ public:
      * @brief 获取输出
      */
     Outputter& GetOutputter() { return m_Outputter; }
+    const Outputter& GetOutputter() const { return m_Outputter; }
 };
-
