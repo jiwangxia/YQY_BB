@@ -107,7 +107,7 @@ std::shared_ptr<Property> StructureData::Create_Property(int id_material, int id
     else
     {
         qDebug().noquote() << QStringLiteral("Error: Create_Property 未找到材料 id=") << id_material;
-        exit(1);
+        return nullptr;
     }
 
     auto iterSec = m_Section.find(id_section);
@@ -118,7 +118,7 @@ std::shared_ptr<Property> StructureData::Create_Property(int id_material, int id
     else
     {
         qDebug().noquote() << QStringLiteral("Error: Create_Property 未找到截面 id=") << id_section;
-        exit(1);
+        return nullptr;
     }
 
     property->m_Id = property_id;
@@ -170,11 +170,20 @@ void StructureData::Add_Property(double E, double density, double Area, double* 
 
 int StructureData::Add_Constraint(std::vector<int> Nodeid, std::vector<int> direaction, std::vector<double> value)
 {
-    Q_ASSERT(direaction.size() == value.size());
+    if (direaction.size() != value.size())
+    {
+        qDebug().noquote() << QStringLiteral("Error: 约束方向数量与约束值数量不一致");
+        return 0;
+    }
     size_t num = value.size();
     for (auto& node : Nodeid)
     {
         auto pNode = FindNode(node);
+        if (!pNode)
+        {
+            qDebug().noquote() << QStringLiteral("Error: 添加约束时未找到节点 id=") << node;
+            continue;
+        }
         for (int i = 0; i < num; ++i)
         {
             auto pConstraint = std::make_shared<Constraint>();

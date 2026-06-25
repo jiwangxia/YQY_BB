@@ -1,5 +1,6 @@
 #include "TimeIntegrationSolver.h"
 #include <Eigen/SparseLU>
+#include <algorithm>
 #include <iostream>
 #include <cmath>
 

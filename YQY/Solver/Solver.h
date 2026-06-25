@@ -17,7 +17,7 @@ public:
     /**
      * @brief 运行所有分析步
      */
-    void RunAll();
+    bool RunAll();
     
     /**
      * @brief 运行指定ID的分析步

@@ -57,6 +57,29 @@ namespace Conductor
     };
 
     /**
+     * @brief 相内间隔棒自动布置参数
+     */
+    struct InnerSpacerLayoutConfig
+    {
+        int count = 0;                                                      ///< 间隔棒数量
+        double startOffset = 0.0;                                           ///< 距左端避让距离，单位 m
+        double endOffset = 0.0;                                             ///< 距右端避让距离，单位 m
+        bool useEqualSpacing = true;                                        ///< true=在有效区间内均匀布置
+        InnerSpacerConfig spacer;                                           ///< 单个间隔棒的单元类型和属性
+    };
+
+    /**
+     * @brief 单档导线业务生成参数
+     */
+    struct SpanConductorBuildConfig
+    {
+        LineBuildConfig line;                                               ///< 导线生成参数
+        std::vector<InnerSpacerConfig> innerSpacers;                        ///< 指定位置间隔棒
+        InnerSpacerLayoutConfig innerSpacerLayout;                          ///< 自动布置间隔棒
+        bool useInnerSpacerLayout = false;                                  ///< 是否使用自动布置
+    };
+
+    /**
      * @brief 相内间隔棒生成结果
      */
     struct InnerSpacerModel
@@ -114,6 +137,15 @@ namespace Conductor
         bool BuildLine(const LineBuildConfig& config, LineBuildResult& result, std::string& error);
 
         /**
+         * @brief 生成单档导线，并按配置生成相内间隔棒
+         * @param [in] config 单档导线业务生成参数
+         * @param [out] result 导线和间隔棒生成结果
+         * @param [out] error 失败原因
+         * @return 成功返回 true
+         */
+        bool BuildSpanConductor(const SpanConductorBuildConfig& config, LineBuildResult& result, std::string& error);
+
+        /**
          * @brief 在已有导线上生成一个相内间隔棒
          * @param [in,out] line 已生成的导线结果
          * @param [in] config 间隔棒生成参数
@@ -132,6 +164,16 @@ namespace Conductor
          */
         bool BuildInnerSpacers(LineBuildResult& line, const std::vector<InnerSpacerConfig>& configs, std::string& error);
 
+        /**
+         * @brief 按规则生成相内间隔棒位置配置
+         * @param [in] line 已生成的导线结果
+         * @param [in] layout 间隔棒自动布置参数
+         * @param [out] configs 生成的间隔棒配置
+         * @param [out] error 失败原因
+         * @return 成功返回 true
+         */
+        bool CalculateInnerSpacerConfigs(const LineBuildResult& line, const InnerSpacerLayoutConfig& layout, std::vector<InnerSpacerConfig>& configs, std::string& error) const;
+
     private:
         std::shared_ptr<StructureData> m_ownedStructure;
         StructureData* m_structure = nullptr;
@@ -142,7 +184,7 @@ namespace Conductor
         bool ValidateProperty(std::shared_ptr<Property> property, const std::string& objectName, std::string& error) const;
         std::shared_ptr<ElementBase> CreateLineElement(EnumKeyword::ElementType elementType, std::string& error) const;
         void PrepareElementLocalFrame(std::shared_ptr<ElementBase> element) const;
-        int FindNodeIdByRatio(const SubConductorModel& sub, double ratio) const;
+        int FindNearestNodeOnSubConductor(const SubConductorModel& sub, const Vector3d& leftBase, const Vector2d& direction, double targetDistance) const;
         bool AddElement(int iNodeId, int jNodeId, EnumKeyword::ElementType elementType, std::shared_ptr<Property> property, double initStress, int& elementId, std::string& error);
         bool AddNodes(BundleResult& raw, LineBuildResult& result, std::string& error);
         bool AddElements(const BundleResult& raw, const LineBuildConfig& config, std::shared_ptr<Property> property, LineBuildResult& result, std::string& error);

@@ -7,7 +7,7 @@ void Solver::SetStructure(std::shared_ptr<StructureData> pStructure)
     m_pStructure = pStructure;
 }
 
-void Solver::RunAll()
+bool Solver::RunAll()
 {
     QElapsedTimer timer;
     timer.start();
@@ -16,13 +16,13 @@ void Solver::RunAll()
     if (!pStructure)
     {
         qDebug().noquote() << QStringLiteral("Error: Solver 未关联结构数据");
-        return;
+        return false;
     }
 
     if (pStructure->m_AnalysisStep.empty())
     {
         qDebug().noquote() << QStringLiteral("Warning: 没有分析步，无法运行分析");
-        return;
+        return false;
     }
 
     qDebug().noquote() << QStringLiteral("\n========== 开始分析 ==========\n\n");
@@ -39,12 +39,17 @@ void Solver::RunAll()
 
         step->Init();
         // 运行分析步（求解内部会处理初始化）
-        step->Solve();
+        if (!step->Solve())
+        {
+            qDebug().noquote() << QStringLiteral("Error: 分析步失败，停止后续分析。Step ID=") << stepId;
+            return false;
+        }
     }
     qDebug().noquote() << QStringLiteral("\n========== 分析完成 ==========\n");
 
     qint64 elapsedMs = timer.elapsed();
     qDebug().noquote() << QStringLiteral("模型分析: ") << elapsedMs << QStringLiteral(" 毫秒");
+    return true;
 }
 
 bool Solver::RunStep(int stepId)
@@ -67,7 +72,5 @@ bool Solver::RunStep(int stepId)
     qDebug().noquote() << QStringLiteral("\n----- 运行分析步 ") << stepId
         << " [" << step->GetTypeName() << "] -----";
 
-    step->Solve();
-
-    return true;
+    return step->Solve();
 }

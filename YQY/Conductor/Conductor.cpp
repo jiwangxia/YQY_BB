@@ -44,7 +44,8 @@ namespace Conductor
             double hsinhLa = h / (2 * a * std::sinh(L / 2.0 / a));
             X0 = L / 2.0 - a * std::asinh(hsinhLa);
             ArcLength = a * (std::sinh((L - X0) / a) + std::sinh(X0 / a));
-            C = Point1[2] - a * cosh((Point1[0] - X0) / a);
+            // X 使用沿档距方向的局部水平坐标，左挂点对应 X = 0。
+            C = Point1[2] - a * std::cosh(X0 / a);
         }
 
         /**
@@ -104,11 +105,17 @@ namespace Conductor
 
         if (Config.connecttype == ConnectionMode::Parallel) // 平行连接
         {
-            model.GetPoints(s1, s2, Config.segments, GenerateNodes, NodeStress);
+            if (!model.GetPoints(s1, s2, Config.segments, GenerateNodes, NodeStress))
+            {
+                return Result;
+            }
         }
         else                                      // 竖直三角形连接
         {
-            model.GetPoints(Config.insulatorL, Config.insulatorL, Config.segments, GenerateNodes, NodeStress);
+            if (!model.GetPoints(Config.insulatorL, Config.insulatorL, Config.segments, GenerateNodes, NodeStress))
+            {
+                return Result;
+            }
         }
 
         // --- 2. 局部坐标系与偏移计算 ---
@@ -179,6 +186,12 @@ namespace Conductor
     void Generator::Offset(const ConductorConfig& Config, const double& dx, const double& dy, std::vector<RawNode>& _OUT offsets)
     {
         double horiz = std::sqrt(dx * dx + dy * dy);
+        if (horiz <= 1e-7)
+        {
+            offsets.clear();
+            offsets.push_back({ 0.0, 0.0, 0.0 });
+            return;
+        }
         double vrx = dy / horiz, vry = -dx / horiz; // 右向量 (V_right)
         double vvx = 0, vvy = 0, vvz = 1.0;         // 上向量 (V_up)
 

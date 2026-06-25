@@ -11,6 +11,7 @@
 #include "DataStructure/Structure/StructureData.h"
 
 #include <cmath>
+#include <limits>
 #include <set>
 
 namespace Conductor
@@ -180,6 +181,61 @@ namespace Conductor
         return true;
     }
 
+    bool ConductorModelBuilder::BuildSpanConductor(const SpanConductorBuildConfig& config, LineBuildResult& result, std::string& error)
+    {
+        if (!BuildLine(config.line, result, error))
+        {
+            return false;
+        }
+
+        auto rollbackLine = [&]()
+            {
+                for (const auto& spacer : result.innerSpacers)
+                {
+                    for (int elementId : spacer.elementIds)
+                    {
+                        m_structure->m_Elements.erase(elementId);
+                    }
+                    if (spacer.centerNodeId != -1)
+                    {
+                        m_structure->m_Nodes.erase(spacer.centerNodeId);
+                    }
+                }
+
+                for (const auto& pair : result.subConductors)
+                {
+                    for (int elementId : pair.second.elementIds)
+                    {
+                        m_structure->m_Elements.erase(elementId);
+                    }
+                    for (int nodeId : pair.second.nodeIds)
+                    {
+                        m_structure->m_Nodes.erase(nodeId);
+                    }
+                }
+                result = LineBuildResult{};
+            };
+
+        if (!config.innerSpacers.empty() && !BuildInnerSpacers(result, config.innerSpacers, error))
+        {
+            rollbackLine();
+            return false;
+        }
+
+        if (config.useInnerSpacerLayout)
+        {
+            std::vector<InnerSpacerConfig> autoSpacers;
+            if (!CalculateInnerSpacerConfigs(result, config.innerSpacerLayout, autoSpacers, error) ||
+                !BuildInnerSpacers(result, autoSpacers, error))
+            {
+                rollbackLine();
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     int ConductorModelBuilder::NextNodeId() const
     {
         auto nextId = [](const auto& values)
@@ -288,38 +344,39 @@ namespace Conductor
         beam->q0 = std::abs(direction.dot(Vector3d::UnitZ())) < 0.9 ? Vector3d::UnitZ() : Vector3d::UnitY();
     }
 
-    int ConductorModelBuilder::FindNodeIdByRatio(const SubConductorModel& sub, double ratio) const
+    int ConductorModelBuilder::FindNearestNodeOnSubConductor(
+        const SubConductorModel& sub,
+        const Vector3d& leftBase,
+        const Vector2d& direction,
+        double targetDistance) const
     {
         if (sub.nodeIds.empty())
         {
             return -1;
         }
 
-        auto clampRatio = [](double value)
-            {
-                if (value < 0.0)
-                {
-                    return 0.0;
-                }
-                if (value > 1.0)
-                {
-                    return 1.0;
-                }
-                return value;
-            };
+        int bestNodeId = -1;
+        double bestDistance = std::numeric_limits<double>::max();
 
-        double clampedRatio = clampRatio(ratio);
-        int maxIndex = static_cast<int>(sub.nodeIds.size()) - 1;
-        int index = static_cast<int>(std::round(clampedRatio * maxIndex));
-        if (index < 0)
+        for (int nodeId : sub.nodeIds)
         {
-            index = 0;
+            auto node = m_structure->FindNode(nodeId);
+            if (!node)
+            {
+                continue;
+            }
+
+            Vector2d delta(node->m_X - leftBase.x(), node->m_Y - leftBase.y());
+            double projectedDistance = delta.dot(direction);
+            double distance = std::abs(projectedDistance - targetDistance);
+            if (distance < bestDistance)
+            {
+                bestDistance = distance;
+                bestNodeId = nodeId;
+            }
         }
-        else if (index > maxIndex)
-        {
-            index = maxIndex;
-        }
-        return sub.nodeIds[index];
+
+        return bestNodeId;
     }
 
     bool ConductorModelBuilder::AddElement(
@@ -437,13 +494,21 @@ namespace Conductor
         spacer.ratio = ratio;
         spacer.position = ratio * line.spanLength;
 
+        Vector2d horizontalSpan = (line.end - line.start).head<2>();
+        if (horizontalSpan.norm() <= 1e-7)
+        {
+            error = "导线水平档距过小，无法生成相内间隔棒";
+            return false;
+        }
+        Vector2d direction = horizontalSpan.normalized();
+
         std::vector<int> wireNodeIds;
         wireNodeIds.reserve(line.subConductors.size());
 
         Vector3d center = Vector3d::Zero();
         for (const auto& pair : line.subConductors)
         {
-            int nodeId = FindNodeIdByRatio(pair.second, ratio);
+            int nodeId = FindNearestNodeOnSubConductor(pair.second, line.start, direction, spacer.position);
             auto node = m_structure->FindNode(nodeId);
             if (!node)
             {
@@ -551,20 +616,104 @@ namespace Conductor
 
     bool ConductorModelBuilder::BuildInnerSpacers(LineBuildResult& line, const std::vector<InnerSpacerConfig>& configs, std::string& error)
     {
+        int oldSpacerCount = static_cast<int>(line.innerSpacers.size());
+
         for (const auto& config : configs)
         {
             InnerSpacerModel spacer;
             if (!BuildInnerSpacer(line, config, spacer, error))
             {
+                for (int i = static_cast<int>(line.innerSpacers.size()) - 1; i >= oldSpacerCount; --i)
+                {
+                    for (int elementId : line.innerSpacers[i].elementIds)
+                    {
+                        m_structure->m_Elements.erase(elementId);
+                    }
+                    if (line.innerSpacers[i].centerNodeId != -1)
+                    {
+                        m_structure->m_Nodes.erase(line.innerSpacers[i].centerNodeId);
+                    }
+                }
+                line.innerSpacers.resize(oldSpacerCount);
                 return false;
             }
         }
         return true;
     }
 
+    bool ConductorModelBuilder::CalculateInnerSpacerConfigs(
+        const LineBuildResult& line,
+        const InnerSpacerLayoutConfig& layout,
+        std::vector<InnerSpacerConfig>& configs,
+        std::string& error) const
+    {
+        configs.clear();
+
+        if (layout.count <= 0)
+        {
+            return true;
+        }
+
+        if (line.subConductors.size() <= 1)
+        {
+            error = "单分裂导线不需要自动布置相内间隔棒";
+            return false;
+        }
+
+        if (line.spanLength <= 1e-7)
+        {
+            error = "导线档距无效，无法自动布置相内间隔棒";
+            return false;
+        }
+
+        if (!layout.useEqualSpacing)
+        {
+            error = "当前仅支持相内间隔棒均匀布置";
+            return false;
+        }
+
+        double start = layout.startOffset;
+        double end = line.spanLength - layout.endOffset;
+        if (start < 0.0)
+        {
+            start = 0.0;
+        }
+        if (end > line.spanLength)
+        {
+            end = line.spanLength;
+        }
+
+        if (end <= start)
+        {
+            error = "相内间隔棒自动布置有效区间无效";
+            return false;
+        }
+
+        double spacing = (end - start) / static_cast<double>(layout.count + 1);
+        configs.reserve(layout.count);
+        for (int i = 1; i <= layout.count; ++i)
+        {
+            InnerSpacerConfig config = layout.spacer;
+            config.position = start + spacing * i;
+            config.useRatio = false;
+            config.createCenterNode = line.subConductors.size() > 2;
+            configs.push_back(config);
+        }
+
+        return true;
+    }
+
     bool ConductorModelBuilder::AddNodes(BundleResult& raw, LineBuildResult& result, std::string& error)
     {
         std::vector<int> createdNodeIds;
+        auto rollback = [&]()
+            {
+                for (int createdNodeId : createdNodeIds)
+                {
+                    m_structure->m_Nodes.erase(createdNodeId);
+                }
+                result = LineBuildResult{};
+            };
 
         for (auto& pair : raw.wiresNode)
         {
@@ -574,6 +723,7 @@ namespace Conductor
             if (rawNodes.empty())
             {
                 error = "子导线节点列表为空";
+                rollback();
                 return false;
             }
 
@@ -594,11 +744,7 @@ namespace Conductor
                 if (!inserted.second)
                 {
                     error = "添加导线节点失败";
-                    for (int createdNodeId : createdNodeIds)
-                    {
-                        m_structure->m_Nodes.erase(createdNodeId);
-                    }
-                    result = LineBuildResult{};
+                    rollback();
                     return false;
                 }
 
@@ -616,6 +762,17 @@ namespace Conductor
     bool ConductorModelBuilder::AddElements(const BundleResult& raw, const LineBuildConfig& config, std::shared_ptr<Property> property, LineBuildResult& result, std::string& error)
     {
         std::vector<int> createdElementIds;
+        auto rollback = [&]()
+            {
+                for (int createdElementId : createdElementIds)
+                {
+                    m_structure->m_Elements.erase(createdElementId);
+                }
+                for (auto& pair : result.subConductors)
+                {
+                    pair.second.elementIds.clear();
+                }
+            };
 
         for (const auto& pair : raw.wiresElement)
         {
@@ -627,6 +784,7 @@ namespace Conductor
             if (rawNodeIt == raw.wiresNode.end() || subIt == result.subConductors.end())
             {
                 error = "导线单元找不到对应的子导线节点";
+                rollback();
                 return false;
             }
 
@@ -643,6 +801,7 @@ namespace Conductor
                     jIndex >= static_cast<int>(rawNodes.size()))
                 {
                     error = "导线单元局部节点索引越界";
+                    rollback();
                     return false;
                 }
 
@@ -650,10 +809,7 @@ namespace Conductor
                 if (!AddElement(rawNodes[iIndex].id, rawNodes[jIndex].id, config.elementType, property, rawElement.stress0, elementId, error))
                 {
                     error = "添加导线单元失败：" + error;
-                    for (int createdElementId : createdElementIds)
-                    {
-                        m_structure->m_Elements.erase(createdElementId);
-                    }
+                    rollback();
                     return false;
                 }
 

@@ -529,9 +529,9 @@ void AnalysisStep::Assemble_Constraint(VectorXd& x1, double factor)
 // 求解方法实现
 // ==========================================
 
-void AnalysisStep::Solve()
+bool AnalysisStep::Solve()
 {
-    if (!PrepareData()) return;
+    if (!PrepareData()) return false;
     Init();
 
     // 初始化单元长度
@@ -602,7 +602,7 @@ void AnalysisStep::Solve()
     }
     default:
         qDebug().noquote() << QStringLiteral("警告: 未知的分析步类型，无法求解");
-        return;
+        return false;
     }
 
     const bool outputHdf5 = m_pData->m_OutputControl.m_EnableHdf5;
@@ -617,27 +617,35 @@ void AnalysisStep::Solve()
             m_pData->m_OutputControl.m_SourceModelName))
         {
             qDebug().noquote() << QStringLiteral("Error: H5/HDF5 动力结果流式输出初始化失败");
-            return;
+            return false;
         }
     }
 
     // 执行求解
+    bool solveOk = true;
     if (solver && !solver->Solve(*this, m_Time))
     {
         qDebug().noquote() << QStringLiteral("求解失败: %1").arg(solver->GetName());
+        solveOk = false;
     }
 
     if (dynamicAnalysis && outputHdf5)
     {
         m_pData->GetOutputter().EndHdf5ResultStream();
     }
-    else if (!dynamicAnalysis && outputHdf5)
+    else if (!dynamicAnalysis && outputHdf5 && solveOk)
     {
         m_pData->GetOutputter().SaveHdf5File(
             m_pData->m_OutputControl.m_Hdf5FileName,
             m_pData,
             m_pData->m_OutputControl.m_SourceModelName);
     }
+    else if (!solveOk)
+    {
+        qDebug().noquote() << QStringLiteral("求解失败，跳过结果文件保存");
+    }
+
+    return solveOk;
 }
 
 // ==========================================

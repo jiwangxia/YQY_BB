@@ -720,8 +720,10 @@ bool Outputter::SaveBdfModel(const QString& fileName, StructureData* pData)
         }
         for (const auto& pElem : group.second)
         {
-            int nodeId1 = pElem->m_pNode[0].lock() ? mapId(nodeIdMap, pElem->m_pNode[0].lock()->m_Id) : 0;
-            int nodeId2 = pElem->m_pNode[1].lock() ? mapId(nodeIdMap, pElem->m_pNode[1].lock()->m_Id) : 0;
+            auto elemNode1 = pElem->m_pNode[0].lock();
+            auto elemNode2 = pElem->m_pNode[1].lock();
+            int nodeId1 = elemNode1 ? mapId(nodeIdMap, elemNode1->m_Id) : 0;
+            int nodeId2 = elemNode2 ? mapId(nodeIdMap, elemNode2->m_Id) : 0;
 
             int matId = 0;
             int secId = 0;
@@ -757,9 +759,10 @@ bool Outputter::SaveBdfModel(const QString& fileName, StructureData* pData)
         for (const auto& pair : pData->m_Constraint)
         {
             auto pCon = pair.second;
+            auto constraintNode = pCon->m_pNode.lock();
             // ID, NodeID, Dir, Value
             stream << FmtInt(mapId(constraintIdMap, pair.first), 10, true) << " "
-                << FmtInt(pCon->m_pNode.lock() ? mapId(nodeIdMap, pCon->m_pNode.lock()->m_Id) : 0) << " "
+                << FmtInt(constraintNode ? mapId(nodeIdMap, constraintNode->m_Id) : 0) << " "
                 << FmtInt(static_cast<int>(pCon->m_Direction)) << " "
                 << FmtDouble(pCon->m_Value) << "\n";
         }
@@ -789,8 +792,9 @@ bool Outputter::SaveBdfModel(const QString& fileName, StructureData* pData)
             if (group.first == "FORCE_NODE")
             {
                 auto pL = std::dynamic_pointer_cast<Force_Node>(pLoad);
+                auto loadNode = pL->m_pNode.lock();
                 stream << FmtInt(mapId(loadIdMap, pL->m_Id), 10, true) << " "
-                    << FmtInt(pL->m_pNode.lock() ? mapId(nodeIdMap, pL->m_pNode.lock()->m_Id) : 0) << " "
+                    << FmtInt(loadNode ? mapId(nodeIdMap, loadNode->m_Id) : 0) << " "
                     << FmtInt(static_cast<int>(pL->m_Direction)) << " "
                     << FmtDouble(pL->m_Value) << " "
                     << FmtInt(mapId(stepIdMap, pL->m_StepId)) << " "
@@ -800,8 +804,9 @@ bool Outputter::SaveBdfModel(const QString& fileName, StructureData* pData)
             else if (group.first == "FORCE_ELEMENT")
             {
                 auto pL = std::dynamic_pointer_cast<Force_Element>(pLoad);
+                auto loadElement = pL->m_pElement.lock();
                 stream << FmtInt(mapId(loadIdMap, pL->m_Id), 10, true) << " "
-                    << FmtInt(pL->m_pElement.lock() ? mapId(elementIdMap, pL->m_pElement.lock()->m_Id) : 0) << " "
+                    << FmtInt(loadElement ? mapId(elementIdMap, loadElement->m_Id) : 0) << " "
                     << FmtInt(static_cast<int>(pL->m_Direction)) << " "
                     << FmtDouble(pL->m_Value) << "\n";
             }

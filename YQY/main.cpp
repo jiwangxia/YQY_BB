@@ -1,8 +1,12 @@
 ﻿#include "GUI/YQY.h"
 #include <QtWidgets/QApplication>
+#include <QDebug>
+#include <QElapsedTimer>
+#include <QFileInfo>
 #include "Import/Input_Model.h"
 #include "DataStructure/Structure/StructureData.h"
 #include "Solver/Solver.h"
+#include "Utility/Logger/Logger.h"
 #include <Windows.h>
 
 #include "Import/AeroManager.h"
@@ -18,16 +22,59 @@ int main(int argc, char* argv[])
     QString BaseName = "24杆星形穹顶桁架";
     QString InputPath = QString("Import/ImportFile/%1.bdf").arg(BaseName);
     QString OutputPath = QString("Export/ExportFile/%1_TEP.bdf").arg(BaseName);
+    const QString inputFileName = QFileInfo(InputPath).fileName();
+    const QString outputFileName = QFileInfo(OutputPath).fileName();
 
-    qDebug().noquote() << QStringLiteral("\n读取文件为:") << InputPath << "\n";
+    auto reportInfo = [](const QString& message)
+        {
+            Logger::Instance().Info(message);
+        };
+
+    auto reportSuccess = [](const QString& message)
+        {
+            Logger::Instance().Success(message);
+        };
+
+    auto reportError = [](const QString& message)
+        {
+            Logger::Instance().Error(message);
+        };
+
+    if (Logger::Instance().Start(InputPath))
+    {
+        reportInfo(QStringLiteral("日志文件: %1").arg(QFileInfo(Logger::Instance().LogFilePath()).fileName()));
+    }
+    else
+    {
+        qDebug().noquote() << QStringLiteral("日志文件创建失败，程序继续运行");
+    }
+
+    QElapsedTimer totalTimer;
+    totalTimer.start();
+
+    QElapsedTimer stageTimer;
+    reportInfo(QStringLiteral("开始读取模型: %1").arg(inputFileName));
+    stageTimer.start();
     if (importer.InputData(InputPath, pStructure))
     {
+        const qint64 importElapsedMs = stageTimer.elapsed();
+        reportSuccess(QStringLiteral("模型读取成功，用时 %1 ms").arg(importElapsedMs));
         qDebug() << "\n=====Model loaded successfully!=====";
 
         //     使用 Solver 运行分析
+        reportInfo(QStringLiteral("开始分析计算"));
+        stageTimer.restart();
         Solver solver;
         solver.SetStructure(pStructure);
-        solver.RunAll();  // 运行所有分析步
+        if (!solver.RunAll())  // 运行所有分析步
+        {
+            const qint64 solveElapsedMs = stageTimer.elapsed();
+            reportError(QStringLiteral("分析计算失败，用时 %1 ms，跳过结果导出").arg(solveElapsedMs));
+            Logger::Instance().Stop(false, QStringLiteral("分析失败，跳过结果导出"));
+            return -1;
+        }
+        const qint64 solveElapsedMs = stageTimer.elapsed();
+        reportSuccess(QStringLiteral("分析计算成功，用时 %1 ms").arg(solveElapsedMs));
 
         std::vector<int> nodeIds = { 1 };
         //for (auto& nodePair : pStructure->m_Nodes)
@@ -46,7 +93,24 @@ int main(int argc, char* argv[])
         //std::vector<EnumKeyword::NodeResultType> types = { EnumKeyword::NodeResultType::U3};
         //std::vector<EnumKeyword::NodeResultType> types = { EnumKeyword::NodeResultType::U1, EnumKeyword::NodeResultType::U2, EnumKeyword::NodeResultType::U3, EnumKeyword::NodeResultType::F1, EnumKeyword::NodeResultType::F2, EnumKeyword::NodeResultType::F3 };
 
+        reportInfo(QStringLiteral("开始输出结果: %1").arg(outputFileName));
+        stageTimer.restart();
         pStructure->GetOutputter().ExportNodes(OutputPath, nodeIds, types);
+        const qint64 exportElapsedMs = stageTimer.elapsed();
+        reportSuccess(QStringLiteral("结果输出完成，用时 %1 ms").arg(exportElapsedMs));
+
+        const qint64 totalElapsedMs = totalTimer.elapsed();
+        reportSuccess(QStringLiteral("程序运行成功，总耗时 %1 ms，日志文件: %2")
+            .arg(totalElapsedMs)
+            .arg(QFileInfo(Logger::Instance().LogFilePath()).fileName()));
+        Logger::Instance().Stop(true, QStringLiteral("模型读取、分析和结果导出完成"));
+    }
+    else
+    {
+        const qint64 importElapsedMs = stageTimer.elapsed();
+        reportError(QStringLiteral("模型读取失败，用时 %1 ms，程序终止").arg(importElapsedMs));
+        Logger::Instance().Stop(false, QStringLiteral("模型读取失败"));
+        return -1;
     }
 
     // 启用控制台颜色支持

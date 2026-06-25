@@ -101,9 +101,11 @@
     <ClCompile Include="Conductor\Conductor.cpp" />
     <ClCompile Include="Conductor\ConductorModelBuilder.cpp" />
     <ClCompile Include="DataStructure\Section\SectionRectangle.cpp" />
+    <ClCompile Include="Solver\Dynamic\TimeIntegrationSolver.cpp" />
     <ClCompile Include="Solver\Dynamic\SolverAdaptiveTSSBN.cpp" />
     <ClCompile Include="Solver\Dynamic\SolverTSSBN.cpp" />
     <ClCompile Include="Utility\CR.cpp" />
+    <ClCompile Include="Utility\Logger\Logger.cpp" />
     <ClCompile Include="DataStructure\AnalysisStep\AnalysisStep.cpp" />
     <ClCompile Include="DataStructure\Constraint\Constraint.cpp" />
     <ClCompile Include="DataStructure\Load\LoadBase.cpp" />
@@ -143,9 +145,11 @@
     <ClInclude Include="Conductor\Conductor.h" />
     <ClInclude Include="Conductor\ConductorModelBuilder.h" />
     <ClInclude Include="DataStructure\Section\SectionRectangle.h" />
+    <ClInclude Include="Solver\Dynamic\TimeIntegrationSolver.h" />
     <ClInclude Include="Solver\Dynamic\SolverAdaptiveTSSBN.h" />
     <ClInclude Include="Solver\Dynamic\SolverTSSBN.h" />
     <ClInclude Include="Utility\CR.h" />
+    <ClInclude Include="Utility\Logger\Logger.h" />
     <ClInclude Include="DataStructure\AnalysisStep\AnalysisStep.h" />
     <ClInclude Include="Base\Base.h" />
     <ClInclude Include="DataStructure\Constraint\Constraint.h" />
@@ -170,6 +174,7 @@
     <ClInclude Include="Solver\Dynamic\SolverNewmark.h" />
     <ClInclude Include="Solver\Interface\IAnalysisModel.h" />
     <ClInclude Include="Solver\Interface\ISolver.h" />
+    <ClInclude Include="Solver\SolverFactory.h" />
     <ClInclude Include="Solver\Solver.h" />
     <ClInclude Include="Solver\Static\SolverStatic.h" />
     <ClInclude Include="Utility\ModelManager.h" />

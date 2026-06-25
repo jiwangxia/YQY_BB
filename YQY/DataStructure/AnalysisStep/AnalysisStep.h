@@ -63,7 +63,7 @@ public:
     /**
      * @brief 根据分析步类型调度求解
      */
-    void Solve();
+    bool Solve();
 
     // ============ IAnalysisModel 接口实现 ============
     int  GetFreeDofs() const override { return m_nFree; }
