@@ -36,11 +36,11 @@ enum class MaterialModel
 };
 
 MaterialModel m_Model = MaterialModel::Elastic;
-double m_YieldStress = 0.0;  // 初始屈服应力
+double m_YieldStress = 0.0;  ///< 初始屈服应力（原 m_MaxStress）
 double m_Hardening = 0.0;    // 线性硬化模量 H
 ```
 
-默认模型为 `Elastic`，保证旧模型不会因为已有的 `m_MaxStress` 数值而自动进入塑性。`m_MaxStress` 不直接复用为屈服应力，避免改变旧字段语义。
+现有输入字段 `S` 的物理意义明确为“初始屈服应力”。代码中的 `m_MaxStress` 重命名为 `m_YieldStress`，相应中文注释改为“初始屈服应力”。默认模型仍为 `Elastic`，保证旧的六字段材料不会自动进入塑性。
 
 ### 2.2 `ElementTruss`
 
@@ -227,28 +227,39 @@ void ElementTruss::CommitState()
 
 ## 8. 输入格式
 
-现有 `MATERIAL` 六字段格式保持不变，默认创建弹性材料。
-
-新增独立塑性段，避免破坏旧文件：
+现有 `MATERIAL` 六字段格式保持不变，其中第 5 个字段 `S` 明确定义为初始屈服应力：
 
 ```text
-PLASTIC, 数量
-材料ID, 初始屈服应力, 硬化模量
+材料标识, E, 泊松比, 密度, 初始屈服应力, 热膨胀系数
 ```
 
-例如：
+为启用一维塑性，在行末增加第 7 个可选字段——硬化模量 `H`：
 
 ```text
-PLASTIC, 1
-1, 235000000, 1000000000
+材料标识, E, 泊松比, 密度, 初始屈服应力, 热膨胀系数, H
 ```
 
-`PLASTIC` 段必须位于对应的 `MATERIAL` 段之后。读取后将对应材料设置为 `Plastic1D`。输入检查：
+- 6 个字段：弹性材料，保持旧模型行为。
+- 7 个字段：一维双线性弹塑性材料。
+- 7 个字段且 `H = 0`：理想弹塑性材料。
 
-- 材料 ID 必须存在。
+读取代码中的局部变量使用清晰名称：
+
+```cpp
+double young = fields[1].toDouble();
+double poisson = fields[2].toDouble();
+double density = fields[3].toDouble();
+double yieldStress = fields[4].toDouble();
+double expansion = fields[5].toDouble();
+```
+
+如果存在第 7 个字段，再读取 `hardening` 并将材料类型设置为 `Plastic1D`。输入检查：
+
 - `E > 0`。
-- `σy0 > 0`。
-- `H >= 0`。
+- 塑性材料必须满足 `σy0 > 0`。
+- 塑性材料必须满足 `H >= 0`。
+
+文本输出中的字段位置保持不变，但注释和字段说明由 `MaxStress` 改为 `YieldStress`。HDF5 已有成员名 `MAX_STRESS` 为兼容旧结果文件暂时保留，其值改为映射 `m_YieldStress`，并在格式文档中注明该旧名称表示初始屈服应力。
 
 ## 9. 错误处理
 
