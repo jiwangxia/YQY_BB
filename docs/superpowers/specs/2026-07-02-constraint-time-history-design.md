@@ -70,16 +70,16 @@ double Constraint::GetValue(double currentTime, double factor) const
 
 ## 3. 输入格式
 
-现有四字段约束保持不变：
+约束定义严格保持四字段：
 
 ```text
 约束ID, 节点ID, 方向, 位移值
 ```
 
-带时程的约束使用：
+约束时程使用独立关键字，并按约束 ID 关联：
 
 ```text
-约束ID, 节点ID, 方向, 基础位移, TABULAR, 数据点数量
+*CONSTRAINT_TABULAR, 约束ID, 数据点数量
 时间1, 缩放系数1
 时间2, 缩放系数2
 ...
@@ -88,19 +88,26 @@ double Constraint::GetValue(double currentTime, double factor) const
 例如右端 x 向约束：
 
 ```text
-4, 2, 0, 5.0, TABULAR, 4
+*CONSTRAINT, 1
+4, 2, 0, 5.0
+
+*CONSTRAINT_TABULAR, 4, 4
 0.0, 0.0
 1.0, 1.0
 2.0, 0.713181223
 3.0, 0.8
 ```
 
-输入器读取约束主行后，如果发现 `TABULAR`，立即继续读取指定数量的数据点。固定约束和旧模型仍使用四字段格式。
+`CONSTRAINT_TABULAR` 必须写在被引用的约束之后。输入器按约束 ID 查找已有约束，再读取指定数量的数据点并绑定。一个约束最多绑定一组时程。
+
+不保留把 `TABULAR` 写在约束行内的六字段格式。
 
 以下情况导致输入失败：
 
-- 主行既不是 4 字段也不是 6 字段；
-- 扩展类型不是 `TABULAR`；
+- 约束主行不是 4 字段；
+- `CONSTRAINT_TABULAR` 关键字不是 3 字段；
+- 引用的约束 ID 不存在；
+- 同一约束重复绑定时程；
 - 数据点少于两个；
 - 数据行不是两个数值；
 - 时间不严格递增；
@@ -185,9 +192,12 @@ t=3: 8614.700 N
 
 预计修改：
 
+- `YQY/Utility/EnumKeyword.h`
+- `YQY/Utility/EnumKeyword.cpp`
 - `YQY/DataStructure/Constraint/Constraint.h`
 - `YQY/DataStructure/Constraint/Constraint.cpp`
 - `YQY/Import/Input_Model.cpp`
+- `YQY/Import/Input_Model.h`
 - `YQY/Solver/Interface/IAnalysisModel.h`
 - `YQY/DataStructure/AnalysisStep/AnalysisStep.h`
 - `YQY/DataStructure/AnalysisStep/AnalysisStep.cpp`
@@ -214,7 +224,9 @@ t=3: 8614.700 N
 2. 表格外时间取端点值；
 3. 非递增时间被拒绝；
 4. 四字段约束仍使用 `value × factor`；
-5. 六字段约束使用 `value × TABULAR(time)`；
-6. 完整模型能够读取；
-7. Debug x64 完整构建成功；
-8. 三个检查时刻的反力趋势分别为塑性加载、零应力卸载和弹性再加载。
+5. `CONSTRAINT_TABULAR` 按约束 ID 绑定并使用 `value × TABULAR(time)`；
+6. 旧六字段内嵌格式被拒绝；
+7. 不存在的约束 ID 和重复绑定被拒绝；
+8. 完整模型能够读取；
+9. Debug x64 完整构建成功；
+10. 三个检查时刻的反力趋势分别为塑性加载、零应力卸载和弹性再加载。
