@@ -299,6 +299,7 @@ void Outputter::ExportNodes(const QString& fileName,
     }
 
     QTextStream stream(&file);
+    stream.setEncoding(QStringConverter::Utf8);
     const int colWidth = 16;
     const QChar padChar = ' ';
 
@@ -363,6 +364,7 @@ void Outputter::ExportElements(const QString& fileName,
     }
 
     QTextStream stream(&file);
+    stream.setEncoding(QStringConverter::Utf8);
     WriteResultTableHeader(stream, {}, {}, elementIds, types);
 
     for (const auto& frame : m_DataSet)
@@ -391,6 +393,7 @@ bool Outputter::BeginBdfResultStream(const QString& fileName,
     }
 
     m_stream = std::make_unique<QTextStream>(m_streamFile.get());
+    m_stream->setEncoding(QStringConverter::Utf8);
     m_streamNodeIds = nodeIds;
     m_streamNodeTypes = nodeTypes;
     m_streamElementIds = elementIds;
@@ -607,6 +610,7 @@ bool Outputter::SaveBdfModel(const QString& fileName, StructureData* pData)
     }
 
     QTextStream stream(&file);
+    stream.setEncoding(QStringConverter::Utf8);
 
     std::map<int, int> materialIdMap;
     std::map<int, int> sectionIdMap;
@@ -647,13 +651,18 @@ bool Outputter::SaveBdfModel(const QString& fileName, StructureData* pData)
         for (const auto& pair : pData->m_Material)
         {
             auto pMat = pair.second;
-            // ID, E, v, Density, MaxStress, Expansion
+            // ID, E, v, Density, YieldStress, Expansion [, Hardening]
             stream << FmtInt(mapId(materialIdMap, pair.first), 10, true) << " "
                 << FmtDouble(pMat->m_Young) << " "
                 << FmtDouble(pMat->m_Poisson) << " "
                 << FmtDouble(pMat->m_Density) << " "
-                << FmtDouble(pMat->m_MaxStress) << " "
-                << FmtDouble(pMat->m_Expansion) << "\n";
+                << FmtDouble(pMat->m_YieldStress) << " "
+                << FmtDouble(pMat->m_Expansion);
+            if (pMat->m_Model != MaterialModel::Elastic)
+            {
+                stream << " " << FmtDouble(pMat->m_Hardening);
+            }
+            stream << "\n";
         }
     }
 

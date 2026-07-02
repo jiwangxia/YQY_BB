@@ -135,7 +135,6 @@ void StructureData::Add_Property(double E, double density, double Area, double* 
 
     if (v != nullptr) 
     {
-        // 假设m_MaxStress是double类型
         pMaterial->m_Poisson = *v;
     }
     else
@@ -143,11 +142,11 @@ void StructureData::Add_Property(double E, double density, double Area, double* 
 
     if (S != nullptr) 
     {
-        // 假设m_MaxStress是double类型
-        pMaterial->m_MaxStress = *S;
+        // S 在材料定义中表示初始屈服应力。
+        pMaterial->m_YieldStress = *S;
     }
     else
-        pMaterial->m_MaxStress = 0.0;
+        pMaterial->m_YieldStress = 0.0;
 
     if (e != nullptr) 
     {

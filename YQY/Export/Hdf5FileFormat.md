@@ -56,7 +56,7 @@ H5 文件可以有两种写入方式：
 | `E` | double | 弹性模量。 |
 | `NU` | double | 泊松比。 |
 | `RHO` | double | 密度。 |
-| `MAX_STRESS` | double | 许用应力或材料应力限值。 |
+| `MAX_STRESS` | double | 初始屈服应力。字段名为兼容旧结果文件而保留。 |
 | `EXPANSION` | double | 热膨胀系数。 |
 | `DOMAIN_ID` | int | 模型域编号，当前固定为 `1`。 |
 
@@ -146,6 +146,39 @@ H5 文件可以有两种写入方式：
 | `STEP_SIZE` | double | 时间步长或增量步长。 |
 | `TOLERANCE` | double | 收敛容差。 |
 | `MAX_ITERATIONS` | int | 最大迭代次数。 |
+| `DOMAIN_ID` | int | 模型域编号，当前固定为 `1`。 |
+
+### 3.9 `/YQY/INPUT/AERO/CASE`
+
+气动参数工况索引数据。该数据集用于记录每一组气动参数对应的名称、来源文件和基本采样信息。
+
+| 字段名 | 类型 | 说明 |
+| --- | --- | --- |
+| `ID` | int | 气动工况编号。 |
+| `BUNDLE_COUNT` | int | 导线分裂数。 |
+| `WIND_SPEED` | int | 风速，单位为 m/s。 |
+| `ICE_THICKNESS` | int | 覆冰厚度，单位为 mm。 |
+| `MODEL_COUNT` | int | 当前工况下包含的气动模型数量。 |
+| `DATA_SIZE` | int | 每个气动模型的角度采样点数量。 |
+| `START_ANGLE` | double | 起始攻角，当前为 `0` 度。 |
+| `ANGLE_STEP` | double | 攻角步长，当前为 `5` 度。 |
+| `SOURCE_FILE` | string | 当前工况对应的气动参数文件名。该字段使用 UTF-8 保存，可以包含中文。 |
+| `SOURCE_PATH` | string | 当前工况对应的气动参数文件路径。该字段使用 UTF-8 保存，可以包含中文。 |
+| `DOMAIN_ID` | int | 模型域编号，当前固定为 `1`。 |
+
+### 3.10 `/YQY/INPUT/AERO/COEFFICIENT`
+
+气动力系数表数据。该数据集保存程序实际读取后的升力、阻力和力矩系数，因此即使原始气动参数文件被移动或删除，H5 文件中仍然保留计算时使用的气动参数。
+
+| 字段名 | 类型 | 说明 |
+| --- | --- | --- |
+| `CASE_ID` | int | 气动工况编号，对应 `/YQY/INPUT/AERO/CASE` 中的 `ID`。 |
+| `MODEL_INDEX` | int | 当前工况下的气动模型序号，从 `0` 开始。 |
+| `ANGLE_INDEX` | int | 攻角采样点序号，从 `0` 开始。 |
+| `ANGLE` | double | 攻角，单位为度。 |
+| `CL` | double | 升力系数。 |
+| `CD` | double | 阻力系数。 |
+| `CM` | double | 力矩系数。 |
 | `DOMAIN_ID` | int | 模型域编号，当前固定为 `1`。 |
 
 ## 4. 结果域数据

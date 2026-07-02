@@ -78,7 +78,7 @@ bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureDa
     QFile file(FileName);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
     {
-        qDebug() << "Error: 文件 " << FileName << " 不存在";
+        qDebug().noquote() << QStringLiteral("Error: 文件 %1 不存在").arg(FileName);
         return false;
     }
 
@@ -534,28 +534,54 @@ bool Input_Model::InputMaterial(QTextStream& flow, const QStringList& list_str)
         }
 
         QStringList strlist_mat = strdata.split(QRegularExpression("[\t, ]"), Qt::SkipEmptyParts);//利用空格,分解字符串
-        if (strlist_mat.size() != 6)
+        if (strlist_mat.size() != 6 && strlist_mat.size() != 7)
         {
-            qDebug().noquote() << QStringLiteral("Error: 材料数据格式错误，需要6个字段: ") << strdata;
+            qDebug().noquote()
+                << QStringLiteral("Error: 材料数据格式错误，需要6个字段（弹性）或7个字段（塑性）: ")
+                << strdata;
             return false;
         }
 
-        double  E = strlist_mat[1].toDouble();
-        double  v = strlist_mat[2].toDouble();
-        double  p = strlist_mat[3].toDouble();//密度
-        double  S = strlist_mat[4].toDouble();
-        double  e = strlist_mat[5].toDouble();
+        const double young = strlist_mat[1].toDouble();
+        const double poisson = strlist_mat[2].toDouble();
+        const double density = strlist_mat[3].toDouble();
+        const double yieldStress = strlist_mat[4].toDouble();
+        const double expansion = strlist_mat[5].toDouble();
+
+        if (young <= 0.0)
+        {
+            qDebug().noquote() << QStringLiteral("Error: 材料弹性模量必须大于0: ") << strdata;
+            return false;
+        }
 
         int autoId = static_cast<int>(m_Structure->m_Material.size()) + 1;
 
         //保存到模型数据库
         auto pMaterial = std::make_shared<Material>();
         pMaterial->m_Id = autoId;
-        pMaterial->m_Young = E;
-        pMaterial->m_Poisson = v;
-        pMaterial->m_Density = p;
-        pMaterial->m_MaxStress = S;
-        pMaterial->m_Expansion = e;
+        pMaterial->m_Young = young;
+        pMaterial->m_Poisson = poisson;
+        pMaterial->m_Density = density;
+        pMaterial->m_YieldStress = yieldStress;
+        pMaterial->m_Expansion = expansion;
+
+        // 第7个字段是硬化模量。只要显式给出该字段，就启用一维塑性。
+        if (strlist_mat.size() == 7)
+        {
+            const double hardening = strlist_mat[6].toDouble();
+            if (yieldStress <= 0.0 || hardening < 0.0)
+            {
+                qDebug().noquote()
+                    << QStringLiteral("Error: 塑性材料要求屈服应力大于0且硬化模量不小于0: ")
+                    << strdata;
+                return false;
+            }
+            pMaterial->m_Model =
+                (hardening == 0.0)
+                ? MaterialModel::IdealPlastic1D
+                : MaterialModel::HardeningPlastic1D;
+            pMaterial->m_Hardening = hardening;
+        }
 
         m_Structure->m_Material.insert(std::make_pair(autoId, pMaterial));
     }

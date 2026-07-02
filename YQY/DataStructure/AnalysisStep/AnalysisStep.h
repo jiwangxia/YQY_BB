@@ -74,6 +74,7 @@ public:
     void Assemble_Matrix(SpMat& Keff, bool isDynamic);          //组装整体等效刚度矩阵
     void ComputeResidual(const SolverNameSpace::Vec& F_ext, SolverNameSpace::Vec& R) override;
     void OnStepCompleted(double time) override;
+    void CommitState() override;
 
 private:
     std::weak_ptr<StructureData> m_pStructure;  // 结构数据的弱引用

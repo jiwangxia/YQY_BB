@@ -1,7 +1,7 @@
 #include "TimeIntegrationSolver.h"
 #include <Eigen/SparseLU>
+#include <QDebug>
 #include <algorithm>
-#include <iostream>
 #include <cmath>
 
 // ============================================================================
@@ -53,13 +53,13 @@ bool NewmarkSolver::solve(State& state, double dt, double t_end) {
         Eigen::SparseLU<SparseMatrix<double>> solver;
         solver.compute(K_eff);
         if (solver.info() != Eigen::Success) {
-            std::cerr << "Newmark: 刚度矩阵分解失败" << std::endl;
+            qDebug().noquote() << QStringLiteral("Newmark: 刚度矩阵分解失败");
             return false;
         }
 
         VectorXd du = solver.solve(F_eff);
         if (solver.info() != Eigen::Success) {
-            std::cerr << "Newmark: 求解失败" << std::endl;
+            qDebug().noquote() << QStringLiteral("Newmark: 求解失败");
             return false;
         }
 
@@ -97,12 +97,15 @@ void TSSBNSolver::calculateParameters() {
         m_params.b1 = 1.0 / 2.0;
     }
     else {
-        std::cerr << "TSSBN: 无效的rho_inf值: " << rho << std::endl;
+        qDebug().noquote() << QStringLiteral("TSSBN: 无效的 rho_inf 值: %1").arg(rho);
         throw std::runtime_error("Invalid rho_inf");
     }
 
-    std::cout << "TSSBN参数: c1=" << m_params.c1 << ", c2=" << m_params.c2
-              << ", alpha=" << m_params.alpha << ", b1=" << m_params.b1 << std::endl;
+    qDebug().noquote() << QStringLiteral("TSSBN参数: c1=%1, c2=%2, alpha=%3, b1=%4")
+        .arg(m_params.c1)
+        .arg(m_params.c2)
+        .arg(m_params.alpha)
+        .arg(m_params.b1);
 }
 
 bool TSSBNSolver::solve(State& state, double dt, double t_end) {
@@ -154,7 +157,7 @@ bool TSSBNSolver::solve(State& state, double dt, double t_end) {
         Eigen::SparseLU<SparseMatrix<double>> solver_c1;
         solver_c1.compute(K_eff_c1);
         if (solver_c1.info() != Eigen::Success) {
-            std::cerr << "TSSBN C1: 刚度矩阵分解失败" << std::endl;
+            qDebug().noquote() << QStringLiteral("TSSBN C1: 刚度矩阵分解失败");
             return false;
         }
 
@@ -194,7 +197,7 @@ bool TSSBNSolver::solve(State& state, double dt, double t_end) {
         Eigen::SparseLU<SparseMatrix<double>> solver_c2;
         solver_c2.compute(K_eff_c2);
         if (solver_c2.info() != Eigen::Success) {
-            std::cerr << "TSSBN C2: 刚度矩阵分解失败" << std::endl;
+            qDebug().noquote() << QStringLiteral("TSSBN C2: 刚度矩阵分解失败");
             return false;
         }
 
@@ -282,9 +285,16 @@ void AdaptiveTSSBNSolver::calculateParameters() {
     m_params.a31_hat = a_hat_sol(0);
     m_params.a32_hat = a_hat_sol(1);
 
-    std::cout << "自适应TSSBN参数计算完成:" << std::endl;
-    std::cout << "  c1=" << m_params.c1 << ", c2=" << m_params.c2 << ", alpha=" << m_params.alpha << ", b1=" << m_params.b1 << std::endl;
-    std::cout << "  b1_hat=" << m_params.b1_hat << ", b2_hat=" << m_params.b2_hat << ", b3_hat=" << m_params.b3_hat << std::endl;
+    qDebug().noquote() << QStringLiteral("自适应TSSBN参数计算完成:");
+    qDebug().noquote() << QStringLiteral("  c1=%1, c2=%2, alpha=%3, b1=%4")
+        .arg(m_params.c1)
+        .arg(m_params.c2)
+        .arg(m_params.alpha)
+        .arg(m_params.b1);
+    qDebug().noquote() << QStringLiteral("  b1_hat=%1, b2_hat=%2, b3_hat=%3")
+        .arg(m_params.b1_hat)
+        .arg(m_params.b2_hat)
+        .arg(m_params.b3_hat);
 }
 
 double AdaptiveTSSBNSolver::estimateError(const State& state_order2, const State& state_order3, const State& state_base) {
@@ -388,7 +398,7 @@ bool AdaptiveTSSBNSolver::solve(State& state, double dt, double t_end) {
             // ==================== 步长控制 ====================
             if (LTE > 1.0) {
                 if (dt_try <= m_params.dt_min * 1.001) {
-                    std::cout << "警告: LTE > 1.0 但已达最小步长，强制接受" << std::endl;
+                    qDebug().noquote() << QStringLiteral("警告: LTE > 1.0 但已达最小步长，强制接受");
                     accepted = true;
                 } else {
                     dt_try = computeNewStepSize(dt_try, LTE, n_iter);
@@ -417,9 +427,10 @@ bool AdaptiveTSSBNSolver::solve(State& state, double dt, double t_end) {
 
     m_avg_dt = dt_sum / m_total_steps;
 
-    std::cout << "自适应TSSBN完成: 总步数=" << m_total_steps
-              << ", 拒绝步数=" << m_rejected_steps
-              << ", 平均步长=" << m_avg_dt << std::endl;
+    qDebug().noquote() << QStringLiteral("自适应TSSBN完成: 总步数=%1, 拒绝步数=%2, 平均步长=%3")
+        .arg(m_total_steps)
+        .arg(m_rejected_steps)
+        .arg(m_avg_dt);
 
     return true;
 }

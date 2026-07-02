@@ -22,12 +22,13 @@ void WriteNativeConsole(const QString& message, bool errorStream)
     if (handle != INVALID_HANDLE_VALUE && GetConsoleMode(handle, &mode))
     {
         DWORD written = 0;
-        WriteConsoleW(handle, line.utf16(), static_cast<DWORD>(line.size()), &written, nullptr);
+        WriteConsoleW(handle, reinterpret_cast<LPCWSTR>(line.utf16()), static_cast<DWORD>(line.size()), &written, nullptr);
         return;
     }
 #endif
 
     QTextStream stream(errorStream ? stderr : stdout);
+    stream.setEncoding(QStringConverter::Utf8);
     stream << message << Qt::endl;
     stream.flush();
 }
@@ -37,6 +38,21 @@ Logger& Logger::Instance()
 {
     static Logger logger;
     return logger;
+}
+
+void Logger::InitializeConsoleEncoding()
+{
+#ifdef Q_OS_WIN
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+
+    HANDLE outputHandle = GetStdHandle(STD_OUTPUT_HANDLE);
+    DWORD outputMode = 0;
+    if (outputHandle != INVALID_HANDLE_VALUE && GetConsoleMode(outputHandle, &outputMode))
+    {
+        SetConsoleMode(outputHandle, outputMode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+    }
+#endif
 }
 
 Logger::~Logger()
@@ -188,20 +204,7 @@ void Logger::WriteTerminalLine(Level level, const QString& message)
         .arg(LevelName(level))
         .arg(message);
 
-    QtMessageHandler handler = nullptr;
-    {
-        QMutexLocker locker(&m_mutex);
-        handler = m_previousHandler;
-    }
-
-    if (handler)
-    {
-        handler(QtInfoMsg, QMessageLogContext(), line);
-    }
-    else
-    {
-        WriteNativeConsole(line, false);
-    }
+    WriteNativeConsole(line, level == Level::Error);
 }
 
 void Logger::RotateLogFiles(const QString& filePath, int maxBackupCount)
@@ -305,6 +308,8 @@ void Logger::RestoreMessageHandler()
 
 void Logger::WriteQtMessage(QtMsgType type, const QMessageLogContext& context, const QString& message)
 {
+    Q_UNUSED(context);
+
     Level level = Level::Info;
     switch (type)
     {
@@ -335,20 +340,7 @@ void Logger::WriteQtMessage(QtMsgType type, const QMessageLogContext& context, c
         }
     }
 
-    QtMessageHandler handler = nullptr;
-    {
-        QMutexLocker locker(&m_mutex);
-        handler = m_previousHandler;
-    }
-
-    if (handler)
-    {
-        handler(type, context, message);
-    }
-    else
-    {
-        WriteNativeConsole(message, type == QtCriticalMsg || type == QtFatalMsg);
-    }
+    WriteNativeConsole(message, type == QtCriticalMsg || type == QtFatalMsg);
 }
 
 void Logger::MessageHandler(QtMsgType type, const QMessageLogContext& context, const QString& message)

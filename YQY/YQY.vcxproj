@@ -73,6 +73,7 @@
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <AdditionalIncludeDirectories>$(ProjectDir)GUI;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
@@ -86,6 +87,7 @@
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <AdditionalIncludeDirectories>$(ProjectDir)GUI;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
@@ -112,6 +114,7 @@
     <ClCompile Include="DataStructure\Load\Force_Node.cpp" />
     <ClCompile Include="DataStructure\Node\Node.cpp" />
     <ClCompile Include="DataStructure\Material\Material.cpp" />
+    <ClCompile Include="DataStructure\Material\Material1D.cpp" />
     <ClCompile Include="DataStructure\Property\Property.cpp" />
     <ClCompile Include="DataStructure\Load\Force_Element.cpp" />
     <ClCompile Include="DataStructure\Load\Force_Gravity.cpp" />
@@ -159,6 +162,7 @@
     <ClInclude Include="DataStructure\Element\ElementBase.h" />
     <ClInclude Include="DataStructure\Element\ElementTruss.h" />
     <ClInclude Include="DataStructure\Material\Material.h" />
+    <ClInclude Include="DataStructure\Material\Material1D.h" />
     <ClInclude Include="DataStructure\Property\Property.h" />
     <ClInclude Include="DataStructure\Load\Force_Element.h" />
     <ClInclude Include="DataStructure\Load\Force_Gravity.h" />

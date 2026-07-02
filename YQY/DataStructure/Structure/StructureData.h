@@ -18,6 +18,7 @@
 #include "DataStructure/Load/Force_Wind.h"
 #include "DataStructure/AnalysisStep/AnalysisStep.h"
 #include "Export/Outputter.h"
+#include "Import/AeroManager.h"
 
 /**
  * @brief 输出控制参数 - 保存输入文件中定义的结果输出请求
@@ -51,6 +52,7 @@ public:
     /// @}
 
     OutputControl m_OutputControl;                                      ///< 输出控制参数
+    AeroManager m_AeroManager;                                          ///< 气动参数管理器
 
     ~StructureData();
 

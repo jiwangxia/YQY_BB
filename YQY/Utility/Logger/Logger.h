@@ -20,6 +20,8 @@ public:
 
     static Logger& Instance();
 
+    static void InitializeConsoleEncoding();
+
     bool Start(const QString& modelFileName, int maxBackupCount = 20);
     void Stop(bool success, const QString& summary = QString());
 

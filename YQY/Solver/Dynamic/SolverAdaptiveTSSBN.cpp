@@ -273,6 +273,8 @@ namespace SolverNameSpace
                     }
 
                     // 步结束回调
+                    // 只提交已经通过误差判据的时间步。
+                    model.CommitState();
                     model.OnStepCompleted(currentTime);
                 }
             }

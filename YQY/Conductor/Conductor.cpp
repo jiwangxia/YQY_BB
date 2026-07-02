@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <vector>
 
-#include <iostream>
+#include <QDebug>
 namespace Conductor
 {
 
@@ -65,10 +65,9 @@ namespace Conductor
             double effectiveLength = ArcLength - s1 - s2;
             if (effectiveLength < 0)
             {
-                std::cerr << "[错误] 弧长校验失败: \n"
-                    << "总弧长(" << ArcLength << ") < \n"
-                    << "耐张串总长(" << s1 + s2 << ")\n"
-                    << "请检查应力值或档距配置。" << std::endl;
+                qDebug().noquote() << QStringLiteral("[错误] 弧长校验失败:\n总弧长(%1) <\n耐张串总长(%2)\n请检查应力值或档距配置。")
+                    .arg(ArcLength)
+                    .arg(s1 + s2);
                 return false;
             }
 

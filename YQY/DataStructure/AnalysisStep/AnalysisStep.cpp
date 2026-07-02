@@ -892,6 +892,19 @@ void AnalysisStep::OnStepCompleted(double time)
     }
 }
 
+void AnalysisStep::CommitState()
+{
+    if (!m_pData)
+    {
+        return;
+    }
+
+    for (auto& elementPair : m_pData->m_Elements)
+    {
+        elementPair.second->CommitState();
+    }
+}
+
 VectorXd AnalysisStep::GetCurrentVelocity() const
 {
     VectorXd v(m_nFree);

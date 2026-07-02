@@ -32,7 +32,8 @@ Material1DResult Update1D(
 enum class MaterialModel
 {
     Elastic,
-    Plastic1D
+    IdealPlastic1D,
+    HardeningPlastic1D
 };
 
 MaterialModel m_Model = MaterialModel::Elastic;
@@ -253,7 +254,7 @@ double yieldStress = fields[4].toDouble();
 double expansion = fields[5].toDouble();
 ```
 
-如果存在第 7 个字段，再读取 `hardening` 并将材料类型设置为 `Plastic1D`。输入检查：
+如果存在第 7 个字段，再读取 `hardening`：`H = 0` 设置为 `IdealPlastic1D`，`H > 0` 设置为 `HardeningPlastic1D`。输入检查：
 
 - `E > 0`。
 - 塑性材料必须满足 `σy0 > 0`。

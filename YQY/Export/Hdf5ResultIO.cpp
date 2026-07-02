@@ -32,7 +32,7 @@ QString MakeAsciiTempHdf5FileName()
 
 QByteArray ToHdf5Path(const QString& fileName)
 {
-    return QDir::toNativeSeparators(fileName).toLatin1();
+    return QDir::toNativeSeparators(fileName).toUtf8();
 }
 
 bool MoveTempFileToTarget(const QString& tempFileName, const QString& targetFileName)
@@ -202,6 +202,33 @@ struct StepRecord
     int domainId = kModelDomainId;
 };
 
+struct AeroCaseRecord
+{
+    int id = 0;
+    int bundleCount = 0;
+    int windSpeed = 0;
+    int iceThickness = 0;
+    int modelCount = 0;
+    int dataSize = 0;
+    double startAngle = 0.0;
+    double angleStep = 0.0;
+    char sourceFile[260] = {};
+    char sourcePath[520] = {};
+    int domainId = kModelDomainId;
+};
+
+struct AeroCoefficientRecord
+{
+    int caseId = 0;
+    int modelIndex = 0;
+    int angleIndex = 0;
+    double angle = 0.0;
+    double lift = 0.0;
+    double drag = 0.0;
+    double moment = 0.0;
+    int domainId = kModelDomainId;
+};
+
 struct DomainRecord
 {
     int id = 0;
@@ -307,7 +334,7 @@ bool CreateGroupRecursive(hid_t file, const char* path)
     for (const QString& part : parts)
     {
         currentPath += "/" + part;
-        const QByteArray name = currentPath.toLatin1();
+        const QByteArray name = currentPath.toUtf8();
         htri_t exists = H5Lexists(file, name.constData(), H5P_DEFAULT);
         if (exists > 0)
         {
@@ -329,7 +356,10 @@ bool WriteStringAttribute(hid_t object, const char* name, const QString& value)
     const size_t size = static_cast<size_t>(bytes.size() + 1);
 
     H5Handle type(H5Tcopy(H5T_C_S1), H5Tclose);
-    if (!type.valid() || H5Tset_size(type, size) < 0 || H5Tset_strpad(type, H5T_STR_NULLTERM) < 0)
+    if (!type.valid()
+        || H5Tset_size(type, size) < 0
+        || H5Tset_strpad(type, H5T_STR_NULLTERM) < 0
+        || H5Tset_cset(type, H5T_CSET_UTF8) < 0)
     {
         return false;
     }
@@ -386,6 +416,44 @@ bool InsertArray(hid_t type, const char* name, size_t offset, hid_t baseType, hs
     return H5Tinsert(type, name, offset, arrayType) >= 0;
 }
 
+bool InsertFixedString(hid_t type, const char* name, size_t offset, size_t size)
+{
+    H5Handle stringType(H5Tcopy(H5T_C_S1), H5Tclose);
+    if (!stringType.valid()
+        || H5Tset_size(stringType, size) < 0
+        || H5Tset_strpad(stringType, H5T_STR_NULLTERM) < 0
+        || H5Tset_cset(stringType, H5T_CSET_UTF8) < 0)
+    {
+        return false;
+    }
+    return H5Tinsert(type, name, offset, stringType) >= 0;
+}
+
+void CopyUtf8String(char* target, size_t targetSize, const QString& value)
+{
+    if (!target || targetSize == 0)
+    {
+        return;
+    }
+
+    std::memset(target, 0, targetSize);
+    const QByteArray bytes = value.toUtf8();
+    const size_t copySize = std::min(static_cast<size_t>(bytes.size()), targetSize - 1);
+    if (copySize > 0)
+    {
+        std::memcpy(target, bytes.constData(), copySize);
+    }
+}
+
+QString PathToQString(const std::filesystem::path& path)
+{
+#ifdef _WIN32
+    return QString::fromStdWString(path.wstring());
+#else
+    return QString::fromStdString(path.string());
+#endif
+}
+
 template <typename Record>
 bool WriteDataset(hid_t file, const char* path, hid_t memoryType, const std::vector<Record>& records)
 {
@@ -393,7 +461,7 @@ bool WriteDataset(hid_t file, const char* path, hid_t memoryType, const std::vec
     const int lastSlash = datasetPath.lastIndexOf('/');
     if (lastSlash > 0)
     {
-        const QByteArray groupPath = datasetPath.left(lastSlash).toLatin1();
+        const QByteArray groupPath = datasetPath.left(lastSlash).toUtf8();
         if (!CreateGroupRecursive(file, groupPath.constData()))
         {
             return false;
@@ -431,7 +499,7 @@ bool CreateExtendableDataset(hid_t file, const char* path, hid_t memoryType)
     const int lastSlash = datasetPath.lastIndexOf('/');
     if (lastSlash > 0)
     {
-        const QByteArray groupPath = datasetPath.left(lastSlash).toLatin1();
+        const QByteArray groupPath = datasetPath.left(lastSlash).toUtf8();
         if (!CreateGroupRecursive(file, groupPath.constData()))
         {
             return false;
@@ -635,6 +703,39 @@ H5Handle CreateStepType()
     return type;
 }
 
+H5Handle CreateAeroCaseType()
+{
+    H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(AeroCaseRecord)), H5Tclose);
+    if (!type.valid()) return {};
+    H5Tinsert(type, "ID", HOFFSET(AeroCaseRecord, id), H5T_NATIVE_INT);
+    H5Tinsert(type, "BUNDLE_COUNT", HOFFSET(AeroCaseRecord, bundleCount), H5T_NATIVE_INT);
+    H5Tinsert(type, "WIND_SPEED", HOFFSET(AeroCaseRecord, windSpeed), H5T_NATIVE_INT);
+    H5Tinsert(type, "ICE_THICKNESS", HOFFSET(AeroCaseRecord, iceThickness), H5T_NATIVE_INT);
+    H5Tinsert(type, "MODEL_COUNT", HOFFSET(AeroCaseRecord, modelCount), H5T_NATIVE_INT);
+    H5Tinsert(type, "DATA_SIZE", HOFFSET(AeroCaseRecord, dataSize), H5T_NATIVE_INT);
+    H5Tinsert(type, "START_ANGLE", HOFFSET(AeroCaseRecord, startAngle), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "ANGLE_STEP", HOFFSET(AeroCaseRecord, angleStep), H5T_NATIVE_DOUBLE);
+    InsertFixedString(type, "SOURCE_FILE", HOFFSET(AeroCaseRecord, sourceFile), sizeof(AeroCaseRecord::sourceFile));
+    InsertFixedString(type, "SOURCE_PATH", HOFFSET(AeroCaseRecord, sourcePath), sizeof(AeroCaseRecord::sourcePath));
+    H5Tinsert(type, "DOMAIN_ID", HOFFSET(AeroCaseRecord, domainId), H5T_NATIVE_INT);
+    return type;
+}
+
+H5Handle CreateAeroCoefficientType()
+{
+    H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(AeroCoefficientRecord)), H5Tclose);
+    if (!type.valid()) return {};
+    H5Tinsert(type, "CASE_ID", HOFFSET(AeroCoefficientRecord, caseId), H5T_NATIVE_INT);
+    H5Tinsert(type, "MODEL_INDEX", HOFFSET(AeroCoefficientRecord, modelIndex), H5T_NATIVE_INT);
+    H5Tinsert(type, "ANGLE_INDEX", HOFFSET(AeroCoefficientRecord, angleIndex), H5T_NATIVE_INT);
+    H5Tinsert(type, "ANGLE", HOFFSET(AeroCoefficientRecord, angle), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "CL", HOFFSET(AeroCoefficientRecord, lift), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "CD", HOFFSET(AeroCoefficientRecord, drag), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "CM", HOFFSET(AeroCoefficientRecord, moment), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "DOMAIN_ID", HOFFSET(AeroCoefficientRecord, domainId), H5T_NATIVE_INT);
+    return type;
+}
+
 H5Handle CreateDomainType()
 {
     H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(DomainRecord)), H5Tclose);
@@ -759,7 +860,9 @@ std::vector<MaterialRecord> BuildMaterialRecords(const StructureData* pData)
         record.young = pMaterial->m_Young;
         record.poisson = pMaterial->m_Poisson;
         record.density = pMaterial->m_Density;
-        record.maxStress = pMaterial->m_MaxStress;
+        // 为兼容既有 HDF5 格式，字段名仍为 MAX_STRESS，
+        // 其物理含义现明确为初始屈服应力。
+        record.maxStress = pMaterial->m_YieldStress;
         record.expansion = pMaterial->m_Expansion;
         records.push_back(record);
     }
@@ -938,6 +1041,89 @@ std::vector<StepRecord> BuildStepRecords(const StructureData* pData)
     return records;
 }
 
+int GetAeroDataSize(const std::vector<BladeModel>& models)
+{
+    if (models.empty())
+    {
+        return 0;
+    }
+    return static_cast<int>(models.front().lift.size());
+}
+
+void AppendAeroRecords(int caseId,
+    const AeroCaseKey& key,
+    const std::vector<BladeModel>& models,
+    const std::filesystem::path& sourceFile,
+    const AeroManager& manager,
+    std::vector<AeroCaseRecord>& caseRecords,
+    std::vector<AeroCoefficientRecord>& coefficientRecords)
+{
+    AeroCaseRecord caseRecord;
+    caseRecord.id = caseId;
+    caseRecord.bundleCount = key.bundleCount;
+    caseRecord.windSpeed = key.windSpeed;
+    caseRecord.iceThickness = key.iceThickness;
+    caseRecord.modelCount = static_cast<int>(models.size());
+    caseRecord.dataSize = GetAeroDataSize(models);
+    caseRecord.startAngle = manager.getStartAngle();
+    caseRecord.angleStep = manager.getAngleStep();
+
+    const QString sourcePath = PathToQString(sourceFile);
+    CopyUtf8String(caseRecord.sourceFile, sizeof(caseRecord.sourceFile), QFileInfo(sourcePath).fileName());
+    CopyUtf8String(caseRecord.sourcePath, sizeof(caseRecord.sourcePath), sourcePath);
+    caseRecords.push_back(caseRecord);
+
+    for (int modelIndex = 0; modelIndex < static_cast<int>(models.size()); ++modelIndex)
+    {
+        const BladeModel& model = models[modelIndex];
+        const size_t dataSize = std::min({ model.lift.size(), model.drag.size(), model.moment.size() });
+        for (size_t angleIndex = 0; angleIndex < dataSize; ++angleIndex)
+        {
+            AeroCoefficientRecord coefficient;
+            coefficient.caseId = caseId;
+            coefficient.modelIndex = modelIndex;
+            coefficient.angleIndex = static_cast<int>(angleIndex);
+            coefficient.angle = manager.getStartAngle() + manager.getAngleStep() * static_cast<double>(angleIndex);
+            coefficient.lift = model.lift[angleIndex];
+            coefficient.drag = model.drag[angleIndex];
+            coefficient.moment = model.moment[angleIndex];
+            coefficientRecords.push_back(coefficient);
+        }
+    }
+}
+
+void BuildAeroRecords(const StructureData* pData,
+    std::vector<AeroCaseRecord>& caseRecords,
+    std::vector<AeroCoefficientRecord>& coefficientRecords)
+{
+    const AeroManager& manager = pData->m_AeroManager;
+    int caseId = 1;
+
+    for (const auto& pair : manager.getCaseModels())
+    {
+        AppendAeroRecords(caseId,
+            pair.first,
+            pair.second,
+            manager.getCaseSourceFile(pair.first),
+            manager,
+            caseRecords,
+            coefficientRecords);
+        ++caseId;
+    }
+
+    if (caseRecords.empty() && !manager.getModels().empty())
+    {
+        AeroCaseKey currentKey;
+        AppendAeroRecords(caseId,
+            currentKey,
+            manager.getModels(),
+            manager.getCurrentSourceFile(),
+            manager,
+            caseRecords,
+            coefficientRecords);
+    }
+}
+
 void AppendFrameIndex(std::vector<IndexRecord>& indexRecords, int domainId, long long position, long long length)
 {
     IndexRecord record;
@@ -957,6 +1143,11 @@ bool WriteInputData(hid_t file, const StructureData* pData)
     H5Handle constraintType = CreateConstraintType();
     H5Handle loadType = CreateLoadType();
     H5Handle stepType = CreateStepType();
+    H5Handle aeroCaseType = CreateAeroCaseType();
+    H5Handle aeroCoefficientType = CreateAeroCoefficientType();
+    std::vector<AeroCaseRecord> aeroCases;
+    std::vector<AeroCoefficientRecord> aeroCoefficients;
+    BuildAeroRecords(pData, aeroCases, aeroCoefficients);
 
     return gridType.valid()
         && materialType.valid()
@@ -966,6 +1157,8 @@ bool WriteInputData(hid_t file, const StructureData* pData)
         && constraintType.valid()
         && loadType.valid()
         && stepType.valid()
+        && aeroCaseType.valid()
+        && aeroCoefficientType.valid()
         && WriteDataset(file, "/YQY/INPUT/NODE/GRID", gridType, BuildGridRecords(pData))
         && WriteDataset(file, "/YQY/INPUT/MATERIAL/MAT", materialType, BuildMaterialRecords(pData))
         && WriteDataset(file, "/YQY/INPUT/SECTION/SECTION", sectionType, BuildSectionRecords(pData))
@@ -973,7 +1166,9 @@ bool WriteInputData(hid_t file, const StructureData* pData)
         && WriteDataset(file, "/YQY/INPUT/ELEMENT/ELEMENT", elementType, BuildElementRecords(pData))
         && WriteDataset(file, "/YQY/INPUT/CONSTRAINT/SPC", constraintType, BuildConstraintRecords(pData))
         && WriteDataset(file, "/YQY/INPUT/LOAD/LOAD", loadType, BuildLoadRecords(pData))
-        && WriteDataset(file, "/YQY/INPUT/ANALYSIS_STEP/STEP", stepType, BuildStepRecords(pData));
+        && WriteDataset(file, "/YQY/INPUT/ANALYSIS_STEP/STEP", stepType, BuildStepRecords(pData))
+        && WriteDataset(file, "/YQY/INPUT/AERO/CASE", aeroCaseType, aeroCases)
+        && WriteDataset(file, "/YQY/INPUT/AERO/COEFFICIENT", aeroCoefficientType, aeroCoefficients);
 }
 
 bool WriteResultData(hid_t file, const StructureData* pData)
@@ -1754,6 +1949,7 @@ bool Hdf5ResultIO::ExportBdfResultFromHdf5(const QString& hdf5FileName,
     const QHash<int, IndexRecord> elementStrainIndex = BuildIndexMap(elementStrainIndexRecords);
 
     QTextStream stream(&outFile);
+    stream.setEncoding(QStringConverter::Utf8);
     stream << QString("TIME").rightJustified(16, ' ');
     for (int nodeId : nodeIds)
     {

@@ -4,7 +4,7 @@
 
 **Goal:** Add tested one-dimensional bilinear elastoplastic behavior with initial stress and converged-step state commits to `ElementTruss`.
 
-**Architecture:** `Material::Update1D()` is the element-facing constitutive interface. A Qt-independent `Material1D.h` contains the state/result types and return-mapping algorithm so it can be unit tested directly; each truss owns old/trial states, while shared `Material` objects own only parameters.
+**Architecture:** `Material::Update1D()` is the element-facing constitutive interface. `Material1D.h` contains only the state/result declarations, while the Qt-independent return-mapping algorithm lives in `Material1D.cpp`; each truss owns old/trial states, while shared `Material` objects own only parameters.
 
 **Tech Stack:** C++17, Eigen, Qt/MSBuild, standalone assertion-based C++ tests.
 
@@ -12,7 +12,8 @@
 
 ## File structure
 
-- Create `YQY/DataStructure/Material/Material1D.h`: one-dimensional state/result types and pure constitutive update.
+- Create `YQY/DataStructure/Material/Material1D.h`: one-dimensional state/result types and function declaration.
+- Create `YQY/DataStructure/Material/Material1D.cpp`: pure constitutive update implementation.
 - Create `YQY/Tests/Material1DTest.cpp`: standalone tests for elastic, initial-stress, yielding, hardening, unloading, and repeat-trial behavior.
 - Modify `YQY/DataStructure/Material/Material.h/.cpp`: expose `Update1D()` and rename the yield field.
 - Modify `YQY/DataStructure/Element/ElementBase.h`: default no-op state commit hook.
@@ -27,6 +28,7 @@
 **Files:**
 - Create: `YQY/Tests/Material1DTest.cpp`
 - Create: `YQY/DataStructure/Material/Material1D.h`
+- Create: `YQY/DataStructure/Material/Material1D.cpp`
 
 - [ ] **Step 1: Write the failing standalone test**
 
@@ -43,13 +45,13 @@ CheckNear(elastic.stiffness, 200000.0);
 
 // Perfect plasticity returns to the yield surface.
 const auto perfect = CalculateMaterial1D(
-    MaterialModel::Plastic1D, 200000.0, 200.0, 0.0, 0.002, {});
+    MaterialModel::IdealPlastic1D, 200000.0, 200.0, 0.0, 0.002, {});
 CheckNear(perfect.stress, 200.0);
 CheckNear(perfect.stiffness, 0.0);
 
 // Calling twice from the same old state must not accumulate history twice.
 const auto repeat = CalculateMaterial1D(
-    MaterialModel::Plastic1D, 200000.0, 200.0, 0.0, 0.002, {});
+    MaterialModel::IdealPlastic1D, 200000.0, 200.0, 0.0, 0.002, {});
 CheckNear(repeat.state.plasticStrain, perfect.state.plasticStrain);
 ```
 
@@ -65,12 +67,17 @@ cmd /d /s /c """D:\Visual Studio2022\Community\VC\Auxiliary\Build\vcvars64.bat""
 
 Expected: compilation fails because `DataStructure/Material/Material1D.h` does not exist.
 
-- [ ] **Step 3: Implement `Material1D.h`**
+- [ ] **Step 3: Implement `Material1D.h` and `Material1D.cpp`**
 
 Define:
 
 ```cpp
-enum class MaterialModel { Elastic, Plastic1D };
+enum class MaterialModel
+{
+    Elastic,
+    IdealPlastic1D,
+    HardeningPlastic1D
+};
 
 struct Material1DState
 {
@@ -96,14 +103,14 @@ Material1DResult CalculateMaterial1D(
     const Material1DState& oldState);
 ```
 
-The inline implementation validates finite values, `young > 0`, plastic `yieldStress > 0`, `hardening >= 0`, and `abs(oldState.stress) <= yieldStress + tolerance` only for a pristine initial plastic state. It performs the elastic predictor and one-dimensional return mapping from the design spec, assigns current strain/stress into the returned state, and throws `std::runtime_error` with clear English core messages for the standalone layer.
+The `.cpp` implementation validates finite values, `young > 0`, plastic `yieldStress > 0`, `hardening >= 0`, and `abs(oldState.stress) <= yieldStress + tolerance` only for a pristine initial plastic state. It performs the elastic predictor and one-dimensional return mapping from the design spec, assigns current strain/stress into the returned state, and throws `std::runtime_error` with clear English core messages for the standalone layer.
 
 - [ ] **Step 4: Compile and run the standalone tests**
 
 Run:
 
 ```powershell
-cmd /d /s /c """D:\Visual Studio2022\Community\VC\Auxiliary\Build\vcvars64.bat"" && cl /nologo /std:c++17 /EHsc /IYQY YQY\Tests\Material1DTest.cpp /Fe:%TEMP%\Material1DTest.exe && %TEMP%\Material1DTest.exe"
+cmd /d /s /c """D:\Visual Studio2022\Community\VC\Auxiliary\Build\vcvars64.bat"" && cl /nologo /std:c++17 /utf-8 /EHsc /IYQY YQY\Tests\Material1DTest.cpp YQY\DataStructure\Material\Material1D.cpp /Fe:%TEMP%\Material1DTest.exe && %TEMP%\Material1DTest.exe"
 ```
 
 Expected: `Material1D tests passed`.
@@ -157,7 +164,7 @@ const double yieldStress = fields[4].toDouble();
 const double expansion = fields[5].toDouble();
 ```
 
-For 6 fields set `m_Model = Elastic`. For 7 fields parse `hardening`, require `yieldStress > 0` and `hardening >= 0`, then set `m_Model = Plastic1D`. Keep `yieldStress` stored for both formats.
+For 6 fields set `m_Model = Elastic`. For 7 fields parse `hardening`, require `yieldStress > 0` and `hardening >= 0`, then select `IdealPlastic1D` for `H = 0` or `HardeningPlastic1D` for `H > 0`. Keep `yieldStress` stored for both formats.
 
 - [ ] **Step 3: Rename internal field references**
 

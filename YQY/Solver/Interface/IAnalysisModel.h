@@ -113,6 +113,10 @@ namespace SolverNameSpace
          */
         virtual void OnStepCompleted(double time) = 0;
 
+        /**
+         * @brief 提交当前已经收敛或接受的增量步内部状态
+         */
+        virtual void CommitState() = 0;
 
         virtual void BackupStepState() = 0;
         virtual void GetStepIncrement(SolverNameSpace::Vec& dx_step) const = 0;

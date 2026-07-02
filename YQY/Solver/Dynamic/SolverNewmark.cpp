@@ -183,6 +183,7 @@ namespace SolverNameSpace
             }
 
             // 步结束回调（保存结果等）
+            model.CommitState();
             model.OnStepCompleted(currentTime);
             //std::cout << "\nx2: " << m_totalDx[56] << "\n";
         }

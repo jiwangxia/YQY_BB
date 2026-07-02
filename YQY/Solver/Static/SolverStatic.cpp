@@ -136,6 +136,8 @@ namespace SolverNameSpace
             Vec u, v, a;
             model.GetState(u, v, a);
 
+            // Newton 迭代已经收敛，此时才提交塑性历史变量。
+            model.CommitState();
             model.OnStepCompleted(currentTime);
 
             // 步回调

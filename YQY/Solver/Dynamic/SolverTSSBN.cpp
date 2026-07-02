@@ -154,6 +154,7 @@ namespace SolverNameSpace
             }
 
             // 步结束回调
+            model.CommitState();
             model.OnStepCompleted(currentTime);
         }
 
