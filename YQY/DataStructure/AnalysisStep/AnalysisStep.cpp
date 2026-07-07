@@ -1,9 +1,8 @@
-﻿#include "AnalysisStep.h"
+#include "AnalysisStep.h"
 #include "DataStructure/Structure/StructureData.h"
 #include "DataStructure/Element/ElementBase.h"
 #include "Solver/Interface/ISolver.h"
-#include "Solver/Static/SolverStatic.h"
-#include "Solver/Dynamic/SolverNewmark.h"
+#include "Solver/SolverFactory.h"
 #include <Eigen/SparseCholesky>
 
 void AnalysisStep::SetStructure(std::shared_ptr<StructureData> pStructure)
@@ -542,70 +541,10 @@ bool AnalysisStep::Solve()
     // 初始化单元长度
     Get_ElementLength();
 
-    // 使用工厂模式创建求解器
-    std::unique_ptr<SolverNameSpace::ISolver> solver;
-
-    switch (m_Type)
+    //solver为求解器类型指针，使用工厂模式创建对应的求解器实例
+    auto solver = SolverNameSpace::SolverFactory::Create_StepForSlover(*this);
+    if (!solver)
     {
-    case EnumKeyword::StepType::STATIC:
-    {
-        SolverNameSpace::SolverStatic::Params p;
-        p.numIncrements = static_cast<int>(m_Time / m_StepSize);
-        if (p.numIncrements < 1) p.numIncrements = 1;
-        p.maxIter = m_MaxIterations;
-        solver = std::make_unique<SolverNameSpace::SolverStatic>(p);
-        break;
-    }
-    case EnumKeyword::StepType::DYNAMIC:
-    {
-        isDynamic = true;
-        // 根据 m_DynamicSolverType 选择动力求解器
-        switch (m_DynamicSolverType)
-        {
-        case SolverNameSpace::SolverType::Newmark:
-        {
-            SolverNameSpace::SolverNewmark::Params p;
-            p.dt = m_StepSize;
-            p.maxIter = m_MaxIterations;
-            p.tol = m_Tolerance;
-            solver = std::make_unique<SolverNameSpace::SolverNewmark>(p);
-            break;
-        }
-        case SolverNameSpace::SolverType::CentralDifference:
-            qDebug().noquote() << QStringLiteral("警告: CentralDifference 求解器尚未实现，使用 Newmark");
-            // TODO: solver = std::make_unique<SolverNameSpace::SolverCentralDiff>(p);
-            {
-                SolverNameSpace::SolverNewmark::Params p;
-                p.dt = m_StepSize;
-                p.maxIter = m_MaxIterations;
-                p.tol = m_Tolerance;
-                solver = std::make_unique<SolverNameSpace::SolverNewmark>(p);
-            }
-            break;
-        case SolverNameSpace::SolverType::HHT:
-            qDebug().noquote() << QStringLiteral("警告: HHT 求解器尚未实现，使用 Newmark");
-            // TODO: solver = std::make_unique<SolverNameSpace::SolverHHT>(p);
-            {
-                SolverNameSpace::SolverNewmark::Params p;
-                p.dt = m_StepSize;
-                p.maxIter = m_MaxIterations;
-                p.tol = m_Tolerance;
-                solver = std::make_unique<SolverNameSpace::SolverNewmark>(p);
-            }
-            break;
-        default:
-        {
-            SolverNameSpace::SolverNewmark::Params p;
-            p.dt = m_StepSize;
-            p.maxIter = m_MaxIterations;
-            p.tol = m_Tolerance;
-            solver = std::make_unique<SolverNameSpace::SolverNewmark>(p);
-            break;
-        }
-        }
-        break;
-    }
-    default:
         qDebug().noquote() << QStringLiteral("警告: 未知的分析步类型，无法求解");
         return false;
     }

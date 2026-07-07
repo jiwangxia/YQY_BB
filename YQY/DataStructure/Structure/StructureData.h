@@ -112,7 +112,7 @@ public:
     int Add_Constraint(std::vector<int> Nodeid, std::vector<int> direaction, std::vector<double> value);
 
     void Add_Gravity(int direction, int idStep);
-    void Add_AnalysisStep(QString Name, double TotalTime, double increament, double tolerance, double maxIteration);
+    void AddAnalysisStep(const AnalysisStepConfig& config);
 
 
     /**

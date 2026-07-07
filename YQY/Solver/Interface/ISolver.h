@@ -60,7 +60,4 @@ namespace SolverNameSpace
         virtual void SetStepCallback(StepCallback callback) = 0;
     };
 
-    // 前向声明求解器工厂函数
-    std::unique_ptr<ISolver> CreateSolver(SolverType type, double stepSize = 0.01, 
-                                          double tolerance = 1e-5, int maxIterations = 32);
 }

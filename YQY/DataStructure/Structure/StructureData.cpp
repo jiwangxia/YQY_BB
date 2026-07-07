@@ -1,4 +1,4 @@
-﻿#include "StructureData.h"
+#include "StructureData.h"
 #include <set>
 #include <cmath>
 #include <vector>
@@ -209,18 +209,19 @@ void StructureData::Add_Gravity(int direction, int idStep)
     m_Load.insert(std::make_pair(autoId, pLoad));
 }
 
-void StructureData::Add_AnalysisStep(QString Name, double TotalTime, double increament, double tolerance, double maxIteration)
+void StructureData::AddAnalysisStep(const AnalysisStepConfig& config)
 {
-    auto autoId = int(m_AnalysisStep.size()) + 1;
     auto pStep = std::make_shared<AnalysisStep>();
-    pStep->m_Id = autoId;
-    pStep->m_Type = EnumKeyword::MapStepType.value(Name.toUpper(), EnumKeyword::StepType::UNKNOWN);
-    pStep->m_Time = TotalTime;
-    pStep->m_StepSize = increament;
-    pStep->m_Tolerance = tolerance;
-    pStep->m_MaxIterations = maxIteration;
+    pStep->m_Id = config.id > 0 ? config.id : static_cast<int>(m_AnalysisStep.size()) + 1;
+    pStep->m_Type = config.type;//分析步类型
+    pStep->m_Time = config.totalTime;//总时间
+    pStep->m_StepSize = config.stepSize;
+    pStep->m_Tolerance = config.tolerance;
+    pStep->m_MaxIterations = config.maxIterations;
+    pStep->m_DynamicSolverType = config.dynamicSolverType;
+    pStep->isDynamic = (config.type == EnumKeyword::StepType::DYNAMIC);
 
-    m_AnalysisStep.insert(std::make_pair(autoId, pStep));
+    m_AnalysisStep.insert(std::make_pair(pStep->m_Id, pStep));
 }
 
 // ===== 模型检查函数 =====

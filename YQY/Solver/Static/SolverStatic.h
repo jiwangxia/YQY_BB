@@ -33,7 +33,7 @@ namespace SolverNameSpace
          * @brief 构造函数
          * @param[in] p 求解器参数
          */
-        explicit SolverStatic(Params p = {}) : m_param(p) {}
+        explicit SolverStatic(Params p) : m_param(p) {}
 
         // ============ ISolver 接口实现 ============
         bool Solve(IAnalysisModel& model, double duration) override;

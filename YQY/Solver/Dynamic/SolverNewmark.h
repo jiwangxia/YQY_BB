@@ -34,7 +34,7 @@ namespace SolverNameSpace
          * @brief 构造函数
          * @param[in] p 求解器参数
          */
-        explicit SolverNewmark(Params p = {});
+        explicit SolverNewmark(Params p);
 
         // ============ ISolver 接口实现 ============
         bool Solve(IAnalysisModel& model, double duration) override;

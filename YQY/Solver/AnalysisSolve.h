@@ -1,16 +1,15 @@
-﻿#pragma once
+#pragma once
 #include "DataStructure/Structure/StructureData.h"
 #include <memory>
 
 /**
- * @brief 求解器类 - 协调整体分析流程
+ * @brief 分析运行器 - 编排模型中的一个或多个分析步
  */
-class Solver
+class AnalysisRunner
 {
 public:
     /**
      * @brief 设置要分析的模型
-     * @param [in] pStructure 结构数据的共享指针
      */
     void SetStructure(std::shared_ptr<StructureData> pStructure);
 
@@ -18,14 +17,12 @@ public:
      * @brief 运行所有分析步
      */
     bool RunAll();
-    
+
     /**
      * @brief 运行指定ID的分析步
-     * @param [in] stepId 分析步ID
-     * @return 运行成功返回 true，失败返回 false
      */
     bool RunStep(int stepId);
 
 private:
-    std::weak_ptr<StructureData> m_pStructure;  ///< 结构数据的弱引用
+    std::weak_ptr<StructureData> m_pStructure;
 };

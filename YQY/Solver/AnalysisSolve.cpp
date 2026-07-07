@@ -1,13 +1,14 @@
-﻿#include "Solver.h"
+#include "AnalysisSolve.h"
 #include "DataStructure/AnalysisStep/AnalysisStep.h"
+#include <QDebug>
 #include <QElapsedTimer>
 
-void Solver::SetStructure(std::shared_ptr<StructureData> pStructure)
+void AnalysisRunner::SetStructure(std::shared_ptr<StructureData> pStructure)
 {
     m_pStructure = pStructure;
 }
 
-bool Solver::RunAll()
+bool AnalysisRunner::RunAll()
 {
     QElapsedTimer timer;
     timer.start();
@@ -25,29 +26,26 @@ bool Solver::RunAll()
         return false;
     }
 
-    bool m_IsFirst = true;
-
-    // 循环执行所有分析步
     for (auto& pair : pStructure->m_AnalysisStep)
     {
         int stepId = pair.first;
         auto& step = pair.second;
         step->m_Id = stepId;
-        step->SetStructure(pStructure);           // 关联结构数据
+        step->SetStructure(pStructure);
 
-        step->Init();
-        // 运行分析步（求解内部会处理初始化）
         if (!step->Solve())
         {
             qDebug().noquote() << QStringLiteral("Error: 分析步失败，停止后续分析。Step ID=") << stepId;
             return false;
         }
     }
+
     qint64 elapsedMs = timer.elapsed();
+    Q_UNUSED(elapsedMs);
     return true;
 }
 
-bool Solver::RunStep(int stepId)
+bool AnalysisRunner::RunStep(int stepId)
 {
     auto pStructure = m_pStructure.lock();
     if (!pStructure)
@@ -64,6 +62,7 @@ bool Solver::RunStep(int stepId)
     }
 
     auto& step = it->second;
+    step->SetStructure(pStructure);
     qDebug().noquote() << QStringLiteral("\n----- 运行分析步 ") << stepId
         << " [" << step->GetTypeName() << "] -----";
 

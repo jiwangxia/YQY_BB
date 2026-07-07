@@ -1119,12 +1119,9 @@ bool Input_Model::InputAnalysisStep(QTextStream& flow, const QStringList& list_s
         double  tolerance = strlist_step[4].toDouble();
         int     maxIterations = strlist_step[5].toInt();
 
-        int autoId = static_cast<int>(m_Structure->m_AnalysisStep.size()) + 1;
-
-        auto pStep = std::make_shared<AnalysisStep>();
-        pStep->m_Id = autoId;
-        pStep->m_Type = EnumKeyword::MapStepType.value(typeStr, EnumKeyword::StepType::UNKNOWN);
-        if (pStep->m_Type == EnumKeyword::StepType::UNKNOWN)
+        AnalysisStepConfig config;
+        config.type = EnumKeyword::MapStepType.value(typeStr, EnumKeyword::StepType::UNKNOWN);
+        if (config.type == EnumKeyword::StepType::UNKNOWN)
         {
             qDebug().noquote() << QStringLiteral("Error: 未知的分析步类型: ") << typeStr;
             return false;
@@ -1134,12 +1131,12 @@ bool Input_Model::InputAnalysisStep(QTextStream& flow, const QStringList& list_s
             qDebug().noquote() << QStringLiteral("Error: 分析步时间参数无效: ") << strdata;
             return false;
         }
-        pStep->m_Time = time;
-        pStep->m_StepSize = stepSize;
-        pStep->m_Tolerance = tolerance;
-        pStep->m_MaxIterations = maxIterations;
+        config.totalTime = time;
+        config.stepSize = stepSize;
+        config.tolerance = tolerance;
+        config.maxIterations = maxIterations;
 
-        m_Structure->m_AnalysisStep.insert(std::make_pair(autoId, pStep));
+        m_Structure->AddAnalysisStep(config);
     }
 
     return true;

@@ -14,6 +14,20 @@ class Force_Gravity;
 class Force_Wind;
 
 /**
+ * @brief 分析步配置 - 描述一次分析任务的输入参数
+ */
+struct AnalysisStepConfig
+{
+    int id = 0;
+    EnumKeyword::StepType type = EnumKeyword::StepType::UNKNOWN;
+    double totalTime = 0.0;
+    double stepSize = 0.0;
+    double tolerance = 1e-5;
+    int maxIterations = 32;
+    SolverNameSpace::SolverType dynamicSolverType = SolverNameSpace::SolverType::Newmark;
+};
+
+/**
  * @brief 分析步类 - 负责单次分析的完整流程
  * 
  * 实现 SolverNameSpace::IAnalysisModel 接口，可以使用独立的求解器进行求解
