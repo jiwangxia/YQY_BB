@@ -8,12 +8,10 @@
 #include <memory>
 #include <vector>
 #include <QString>
-#include <QFile>
-#include <QTextStream>
-#include <QDebug>
-#include <Eigen/Dense>
 #include "Utility/EnumKeyword.h"
 
+class QFile;
+class QTextStream;
 class StructureData;
 class Node;
 class ElementBase;

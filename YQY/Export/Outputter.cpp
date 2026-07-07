@@ -1,6 +1,9 @@
 #include "Outputter.h"
 #include "DataStructure/Structure/StructureData.h"
 #include "Export/Hdf5ResultIO.h"
+#include <QDebug>
+#include <QFile>
+#include <QTextStream>
 #include <iomanip>
 #include <sstream>
 #include <cmath>
