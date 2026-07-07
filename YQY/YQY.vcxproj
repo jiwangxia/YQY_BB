@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|x64">
@@ -141,7 +141,7 @@
     <ClCompile Include="DataStructure\Section\SectionCircular.cpp" />
     <ClCompile Include="DataStructure\Section\Section_Ice.cpp" />
     <ClCompile Include="Solver\Dynamic\SolverNewmark.cpp" />
-    <ClCompile Include="Solver\Solver.cpp" />
+    <ClCompile Include="Solver\AnalysisSolve.cpp" />
     <ClCompile Include="Solver\Static\SolverStatic.cpp" />
     <ClCompile Include="Utility\ModelManager.cpp" />
     <ClCompile Include="Utility\EnumKeyword.cpp" />
@@ -190,8 +190,8 @@
     <ClInclude Include="Solver\Dynamic\SolverNewmark.h" />
     <ClInclude Include="Solver\Interface\IAnalysisModel.h" />
     <ClInclude Include="Solver\Interface\ISolver.h" />
+    <ClInclude Include="Solver\AnalysisSolve.h" />
     <ClInclude Include="Solver\SolverFactory.h" />
-    <ClInclude Include="Solver\Solver.h" />
     <ClInclude Include="Solver\Static\SolverStatic.h" />
     <ClInclude Include="Utility\ModelManager.h" />
     <ClInclude Include="Utility\EnumKeyword.h" />

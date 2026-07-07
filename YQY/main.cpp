@@ -6,7 +6,7 @@
 #include <QStringList>
 #include "Import/Input_Model.h"
 #include "DataStructure/Structure/StructureData.h"
-#include "Solver/Solver.h"
+#include "Solver/AnalysisSolve.h"
 #include "Utility/Logger/Logger.h"
 
 #include "Import/AeroManager.h"
@@ -58,9 +58,9 @@ int main(int argc, char* argv[])
         reportSuccess(QStringLiteral("模型读取成功，用时 %1 ms").arg(importElapsedMs));
 
         stageTimer.restart();
-        Solver solver;
-        solver.SetStructure(pStructure);
-        if (!solver.RunAll())
+        AnalysisRunner analysisRunner;
+        analysisRunner.SetStructure(pStructure);
+        if (!analysisRunner.RunAll())
         {
             const qint64 solveElapsedMs = stageTimer.elapsed();
             reportError(QStringLiteral("分析计算失败，用时 %1 ms，跳过结果导出").arg(solveElapsedMs));

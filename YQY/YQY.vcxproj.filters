@@ -127,7 +127,7 @@
     <ClCompile Include="Solver\Static\SolverStatic.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Solver\Solver.cpp">
+    <ClCompile Include="Solver\AnalysisRunner.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Import\AeroManager.cpp">
@@ -249,10 +249,10 @@
     <ClInclude Include="Solver\SolverFactory.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Solver\Static\SolverStatic.h">
+    <ClInclude Include="Solver\AnalysisRunner.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Solver\Solver.h">
+    <ClInclude Include="Solver\Static\SolverStatic.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Import\AeroManager.h">
