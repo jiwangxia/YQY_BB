@@ -1,5 +1,6 @@
-﻿#include "Input_Model.h"
+#include "Input_Model.h"
 #include "DataStructure/Structure/StructureData.h"
+#include "Utility/Logger/Logger.h"
 #include <QRegularExpression>
 #include <QElapsedTimer>
 #include <QFileInfo>
@@ -15,7 +16,7 @@ namespace
 QString GetDefaultHdf5FileName(const QString& inputFileName)
 {
     const QFileInfo inputFileInfo(inputFileName);
-    QDir outputDir(QDir::current().filePath("Export/ExportFile"));
+    QDir outputDir(QDir::current().filePath("Export/ExportH5"));//输出H5文件的默认路径
     if (!outputDir.exists())
     {
         QDir().mkpath(outputDir.absolutePath());
@@ -142,15 +143,7 @@ bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureDa
     file.close();
 
     // 合并重复节点、删除重复单元、删除孤立节点、重新编号
-    QElapsedTimer timer;
-    timer.start();
     m_Structure->CleanupModel();
-    qint64 elapsedMs = timer.elapsed();
-    qDebug().noquote() << QStringLiteral("模型读取耗时: ") << elapsedMs << QStringLiteral(" 毫秒");
-
-    // 输出
-    if (0 != m_Structure->m_Nodes.size())
-        qDebug().noquote() << QStringLiteral("\n节点数量: ") << m_Structure->m_Nodes.size();
 
     // 按类型统计单元数量
     QMap<QString, int> elementTypeCount;
@@ -162,20 +155,6 @@ bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureDa
         else if (dynamic_cast<ElementBeam_CR*>(pair.second.get())) typeName = "CR3D";
         elementTypeCount[typeName]++;
     }
-    if (0 != m_Structure->m_Elements.size())
-        qDebug().noquote() << QStringLiteral("\n单元总数: ") << m_Structure->m_Elements.size();
-
-    for (auto it = elementTypeCount.constBegin(); it != elementTypeCount.constEnd(); ++it)
-    {
-        qDebug().noquote() << it.key() << QStringLiteral(": ") << it.value();
-    }
-
-    if (0 != m_Structure->m_Material.size())
-        qDebug().noquote() << QStringLiteral("\n材料数量: ") << m_Structure->m_Material.size();
-    if (0 != m_Structure->m_Section.size())
-        qDebug().noquote() << QStringLiteral("\n截面数量: ") << m_Structure->m_Section.size();
-    if (0 != m_Structure->m_Constraint.size())
-        qDebug().noquote() << QStringLiteral("\n约束数量: ") << m_Structure->m_Constraint.size();
 
     // 按类型统计荷载数量
     QMap<QString, int> loadTypeCount;
@@ -190,19 +169,29 @@ bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureDa
         loadTypeCount[typeName]++;
     }
 
-    if (0 != m_Structure->m_Load.size())
-        qDebug().noquote() << QStringLiteral("\n荷载总数: ") << m_Structure->m_Load.size();
+    QStringList summary;
+    summary << QStringLiteral("模型信息:");
+    summary << QStringLiteral("节点数量: %1").arg(m_Structure->m_Nodes.size());
+    summary << QStringLiteral("单元总数: %1").arg(m_Structure->m_Elements.size());
+    for (auto it = elementTypeCount.constBegin(); it != elementTypeCount.constEnd(); ++it)
+    {
+        summary << QStringLiteral("%1: %2").arg(it.key()).arg(it.value());
+    }
+    summary << QStringLiteral("材料数量: %1").arg(m_Structure->m_Material.size());
+    summary << QStringLiteral("截面数量: %1").arg(m_Structure->m_Section.size());
+    summary << QStringLiteral("约束数量: %1").arg(m_Structure->m_Constraint.size());
+    summary << QStringLiteral("荷载总数: %1").arg(m_Structure->m_Load.size());
     for (auto it = loadTypeCount.constBegin(); it != loadTypeCount.constEnd(); ++it)
     {
-        qDebug().noquote() << it.key() << QStringLiteral(": ") << it.value();
+        summary << QStringLiteral("%1: %2").arg(it.key()).arg(it.value());
         if (it.key() == "FORCE_GRAVITY")
         {
-            qDebug().noquote() << QStringLiteral("------重力方向为:") << g_Direction;
+            summary << QStringLiteral("重力方向: %1").arg(g_Direction);
         }
     }
+    summary << QStringLiteral("分析步数量: %1").arg(m_Structure->m_AnalysisStep.size());
 
-    if (0 != m_Structure->m_AnalysisStep.size())
-        qDebug().noquote() << QStringLiteral("\n分析步数量: ") << m_Structure->m_AnalysisStep.size();
+    Logger::Instance().InfoToFile(summary.join(QStringLiteral("\n")));
 
     return true;
 }
@@ -541,10 +530,10 @@ bool Input_Model::InputMaterial(QTextStream& flow, const QStringList& list_str)
         }
 
         QStringList strlist_mat = strdata.split(QRegularExpression("[\t, ]"), Qt::SkipEmptyParts);//利用空格,分解字符串
-        if (strlist_mat.size() != 6 && strlist_mat.size() != 7)
+        if (strlist_mat.size() != 6)
         {
             qDebug().noquote()
-                << QStringLiteral("Error: 材料数据格式错误，需要6个字段（弹性）或7个字段（塑性）: ")
+                << QStringLiteral("Error: 材料数据格式错误，需要6个字段: ")
                 << strdata;
             return false;
         }
@@ -552,7 +541,7 @@ bool Input_Model::InputMaterial(QTextStream& flow, const QStringList& list_str)
         const double young = strlist_mat[1].toDouble();
         const double poisson = strlist_mat[2].toDouble();
         const double density = strlist_mat[3].toDouble();
-        const double yieldStress = strlist_mat[4].toDouble();
+        const double maxStress = strlist_mat[4].toDouble();
         const double expansion = strlist_mat[5].toDouble();
 
         if (young <= 0.0)
@@ -569,26 +558,8 @@ bool Input_Model::InputMaterial(QTextStream& flow, const QStringList& list_str)
         pMaterial->m_Young = young;
         pMaterial->m_Poisson = poisson;
         pMaterial->m_Density = density;
-        pMaterial->m_YieldStress = yieldStress;
+        pMaterial->m_MaxStress = maxStress;
         pMaterial->m_Expansion = expansion;
-
-        // 第7个字段是硬化模量。只要显式给出该字段，就启用一维塑性。
-        if (strlist_mat.size() == 7)
-        {
-            const double hardening = strlist_mat[6].toDouble();
-            if (yieldStress <= 0.0 || hardening < 0.0)
-            {
-                qDebug().noquote()
-                    << QStringLiteral("Error: 塑性材料要求屈服应力大于0且硬化模量不小于0: ")
-                    << strdata;
-                return false;
-            }
-            pMaterial->m_Model =
-                (hardening == 0.0)
-                ? MaterialModel::IdealPlastic1D
-                : MaterialModel::HardeningPlastic1D;
-            pMaterial->m_Hardening = hardening;
-        }
 
         m_Structure->m_Material.insert(std::make_pair(autoId, pMaterial));
     }

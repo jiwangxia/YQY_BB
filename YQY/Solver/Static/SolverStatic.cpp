@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file SolverStatic.cpp
  * @brief 静力求解器实现
  */
@@ -10,7 +10,7 @@ namespace SolverNameSpace
     bool SolverStatic::Solve(IAnalysisModel& model, double duration)
     {
         qDebug().noquote() << QStringLiteral("开始静力求解 (Newton-Raphson)...");
-        qDebug().noquote() << QStringLiteral("总增量步数: %1, 总时间: %2 s").arg(m_param.numIncrements).arg(duration);
+        qDebug().noquote() << QStringLiteral("总增量步数: %1, 总时间: %2 s\n").arg(m_param.numIncrements).arg(duration);
 
         const int nDofs = model.GetFreeDofs();
         if (nDofs < 0)

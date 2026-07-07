@@ -3,23 +3,24 @@
 #include <QDebug>
 #include <QElapsedTimer>
 #include <QFileInfo>
+#include <QStringList>
 #include "Import/Input_Model.h"
 #include "DataStructure/Structure/StructureData.h"
 #include "Solver/Solver.h"
 #include "Utility/Logger/Logger.h"
 
 #include "Import/AeroManager.h"
+
 int main(int argc, char* argv[])
 {
-
     QApplication app(argc, argv);
     Logger::InitializeConsoleEncoding();
 
     auto pStructure = std::make_shared<StructureData>();
 
     Input_Model importer;
-    
-    QString BaseName = QStringLiteral("Two_Bar_Elastoplastic");
+
+    QString BaseName = QStringLiteral("拱形位移Truss");
     QString InputPath = QStringLiteral("Import/ImportFile/%1.bdf").arg(BaseName);
     QString OutputPath = QStringLiteral("Export/ExportFile/%1_TEP.bdf").arg(BaseName);
     const QString inputFileName = QFileInfo(InputPath).fileName();
@@ -40,11 +41,7 @@ int main(int argc, char* argv[])
             Logger::Instance().Error(message);
         };
 
-    if (Logger::Instance().Start(InputPath))
-    {
-        reportInfo(QStringLiteral("日志文件: %1").arg(QFileInfo(Logger::Instance().LogFilePath()).fileName()));
-    }
-    else
+    if (!Logger::Instance().Start(InputPath))
     {
         qDebug().noquote() << QStringLiteral("日志文件创建失败，程序继续运行");
     }
@@ -53,20 +50,17 @@ int main(int argc, char* argv[])
     totalTimer.start();
 
     QElapsedTimer stageTimer;
-    reportInfo(QStringLiteral("开始读取模型: %1").arg(inputFileName));
+    reportInfo(QStringLiteral("开始读取模型文件: %1").arg(inputFileName));
     stageTimer.start();
     if (importer.InputData(InputPath, pStructure))
     {
         const qint64 importElapsedMs = stageTimer.elapsed();
         reportSuccess(QStringLiteral("模型读取成功，用时 %1 ms").arg(importElapsedMs));
-        qDebug() << "\n=====Model loaded successfully!=====";
 
-        //     使用 Solver 运行分析
-        reportInfo(QStringLiteral("开始分析计算"));
         stageTimer.restart();
         Solver solver;
         solver.SetStructure(pStructure);
-        if (!solver.RunAll())  // 运行所有分析步
+        if (!solver.RunAll())
         {
             const qint64 solveElapsedMs = stageTimer.elapsed();
             reportError(QStringLiteral("分析计算失败，用时 %1 ms，跳过结果导出").arg(solveElapsedMs));
@@ -92,10 +86,19 @@ int main(int argc, char* argv[])
         stageTimer.restart();
         pStructure->GetOutputter().ExportNodes(OutputPath, nodeIds, types);
         const qint64 exportElapsedMs = stageTimer.elapsed();
-        reportSuccess(QStringLiteral("结果输出完成，用时 %1 ms").arg(exportElapsedMs));
+
+        QStringList outputFiles;
+        outputFiles << QStringLiteral("BDF: %1").arg(outputFileName);
+        if (pStructure->m_OutputControl.m_EnableHdf5 && !pStructure->m_OutputControl.m_Hdf5FileName.isEmpty())
+        {
+            outputFiles << QStringLiteral("H5: %1").arg(QFileInfo(pStructure->m_OutputControl.m_Hdf5FileName).fileName());
+        }
+        reportSuccess(QStringLiteral("结果输出完成，用时 %1 ms，输出文件: %2")
+            .arg(exportElapsedMs)
+            .arg(outputFiles.join(QStringLiteral("; "))));
 
         const qint64 totalElapsedMs = totalTimer.elapsed();
-        reportSuccess(QStringLiteral("程序运行成功，总耗时 %1 ms，日志文件: %2")
+        reportSuccess(QStringLiteral("程序运行成功，总耗时 %1 ms，运行日志文件: %2")
             .arg(totalElapsedMs)
             .arg(QFileInfo(Logger::Instance().LogFilePath()).fileName()));
         Logger::Instance().Stop(true, QStringLiteral("模型读取、分析和结果导出完成"));
@@ -111,5 +114,4 @@ int main(int argc, char* argv[])
     //YQY window;
     //window.show();
     return app.exec();
-
 }

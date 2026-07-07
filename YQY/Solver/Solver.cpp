@@ -25,8 +25,6 @@ bool Solver::RunAll()
         return false;
     }
 
-    qDebug().noquote() << QStringLiteral("\n========== 开始分析 ==========\n\n");
-
     bool m_IsFirst = true;
 
     // 循环执行所有分析步
@@ -45,10 +43,7 @@ bool Solver::RunAll()
             return false;
         }
     }
-    qDebug().noquote() << QStringLiteral("\n========== 分析完成 ==========\n");
-
     qint64 elapsedMs = timer.elapsed();
-    qDebug().noquote() << QStringLiteral("模型分析: ") << elapsedMs << QStringLiteral(" 毫秒");
     return true;
 }
 

@@ -27,6 +27,7 @@ public:
 
     void Debug(const QString& message);
     void Info(const QString& message);
+    void InfoToFile(const QString& message);
     void Success(const QString& message);
     void Warning(const QString& message);
     void Error(const QString& message);

@@ -5,34 +5,13 @@ ElementTruss::ElementTruss()
     m_pNode.resize(2);
 }
 
-void ElementTruss::InitializeState()
-{
-    if (m_StateInitialized)
-    {
-        return;
-    }
-
-    // 总应变以输入构形为零点；输入初始应力作为该构形的已平衡应力。
-    m_OldState.strain = 0.0;
-    m_OldState.stress = m_InitStress;
-    m_TrialState = m_OldState;
-    m_StateInitialized = true;
-}
-
-void ElementTruss::CommitState()
-{
-    if (m_StateInitialized)
-    {
-        m_OldState = m_TrialState;
-    }
-}
-
 void ElementTruss::Get_ke(MatrixXd& ke)
 {
     auto pProperty = m_pProperty.lock();
     auto pSection = pProperty->m_pSection.lock();
     auto pMaterial = pProperty->m_pMaterial.lock();
 
+    double E = pMaterial->m_Young;
     double A = pSection->m_Area;
 
     auto pNode0 = m_pNode[0].lock();
@@ -68,21 +47,13 @@ void ElementTruss::Get_ke(MatrixXd& ke)
 
     if (!bUseLogStrain)
     {
-        // ===== 工程应变公式 (modelering Strain) =====
+        // ===== 工程应变公式 (Engineering Strain) =====
         // ε = (L - L0) / L0
-        double strain = (length_current - L0) / L0;
-        InitializeState();
-
-        // 每次 Newton 迭代都从上一个已收敛状态重新试算。
-        const Material1DResult result =
-            pMaterial->Update1D(strain, m_OldState);
-        m_TrialState = result.state;
-        m_Stress = result.stress;
-
-        double materialStiffness =
-            result.stiffness * A / L0;
+        double materialStiffness = E * A / L0;
         ke = B_matrix * B_matrix.transpose() * materialStiffness;
 
+        double strain = (length_current - L0) / L0;
+        m_Stress = E * strain + m_InitStress;
         double axialForce = m_Stress * A;
 
         m_inforce = B_matrix * axialForce;
@@ -108,17 +79,11 @@ void ElementTruss::Get_ke(MatrixXd& ke)
         // ===== 对数应变公式 (True Strain / Logarithmic Strain, 体积不变) =====
         // ε = ln(L / L0), 当前面积 A_current = A * L0 / L (体积守恒)
         double A_current = A * L0 / length_current;
-        double strain = log(length_current / L0);  // 对数应变
-        InitializeState();
-
-        // 材料返回总应力（含初始应力）和一维切线刚度 D。
-        const Material1DResult result = pMaterial->Update1D(strain, m_OldState);
-        m_TrialState = result.state;
-        m_Stress = result.stress;
-
-        double materialStiffness = result.stiffness * A_current / L0;
+        double materialStiffness = E * A_current / L0;
         ke = B_matrix * B_matrix.transpose() * materialStiffness;
 
+        double strain = log(length_current / L0);  // 对数应变
+        m_Stress = E * strain + m_InitStress;      // 真应力，保留单元初始应力
         double axialForce = m_Stress * A_current;
 
         m_inforce = B_matrix * axialForce;
@@ -205,7 +170,7 @@ void ElementTruss::Get_L0()
 
 void ElementTruss::Assemble(const std::vector<double>& damping, MatrixXd& _OUT ce)
 {
-    if (damping.size() < 4) 
+    if (damping.size() < 4)
     {
         // 处理错误：抛出异常或设置空矩阵并返回
         throw std::invalid_argument("damping vector must have at least 4 elements");
@@ -216,7 +181,6 @@ void ElementTruss::Assemble(const std::vector<double>& damping, MatrixXd& _OUT c
     Get_L0();
     Get_ke(ke);
     Get_me_Consistent(me);//一致质量矩阵
-    
+
     ce = damping[0] * me + damping[1] * ke;
 }
-

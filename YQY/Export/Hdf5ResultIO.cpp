@@ -860,9 +860,8 @@ std::vector<MaterialRecord> BuildMaterialRecords(const StructureData* pData)
         record.young = pMaterial->m_Young;
         record.poisson = pMaterial->m_Poisson;
         record.density = pMaterial->m_Density;
-        // 为兼容既有 HDF5 格式，字段名仍为 MAX_STRESS，
-        // 其物理含义现明确为初始屈服应力。
-        record.maxStress = pMaterial->m_YieldStress;
+        // 为兼容既有 HDF5 格式，字段名仍为 MAX_STRESS。
+        record.maxStress = pMaterial->m_MaxStress;
         record.expansion = pMaterial->m_Expansion;
         records.push_back(record);
     }

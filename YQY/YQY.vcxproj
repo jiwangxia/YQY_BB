@@ -114,7 +114,6 @@
     <ClCompile Include="DataStructure\Load\Force_Node.cpp" />
     <ClCompile Include="DataStructure\Node\Node.cpp" />
     <ClCompile Include="DataStructure\Material\Material.cpp" />
-    <ClCompile Include="DataStructure\Material\Material1D.cpp" />
     <ClCompile Include="DataStructure\Property\Property.cpp" />
     <ClCompile Include="DataStructure\Load\Force_Element.cpp" />
     <ClCompile Include="DataStructure\Load\Force_Gravity.cpp" />
@@ -162,7 +161,6 @@
     <ClInclude Include="DataStructure\Element\ElementBase.h" />
     <ClInclude Include="DataStructure\Element\ElementTruss.h" />
     <ClInclude Include="DataStructure\Material\Material.h" />
-    <ClInclude Include="DataStructure\Material\Material1D.h" />
     <ClInclude Include="DataStructure\Property\Property.h" />
     <ClInclude Include="DataStructure\Load\Force_Element.h" />
     <ClInclude Include="DataStructure\Load\Force_Gravity.h" />
@@ -199,8 +197,6 @@
   <ItemGroup>
     <None Include="Import\FileFormat.md" />
     <None Include="Import\ImportFile\45梁.bdf" />
-    <None Include="Import\ImportFile\Truss_Plastic_TimeHistory.bdf" />
-    <None Include="Import\ImportFile\Two_Bar_Elastoplastic.bdf" />
     <None Include="Import\ImportFile\两维梁.bdf" />
     <None Include="Import\ImportFile\斜杆一端受压.bdf" />
     <None Include="Import\ImportFile\测试梁.bdf" />

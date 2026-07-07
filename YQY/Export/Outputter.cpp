@@ -349,7 +349,6 @@ void Outputter::ExportNodes(const QString& fileName,
     }
 
     file.close();
-    qDebug().noquote() << QStringLiteral("\n输出至") << fileName;
 }
 
 void Outputter::ExportElements(const QString& fileName,
@@ -373,7 +372,6 @@ void Outputter::ExportElements(const QString& fileName,
     }
 
     file.close();
-    qDebug().noquote() << QStringLiteral("\n输出至") << fileName;
 }
 
 bool Outputter::BeginBdfResultStream(const QString& fileName,
@@ -651,17 +649,13 @@ bool Outputter::SaveBdfModel(const QString& fileName, StructureData* pData)
         for (const auto& pair : pData->m_Material)
         {
             auto pMat = pair.second;
-            // ID, E, v, Density, YieldStress, Expansion [, Hardening]
+            // ID, E, v, Density, MaxStress, Expansion
             stream << FmtInt(mapId(materialIdMap, pair.first), 10, true) << " "
                 << FmtDouble(pMat->m_Young) << " "
                 << FmtDouble(pMat->m_Poisson) << " "
                 << FmtDouble(pMat->m_Density) << " "
-                << FmtDouble(pMat->m_YieldStress) << " "
+                << FmtDouble(pMat->m_MaxStress) << " "
                 << FmtDouble(pMat->m_Expansion);
-            if (pMat->m_Model != MaterialModel::Elastic)
-            {
-                stream << " " << FmtDouble(pMat->m_Hardening);
-            }
             stream << "\n";
         }
     }

@@ -97,7 +97,6 @@ bool Logger::Start(const QString& modelFileName, int maxBackupCount)
     WriteRawLine(QStringLiteral("YQY CAE 运行日志"));
     WriteRawLine(QStringLiteral("开始时间: %1").arg(QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz")));
     WriteRawLine(QStringLiteral("模型文件: %1").arg(modelFileName));
-    WriteRawLine(QStringLiteral("日志文件: %1").arg(m_logFilePath));
     WriteRawLine(QStringLiteral("旧日志规则: 最新日志为 *.log，历史日志依次为 *.log.1、*.log.2 ..."));
     WriteRawLine(QStringLiteral("============================================================"));
     return true;
@@ -136,6 +135,21 @@ void Logger::Debug(const QString& message)
 void Logger::Info(const QString& message)
 {
     Write(Level::Info, message);
+}
+
+void Logger::InfoToFile(const QString& message)
+{
+    QMutexLocker locker(&m_mutex);
+    if (!m_active)
+    {
+        return;
+    }
+
+    const QString line = QStringLiteral("[%1] [%2] %3")
+        .arg(QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz"))
+        .arg(LevelName(Level::Info))
+        .arg(message);
+    WriteRawLine(line);
 }
 
 void Logger::Success(const QString& message)
@@ -340,7 +354,7 @@ void Logger::WriteQtMessage(QtMsgType type, const QMessageLogContext& context, c
         }
     }
 
-    WriteNativeConsole(message, type == QtCriticalMsg || type == QtFatalMsg);
+    WriteTerminalLine(level, message);
 }
 
 void Logger::MessageHandler(QtMsgType type, const QMessageLogContext& context, const QString& message)

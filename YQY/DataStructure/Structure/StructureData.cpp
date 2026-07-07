@@ -142,11 +142,11 @@ void StructureData::Add_Property(double E, double density, double Area, double* 
 
     if (S != nullptr) 
     {
-        // S 在材料定义中表示初始屈服应力。
-        pMaterial->m_YieldStress = *S;
+        // S 在材料定义中表示极限应力。
+        pMaterial->m_MaxStress = *S;
     }
     else
-        pMaterial->m_YieldStress = 0.0;
+        pMaterial->m_MaxStress = 0.0;
 
     if (e != nullptr) 
     {
@@ -243,7 +243,6 @@ void StructureData::CleanupModel(double tolerance)
         qDebug().noquote() << QStringLiteral("单元: ") << elementsBefore << QStringLiteral(" -> ") << elementsAfter;
     }
 
-    qDebug().noquote() << QStringLiteral("===== 模型检查完成 =====\n");
 }
 
 //数据优化-----不用看这些代码-------------------
