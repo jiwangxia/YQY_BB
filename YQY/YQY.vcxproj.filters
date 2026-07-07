@@ -32,6 +32,9 @@
     <QtMoc Include="GUI\YQY.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <ClCompile Include="Utility\pch.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="GUI\YQY.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -154,6 +157,9 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Base\Base.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Utility\pch.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DataStructure\Node\Node.h">
