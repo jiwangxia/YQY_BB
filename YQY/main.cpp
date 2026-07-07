@@ -1,4 +1,4 @@
-﻿#include "GUI/YQY.h"
+#include "GUI/YQY.h"
 #include <QtWidgets/QApplication>
 #include <QDebug>
 #include <QElapsedTimer>
@@ -18,8 +18,8 @@ int main(int argc, char* argv[])
     auto pStructure = std::make_shared<StructureData>();
 
     Input_Model importer;
-
-    QString BaseName = QStringLiteral("24杆星形穹顶桁架");
+    
+    QString BaseName = QStringLiteral("Two_Bar_Elastoplastic");
     QString InputPath = QStringLiteral("Import/ImportFile/%1.bdf").arg(BaseName);
     QString OutputPath = QStringLiteral("Export/ExportFile/%1_TEP.bdf").arg(BaseName);
     const QString inputFileName = QFileInfo(InputPath).fileName();
@@ -76,19 +76,14 @@ int main(int argc, char* argv[])
         const qint64 solveElapsedMs = stageTimer.elapsed();
         reportSuccess(QStringLiteral("分析计算成功，用时 %1 ms").arg(solveElapsedMs));
 
-        std::vector<int> nodeIds = { 1 };
+        std::vector<int> nodeIds = { 2 };
         //for (auto& nodePair : pStructure->m_Nodes)
         //{
         //    nodeIds.push_back(nodePair.first);
         //}
         std::vector<EnumKeyword::NodeResultType> types = {
-            EnumKeyword::NodeResultType::U1,
             EnumKeyword::NodeResultType::U2,
-            EnumKeyword::NodeResultType::U3,
-            EnumKeyword::NodeResultType::CX,
-            EnumKeyword::NodeResultType::CY,
-            EnumKeyword::NodeResultType::CZ,
-            EnumKeyword::NodeResultType::R3
+            EnumKeyword::NodeResultType::R2
         };
         //std::vector<EnumKeyword::NodeResultType> types = { EnumKeyword::NodeResultType::U3};
         //std::vector<EnumKeyword::NodeResultType> types = { EnumKeyword::NodeResultType::U1, EnumKeyword::NodeResultType::U2, EnumKeyword::NodeResultType::U3, EnumKeyword::NodeResultType::F1, EnumKeyword::NodeResultType::F2, EnumKeyword::NodeResultType::F3 };

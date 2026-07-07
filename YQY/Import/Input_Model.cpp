@@ -6,6 +6,10 @@
 #include <QDir>
 #include <QStringDecoder>
 
+#include <cmath>
+#include <stdexcept>
+#include <utility>
+
 namespace
 {
 QString GetDefaultHdf5FileName(const QString& inputFileName)
@@ -114,6 +118,9 @@ bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureDa
             break;
         case EnumKeyword::KeyData::CONSTRAINT:
             if (!InputConstraint(flow, list_str)) return false;
+            break;
+        case EnumKeyword::KeyData::CONSTRAINT_TABULAR:
+            if (!InputConstraintTabular(flow, list_str)) return false;
             break;
         case EnumKeyword::KeyData::LOAD:
             if (!InputLoad(flow, list_str)) return false;
@@ -910,13 +917,38 @@ bool Input_Model::InputConstraint(QTextStream& flow, const QStringList& list_str
         QStringList strlist_con = strdata.split(QRegularExpression("[\t, ]"), Qt::SkipEmptyParts);//利用空格,分解字符串
         if (strlist_con.size() != 4)
         {
-            qDebug().noquote() << QStringLiteral("Error: 约束数据格式错误，需要4个字段: ") << strdata;
+            qDebug().noquote()
+                << QStringLiteral("Error: 约束数据格式错误，需要4个字段: ")
+                << strdata;
             return false;
         }
 
-        int idNode = strlist_con[1].toInt();
-        auto  direaction = strlist_con[2].toInt();
-        double  value = strlist_con[3].toDouble();
+        bool idOk = false;
+        bool nodeIdOk = false;
+        bool directionOk = false;
+        bool valueOk = false;
+        const int constraintId = strlist_con[0].toInt(&idOk);
+        const int idNode = strlist_con[1].toInt(&nodeIdOk);
+        const int direction = strlist_con[2].toInt(&directionOk);
+        const double value = strlist_con[3].toDouble(&valueOk);
+        if (!idOk || !nodeIdOk || !directionOk || !valueOk
+            || constraintId <= 0 || !std::isfinite(value))
+        {
+            qDebug().noquote()
+                << QStringLiteral("Error: 约束包含无效字段: ")
+                << strdata;
+            return false;
+        }
+
+        if (m_Structure->m_Constraint.find(constraintId)
+            != m_Structure->m_Constraint.end())
+        {
+            qDebug().noquote()
+                << QStringLiteral("Error: 约束编号重复: ")
+                << constraintId;
+            return false;
+        }
+
         auto node = m_Structure->FindNode(idNode);
         if (!node)
         {
@@ -924,14 +956,121 @@ bool Input_Model::InputConstraint(QTextStream& flow, const QStringList& list_str
             return false;
         }
 
-        int autoId = static_cast<int>(m_Structure->m_Constraint.size()) + 1;
-
         auto pConstraint = std::make_shared<Constraint>();
-        pConstraint->m_Id = autoId;
+        pConstraint->m_Id = constraintId;
         pConstraint->m_pNode = node;
-        pConstraint->m_Direction = static_cast<EnumKeyword::Direction>(direaction);
+        pConstraint->m_Direction =
+            static_cast<EnumKeyword::Direction>(direction);
         pConstraint->m_Value = value;
-        m_Structure->m_Constraint.insert(std::make_pair(autoId, pConstraint));
+        m_Structure->m_Constraint.insert(
+            std::make_pair(constraintId, pConstraint));
+    }
+
+    return true;
+}
+
+bool Input_Model::InputConstraintTabular(
+    QTextStream& flow,
+    const QStringList& list_str)
+{
+    if (!RequireKeywordFieldCount(
+        list_str,
+        3,
+        "CONSTRAINT_TABULAR"))
+    {
+        return false;
+    }
+
+    bool constraintIdOk = false;
+    bool pointCountOk = false;
+    const int constraintId = list_str[1].toInt(&constraintIdOk);
+    const int pointCount = list_str[2].toInt(&pointCountOk);
+    if (!constraintIdOk || !pointCountOk
+        || constraintId <= 0 || pointCount < 2)
+    {
+        qDebug().noquote()
+            << QStringLiteral(
+                "Error: CONSTRAINT_TABULAR需要有效约束编号，且数据点不少于2个");
+        return false;
+    }
+
+    const auto constraintIt =
+        m_Structure->m_Constraint.find(constraintId);
+    if (constraintIt == m_Structure->m_Constraint.end()
+        || !constraintIt->second)
+    {
+        qDebug().noquote()
+            << QStringLiteral(
+                "Error: CONSTRAINT_TABULAR引用了不存在的约束: ")
+            << constraintId;
+        return false;
+    }
+
+    const std::shared_ptr<Constraint>& constraint =
+        constraintIt->second;
+    if (constraint->HasTimePoints())
+    {
+        qDebug().noquote()
+            << QStringLiteral(
+                "Error: 约束已绑定TABULAR时程，不能重复绑定: ")
+            << constraintId;
+        return false;
+    }
+
+    std::vector<ConstraintTimePoint> points;
+    points.reserve(static_cast<size_t>(pointCount));
+    for (int pointIndex = 0; pointIndex < pointCount; ++pointIndex)
+    {
+        QString pointLine;
+        if (!ReadLine(flow, pointLine) || pointLine.startsWith("*"))
+        {
+            qDebug().noquote()
+                << QStringLiteral(
+                    "Error: CONSTRAINT_TABULAR时程数据不足，约束编号: ")
+                << constraintId;
+            return false;
+        }
+
+        const QStringList pointFields =
+            pointLine.split(
+                QRegularExpression("[\t, ]"),
+                Qt::SkipEmptyParts);
+        if (pointFields.size() != 2)
+        {
+            qDebug().noquote()
+                << QStringLiteral(
+                    "Error: CONSTRAINT_TABULAR数据行需要“时间, 系数”: ")
+                << pointLine;
+            return false;
+        }
+
+        bool timeOk = false;
+        bool scaleOk = false;
+        const double time = pointFields[0].toDouble(&timeOk);
+        const double scale = pointFields[1].toDouble(&scaleOk);
+        if (!timeOk || !scaleOk
+            || !std::isfinite(time) || !std::isfinite(scale))
+        {
+            qDebug().noquote()
+                << QStringLiteral(
+                    "Error: CONSTRAINT_TABULAR包含无效数值: ")
+                << pointLine;
+            return false;
+        }
+        points.push_back({ time, scale });
+    }
+
+    try
+    {
+        constraint->SetTimePoints(std::move(points));
+    }
+    catch (const std::invalid_argument& error)
+    {
+        qDebug().noquote()
+            << QStringLiteral(
+                "Error: CONSTRAINT_TABULAR时程无效: ")
+            << error.what();
+        return false;
     }
 
     return true;

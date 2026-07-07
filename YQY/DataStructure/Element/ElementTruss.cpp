@@ -1,4 +1,4 @@
-﻿#include "ElementTruss.h"
+#include "ElementTruss.h"
 
 ElementTruss::ElementTruss()
 {
@@ -112,13 +112,11 @@ void ElementTruss::Get_ke(MatrixXd& ke)
         InitializeState();
 
         // 材料返回总应力（含初始应力）和一维切线刚度 D。
-        const Material1DResult result =
-            pMaterial->Update1D(strain, m_OldState);
+        const Material1DResult result = pMaterial->Update1D(strain, m_OldState);
         m_TrialState = result.state;
         m_Stress = result.stress;
 
-        double materialStiffness =
-            result.stiffness * A_current / L0;
+        double materialStiffness = result.stiffness * A_current / L0;
         ke = B_matrix * B_matrix.transpose() * materialStiffness;
 
         double axialForce = m_Stress * A_current;

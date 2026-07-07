@@ -19,6 +19,7 @@ public:
         NODE,           ///< 节点
         ELEMENT,        ///< 单元
         CONSTRAINT,     ///< 约束
+        CONSTRAINT_TABULAR, ///< 约束分段线性时程
         LOAD,           ///< 荷载
         STRESS,         ///< 初始应力
         ANALYSIS_STEP,  ///< 分析步

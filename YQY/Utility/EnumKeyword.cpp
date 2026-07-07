@@ -7,6 +7,7 @@ const QMap<QString, EnumKeyword::KeyData> EnumKeyword::MapKeyData =
     {"MATERIAL",      EnumKeyword::KeyData::MATERIAL},
     {"SECTION",       EnumKeyword::KeyData::SECTION},
     {"CONSTRAINT",    EnumKeyword::KeyData::CONSTRAINT},
+    {"CONSTRAINT_TABULAR", EnumKeyword::KeyData::CONSTRAINT_TABULAR},
     {"LOAD",          EnumKeyword::KeyData::LOAD},
     {"STRESS",        EnumKeyword::KeyData::STRESS},
     {"ANALYSIS_STEP", EnumKeyword::KeyData::ANALYSIS_STEP},

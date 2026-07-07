@@ -1,12 +1,10 @@
-﻿#include "Material.h"
+#include "Material.h"
 
 Material::Material()
 {
 }
 
-Material1DResult Material::Update1D(
-    double strain,
-    const Material1DState& oldState) const
+Material1DResult Material::Update1D(double strain, const Material1DState& oldState) const
 {
     return CalculateMaterial1D(
         m_Model,

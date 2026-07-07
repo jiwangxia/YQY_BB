@@ -13,10 +13,15 @@ namespace SolverNameSpace
         qDebug().noquote() << QStringLiteral("总增量步数: %1, 总时间: %2 s").arg(m_param.numIncrements).arg(duration);
 
         const int nDofs = model.GetFreeDofs();
-        if (nDofs <= 0)
+        if (nDofs < 0)
         {
             qDebug().noquote() << QStringLiteral("错误: 自由度数量无效");
             return false;
+        }
+        if (nDofs == 0)
+        {
+            qDebug().noquote()
+                << QStringLiteral("提示: 模型没有自由自由度，将执行位移控制和反力计算");
         }
 
         // 初始化工作区
@@ -35,7 +40,7 @@ namespace SolverNameSpace
 
             // 施加约束（包括位移控制）
             Eigen::VectorXd x1;
-            model.Assemble_Constraint(x1, factor);
+            model.Assemble_Constraint(x1, currentTime, factor);
             // 组装外荷载（增量步开始时做一次）
             Vec F1, F2;
             model.ComputeExternalForce(currentTime, factor, F1, F2);

@@ -182,6 +182,16 @@ private:
 	bool InputConstraint(QTextStream& flow, const QStringList& list_str);
 
 	/**
+	 * @brief 读取按约束编号关联的分段线性位移时程
+	 * @param [in,out] flow 模型文件输入流
+	 * @param [in] list_str 关键字行解析后的字符串列表
+	 * @return 读取成功返回 true
+	 */
+	bool InputConstraintTabular(
+		QTextStream& flow,
+		const QStringList& list_str);
+
+	/**
 	 * @brief 读取单元应力
 	 * @param [in] flow 文本流
 	 * @param [in] list_str 关键字行解析后的字符串列表

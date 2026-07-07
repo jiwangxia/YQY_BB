@@ -196,7 +196,10 @@ private:
      * @brief 组装约束位移
      * @param [out] x1 约束位移向量
      */
-    void Assemble_Constraint(VectorXd& x1, double factor);
+    void Assemble_Constraint(
+        VectorXd& x1,
+        double currentTime,
+        double factor);
 
     /**
     * @brief 计算反力向量

@@ -6,10 +6,10 @@
 
 Material1DResult CalculateMaterial1D(
     MaterialModel model,
-    double young,
-    double yieldStress,
-    double hardening,
-    double strain,
+    double young,       //弹性模量
+    double yieldStress, //初始屈服应力
+    double hardening,   //硬化模量
+    double strain,      //当前总应变
     const Material1DState& oldState)
 {
     const bool valuesAreFinite =

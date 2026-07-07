@@ -83,10 +83,13 @@ namespace SolverNameSpace
          * @brief 计算位移向量
          *
          * @param[out] x1 约束自由度对应的位移向量
+         * @param[in] currentTime 当前分析步伪时间
          * @param[in] factor 位移因子（静力增量时使用）
-         * @param[out] x2 自由自由度对应的位移向量
          */
-        virtual void Assemble_Constraint(Vec& x1, double factor) = 0;
+        virtual void Assemble_Constraint(
+            Vec& x1,
+            double currentTime,
+            double factor) = 0;
 
         /**
          * @brief 计算残差向量

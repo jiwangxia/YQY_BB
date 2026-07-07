@@ -504,7 +504,10 @@ void AnalysisStep::Assemble_ForceWind(Force_Wind* pForceWind, VectorXd& F1, Vect
     }
 }
 
-void AnalysisStep::Assemble_Constraint(VectorXd& x1, double factor)
+void AnalysisStep::Assemble_Constraint(
+    VectorXd& x1,
+    double currentTime,
+    double factor)
 {
     x1.resize(m_nFixed);
     for (auto& constraintPair : m_pData->m_Constraint)
@@ -519,8 +522,10 @@ void AnalysisStep::Assemble_Constraint(VectorXd& x1, double factor)
         int dof = pNode->m_DOF[iDirection];
         if (dof >= 0 && dof < m_nFixed)
         {
-            x1[dof] = pConstraint->m_Value * factor;
-            pNode->m_Displacement[iDirection] = pConstraint->m_Value * factor;
+            const double value =
+                pConstraint->GetValue(currentTime, factor);
+            x1[dof] = value;
+            pNode->m_Displacement[iDirection] = value;
         }
     }
 }
