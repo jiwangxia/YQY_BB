@@ -153,32 +153,23 @@ namespace Utility
         // ========================================================================
         void Extract_RotationVector(const Eigen::Matrix3d& R, Eigen::Vector3d& _OUT result)
         {
-            // 计算旋转角的余弦值 (利用矩阵的迹 trace)
-            double trace = R.trace();
-            double cos_theta = 0.5 * (trace - 1.0);
+            Eigen::Quaterniond q(R);
+            q.normalize();
 
-            cos_theta = std::min(1.0, std::max(-1.0, cos_theta));
+            // q 与 -q 表示同一姿态。固定到 w >= 0 后得到 [0, pi] 的主值，
+            // 避免相邻 Newton 迭代因四元数换号造成转角跳变。
+            if (q.w() < 0.0) q.coeffs() *= -1.0;
 
-            double theta = std::acos(cos_theta);
-
-            // 提取反对称部分： R - R^T = 2 * sin(theta) * \tilde{n}
-            Eigen::Matrix3d skew_part = R - R.transpose();
-            Eigen::Vector3d spin_vec(skew_part(2, 1), skew_part(0, 2), skew_part(1, 0));
-
-            if (theta < 1e-8) 
+            const Eigen::Vector3d vectorPart = q.vec();
+            const double vectorNorm = vectorPart.norm();
+            if (vectorNorm < 1e-12)
             {
-                // 当转角极小，sin(theta) 近似为 theta。
-                double theta2 = theta * theta;
-                double theta4 = theta * theta2;
-                double a = 0.5 + theta2 / 12.0 + 7 * theta4 / 720.0;
-                result = a * spin_vec;
+                result = 2.0 * vectorPart;
+                return;
             }
-            else
-            {
-                // 精确计算：乘上修正系数 theta / (2 * sin(theta))
-                double coef = theta / (2.0 * std::sin(theta));
-                result = coef * spin_vec;
-            }
+
+            const double angle = 2.0 * std::atan2(vectorNorm, q.w());
+            result = (angle / vectorNorm) * vectorPart;
         }
 
         // 7. 节点姿态增量更新 (乘法更新法则)

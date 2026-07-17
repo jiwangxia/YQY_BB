@@ -20,7 +20,7 @@ int main(int argc, char* argv[])
 
     Input_Model importer;
 
-    QString BaseName = QStringLiteral("拱形位移Truss");
+    QString BaseName = QStringLiteral("24杆星形穹顶桁架");
     QString InputPath = QStringLiteral("Import/ImportFile/%1.bdf").arg(BaseName);
     QString OutputPath = QStringLiteral("Export/ExportFile/%1_TEP.bdf").arg(BaseName);
     const QString inputFileName = QFileInfo(InputPath).fileName();
@@ -70,14 +70,16 @@ int main(int argc, char* argv[])
         const qint64 solveElapsedMs = stageTimer.elapsed();
         reportSuccess(QStringLiteral("分析计算成功，用时 %1 ms").arg(solveElapsedMs));
 
-        std::vector<int> nodeIds = { 2 };
+        std::vector<int> nodeIds = { 1, 2 };
         //for (auto& nodePair : pStructure->m_Nodes)
         //{
         //    nodeIds.push_back(nodePair.first);
         //}
         std::vector<EnumKeyword::NodeResultType> types = {
-            EnumKeyword::NodeResultType::U2,
-            EnumKeyword::NodeResultType::R2
+            EnumKeyword::NodeResultType::U1,
+            EnumKeyword::NodeResultType::U3,
+            EnumKeyword::NodeResultType::R1,
+            EnumKeyword::NodeResultType::R3
         };
         //std::vector<EnumKeyword::NodeResultType> types = { EnumKeyword::NodeResultType::U3};
         //std::vector<EnumKeyword::NodeResultType> types = { EnumKeyword::NodeResultType::U1, EnumKeyword::NodeResultType::U2, EnumKeyword::NodeResultType::U3, EnumKeyword::NodeResultType::F1, EnumKeyword::NodeResultType::F2, EnumKeyword::NodeResultType::F3 };
@@ -88,17 +90,17 @@ int main(int argc, char* argv[])
         const qint64 exportElapsedMs = stageTimer.elapsed();
 
         QStringList outputFiles;
-        outputFiles << QStringLiteral("BDF: %1").arg(outputFileName);
+        outputFiles << QStringLiteral("%1").arg(outputFileName);//文件名
         if (pStructure->m_OutputControl.m_EnableHdf5 && !pStructure->m_OutputControl.m_Hdf5FileName.isEmpty())
         {
-            outputFiles << QStringLiteral("H5: %1").arg(QFileInfo(pStructure->m_OutputControl.m_Hdf5FileName).fileName());
+            outputFiles << QStringLiteral("%1").arg(QFileInfo(pStructure->m_OutputControl.m_Hdf5FileName).fileName());
         }
         reportSuccess(QStringLiteral("结果输出完成，用时 %1 ms，输出文件: %2")
             .arg(exportElapsedMs)
             .arg(outputFiles.join(QStringLiteral("; "))));
 
         const qint64 totalElapsedMs = totalTimer.elapsed();
-        reportSuccess(QStringLiteral("程序运行成功，总耗时 %1 ms，运行日志文件: %2")
+        reportSuccess(QStringLiteral("运行成功，总耗时 %1 ms，日志文件: %2")
             .arg(totalElapsedMs)
             .arg(QFileInfo(Logger::Instance().LogFilePath()).fileName()));
         Logger::Instance().Stop(true, QStringLiteral("模型读取、分析和结果导出完成"));

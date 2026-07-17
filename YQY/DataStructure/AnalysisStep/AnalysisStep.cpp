@@ -725,6 +725,58 @@ void AnalysisStep::ApplyIncrement(const SolverNameSpace::Vec& dx)
     }
 }
 
+void AnalysisStep::BeginDynamicStep(double dt, double beta, double gamma)
+{
+    for (auto& nodePair : m_pData->m_Nodes)
+    {
+        auto pNode = nodePair.second;
+        std::array<bool, 3> translationActive{ false, false, false };
+        std::array<bool, 3> rotationActive{ false, false, false };
+
+        for (int i = 0; i < pNode->m_DOF.size() && i < 6; ++i)
+        {
+            const int dof = pNode->m_DOF[i];
+            const bool isFree = dof >= m_nFixed && dof < m_nFixed + m_nFree;
+            if (i < 3) translationActive[i] = isFree;
+            else rotationActive[i - 3] = isFree;
+        }
+
+        pNode->BeginNewmarkStep(dt, beta, gamma,
+            translationActive, rotationActive);
+    }
+}
+
+void AnalysisStep::ApplyDynamicCorrection(const SolverNameSpace::Vec& dx,
+    double a0, double a1)
+{
+    for (auto& nodePair : m_pData->m_Nodes)
+    {
+        auto pNode = nodePair.second;
+        Eigen::Vector3d deltaTranslation = Eigen::Vector3d::Zero();
+        Eigen::Vector3d deltaRotation = Eigen::Vector3d::Zero();
+
+        for (int i = 0; i < pNode->m_DOF.size() && i < 6; ++i)
+        {
+            const int dof = pNode->m_DOF[i];
+            if (dof < m_nFixed || dof >= m_nFixed + m_nFree) continue;
+
+            const double correction = dx[dof - m_nFixed];
+            if (i < 3) deltaTranslation(i) = correction;
+            else deltaRotation(i - 3) = correction;
+        }
+
+        pNode->ApplyNewmarkCorrection(deltaTranslation, deltaRotation, a0, a1);
+    }
+}
+
+void AnalysisStep::RollbackDynamicStep()
+{
+    for (auto& nodePair : m_pData->m_Nodes)
+    {
+        nodePair.second->RollbackNewmarkStep();
+    }
+}
+
 void AnalysisStep::SetTrialKinematics(const SolverNameSpace::Vec& v, const SolverNameSpace::Vec& a)
 {
     // 将速度和加速度设置到节点

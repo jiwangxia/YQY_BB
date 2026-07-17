@@ -188,6 +188,7 @@
     <ClInclude Include="DataStructure\Section\SectionCircular.h" />
     <ClInclude Include="DataStructure\Section\Section_Ice.h" />
     <ClInclude Include="Solver\Dynamic\SolverNewmark.h" />
+    <ClInclude Include="Solver\Dynamic\RayleighDamping.h" />
     <ClInclude Include="Solver\Interface\IAnalysisModel.h" />
     <ClInclude Include="Solver\Interface\ISolver.h" />
     <ClInclude Include="Solver\AnalysisSolve.h" />

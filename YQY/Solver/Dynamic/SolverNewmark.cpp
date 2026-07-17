@@ -1,11 +1,15 @@
-﻿/**
+/**
  * @file SolverNewmark.cpp
- * @brief Newmark-β 动力求解器实现
+ * @brief Newmark-beta nonlinear dynamic solver
  */
 #include "SolverNewmark.h"
+
 #include <QDebug>
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <limits>
 #include <stdexcept>
-#include <iostream>
 
 namespace SolverNameSpace
 {
@@ -16,22 +20,13 @@ namespace SolverNameSpace
 
     void SolverNewmark::ComputeCoeffs(double dt)
     {
-        if (dt <= 0.0)
+        if (dt <= 0.0 || m_param.beta <= 0.0)
         {
-            throw std::invalid_argument("Time step must be positive");
+            throw std::invalid_argument("Newmark dt and beta must be positive");
         }
 
-        double beta = m_param.beta;
-        double gamma = m_param.gamma;
-
-        m_c.a0 = 1.0 / (beta * dt * dt);
-        m_c.a1 = gamma / (beta * dt);
-        m_c.a2 = 1.0 / (beta * dt);
-        m_c.a3 = 1.0 / (2.0 * beta) - 1.0;
-        m_c.a4 = gamma / beta - 1.0;
-        m_c.a5 = dt * 0.5 * (gamma / beta - 2.0);
-        m_c.a6 = dt * (1.0 - gamma);
-        m_c.a7 = gamma * dt;
+        m_c.a0 = 1.0 / (m_param.beta * dt * dt);
+        m_c.a1 = m_param.gamma / (m_param.beta * dt);
     }
 
     bool SolverNewmark::Solve(IAnalysisModel& model, double duration)
@@ -44,153 +39,109 @@ namespace SolverNameSpace
             qDebug().noquote() << QStringLiteral("错误: 自由度数量无效");
             return false;
         }
-
-        double dt = m_param.dt;
-        if (dt <= 0.0)
+        if (m_param.dt <= 0.0 || m_param.beta <= 0.0 || duration <= 0.0)
         {
-            qDebug().noquote() << QStringLiteral("错误: 时间步长必须为正");
+            qDebug().noquote() << QStringLiteral("错误: 时间步长、beta 和总时间必须为正");
             return false;
         }
 
-        // 初始化工作区
         m_dx.resize(nDofs);
         m_R.resize(nDofs);
-        m_totalDx.resize(nDofs);
-        m_Acurr.resize(nDofs);
-        m_Vcurr.resize(nDofs);
         m_Un.resize(nDofs);
         m_Vn.resize(nDofs);
         m_An.resize(nDofs);
-
         m_cache.reset();
-
-        // 获取初始状态
         model.GetState(m_Un, m_Vn, m_An);
 
-        // 简化为：A_0 = M^(-1) * F_ext(t=0)
-        Vec F1_init, F2_init;
-        model.ComputeExternalForce(0.0, 1.0, F1_init, F2_init);
+        // The element mass and damping matrices will be connected next.  Keeping
+        // them zero here isolates and validates the Newmark/SO(3) iteration.
+        m_M.resize(nDofs, nDofs);
+        m_C.resize(nDofs, nDofs);
+        m_M.setZero();
+        m_C.setZero();
 
-        // 组装质量矩阵
-        SpMat M_init, C_init;
-        //model.AssembleMatrices(m_K, &M_init, &C_init);
+        const int numSteps = static_cast<int>(std::ceil(duration / m_param.dt));
+        qDebug().noquote() << QStringLiteral("总时间步数: %1, 标准时间步长: %2 s, 总时间: %3 s")
+            .arg(numSteps).arg(m_param.dt).arg(duration);
 
-        int numSteps = static_cast<int>(duration / dt);
-        qDebug().noquote() << QStringLiteral("总时间步数: %1, 时间步长: %2 s, 总时间: %3 s").arg(numSteps).arg(dt).arg(duration);
-
-        // 进度条参数
-        const int barWidth = 50;  // 进度条宽度
-
-        // 时间步循环
+        const int barWidth = 50;
+        double time = 0.0;
         for (int step = 1; step <= numSteps; ++step)
         {
-            double currentTime = step * dt;
-            double progress = static_cast<double>(step) / numSteps;
+            const double dt = std::min(m_param.dt, duration - time);
+            if (dt <= 0.0) break;
 
-            // 显示进度条（使用 printf 支持 \r 动态刷新）
-            int pos = static_cast<int>(barWidth * progress);
-            printf("\rProgress: [");
+            ComputeCoeffs(dt);
+            const double currentTime = time + dt;
+            const double progress = currentTime / duration;
+
+            const int pos = static_cast<int>(barWidth * progress);
+            std::printf("\rProgress: [");
             for (int i = 0; i < barWidth; ++i)
             {
-                if (i < pos) printf("=");
-                else if (i == pos) printf(">");
-                else printf(" ");
+                if (i < pos) std::printf("=");
+                else if (i == pos) std::printf(">");
+                else std::printf(" ");
             }
-            printf("] %d%% (%d/%d) t=%.4fs",
-                int(progress * 100.0), step, numSteps, currentTime);
-            fflush(stdout);  // 强制刷新输出
+            std::printf("] %d%% (%d/%d) t=%.4fs",
+                static_cast<int>(progress * 100.0), step, numSteps, currentTime);
+            std::fflush(stdout);
 
-            model.BackupStepState();
-            // 第一步时 m_Un, m_Vn, m_An 已由 GetState 初始化
-
-            // 组装外荷载（时间步开始时做一次）
             Vec F1, F2;
             model.ComputeExternalForce(currentTime, 1.0, F1, F2);
-            //std::cout << "\nF2:" << F2[56] << "\n";
-            // 当前步累计位移增量清零
-            m_totalDx.setZero();
+            model.BeginDynamicStep(dt, m_param.beta, m_param.gamma);
 
-            // Newton-Raphson 迭代
+            bool converged = false;
+            double error = std::numeric_limits<double>::infinity();
             for (int iter = 0; iter < m_param.maxIter; ++iter)
             {
-                // 1. 根据 Newmark 公式计算试探的加速度和速度
-                // A_{n+1} = a0 * ΔU - a2 * V_n - a3 * A_n
-                // V_{n+1} = V_n + a6 * A_n + a7 * A_{n+1}
-                m_Acurr = m_c.a0 * m_totalDx - m_c.a2 * m_Vn - m_c.a3 * m_An;
-                m_Vcurr = m_Vn + m_c.a6 * m_An + m_c.a7 * m_Acurr;
-
-                // 2. 将试探的 V 和 A 设置到模型中
-                model.SetTrialKinematics(m_Vcurr, m_Acurr);
-
-                // 3. 组装 K, M, C 矩阵
-                //model.AssembleMatrices(m_K, &m_M, &m_C);
-
-                // 4. 计算有效刚度矩阵: K_eff = K + a0*M + a1*C
+                model.Assemble_Matrix(m_K, true);
                 m_Keff = m_K + m_c.a0 * m_M + m_c.a1 * m_C;
-
-                // 5. 计算残差: R = F_ext - F_int - M*a - C*v
                 model.ComputeResidual(F2, m_R);
 
-                // 6. 收敛检查
-                double error = m_R.norm();
-                if (error < m_param.tol && iter > 0)
+                error = m_R.norm();
+                if (!std::isfinite(error))
                 {
+                    qDebug().noquote()
+                        << QStringLiteral("错误: 时间步 %1 的残差不是有限数").arg(step);
+                    break;
+                }
+                if (error < m_param.tol)
+                {
+                    converged = true;
                     break;
                 }
 
-                // 7. 检查是否达到最大迭代次数
-                if (iter == m_param.maxIter - 1)
-                {
-                    qDebug().noquote() << QStringLiteral("警告: 时间步 %1 未收敛 (残差=%2)")
-                                              .arg(step).arg(error);
-                    return false;
-                }
-
-                // 8. 求解线性方程组: K_eff * dx = R
                 if (!SolveLinear(m_Keff, m_R, m_dx))
                 {
-                    qDebug().noquote() << QStringLiteral("错误: 线性求解失败");
-                    return false;
+                    qDebug().noquote()
+                        << QStringLiteral("错误: 时间步 %1 线性求解失败").arg(step);
+                    break;
                 }
-                //std::cout << "\nx2:" << m_dx[56] << "\n";
-                // 10. 更新模型的位移状态 (试探)
-                model.ApplyIncrement(m_dx);
-                model.GetStepIncrement(m_totalDx);
+
+                model.ApplyDynamicCorrection(m_dx, m_c.a0, m_c.a1);
             }
 
-            // 步末计算最终的 V 和 A
-            Vec Afinal = m_c.a0 * m_totalDx - m_c.a2 * m_Vn - m_c.a3 * m_An;
-            Vec Vfinal = m_Vn + m_c.a6 * m_An + m_c.a7 * Afinal;
+            if (!converged)
+            {
+                model.RollbackDynamicStep();
+                qDebug().noquote()
+                    << QStringLiteral("警告: 时间步 %1 未收敛 (残差=%2)")
+                        .arg(step).arg(error);
+                return false;
+            }
 
-            // 更新模型的最终速度和加速度
-            model.SetTrialKinematics(Vfinal, Afinal);
-
-            // 提交状态
-            Vec zero = Vec::Zero(nDofs);
-            model.ApplyIncrement(zero);
-
-            // 更新上一时刻状态为下一步做准备
-            m_Un += m_totalDx;  // 注意：实际位移已在模型中更新
-            m_Vn = Vfinal;
-            m_An = Afinal;
-
-            // 步回调
+            model.CommitState();
+            model.GetState(m_Un, m_Vn, m_An);
             if (m_callback)
             {
-                Vec u, v, a;
-                model.GetState(u, v, a);
-                m_callback(step, currentTime, u);
+                m_callback(step, currentTime, m_Un);
             }
-
-            // 步结束回调（保存结果等）
-            model.CommitState();
             model.OnStepCompleted(currentTime);
-            //std::cout << "\nx2: " << m_totalDx[56] << "\n";
+            time = currentTime;
         }
 
-        // 进度条完成后换行
-        printf("\n");
-
+        std::printf("\n");
         qDebug().noquote() << QStringLiteral("动力求解完成");
         return true;
     }
@@ -199,7 +150,6 @@ namespace SolverNameSpace
     {
         bool solved = false;
 
-        // 尝试 LDLT（更快）
         if (m_cache.useLdlt)
         {
             if (!m_cache.patternAnalyzed)
@@ -211,7 +161,7 @@ namespace SolverNameSpace
             if (m_cache.ldlt.info() == Eigen::Success)
             {
                 x = m_cache.ldlt.solve(b);
-                if (m_cache.ldlt.info() == Eigen::Success)
+                if (m_cache.ldlt.info() == Eigen::Success && x.allFinite())
                 {
                     solved = true;
                     m_cache.patternAnalyzed = true;
@@ -226,7 +176,6 @@ namespace SolverNameSpace
             }
         }
 
-        // 如果 LDLT 失败，尝试 LU
         if (!solved)
         {
             if (!m_cache.patternAnalyzed)
@@ -239,11 +188,11 @@ namespace SolverNameSpace
             if (m_cache.lu.info() == Eigen::Success)
             {
                 x = m_cache.lu.solve(b);
-                solved = true;
+                solved = m_cache.lu.info() == Eigen::Success && x.allFinite();
             }
-            else
+            if (!solved)
             {
-                qDebug() << "LU factorization failed!";
+                qDebug() << "LU factorization or solve failed!";
                 m_cache.patternAnalyzed = false;
             }
         }

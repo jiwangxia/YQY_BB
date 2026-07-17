@@ -83,6 +83,9 @@ public:
     int  GetFreeDofs() const override { return m_nFree; }
     int  GetFixedDofs() const override { return m_nFixed; }
     void ApplyIncrement(const SolverNameSpace::Vec& dx) override;
+    void BeginDynamicStep(double dt, double beta, double gamma) override;
+    void ApplyDynamicCorrection(const SolverNameSpace::Vec& dx, double a0, double a1) override;
+    void RollbackDynamicStep() override;
     void SetTrialKinematics(const SolverNameSpace::Vec& v, const SolverNameSpace::Vec& a) override;
     void GetState(SolverNameSpace::Vec& u, SolverNameSpace::Vec& v, SolverNameSpace::Vec& a) const override;
     void Assemble_Matrix(SpMat& Keff, bool isDynamic);          //组装整体等效刚度矩阵
@@ -227,6 +230,6 @@ private:
     VectorXd GetCurrentVelocity() const;
     VectorXd GetCurrentAcceleration() const;
 
-    void BackupStepState();
-    void GetStepIncrement(SolverNameSpace::Vec& dx_step) const;
+    void BackupStepState() override;
+    void GetStepIncrement(SolverNameSpace::Vec& dx_step) const override;
 };

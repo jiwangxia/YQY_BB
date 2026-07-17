@@ -1,4 +1,5 @@
 ﻿#include "ElementCable.h"
+#include <stdexcept>
 
 ElementCable::ElementCable()
 {
@@ -7,6 +8,71 @@ ElementCable::ElementCable()
 
 void ElementCable::Get_ke(MatrixXd& ke)
 {
+    auto pNode0 = m_pNode[0].lock();
+    auto pNode1 = m_pNode[1].lock();
+    auto pProperty = m_pProperty.lock();
+    if (!pNode0 || !pNode1 || !pProperty)
+        throw std::runtime_error("ElementCable has incomplete node/property references");
+
+    auto pMaterial = pProperty->m_pMaterial.lock();
+    auto pSection = pProperty->m_pSection.lock();
+    if (!pMaterial || !pSection)
+        throw std::runtime_error("ElementCable has incomplete material/section references");
+
+    Get_L0();
+    const Eigen::Vector3d x0(
+        pNode0->m_X + pNode0->m_Displacement[0],
+        pNode0->m_Y + pNode0->m_Displacement[1],
+        pNode0->m_Z + pNode0->m_Displacement[2]);
+    const Eigen::Vector3d x1(
+        pNode1->m_X + pNode1->m_Displacement[0],
+        pNode1->m_Y + pNode1->m_Displacement[1],
+        pNode1->m_Z + pNode1->m_Displacement[2]);
+    const Eigen::Vector3d chord = x1 - x0;
+    const double currentLength = chord.norm();
+    if (currentLength <= 1.0e-12 || L0 <= 1.0e-12)
+        throw std::runtime_error("ElementCable length must be positive");
+
+    const Eigen::Vector3d axis = chord / currentLength;
+    const double area = pSection->m_Area;
+    double Iy = 0.0, Iz = 0.0, polarMoment = 0.0;
+    pSection->Calculate_I(Iy, Iz, polarMoment);
+    if (polarMoment <= 0.0 && pSection->m_Radius > 0.0)
+        polarMoment = 0.5 * area * pSection->m_Radius * pSection->m_Radius;
+
+    const double shearModulus = pMaterial->m_Young
+        / (2.0 * (1.0 + pMaterial->m_Poisson));
+    const double axialStiffness = pMaterial->m_Young * area / currentLength;
+    const double torsionalStiffness = shearModulus * polarMoment / currentLength;
+    const double extension = currentLength - L0;
+    const double twist = pNode1->m_Displacement[3] - pNode0->m_Displacement[3];
+
+    Eigen::Vector2d generalizedForce;
+    generalizedForce(0) = m_InitStress * area + axialStiffness * extension;
+    generalizedForce(1) = torsionalStiffness * twist;
+    m_Stress = area > 0.0 ? generalizedForce(0) / area : 0.0;
+
+    Eigen::Matrix<double, 2, 8> B = Eigen::Matrix<double, 2, 8>::Zero();
+    B.block<1, 3>(0, 0) = -axis.transpose();
+    B.block<1, 3>(0, 4) = axis.transpose();
+    B(1, 3) = -1.0;
+    B(1, 7) = 1.0;
+
+    Eigen::Matrix2d material = Eigen::Matrix2d::Zero();
+    material(0, 0) = axialStiffness;
+    material(1, 1) = torsionalStiffness;
+    ke = B.transpose() * material * B;
+
+    const Eigen::Matrix3d geometricBlock = generalizedForce(0) / currentLength
+        * (Eigen::Matrix3d::Identity() - axis * axis.transpose());
+    ke.block<3, 3>(0, 0) += geometricBlock;
+    ke.block<3, 3>(4, 4) += geometricBlock;
+    ke.block<3, 3>(0, 4) -= geometricBlock;
+    ke.block<3, 3>(4, 0) -= geometricBlock;
+
+    m_inforce = B.transpose() * generalizedForce;
+    m_ke = ke;
+    L = currentLength;
 
 }
 
@@ -44,10 +110,8 @@ void ElementCable::Get_me_Consistent(MatrixXd& me) //一致质量矩阵
     double Density = pMaterial->m_Density;
     Get_L0();  //原长
     double Linear_density = A * Density;               //线性密度---单位长度质量
-    //double I = 0.5 * Linear_density * Radius * Radius; //单位长度转动惯量
-
     double Sy = 0.0, Sz = 0.0;//目前只考虑对称截面
-    double I = 0.0;
+    double I = 0.5 * Linear_density * Radius * Radius; // 单位长度极质量惯量 rho*J
     me.setZero(8, 8);
 
     MatrixXd mu = MatrixXd::Zero(4, 4);
@@ -65,6 +129,17 @@ void ElementCable::Get_me_Consistent(MatrixXd& me) //一致质量矩阵
 
 void ElementCable::Get_L0()
 {
+    auto pNode0 = m_pNode[0].lock();
+    auto pNode1 = m_pNode[1].lock();
+    if (!pNode0 || !pNode1)
+        throw std::runtime_error("ElementCable node reference is invalid");
+
+    const Eigen::Vector3d x0(pNode0->m_X, pNode0->m_Y, pNode0->m_Z);
+    const Eigen::Vector3d x1(pNode1->m_X, pNode1->m_Y, pNode1->m_Z);
+    L0 = (x1 - x0).norm();
+    if (L0 <= 1.0e-12)
+        throw std::runtime_error("ElementCable initial length must be positive");
+    if (L <= 0.0) L = L0;
 
 }
 
@@ -92,4 +167,3 @@ void ElementCable::Assemble(const std::vector<double>& damping, MatrixXd& _OUT c
     ce(3, 7) = damping[2] * me(3, 7) + damping[3] * ke(3, 7);
     ce(7, 3) = ce(3, 7);
 }
-

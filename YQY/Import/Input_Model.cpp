@@ -328,7 +328,9 @@ bool Input_Model::InputElementTruss(QTextStream& flow, const QStringList& /*list
             return false;
         }
         pElement_Truss->m_pNode[0] = node0;
+        node0->SetNumDOFs(pElement_Truss->Get_NodeDOF());
         pElement_Truss->m_pNode[1] = node1;
+        node1->SetNumDOFs(pElement_Truss->Get_NodeDOF());
         auto Property = m_Structure->Create_Property(idMaterial, idSection);
         if (!Property)
         {
@@ -383,7 +385,9 @@ bool Input_Model::InputElementCable(QTextStream& flow, const QStringList& list_s
             return false;
         }
         pElement_Truss->m_pNode[0] = node0;
+        node0->SetNumDOFs(pElement_Truss->Get_NodeDOF());
         pElement_Truss->m_pNode[1] = node1;
+        node1->SetNumDOFs(pElement_Truss->Get_NodeDOF());
         auto Property = m_Structure->Create_Property(idMaterial, idSection);
         if (!Property)
         {

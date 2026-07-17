@@ -44,6 +44,20 @@ namespace SolverNameSpace
          */
         virtual void ApplyIncrement(const Vec& dx) = 0;
 
+        /** @brief 开始一个 Newmark 动力时间步并建立预测状态 */
+        virtual void BeginDynamicStep(double dt, double beta, double gamma) = 0;
+
+        /**
+         * @brief 应用一次动力 Newton 修正
+         *
+         * 平动按普通 Newmark 公式更新；转动由节点在 SO(3) 上更新姿态，
+         * 并在材料坐标系内更新角速度和角加速度。
+         */
+        virtual void ApplyDynamicCorrection(const Vec& dx, double a0, double a1) = 0;
+
+        /** @brief 放弃当前动力时间步并恢复步初状态 */
+        virtual void RollbackDynamicStep() = 0;
+
         /**
          * @brief 设置当前试探的速度和加速度（动力学求解器使用）
          * @param[in] v 速度向量

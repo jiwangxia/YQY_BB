@@ -237,6 +237,9 @@
     <ClInclude Include="Solver\Dynamic\SolverNewmark.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Solver\Dynamic\RayleighDamping.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="Solver\Dynamic\TimeIntegrationSolver.h">
       <Filter>Header Files</Filter>
     </ClInclude>

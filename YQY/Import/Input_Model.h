@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "Base/Base.h"
 #include <QTextStream>
 #include <QFile>

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file SolverNewmark.h
  * @brief 动力求解器 - Newmark-β 隐式时间积分法
  */
@@ -55,7 +55,7 @@ namespace SolverNameSpace
          */
         struct Coeffs
         {
-            double a0, a1, a2, a3, a4, a5, a6, a7;
+            double a0, a1;
         };
         Coeffs m_c;
 
@@ -83,9 +83,7 @@ namespace SolverNameSpace
         // 工作区（避免重复分配内存）
         SpMat m_K, m_M, m_C, m_Keff;
         Vec m_R, m_dx;
-        Vec m_Un, m_Vn, m_An;           // 上一时刻状态
-        Vec m_totalDx;                   // 当前步累计位移增量
-        Vec m_Acurr, m_Vcurr;           // 当前试探的加速度和速度
+        Vec m_Un, m_Vn, m_An;
 
         /**
          * @brief 求解线性方程组 K * x = b

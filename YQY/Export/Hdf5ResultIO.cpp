@@ -1621,7 +1621,7 @@ bool Hdf5ResultIO::ExportHdf5(const QString& fileName, const StructureData* pDat
     H5Handle file(H5Fcreate(path.constData(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT), H5Fclose);
     if (!file.valid())
     {
-        qDebug() << "Failed to create HDF5 file:" << fileName;
+        qDebug() << "创建 HDF5 文件失败:" << fileName;
         return false;
     }
 
@@ -1641,7 +1641,7 @@ bool Hdf5ResultIO::ExportHdf5(const QString& fileName, const StructureData* pDat
     {
         file.reset();
         QFile::remove(tempFileName);
-        qDebug() << "Failed to write HDF5 data:" << fileName;
+        qDebug() << "写入HDF5数据失败:" << fileName;
         return false;
     }
 
