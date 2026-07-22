@@ -15,7 +15,7 @@ class ElementBeam_Simo : public ElementBase
 public:
     ElementBeam_Simo();
 
-    int Get_NodeDOF() const override { return 6; }
+	int Get_NodeDOF() const override { return 6; }
 
     Eigen::Vector3d q0 = Eigen::Vector3d(0.0, 1.0, 0.0);
     Eigen::Matrix3d R0 = Eigen::Matrix3d::Identity();
@@ -39,4 +39,3 @@ private:
     void GetSectionData(double& area, double& Iy, double& Iz, double& J,
         double& young, double& shear, double& density) const;
 };
-

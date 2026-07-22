@@ -8,7 +8,8 @@
 // Newmark方法实现
 // ============================================================================
 
-bool NewmarkSolver::solve(State& state, double dt, double t_end) {
+bool NewmarkSolver::solve(State& state, double dt, double t_end)
+{
     const double epsilon = 1e-12 * t_end;
 
     // 预计算常量
@@ -80,7 +81,8 @@ bool NewmarkSolver::solve(State& state, double dt, double t_end) {
 // TSSBN方法实现
 // ============================================================================
 
-void TSSBNSolver::calculateParameters() {
+void TSSBNSolver::calculateParameters()
+{
     const double rho = m_params.rho_inf;
     const double EPSILON = 1e-9;
 
@@ -108,7 +110,8 @@ void TSSBNSolver::calculateParameters() {
         .arg(m_params.b1);
 }
 
-bool TSSBNSolver::solve(State& state, double dt, double t_end) {
+bool TSSBNSolver::solve(State& state, double dt, double t_end)
+{
     const double epsilon = 1e-12 * t_end;
 
     // 初始化中间状态
@@ -233,7 +236,8 @@ bool TSSBNSolver::solve(State& state, double dt, double t_end) {
 // 自适应TSSBN方法实现
 // ============================================================================
 
-void AdaptiveTSSBNSolver::calculateParameters() {
+void AdaptiveTSSBNSolver::calculateParameters()
+{
     // 计算TSSBN基本参数（与TSSBNSolver相同）
     const double rho = m_params.rho_inf;
     const double EPSILON = 1e-9;
@@ -297,7 +301,8 @@ void AdaptiveTSSBNSolver::calculateParameters() {
         .arg(m_params.b3_hat);
 }
 
-double AdaptiveTSSBNSolver::estimateError(const State& state_order2, const State& state_order3, const State& state_base) {
+double AdaptiveTSSBNSolver::estimateError(const State& state_order2, const State& state_order3, const State& state_base)
+{
     const double tolerance_abs = 1e-6;
     const double epsilon_safe = 1e-30;
 
@@ -315,7 +320,8 @@ double AdaptiveTSSBNSolver::estimateError(const State& state_order2, const State
     return LTE;
 }
 
-double AdaptiveTSSBNSolver::computeNewStepSize(double dt_current, double LTE, int n_iter) {
+double AdaptiveTSSBNSolver::computeNewStepSize(double dt_current, double LTE, int n_iter)
+{
     const double epsilon_safe = 1e-30;
     const double inv_p_plus_1 = 1.0 / (m_params.p_order + 1.0);
 
@@ -341,7 +347,8 @@ double AdaptiveTSSBNSolver::computeNewStepSize(double dt_current, double LTE, in
     return dt_new;
 }
 
-bool AdaptiveTSSBNSolver::solve(State& state, double dt, double t_end) {
+bool AdaptiveTSSBNSolver::solve(State& state, double dt, double t_end)
+{
     const double time_tolerance = 1e-10;
 
     // 初始化中间状态

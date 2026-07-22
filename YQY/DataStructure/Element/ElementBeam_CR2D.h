@@ -11,7 +11,7 @@ public:
      * @brief 获取单元每个节点的自由度个数
      * @return 3（平移自由度 X, Y, X轴扭转 RX）
      */
-    int Get_NodeDOF() const override { return 3; };
+	int Get_NodeDOF() const override { return 3; };
 
     /**
      * @brief 计算单元刚度矩阵
@@ -23,4 +23,3 @@ public:
     void Get_L0();
     void Assemble(const std::vector<double>& damping, MatrixXd& _OUT ce);
 };
-

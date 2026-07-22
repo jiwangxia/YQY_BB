@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" width="64" height="64">
+  <title>Element Solid</title>
+  <path d="M7 11 17 5l12 7-10 6z" fill="#8EBBFF" stroke="#215FB5" stroke-width="1.5" stroke-linejoin="round"/>
+  <path d="M7 11v13l12 7V18z" fill="#4C8FE8" stroke="#215FB5" stroke-width="1.5" stroke-linejoin="round"/>
+  <path d="M19 18 29 12v13L19 31z" fill="#2F6FC5" stroke="#215FB5" stroke-width="1.5" stroke-linejoin="round"/>
+</svg>

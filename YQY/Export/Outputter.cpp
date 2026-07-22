@@ -160,6 +160,9 @@ void Outputter::SaveDataFromNodes(double time, StructureData* pData)
     // 创建新帧
     DataFrame frame;
     frame.m_currentTime = time;
+    frame.m_stepId = m_currentStepId;
+    frame.m_increment = m_hdf5NextIncrement;
+    frame.m_analysisType = m_currentAnalysisType;
 
     for (auto& nodePair : pData->m_Nodes)
     {
@@ -191,15 +194,23 @@ void Outputter::SaveDataFromNodes(double time, StructureData* pData)
 
     if (m_hdf5Stream)
     {
-        m_hdf5Stream->WriteResultFrame(m_hdf5NextDomainId, 0, m_hdf5NextIncrement, 0, time, frame);
+        m_hdf5Stream->WriteResultFrame(m_hdf5NextDomainId, frame.GetStepId(),
+            frame.GetIncrement(), frame.GetAnalysisType(), time, frame);
         ++m_hdf5NextDomainId;
-        ++m_hdf5NextIncrement;
     }
 
     if (m_keepFramesInMemory)
     {
         m_DataSet.push_back(frame);
     }
+    ++m_hdf5NextIncrement;
+}
+
+void Outputter::SetResultContext(int stepId, int analysisType)
+{
+    m_currentStepId = stepId;
+    m_currentAnalysisType = analysisType;
+    m_hdf5NextIncrement = 0;
 }
 
 // 智能格式化类实现
@@ -429,7 +440,7 @@ void Outputter::EndBdfResultStream()
 
 bool Outputter::BeginHdf5ResultStream(const QString& fileName, StructureData* pData, const QString& sourceModelName)
 {
-    EndHdf5ResultStream();
+    EndHdf5ResultStream(false);
 
     m_hdf5Stream = std::make_unique<Hdf5ResultIO>();
     if (!m_hdf5Stream->BeginResultStream(fileName, pData, sourceModelName))
@@ -443,11 +454,11 @@ bool Outputter::BeginHdf5ResultStream(const QString& fileName, StructureData* pD
     return true;
 }
 
-void Outputter::EndHdf5ResultStream()
+void Outputter::EndHdf5ResultStream(bool resultComplete)
 {
     if (m_hdf5Stream)
     {
-        m_hdf5Stream->EndResultStream();
+        m_hdf5Stream->EndResultStream(resultComplete);
         m_hdf5Stream.reset();
     }
 }
@@ -455,7 +466,7 @@ void Outputter::EndHdf5ResultStream()
 void Outputter::Clear()
 {
     EndBdfResultStream();
-    EndHdf5ResultStream();
+    EndHdf5ResultStream(false);
     m_DataSet.clear();
 }
 
@@ -871,10 +882,11 @@ bool Outputter::SaveBdfModel(const QString& fileName, StructureData* pData)
     return true;
 }
 
-bool Outputter::SaveHdf5File(const QString& fileName, StructureData* pData, const QString& sourceModelName)
+bool Outputter::SaveHdf5File(const QString& fileName, StructureData* pData,
+    const QString& sourceModelName, bool resultComplete)
 {
     Hdf5ResultIO hdf5ResultIO;
-    return hdf5ResultIO.ExportHdf5(fileName, pData, sourceModelName);
+    return hdf5ResultIO.ExportHdf5(fileName, pData, sourceModelName, resultComplete);
 }
 
 bool Outputter::ExportBdfResultFromHdf5(const QString& hdf5FileName,

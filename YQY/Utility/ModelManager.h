@@ -50,10 +50,7 @@ public:
      * @brief 获取活动模型ID
      * @return 活动模型ID
      */
-    int GetActiveModelId() const
-    {
-        return m_ActiveModelId;
-    }
+	int GetActiveModelId() const { return m_ActiveModelId; }
 
     /**
      * @brief 删除指定模型
@@ -77,10 +74,7 @@ public:
      * @brief 获取模型数量
      * @return 模型数量
      */
-    int GetModelCount() const
-    {
-        return static_cast<int>(m_Models.size());
-    }
+	int GetModelCount() const { return static_cast<int>(m_Models.size()); }
 
 private:
     ModelManager() = default;

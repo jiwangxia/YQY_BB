@@ -77,9 +77,7 @@ public:
     };
 
     TSSBNSolver(int ndof, const Params& params = Params())
-        : TimeIntegrationSolver(ndof), m_params(params) {
-        calculateParameters();
-    }
+        : TimeIntegrationSolver(ndof), m_params(params) { calculateParameters(); }
 
     bool solve(State& state, double dt, double t_end) override;
 
@@ -129,9 +127,7 @@ public:
     };
 
     AdaptiveTSSBNSolver(int ndof, const Params& params = Params())
-        : TimeIntegrationSolver(ndof), m_params(params) {
-        calculateParameters();
-    }
+        : TimeIntegrationSolver(ndof), m_params(params) { calculateParameters(); }
 
     bool solve(State& state, double dt, double t_end) override;
 

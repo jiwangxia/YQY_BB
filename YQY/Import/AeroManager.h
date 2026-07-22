@@ -80,6 +80,22 @@ private:
 
 public:
     AeroManager() = default;
+    AeroManager(const AeroManager& other)
+        : models(other.models), caseModels(other.caseModels),
+          currentSourceFile(other.currentSourceFile), caseSourceFiles(other.caseSourceFiles)
+    {
+    }
+    AeroManager& operator=(const AeroManager& other)
+    {
+        if (this != &other)
+        {
+            models = other.models;
+            caseModels = other.caseModels;
+            currentSourceFile = other.currentSourceFile;
+            caseSourceFiles = other.caseSourceFiles;
+        }
+        return *this;
+    }
 
     static std::filesystem::path buildChineseFileName(const AeroCaseKey& key);
     static std::filesystem::path buildLegacyFileName(const AeroCaseKey& key);

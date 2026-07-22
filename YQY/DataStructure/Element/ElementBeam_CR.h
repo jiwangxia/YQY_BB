@@ -7,7 +7,7 @@ public:
 
     Vector3d q0;    // 单元参考向量,截面向量
 
-    int Get_NodeDOF() const override { return 6; };
+	int Get_NodeDOF() const override { return 6; };
     Eigen::Matrix3d R0 = Matrix3d::Identity();
 
     void Get_ke(MatrixXd& ke);

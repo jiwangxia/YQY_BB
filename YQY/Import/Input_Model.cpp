@@ -67,9 +67,11 @@ bool Input_Model::ReadLine(QTextStream& flow, QString& str)
 
 bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureData> pStructure)
 {
+	m_LastError.clear();
     if (!pStructure)
     {
-        qDebug().noquote() << QStringLiteral("Error: 结构数据为空");
+		m_LastError = QStringLiteral("结构数据为空。");
+        qDebug().noquote() << QStringLiteral("Error:") << m_LastError;
         return false;
     }
 
@@ -83,7 +85,8 @@ bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureDa
     QFile file(FileName);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
     {
-        qDebug().noquote() << QStringLiteral("Error: 文件 %1 不存在").arg(FileName);
+		m_LastError = QStringLiteral("文件不存在或无法打开：%1").arg(FileName);
+        qDebug().noquote() << QStringLiteral("Error:") << m_LastError;
         return false;
     }
 
@@ -145,6 +148,12 @@ bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureDa
     // 合并重复节点、删除重复单元、删除孤立节点、重新编号
     m_Structure->CleanupModel();
 
+	if (!ValidateStructure(m_LastError))
+	{
+		qDebug().noquote() << QStringLiteral("Error: 模型完整性验证失败：") << m_LastError;
+		return false;
+	}
+
     // 按类型统计单元数量
     QMap<QString, int> elementTypeCount;
     for (const auto& pair : m_Structure->m_Elements)
@@ -194,6 +203,130 @@ bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureDa
     Logger::Instance().InfoToFile(summary.join(QStringLiteral("\n")));
 
     return true;
+}
+
+bool Input_Model::ValidateStructure(QString& errorMessage) const
+{
+	if (!m_Structure)
+	{
+		errorMessage = QStringLiteral("结构数据为空。");
+		return false;
+	}
+	if (m_Structure->m_Nodes.empty())
+	{
+		errorMessage = QStringLiteral("模型没有有效节点。");
+		return false;
+	}
+	if (m_Structure->m_Elements.empty())
+	{
+		errorMessage = QStringLiteral("模型没有有效单元。");
+		return false;
+	}
+	if (m_Structure->m_Material.empty())
+	{
+		errorMessage = QStringLiteral("模型缺少材料属性。");
+		return false;
+	}
+	if (m_Structure->m_Section.empty())
+	{
+		errorMessage = QStringLiteral("模型缺少截面属性。");
+		return false;
+	}
+	if (m_Structure->m_Property.empty())
+	{
+		errorMessage = QStringLiteral("模型没有建立有效的材料-截面属性关联。");
+		return false;
+	}
+
+	for (const auto& [nodeId, node] : m_Structure->m_Nodes)
+	{
+		if (!node)
+		{
+			errorMessage = QStringLiteral("节点 %1 为空。").arg(nodeId);
+			return false;
+		}
+		if (!std::isfinite(node->m_X) || !std::isfinite(node->m_Y) || !std::isfinite(node->m_Z))
+		{
+			errorMessage = QStringLiteral("节点 %1 的坐标不是有限数值。").arg(nodeId);
+			return false;
+		}
+	}
+
+	for (const auto& [materialId, material] : m_Structure->m_Material)
+	{
+		if (!material || !std::isfinite(material->m_Young) || material->m_Young <= 0.0)
+		{
+			errorMessage = QStringLiteral("材料 %1 的弹性模量无效。").arg(materialId);
+			return false;
+		}
+		if (!std::isfinite(material->m_Density) || material->m_Density < 0.0)
+		{
+			errorMessage = QStringLiteral("材料 %1 的密度无效。").arg(materialId);
+			return false;
+		}
+	}
+
+	for (const auto& [sectionId, section] : m_Structure->m_Section)
+	{
+		if (!section || !std::isfinite(section->m_Area) || section->m_Area <= 0.0)
+		{
+			errorMessage = QStringLiteral("截面 %1 的面积无效。").arg(sectionId);
+			return false;
+		}
+	}
+
+	for (const auto& [propertyId, property] : m_Structure->m_Property)
+	{
+		if (!property)
+		{
+			errorMessage = QStringLiteral("属性 %1 为空。").arg(propertyId);
+			return false;
+		}
+		const auto material = property->m_pMaterial.lock();
+		const auto section = property->m_pSection.lock();
+		if (!material || !section)
+		{
+			errorMessage = QStringLiteral("属性 %1 未同时关联有效材料和截面。").arg(propertyId);
+			return false;
+		}
+		const auto materialIt = m_Structure->m_Material.find(material->m_Id);
+		const auto sectionIt = m_Structure->m_Section.find(section->m_Id);
+		if (materialIt == m_Structure->m_Material.end() || materialIt->second.get() != material.get() ||
+			sectionIt == m_Structure->m_Section.end() || sectionIt->second.get() != section.get())
+		{
+			errorMessage = QStringLiteral("属性 %1 引用了不属于当前模型的材料或截面。").arg(propertyId);
+			return false;
+		}
+	}
+
+	for (const auto& [elementId, element] : m_Structure->m_Elements)
+	{
+		if (!element || element->m_pNode.isEmpty())
+		{
+			errorMessage = QStringLiteral("单元 %1 为空或没有节点。").arg(elementId);
+			return false;
+		}
+		for (const auto& weakNode : element->m_pNode)
+		{
+			const auto node = weakNode.lock();
+			const auto nodeIt = node ? m_Structure->m_Nodes.find(node->m_Id) : m_Structure->m_Nodes.end();
+			if (!node || nodeIt == m_Structure->m_Nodes.end() || nodeIt->second.get() != node.get())
+			{
+				errorMessage = QStringLiteral("单元 %1 引用了无效节点。").arg(elementId);
+				return false;
+			}
+		}
+		const auto property = element->m_pProperty.lock();
+		const auto propertyIt = property ? m_Structure->m_Property.find(property->m_Id) : m_Structure->m_Property.end();
+		if (!property || propertyIt == m_Structure->m_Property.end() || propertyIt->second.get() != property.get())
+		{
+			errorMessage = QStringLiteral("单元 %1 没有关联有效的材料-截面属性。").arg(elementId);
+			return false;
+		}
+	}
+
+	errorMessage.clear();
+	return true;
 }
 
 
@@ -1174,7 +1307,7 @@ bool Input_Model::InputOutput(QTextStream& flow, const QStringList& list_str)
     {
         QFileInfo hdf5FileInfo(list_str[3].trimmed());
         m_Structure->m_OutputControl.m_Hdf5FileName = hdf5FileInfo.isRelative()
-            ? QDir(QDir::current().filePath("Export/ExportFile")).filePath(list_str[3].trimmed())
+            ? QDir(QDir::current().filePath("Export/ExportH5")).filePath(list_str[3].trimmed())
             : hdf5FileInfo.absoluteFilePath();
     }
 

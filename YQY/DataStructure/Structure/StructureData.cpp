@@ -25,6 +25,219 @@ void StructureData::Clear()
     m_AnalysisStep.clear();
 }
 
+std::shared_ptr<StructureData> StructureData::CloneForAnalysis(QString* errorMessage) const
+{
+    const auto fail = [errorMessage](const QString& message) -> std::shared_ptr<StructureData> {
+        if (errorMessage)
+            *errorMessage = message;
+        qWarning().noquote() << QStringLiteral("计算模型复制失败：") << message;
+        return nullptr;
+    };
+    auto clone = std::make_shared<StructureData>();
+    clone->m_OutputControl = m_OutputControl;
+    clone->m_AeroManager = m_AeroManager;
+
+    for (const auto& [id, source] : m_Nodes)
+    {
+        if (!source)
+            return fail(QStringLiteral("节点 %1 为空").arg(id));
+        auto target = std::make_shared<Node>(*source);
+        clone->m_Nodes.emplace(id, std::move(target));
+    }
+
+    for (const auto& [id, source] : m_Material)
+    {
+        if (!source)
+            return fail(QStringLiteral("材料 %1 为空").arg(id));
+        clone->m_Material.emplace(id, std::make_shared<Material>(*source));
+    }
+
+    for (const auto& [id, source] : m_Section)
+    {
+        if (!source)
+            return fail(QStringLiteral("截面 %1 为空").arg(id));
+        if (const auto circular = std::dynamic_pointer_cast<SectionCircular>(source))
+            clone->m_Section.emplace(id, std::make_shared<SectionCircular>(*circular));
+        else if (const auto rectangle = std::dynamic_pointer_cast<SectionRectangle>(source))
+            clone->m_Section.emplace(id, std::make_shared<SectionRectangle>(*rectangle));
+        else
+            return fail(QStringLiteral("截面 %1 类型不受支持").arg(id));
+    }
+
+    for (const auto& [id, source] : m_Property)
+    {
+        if (!source)
+            return fail(QStringLiteral("属性 %1 为空").arg(id));
+        auto target = std::make_shared<Property>();
+        target->m_Id = source->m_Id;
+        if (const auto material = source->m_pMaterial.lock())
+        {
+            const auto found = clone->m_Material.find(material->m_Id);
+            if (found == clone->m_Material.end())
+                return fail(QStringLiteral("属性 %1 的材料引用无效").arg(id));
+            target->m_pMaterial = found->second;
+        }
+        if (const auto section = source->m_pSection.lock())
+        {
+            const auto found = clone->m_Section.find(section->m_Id);
+            if (found == clone->m_Section.end())
+                return fail(QStringLiteral("属性 %1 的截面引用无效").arg(id));
+            target->m_pSection = found->second;
+        }
+        clone->m_Property.emplace(id, std::move(target));
+    }
+
+    for (const auto& [id, source] : m_Elements)
+    {
+        if (!source)
+            return fail(QStringLiteral("单元 %1 为空").arg(id));
+
+        std::shared_ptr<ElementBase> target;
+        if (std::dynamic_pointer_cast<ElementTruss>(source))
+            target = std::make_shared<ElementTruss>();
+        else if (std::dynamic_pointer_cast<ElementCable>(source))
+            target = std::make_shared<ElementCable>();
+        else if (const auto beam = std::dynamic_pointer_cast<ElementBeam_CR>(source))
+        {
+            auto beamTarget = std::make_shared<ElementBeam_CR>();
+            beamTarget->q0 = beam->q0;
+            beamTarget->R0 = beam->R0;
+            target = std::move(beamTarget);
+        }
+        else
+            return fail(QStringLiteral("单元 %1 类型不受支持").arg(id));
+
+        target->m_Id = source->m_Id;
+        target->L0 = source->L0;
+        target->L = source->L;
+        target->m_InitStress = source->m_InitStress;
+        target->m_Stress = source->m_Stress;
+        target->m_inforce = source->m_inforce;
+        target->m_pNode.clear();
+        for (const auto& sourceNodeRef : source->m_pNode)
+        {
+            const auto sourceNode = sourceNodeRef.lock();
+            if (!sourceNode)
+                return fail(QStringLiteral("单元 %1 的节点引用已失效").arg(id));
+            const auto found = clone->m_Nodes.find(sourceNode->m_Id);
+            if (found == clone->m_Nodes.end())
+                return fail(QStringLiteral("单元 %1 引用了不存在的节点").arg(id));
+            target->m_pNode.push_back(found->second);
+        }
+        if (const auto sourceProperty = source->m_pProperty.lock())
+        {
+            const auto found = clone->m_Property.find(sourceProperty->m_Id);
+            if (found == clone->m_Property.end())
+                return fail(QStringLiteral("单元 %1 的属性引用无效").arg(id));
+            target->m_pProperty = found->second;
+        }
+        clone->m_Elements.emplace(id, std::move(target));
+    }
+
+    for (const auto& [id, source] : m_Constraint)
+    {
+        if (!source)
+            return fail(QStringLiteral("约束 %1 为空").arg(id));
+        auto target = std::make_shared<Constraint>(*source);
+        if (const auto sourceNode = source->m_pNode.lock())
+        {
+            const auto found = clone->m_Nodes.find(sourceNode->m_Id);
+            if (found == clone->m_Nodes.end())
+                return fail(QStringLiteral("约束 %1 的节点引用无效").arg(id));
+            target->m_pNode = found->second;
+        }
+        clone->m_Constraint.emplace(id, std::move(target));
+    }
+
+    const auto copyLoadBase = [](const LoadBase& source, LoadBase& target) {
+        target.m_Id = source.m_Id;
+        target.m_Name = source.m_Name;
+        target.m_LoadType = source.m_LoadType;
+        target.m_Direction = source.m_Direction;
+        target.m_StepId = source.m_StepId;
+        target.m_StartTime = source.m_StartTime;
+        target.m_EndTime = source.m_EndTime;
+        target.m_FunctionType = source.m_FunctionType;
+        target.m_Amplitude = source.m_Amplitude;
+        target.m_Frequency = source.m_Frequency;
+        target.m_Phase = source.m_Phase;
+        target.m_Offset = source.m_Offset;
+        target.m_RampT0 = source.m_RampT0;
+        target.m_RampT1 = source.m_RampT1;
+        target.m_Decay = source.m_Decay;
+        target.m_Period = source.m_Period;
+        target.m_DutyCycle = source.m_DutyCycle;
+    };
+
+    for (const auto& [id, source] : m_Load)
+    {
+        if (!source)
+            return fail(QStringLiteral("荷载 %1 为空").arg(id));
+        std::shared_ptr<LoadBase> target;
+        if (const auto nodeLoad = std::dynamic_pointer_cast<Force_Node>(source))
+        {
+            auto copied = std::make_shared<Force_Node>();
+            copied->m_Value = nodeLoad->m_Value;
+            if (const auto sourceNode = nodeLoad->m_pNode.lock())
+            {
+                const auto found = clone->m_Nodes.find(sourceNode->m_Id);
+                if (found == clone->m_Nodes.end())
+                    return fail(QStringLiteral("节点荷载 %1 的节点引用无效").arg(id));
+                copied->m_pNode = found->second;
+            }
+            target = std::move(copied);
+        }
+        else if (const auto elementLoad = std::dynamic_pointer_cast<Force_Element>(source))
+        {
+            auto copied = std::make_shared<Force_Element>();
+            copied->m_Value = elementLoad->m_Value;
+            if (const auto sourceElement = elementLoad->m_pElement.lock())
+            {
+                const auto found = clone->m_Elements.find(sourceElement->m_Id);
+                if (found == clone->m_Elements.end())
+                    return fail(QStringLiteral("单元荷载 %1 的单元引用无效").arg(id));
+                copied->m_pElement = found->second;
+            }
+            target = std::move(copied);
+        }
+        else if (const auto gravity = std::dynamic_pointer_cast<Force_Gravity>(source))
+        {
+            auto copied = std::make_shared<Force_Gravity>();
+            copied->m_g = gravity->m_g;
+            target = std::move(copied);
+        }
+        else if (const auto wind = std::dynamic_pointer_cast<Force_Wind>(source))
+        {
+            auto copied = std::make_shared<Force_Wind>();
+            copied->m_velocity = wind->m_velocity;
+            copied->m_windDensity = wind->m_windDensity;
+            target = std::move(copied);
+        }
+        else
+            return fail(QStringLiteral("荷载 %1 类型不受支持").arg(id));
+        copyLoadBase(*source, *target);
+        clone->m_Load.emplace(id, std::move(target));
+    }
+
+    for (const auto& [id, source] : m_AnalysisStep)
+    {
+        if (!source)
+            return fail(QStringLiteral("分析步 %1 为空").arg(id));
+        AnalysisStepConfig config;
+        config.id = source->m_Id;
+        config.name = source->m_Name;
+        config.type = source->m_Type;
+        config.totalTime = source->m_Time;
+        config.stepSize = source->m_StepSize;
+        config.tolerance = source->m_Tolerance;
+        config.maxIterations = source->m_MaxIterations;
+        config.dynamicSolverType = source->m_DynamicSolverType;
+        clone->AddAnalysisStep(config);
+    }
+
+    return clone;
+}
+
 std::shared_ptr<Node> StructureData::FindNode(int id)
 {
     auto result = m_Nodes.find(id);
@@ -213,6 +426,8 @@ void StructureData::AddAnalysisStep(const AnalysisStepConfig& config)
 {
     auto pStep = std::make_shared<AnalysisStep>();
     pStep->m_Id = config.id > 0 ? config.id : static_cast<int>(m_AnalysisStep.size()) + 1;
+    pStep->m_Name = config.name.trimmed().isEmpty()
+        ? QStringLiteral("Step-%1").arg(pStep->m_Id) : config.name.trimmed();
     pStep->m_Type = config.type;//分析步类型
     pStep->m_Time = config.totalTime;//总时间
     pStep->m_StepSize = config.stepSize;

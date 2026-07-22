@@ -1,6 +1,7 @@
 #pragma once
 #include "DataStructure/Structure/StructureData.h"
 #include <memory>
+#include <functional>
 
 /**
  * @brief 分析运行器 - 编排模型中的一个或多个分析步
@@ -23,6 +24,14 @@ public:
      */
     bool RunStep(int stepId);
 
+    using ProgressCallback = std::function<void(double, const QString&)>;
+    using CancelCallback = std::function<bool()>;
+    void SetRuntimeCallbacks(ProgressCallback progressCallback, CancelCallback cancelCallback);
+	bool WasCancelled() const { return m_wasCancelled; }
+
 private:
     std::weak_ptr<StructureData> m_pStructure;
+    ProgressCallback m_progressCallback;
+    CancelCallback m_cancelCallback;
+    bool m_wasCancelled = false;
 };

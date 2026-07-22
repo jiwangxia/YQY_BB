@@ -145,6 +145,8 @@ namespace SolverNameSpace
         // 自适应时间步循环
         while (currentTime < duration - time_tolerance)
         {
+            if (model.IsCancellationRequested())
+                return false;
             // 限制步长范围
             dt_try = std::max(m_param.dt_min, std::min(m_param.dt_max, dt_try));
 
@@ -276,6 +278,8 @@ namespace SolverNameSpace
                     // 只提交已经通过误差判据的时间步。
                     model.CommitState();
                     model.OnStepCompleted(currentTime);
+                    model.ReportProgress(std::min(1.0, currentTime / duration),
+                        QStringLiteral("自适应时间步 %1").arg(m_totalSteps));
                 }
             }
         }

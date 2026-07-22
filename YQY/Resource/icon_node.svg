@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" width="64" height="64">
+  <title>Node Sphere</title>
+  <!-- 背景结构：线框模式 -->
+  <path d="M4,4 L32,32" stroke="#003399" stroke-width="2.0" stroke-linecap="round" />
+  <path d="M4,32 L32,4" stroke="#003399" stroke-width="2.0" stroke-linecap="round" />
+  
+  <!-- 核心节点：红色实心球，带白边以从背景中跳脱出来 -->
+  <circle cx="18" cy="18" r="5" fill="#FF0000" stroke="#FFFFFF" stroke-width="1.5" />
+</svg>

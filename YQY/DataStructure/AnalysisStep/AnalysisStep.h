@@ -3,6 +3,7 @@
 #include "Solver/Interface/IAnalysisModel.h"
 #include "Solver/Interface/ISolver.h"
 #include <memory>
+#include <functional>
 #include <Eigen/SparseLU>
 typedef Eigen::SparseMatrix<double> SpMat;
 typedef Eigen::Triplet<double> Tri;
@@ -19,6 +20,7 @@ class Force_Wind;
 struct AnalysisStepConfig
 {
     int id = 0;
+    QString name;
     EnumKeyword::StepType type = EnumKeyword::StepType::UNKNOWN;
     double totalTime = 0.0;
     double stepSize = 0.0;
@@ -35,6 +37,7 @@ struct AnalysisStepConfig
 class AnalysisStep : public Base, public SolverNameSpace::IAnalysisModel
 {
 public:
+    QString m_Name;                 // 用户可读名称；为空时界面回退为 Step-ID
     EnumKeyword::StepType m_Type = EnumKeyword::StepType::UNKNOWN;
     double m_Time = 0.0;           // 总时间
     double m_StepSize = 0.0;       // 每步大小
@@ -79,6 +82,11 @@ public:
      */
     bool Solve();
 
+    using ProgressCallback = std::function<void(double, const QString&)>;
+    using CancelCallback = std::function<bool()>;
+    void SetRuntimeCallbacks(ProgressCallback progressCallback, CancelCallback cancelCallback);
+    void ClearRuntimeCallbacks();
+
     // ============ IAnalysisModel 接口实现 ============
     int  GetFreeDofs() const override { return m_nFree; }
     int  GetFixedDofs() const override { return m_nFixed; }
@@ -92,10 +100,14 @@ public:
     void ComputeResidual(const SolverNameSpace::Vec& F_ext, SolverNameSpace::Vec& R) override;
     void OnStepCompleted(double time) override;
     void CommitState() override;
+    bool IsCancellationRequested() const override;
+    void ReportProgress(double progress, const QString& message = QString()) override;
 
 private:
     std::weak_ptr<StructureData> m_pStructure;  // 结构数据的弱引用
     StructureData* m_pData = nullptr;           // 结构数据的缓存指针
+    ProgressCallback m_progressCallback;
+    CancelCallback m_cancelCallback;
 
     struct SolverCache 
     {

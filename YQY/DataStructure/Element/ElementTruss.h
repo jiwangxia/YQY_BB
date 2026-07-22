@@ -16,7 +16,7 @@ public:
      * @brief 获取单元每个节点的自由度个数
      * @return 3（平移自由度 X, Y, Z）
      */
-    int Get_NodeDOF() const override { return 3; };
+	int Get_NodeDOF() const override { return 3; };
 
     /**
      * @brief 计算单元刚度矩阵

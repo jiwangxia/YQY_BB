@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>YQYClass</class>
+ <widget class="QMainWindow" name="YQYClass">
+  <property name="geometry"><rect><x>0</x><y>0</y><width>1500</width><height>850</height></rect></property>
+  <property name="minimumSize"><size><width>760</width><height>520</height></size></property>
+  <property name="windowTitle"><string>YQY CAE</string></property>
+  <widget class="QWidget" name="centralWidget">
+   <layout class="QVBoxLayout" name="rootLayout">
+    <property name="spacing"><number>0</number></property>
+    <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
+    <item>
+     <widget class="QFrame" name="appHeader">
+      <property name="minimumSize"><size><width>0</width><height>58</height></size></property><property name="maximumSize"><size><width>16777215</width><height>58</height></size></property>
+      <layout class="QHBoxLayout" name="headerLayout">
+       <property name="leftMargin"><number>18</number></property><property name="rightMargin"><number>18</number></property><property name="spacing"><number>12</number></property>
+       <item><widget class="QLabel" name="logoLabel"><property name="minimumSize"><size><width>32</width><height>32</height></size></property><property name="maximumSize"><size><width>32</width><height>32</height></size></property><property name="text"><string>Y</string></property><property name="alignment"><set>Qt::AlignCenter</set></property></widget></item>
+       <item><widget class="QLabel" name="appTitleLabel"><property name="text"><string>YQY CAE</string></property></widget></item>
+       <item><spacer name="headerSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>80</width><height>20</height></size></property></spacer></item>
+       <item><widget class="QLabel" name="themeLabel"><property name="text"><string>主题</string></property></widget></item>
+       <item><widget class="QComboBox" name="themeComboBox"><property name="minimumSize"><size><width>150</width><height>34</height></size></property><item><property name="text"><string>A · 黑色</string></property></item><item><property name="text"><string>B · 紫色</string></property></item><item><property name="text"><string>C · 绿色</string></property></item><item><property name="text"><string>D · 浅色</string></property></item></widget></item>
+      </layout>
+     </widget>
+    </item>
+    <item>
+     <layout class="QHBoxLayout" name="bodyLayout">
+      <property name="spacing"><number>0</number></property><property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
+      <item>
+       <widget class="QFrame" name="navigationRail">
+        <property name="minimumSize"><size><width>84</width><height>0</height></size></property><property name="maximumSize"><size><width>84</width><height>16777215</height></size></property>
+        <layout class="QVBoxLayout" name="navigationLayout"><property name="leftMargin"><number>8</number></property><property name="topMargin"><number>14</number></property><property name="rightMargin"><number>8</number></property><property name="bottomMargin"><number>14</number></property><property name="spacing"><number>8</number></property>
+         <item><widget class="NavigationButton" name="modelButton"><property name="minimumSize"><size><width>66</width><height>58</height></size></property><property name="text"><string>模型</string></property><property name="checkable"><bool>true</bool></property><property name="checked"><bool>true</bool></property><property name="autoExclusive"><bool>true</bool></property></widget></item>
+         <item><widget class="NavigationButton" name="propertyButton"><property name="minimumSize"><size><width>66</width><height>58</height></size></property><property name="text"><string>属性</string></property><property name="checkable"><bool>true</bool></property><property name="autoExclusive"><bool>true</bool></property></widget></item>
+         <item><widget class="NavigationButton" name="conductorButton"><property name="minimumSize"><size><width>66</width><height>58</height></size></property><property name="text"><string>导线</string></property><property name="checkable"><bool>true</bool></property><property name="autoExclusive"><bool>true</bool></property></widget></item>
+         <item><widget class="NavigationButton" name="analysisButton"><property name="minimumSize"><size><width>66</width><height>58</height></size></property><property name="text"><string>分析</string></property><property name="checkable"><bool>true</bool></property><property name="autoExclusive"><bool>true</bool></property></widget></item>
+         <item><widget class="NavigationButton" name="solveButton"><property name="minimumSize"><size><width>66</width><height>58</height></size></property><property name="text"><string>求解</string></property><property name="checkable"><bool>true</bool></property><property name="autoExclusive"><bool>true</bool></property></widget></item>
+         <item><widget class="NavigationButton" name="resultButton"><property name="minimumSize"><size><width>66</width><height>58</height></size></property><property name="text"><string>结果</string></property><property name="checkable"><bool>true</bool></property><property name="autoExclusive"><bool>true</bool></property></widget></item>
+         <item><spacer name="navigationSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint"><size><width>20</width><height>160</height></size></property></spacer></item>
+         <item><widget class="NavigationButton" name="settingsButton"><property name="minimumSize"><size><width>66</width><height>58</height></size></property><property name="text"><string>设置</string></property><property name="checkable"><bool>true</bool></property><property name="autoExclusive"><bool>true</bool></property></widget></item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QSplitter" name="mainSplitter">
+        <property name="orientation"><enum>Qt::Horizontal</enum></property><property name="childrenCollapsible"><bool>false</bool></property>
+        <widget class="QFrame" name="projectPanel">
+         <property name="minimumSize"><size><width>320</width><height>0</height></size></property><property name="maximumSize"><size><width>520</width><height>16777215</height></size></property>
+         <layout class="QVBoxLayout" name="projectLayout"><property name="leftMargin"><number>14</number></property><property name="topMargin"><number>14</number></property><property name="rightMargin"><number>14</number></property><property name="bottomMargin"><number>14</number></property><property name="spacing"><number>10</number></property>
+          <item><widget class="QLabel" name="projectTitleLabel"><property name="text"><string>模型数据</string></property></widget></item>
+          <item>
+           <widget class="QStackedWidget" name="moduleStack">
+            <property name="currentIndex"><number>0</number></property>
+            <widget class="QWidget" name="modelModulePage">
+             <layout class="QVBoxLayout" name="modelModuleLayout"><property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property><property name="spacing"><number>10</number></property>
+              <item><widget class="QLabel" name="modelModuleHint"><property name="text"><string>模型数据与显示控制</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+              <item><widget class="QFrame" name="modelSummaryCard"><layout class="QVBoxLayout" name="modelSummaryLayout"><property name="leftMargin"><number>12</number></property><property name="topMargin"><number>12</number></property><property name="rightMargin"><number>12</number></property><property name="bottomMargin"><number>12</number></property><property name="spacing"><number>8</number></property><item><widget class="QLabel" name="modelFileValue"><property name="text"><string>尚未加载模型</string></property><property name="wordWrap"><bool>true</bool></property></widget></item><item><widget class="QLabel" name="modelNodeValue"><property name="text"><string>节点 --</string></property></widget></item><item><widget class="QLabel" name="modelElementValue"><property name="text"><string>单元 --</string></property></widget></item><item><widget class="QLabel" name="modelPropertyValue"><property name="text"><string>材料 -- · 截面 --</string></property></widget></item></layout></widget></item>
+              <item><widget class="QTreeWidget" name="modelDataTree"><property name="headerHidden"><bool>true</bool></property><property name="indentation"><number>18</number></property><property name="animated"><bool>true</bool></property><column><property name="text"><string notr="true">1</string></property></column></widget></item>
+              <item><widget class="QPushButton" name="modelImportButton"><property name="text"><string>导入模型</string></property></widget></item>
+              <item><widget class="QPushButton" name="modelFitButton"><property name="text"><string>适应窗口</string></property></widget></item>
+              <item><spacer name="modelModuleSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint"><size><width>20</width><height>80</height></size></property></spacer></item>
+             </layout>
+            </widget>
+            <widget class="QWidget" name="analysisModulePage">
+             <layout class="QVBoxLayout" name="analysisModuleLayout"><property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property><property name="spacing"><number>10</number></property>
+              <item><widget class="QLabel" name="analysisModuleHint"><property name="text"><string>分析步、载荷与边界条件</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+              <item><widget class="QTreeWidget" name="analysisTree"><property name="headerHidden"><bool>true</bool></property><property name="animated"><bool>true</bool></property><column><property name="text"><string notr="true">1</string></property></column></widget></item>
+             </layout>
+            </widget>
+            <widget class="QWidget" name="solveModulePage">
+             <layout class="QVBoxLayout" name="solveModuleLayout"><property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property><property name="spacing"><number>10</number></property>
+              <item><widget class="QLabel" name="solveReadinessLabel"><property name="text"><string>请先加载包含分析步的模型</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+              <item><layout class="QHBoxLayout" name="solveBatchActionsLayout"><property name="spacing"><number>6</number></property><item><widget class="QPushButton" name="solveCasesButton"><property name="text"><string>全部分析步 · 0</string></property><property name="minimumSize"><size><width>0</width><height>54</height></size></property></widget></item><item><widget class="QPushButton" name="solveAllCasesButton"><property name="text"><string>全部计算 · 0</string></property><property name="minimumSize"><size><width>0</width><height>54</height></size></property><property name="enabled"><bool>false</bool></property></widget></item><item><widget class="QPushButton" name="solveRestartAllCasesButton"><property name="text"><string>重新计算 · 0</string></property><property name="minimumSize"><size><width>0</width><height>54</height></size></property><property name="enabled"><bool>false</bool></property></widget></item></layout></item>
+              <item><widget class="QTreeWidget" name="solveStepTree"><property name="headerHidden"><bool>true</bool></property><property name="animated"><bool>true</bool></property><column><property name="text"><string notr="true">1</string></property></column></widget></item>
+              <item><widget class="QPushButton" name="solvePageStartButton"><property name="text"><string>运行全部分析步</string></property><property name="enabled"><bool>false</bool></property></widget></item>
+              <item><spacer name="solveModuleSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint"><size><width>20</width><height>80</height></size></property></spacer></item>
+             </layout>
+            </widget>
+            <widget class="QWidget" name="resultModulePage">
+             <layout class="QVBoxLayout" name="resultModuleLayout"><property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property><property name="spacing"><number>10</number></property>
+              <item><widget class="QLabel" name="resultModuleHint"><property name="text"><string>H5 多帧结果后处理</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+              <item><widget class="QPushButton" name="openH5Button"><property name="text"><string>打开 H5 结果文件</string></property></widget></item>
+              <item><widget class="QLabel" name="resultFileLabel"><property name="text"><string>尚未打开结果文件</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+              <item><widget class="QTreeWidget" name="resultTree"><property name="headerHidden"><bool>true</bool></property><property name="animated"><bool>true</bool></property><column><property name="text"><string notr="true">1</string></property></column></widget></item>
+             </layout>
+            </widget>
+            <widget class="QWidget" name="settingsModulePage">
+             <layout class="QVBoxLayout" name="settingsModuleLayout"><property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property><property name="spacing"><number>10</number></property>
+              <item><widget class="QLabel" name="settingsModuleHint"><property name="text"><string>界面设置保存在本机，主题可在窗口顶部切换。</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+              <item><spacer name="settingsModuleSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint"><size><width>20</width><height>80</height></size></property></spacer></item>
+             </layout>
+            </widget>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+        <widget class="QFrame" name="workspacePanel">
+         <property name="minimumSize"><size><width>560</width><height>0</height></size></property>
+         <layout class="QVBoxLayout" name="workspaceLayout"><property name="leftMargin"><number>12</number></property><property name="topMargin"><number>10</number></property><property name="rightMargin"><number>12</number></property><property name="bottomMargin"><number>10</number></property><property name="spacing"><number>10</number></property>
+          <item><widget class="QTabBar" name="documentTabBar"><property name="currentIndex"><number>-1</number></property><property name="tabsClosable"><bool>true</bool></property><property name="movable"><bool>true</bool></property><property name="drawBase"><bool>false</bool></property><property name="expanding"><bool>false</bool></property></widget></item>
+          <item><widget class="QScrollArea" name="toolbarScrollArea"><property name="frameShape"><enum>QFrame::NoFrame</enum></property><property name="widgetResizable"><bool>true</bool></property><property name="horizontalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property><property name="verticalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property><property name="alignment"><set>Qt::AlignLeft|Qt::AlignTop</set></property><widget class="QFrame" name="toolBarCard"><layout class="QHBoxLayout" name="toolBarLayout"><property name="leftMargin"><number>8</number></property><property name="topMargin"><number>6</number></property><property name="rightMargin"><number>8</number></property><property name="bottomMargin"><number>6</number></property><property name="spacing"><number>5</number></property><item><widget class="QPushButton" name="importButton"><property name="text"><string/></property></widget></item><item><widget class="QPushButton" name="undoButton"><property name="text"><string/></property></widget></item><item><widget class="QToolButton" name="selectModeButton"><property name="text"><string/></property><property name="checkable"><bool>true</bool></property><property name="checked"><bool>true</bool></property></widget></item><item><widget class="QToolButton" name="rotateModeButton"><property name="text"><string/></property><property name="checkable"><bool>true</bool></property></widget></item><item><widget class="QToolButton" name="panModeButton"><property name="text"><string/></property><property name="checkable"><bool>true</bool></property></widget></item><item><widget class="QToolButton" name="zoomModeButton"><property name="text"><string/></property><property name="checkable"><bool>true</bool></property></widget></item><item><widget class="QToolButton" name="showNodesButton"><property name="text"><string/></property><property name="checkable"><bool>true</bool></property><property name="checked"><bool>true</bool></property></widget></item><item><widget class="QToolButton" name="showElementsButton"><property name="text"><string/></property><property name="checkable"><bool>true</bool></property><property name="checked"><bool>true</bool></property></widget></item><item><widget class="QToolButton" name="showSolidButton"><property name="text"><string/></property><property name="checkable"><bool>true</bool></property></widget></item><item><widget class="QToolButton" name="showNodeIdsButton"><property name="text"><string/></property><property name="checkable"><bool>true</bool></property></widget></item><item><widget class="QToolButton" name="showElementIdsButton"><property name="text"><string/></property><property name="checkable"><bool>true</bool></property></widget></item><item><widget class="QToolButton" name="frontViewButton"><property name="text"><string/></property><property name="toolTip"><string>前视图</string></property></widget></item><item><widget class="QToolButton" name="backViewButton"><property name="text"><string/></property><property name="toolTip"><string>后视图</string></property></widget></item><item><widget class="QToolButton" name="leftViewButton"><property name="text"><string/></property><property name="toolTip"><string>左视图</string></property></widget></item><item><widget class="QToolButton" name="rightViewButton"><property name="text"><string/></property><property name="toolTip"><string>右视图</string></property></widget></item><item><widget class="QToolButton" name="topViewButton"><property name="text"><string/></property><property name="toolTip"><string>顶视图</string></property></widget></item><item><widget class="QToolButton" name="bottomViewButton"><property name="text"><string/></property><property name="toolTip"><string>底视图</string></property></widget></item><item><widget class="QToolButton" name="fitViewButton"><property name="text"><string/></property><property name="toolTip"><string>适应窗口</string></property></widget></item><item><spacer name="toolBarSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>20</width><height>20</height></size></property></spacer></item><item><widget class="QPushButton" name="startSolveButton"><property name="text"><string/></property></widget></item></layout></widget></widget></item>
+          <item><widget class="QSplitter" name="workspaceVerticalSplitter"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="childrenCollapsible"><bool>false</bool></property>
+           <widget class="ModelViewport" name="modelViewport"><property name="minimumSize"><size><width>280</width><height>160</height></size></property></widget>
+           <widget class="QTabWidget" name="monitorTabs"><property name="minimumSize"><size><width>0</width><height>100</height></size></property><property name="currentIndex"><number>0</number></property>
+            <widget class="QWidget" name="monitorPage"><attribute name="title"><string>求解监视器</string></attribute><layout class="QVBoxLayout" name="monitorLayout"><property name="leftMargin"><number>12</number></property><property name="topMargin"><number>8</number></property><property name="rightMargin"><number>12</number></property><property name="bottomMargin"><number>8</number></property><item><widget class="QLabel" name="incrementLabel"><property name="text"><string>尚未开始求解</string></property></widget></item><item><widget class="QProgressBar" name="solveProgress"><property name="value"><number>0</number></property><property name="textVisible"><bool>true</bool></property></widget></item><item><layout class="QHBoxLayout" name="monitorStatusLayout"><item><widget class="QLabel" name="convergenceLabel"><property name="text"><string>加载模型并配置分析步后可开始求解</string></property></widget></item><item><spacer name="monitorSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>40</width><height>20</height></size></property></spacer></item><item><widget class="QPushButton" name="stopButton"><property name="text"><string>停止</string></property></widget></item></layout></item></layout></widget>
+            <widget class="QWidget" name="logPage"><attribute name="title"><string>日志</string></attribute><layout class="QVBoxLayout" name="logLayout"><item><widget class="QPlainTextEdit" name="logEdit"><property name="readOnly"><bool>true</bool></property></widget></item></layout></widget>
+           </widget>
+          </widget></item>
+         </layout>
+        </widget>
+       </widget>
+      </item>
+     </layout>
+    </item>
+    <item><widget class="QFrame" name="statusFrame"><property name="minimumSize"><size><width>0</width><height>32</height></size></property><property name="maximumSize"><size><width>16777215</width><height>32</height></size></property><layout class="QHBoxLayout" name="statusLayout"><property name="leftMargin"><number>16</number></property><property name="rightMargin"><number>16</number></property><property name="spacing"><number>10</number></property><item><widget class="QLabel" name="loadStatisticsLabel"><property name="text"><string>模型读取  总计 0  ·  成功 0  ·  失败 0</string></property></widget></item><item><spacer name="statusSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>80</width><height>20</height></size></property></spacer></item><item><widget class="QLabel" name="readyLabel"><property name="text"><string>等待导入模型</string></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set></property></widget></item></layout></widget></item>
+   </layout>
+  </widget>
+ </widget>
+ <customwidgets><customwidget><class>ModelViewport</class><extends>QWidget</extends><header>Widgets/ModelViewport.h</header><container>1</container></customwidget><customwidget><class>NavigationButton</class><extends>QPushButton</extends><header>Widgets/NavigationButton.h</header></customwidget></customwidgets>
+ <resources><include location="../../Resource/YQY.qrc"/></resources>
+ <connections/>
+</ui>

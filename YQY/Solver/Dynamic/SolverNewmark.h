@@ -38,13 +38,13 @@ namespace SolverNameSpace
 
         // ============ ISolver 接口实现 ============
         bool Solve(IAnalysisModel& model, double duration) override;
-        const char* GetName() const override { return "Newmark-beta"; }
-        SolverType GetType() const override { return SolverType::Newmark; }
-        void SetStepCallback(StepCallback callback) override { m_callback = std::move(callback); }
+	const char* GetName() const override { return "Newmark-beta"; }
+	SolverType GetType() const override { return SolverType::Newmark; }
+	void SetStepCallback(StepCallback callback) override { m_callback = std::move(callback); }
 
         // ============ 参数访问 ============
-        Params& GetParams() { return m_param; }
-        const Params& GetParams() const { return m_param; }
+	Params& GetParams() { return m_param; }
+	const Params& GetParams() const { return m_param; }
 
     private:
         Params m_param;

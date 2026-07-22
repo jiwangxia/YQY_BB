@@ -29,10 +29,13 @@ public:
 	 * @return 读取成功返回 true
 	 */
 	bool InputData(const QString& FileName, std::shared_ptr<StructureData> pStructure);
+	QString LastError() const { return m_LastError; }
 
 private:
 	std::shared_ptr<StructureData> m_Structure;  ///< 结构数据指针
 	QString m_InputFileDir;                      ///< 输入文件所在目录
+	QString m_LastError;
+	bool ValidateStructure(QString& errorMessage) const;
 
 	/**
 	 * @brief 读取节点数据

@@ -26,20 +26,92 @@
     <QtRcc Include="Resource\YQY.qrc">
       <Filter>Resource Files</Filter>
     </QtRcc>
-    <QtUic Include="GUI\YQY.ui">
+    <QtUic Include="GUI\Ui\YQY.ui">
       <Filter>Form Files</Filter>
     </QtUic>
+    <QtUic Include="GUI\Ui\SettingsPanel.ui">
+      <Filter>Form Files</Filter>
+    </QtUic>
+    <QtUic Include="GUI\Ui\ResultControlPanel.ui"><Filter>Form Files</Filter></QtUic>
+    <QtUic Include="GUI\Ui\AnalysisSummaryPanel.ui"><Filter>Form Files</Filter></QtUic>
+    <QtUic Include="GUI\Ui\SolveTaskManagerDialog.ui"><Filter>Form Files</Filter></QtUic>
+    <QtUic Include="GUI\Ui\PropertyModule.ui"><Filter>Form Files</Filter></QtUic>
+    <QtUic Include="GUI\Ui\ConductorModule.ui"><Filter>Form Files</Filter></QtUic>
+    <QtUic Include="GUI\Ui\AnalysisManagerDialog.ui"><Filter>Form Files</Filter></QtUic>
+    <QtUic Include="GUI\Ui\StepEditorDialog.ui"><Filter>Form Files</Filter></QtUic>
+    <QtUic Include="GUI\Ui\LoadEditorDialog.ui"><Filter>Form Files</Filter></QtUic>
+    <QtUic Include="GUI\Ui\ConstraintEditorDialog.ui"><Filter>Form Files</Filter></QtUic>
+    <QtUic Include="GUI\Ui\PropertyItemEditorDialog.ui"><Filter>Form Files</Filter></QtUic>
+    <QtUic Include="GUI\Ui\PropertyLibraryDialog.ui"><Filter>Form Files</Filter></QtUic>
+    <QtUic Include="GUI\Ui\NodeResultExportDialog.ui"><Filter>Form Files</Filter></QtUic>
     <QtMoc Include="GUI\YQY.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="GUI\Controllers\ModelController.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="GUI\Controllers\SolveTaskController.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="GUI\Widgets\ModelViewport.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="GUI\Widgets\NavigationButton.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="GUI\Widgets\SettingsPanel.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="GUI\Widgets\ResultControlPanel.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="GUI\Widgets\AnalysisSummaryPanel.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="GUI\Widgets\PropertyModule.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="GUI\Widgets\ConductorModule.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="GUI\Widgets\CompactDoubleSpinBox.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="GUI\Dialogs\AnalysisManagerDialog.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="GUI\Dialogs\SolveTaskManagerDialog.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="GUI\Dialogs\PropertyItemEditorDialog.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="GUI\Dialogs\PropertyLibraryDialog.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="GUI\Dialogs\NodeResultExportDialog.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="GUI\Dialogs\ModelImportFileDialog.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="Application\ApplicationBootstrap.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="Application\VerificationRunner.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="Application\UiAuditRunner.h"><Filter>Header Files</Filter></ClInclude>
     <ClCompile Include="Utility\pch.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="GUI\YQY.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="GUI\Controllers\ModelController.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GUI\Controllers\SolveTaskController.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GUI\Widgets\ModelViewport.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GUI\Widgets\SettingsPanel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GUI\Widgets\ResultControlPanel.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="GUI\Widgets\AnalysisSummaryPanel.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="GUI\Widgets\PropertyModule.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="GUI\Widgets\ConductorModule.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="Application\ApplicationBootstrap.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="Application\VerificationRunner.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="Application\UiAuditRunner.cpp"><Filter>Source Files</Filter></ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="GUI\Dialogs\AnalysisManagerDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GUI\Dialogs\SolveTaskManagerDialog.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="GUI\Dialogs\PropertyItemEditorDialog.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="GUI\Dialogs\PropertyLibraryDialog.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="GUI\Dialogs\ModelImportFileDialog.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -118,6 +190,9 @@
     <ClCompile Include="Conductor\ConductorModelBuilder.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Conductor\PropertyLibrary.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="Solver\Dynamic\SolverNewmark.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -154,6 +229,17 @@
     <ClCompile Include="Solver\Dynamic\SolverAdaptiveTSSBN.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="app_icon.rc">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
+    <None Include="Resource\app_icon.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="Resource\app_icon_source.png">
+      <Filter>Resource Files</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Base\Base.h">
@@ -232,6 +318,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Conductor\ConductorModelBuilder.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Conductor\PropertyLibrary.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Solver\Dynamic\SolverNewmark.h">

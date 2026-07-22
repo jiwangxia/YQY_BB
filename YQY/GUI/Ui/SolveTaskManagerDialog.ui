@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>SolveTaskManagerDialogClass</class>
+ <widget class="QDialog" name="SolveTaskManagerDialogClass">
+  <property name="windowTitle"><string>全部分析步求解</string></property>
+  <property name="minimumSize"><size><width>720</width><height>380</height></size></property>
+  <layout class="QVBoxLayout" name="rootLayout">
+   <property name="leftMargin"><number>16</number></property><property name="topMargin"><number>16</number></property><property name="rightMargin"><number>16</number></property><property name="bottomMargin"><number>12</number></property><property name="spacing"><number>12</number></property>
+   <item><layout class="QHBoxLayout" name="summaryLayout">
+    <item><widget class="QLabel" name="hintLabel"><property name="text"><string>全部分析步算例，可在此直接运行、停止并查看完整进度。</string></property></widget></item>
+    <item><spacer name="summarySpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>40</width><height>20</height></size></property></spacer></item>
+    <item><widget class="QPushButton" name="solveAllButton"><property name="text"><string>全部计算</string></property><property name="minimumSize"><size><width>132</width><height>0</height></size></property><property name="toolTip"><string>将所有待运行分析步加入队列；正在计算、已排队和已有结果的算例不会重复计算；单个分析步失败不会停止其他队列任务</string></property></widget></item>
+    <item><widget class="QPushButton" name="restartAllButton"><property name="text"><string>重新计算</string></property><property name="minimumSize"><size><width>132</width><height>0</height></size></property><property name="toolTip"><string>重新计算所有分析步；正在排队或计算的任务会先安全停止，再从头加入计算队列</string></property></widget></item>
+   </layout></item>
+   <item><widget class="QTableWidget" name="taskTable"><property name="columnCount"><number>6</number></property><property name="selectionBehavior"><enum>QAbstractItemView::SelectRows</enum></property><property name="selectionMode"><enum>QAbstractItemView::SingleSelection</enum></property><property name="editTriggers"><set>QAbstractItemView::NoEditTriggers</set></property><property name="alternatingRowColors"><bool>true</bool></property><column><property name="text"><string>操作</string></property></column><column><property name="text"><string>算例名称</string></property></column><column><property name="text"><string>分析步</string></property></column><column><property name="text"><string>进度</string></property></column><column><property name="text"><string>结果</string></property></column><column><property name="text"><string>耗时</string></property></column></widget></item>
+   <item><widget class="QDialogButtonBox" name="buttonBox"><property name="standardButtons"><set>QDialogButtonBox::Close</set></property></widget></item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections><connection><sender>buttonBox</sender><signal>rejected()</signal><receiver>SolveTaskManagerDialogClass</receiver><slot>close()</slot><hints><hint type="sourcelabel"><x>20</x><y>20</y></hint><hint type="destinationlabel"><x>20</x><y>20</y></hint></hints></connection></connections>
+</ui>

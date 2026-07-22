@@ -24,7 +24,7 @@ public:
      * @brief 获取截面面积
      * @return 截面面积值
      */
-    double Get_AreaValue() const { return m_Area; };
+	double Get_AreaValue() const { return m_Area; };
     virtual void Calculate_I(double& Iy, double& Iz,double& J) = 0;
 };
 

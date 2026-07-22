@@ -1,4 +1,31 @@
 <RCC>
-    <qresource prefix="YQY">
+    <qresource prefix="/YQY">
+        <file alias="app_icon.ico">app_icon.ico</file>
+        <file alias="icon_importline.svg">icon_importline.svg</file>
+        <file alias="icon_replay.svg">icon_replay.svg</file>
+        <file alias="icon_cursor.svg">icon_cursor.svg</file>
+        <file alias="icon_rotate.svg">icon_rotate.svg</file>
+        <file alias="icon_pan.svg">icon_pan.svg</file>
+        <file alias="icon_zoom.svg">icon_zoom.svg</file>
+        <file alias="icon_node.svg">icon_node.svg</file>
+        <file alias="icon_element.svg">icon_element.svg</file>
+        <file alias="icon_solid.svg">icon_solid.svg</file>
+        <file alias="icon_node_id.svg">icon_node_id.svg</file>
+        <file alias="icon_element_id.svg">icon_element_id.svg</file>
+        <file alias="icon_front.svg">icon_front.svg</file>
+        <file alias="icon_back.svg">icon_back.svg</file>
+        <file alias="icon_left.svg">icon_left.svg</file>
+        <file alias="icon_right.svg">icon_right.svg</file>
+        <file alias="icon_upper.svg">icon_upper.svg</file>
+        <file alias="icon_under.svg">icon_under.svg</file>
+        <file alias="icon_scale.svg">icon_scale.svg</file>
+        <file alias="icon_solve.svg">icon_solve.svg</file>
+        <file alias="icon_chevron_down.svg">icon_chevron_down.svg</file>
+        <file alias="icon_chevron_up.svg">icon_chevron_up.svg</file>
+        <file alias="icon_check.svg">icon_check.svg</file>
+        <file alias="icon_check_small.svg">icon_check_small.svg</file>
+        <file alias="icon_close.svg">icon_close.svg</file>
+        <file alias="data/materials.csv">Data/materials.csv</file>
+        <file alias="data/sections.csv">Data/sections.csv</file>
     </qresource>
 </RCC>

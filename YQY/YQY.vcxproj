@@ -37,12 +37,12 @@
   </ImportGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="QtSettings">
     <QtInstall>6.8.2_msvc2022_64</QtInstall>
-    <QtModules>core;gui;widgets</QtModules>
+      <QtModules>core;gui;widgets;opengl;openglwidgets;concurrent</QtModules>
     <QtBuildConfig>debug</QtBuildConfig>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="QtSettings">
     <QtInstall>6.8.2_msvc2022_64</QtInstall>
-    <QtModules>core;gui;widgets</QtModules>
+      <QtModules>core;gui;widgets;opengl;openglwidgets;concurrent</QtModules>
     <QtBuildConfig>release</QtBuildConfig>
   </PropertyGroup>
   <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\qt.targets') or !Exists('$(QtMsBuild)\qt.props')">
@@ -106,6 +106,10 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <Text Include="Import\ImportFile\MaterialProperty.bdf" />
+    <ResourceCompile Include="app_icon.rc" />
+  </ItemGroup>
+  <ItemGroup>
     <ClCompile Include="Utility\pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">Create</PrecompiledHeader>
@@ -116,6 +120,7 @@
     </ClCompile>
     <ClCompile Include="Conductor\Conductor.cpp" />
     <ClCompile Include="Conductor\ConductorModelBuilder.cpp" />
+    <ClCompile Include="Conductor\PropertyLibrary.cpp" />
     <ClCompile Include="DataStructure\Section\SectionRectangle.cpp" />
     <ClCompile Include="Solver\Dynamic\TimeIntegrationSolver.cpp" />
     <ClCompile Include="Solver\Dynamic\SolverAdaptiveTSSBN.cpp" />
@@ -147,12 +152,60 @@
     <ClCompile Include="Utility\EnumKeyword.cpp" />
     <ClCompile Include="DataStructure\Section\SectionBase.cpp" />
     <QtRcc Include="Resource\YQY.qrc" />
-    <QtUic Include="GUI\YQY.ui" />
+    <QtUic Include="GUI\Ui\YQY.ui" />
+    <QtUic Include="GUI\Ui\SettingsPanel.ui" />
+    <QtUic Include="GUI\Ui\ResultControlPanel.ui" />
+    <QtUic Include="GUI\Ui\AnalysisSummaryPanel.ui" />
+    <QtUic Include="GUI\Ui\SolveTaskManagerDialog.ui" />
+    <QtUic Include="GUI\Ui\PropertyModule.ui" />
+    <QtUic Include="GUI\Ui\ConductorModule.ui" />
+    <QtUic Include="GUI\Ui\AnalysisManagerDialog.ui" />
+    <QtUic Include="GUI\Ui\StepEditorDialog.ui" />
+    <QtUic Include="GUI\Ui\LoadEditorDialog.ui" />
+    <QtUic Include="GUI\Ui\ConstraintEditorDialog.ui" />
+    <QtUic Include="GUI\Ui\PropertyItemEditorDialog.ui" />
+    <QtUic Include="GUI\Ui\PropertyLibraryDialog.ui" />
+    <QtUic Include="GUI\Ui\NodeResultExportDialog.ui" />
     <QtMoc Include="GUI\YQY.h" />
+    <QtMoc Include="GUI\Controllers\ModelController.h" />
+    <QtMoc Include="GUI\Controllers\SolveTaskController.h" />
+    <QtMoc Include="GUI\Widgets\ModelViewport.h" />
+    <ClInclude Include="GUI\Widgets\NavigationButton.h" />
+    <ClInclude Include="GUI\Widgets\SettingsPanel.h" />
+    <ClInclude Include="GUI\Widgets\ResultControlPanel.h" />
+    <ClInclude Include="GUI\Widgets\AnalysisSummaryPanel.h" />
+    <ClInclude Include="GUI\Widgets\PropertyModule.h" />
+    <ClInclude Include="GUI\Widgets\ConductorModule.h" />
+    <ClInclude Include="GUI\Widgets\CompactDoubleSpinBox.h" />
+    <ClInclude Include="GUI\Dialogs\AnalysisManagerDialog.h" />
+    <ClInclude Include="GUI\Dialogs\SolveTaskManagerDialog.h" />
+    <ClInclude Include="GUI\Dialogs\PropertyItemEditorDialog.h" />
+    <ClInclude Include="GUI\Dialogs\PropertyLibraryDialog.h" />
+    <ClInclude Include="GUI\Dialogs\NodeResultExportDialog.h" />
+    <ClInclude Include="GUI\Dialogs\ModelImportFileDialog.h" />
+    <ClInclude Include="Application\ApplicationBootstrap.h" />
+    <ClInclude Include="Application\VerificationRunner.h" />
+    <ClInclude Include="Application\UiAuditRunner.h" />
     <ClCompile Include="Base\Base.cpp" />
     <ClCompile Include="DataStructure\Element\ElementBase.cpp" />
     <ClCompile Include="DataStructure\Element\ElementTruss.cpp" />
     <ClCompile Include="GUI\YQY.cpp" />
+    <ClCompile Include="GUI\Dialogs\AnalysisManagerDialog.cpp" />
+    <ClCompile Include="GUI\Dialogs\SolveTaskManagerDialog.cpp" />
+    <ClCompile Include="GUI\Dialogs\PropertyItemEditorDialog.cpp" />
+    <ClCompile Include="GUI\Dialogs\PropertyLibraryDialog.cpp" />
+    <ClCompile Include="GUI\Dialogs\ModelImportFileDialog.cpp" />
+    <ClCompile Include="GUI\Controllers\ModelController.cpp" />
+    <ClCompile Include="GUI\Controllers\SolveTaskController.cpp" />
+    <ClCompile Include="GUI\Widgets\ModelViewport.cpp" />
+    <ClCompile Include="GUI\Widgets\SettingsPanel.cpp" />
+    <ClCompile Include="GUI\Widgets\ResultControlPanel.cpp" />
+    <ClCompile Include="GUI\Widgets\AnalysisSummaryPanel.cpp" />
+    <ClCompile Include="GUI\Widgets\PropertyModule.cpp" />
+    <ClCompile Include="GUI\Widgets\ConductorModule.cpp" />
+    <ClCompile Include="Application\ApplicationBootstrap.cpp" />
+    <ClCompile Include="Application\VerificationRunner.cpp" />
+    <ClCompile Include="Application\UiAuditRunner.cpp" />
     <ClCompile Include="Export\Hdf5ResultIO.cpp" />
     <ClCompile Include="Export\Outputter.cpp" />
     <ClCompile Include="main.cpp" />
@@ -160,6 +213,7 @@
   <ItemGroup>
     <ClInclude Include="Conductor\Conductor.h" />
     <ClInclude Include="Conductor\ConductorModelBuilder.h" />
+    <ClInclude Include="Conductor\PropertyLibrary.h" />
     <ClInclude Include="DataStructure\Section\SectionRectangle.h" />
     <ClInclude Include="Solver\Dynamic\TimeIntegrationSolver.h" />
     <ClInclude Include="Solver\Dynamic\SolverAdaptiveTSSBN.h" />
@@ -212,6 +266,8 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Import\FileFormat.md" />
+    <None Include="Resource\app_icon.ico" />
+    <None Include="Resource\app_icon_source.png" />
     <None Include="Import\ImportFile\45梁.bdf" />
     <None Include="Import\ImportFile\两维梁.bdf" />
     <None Include="Import\ImportFile\斜杆一端受压.bdf" />

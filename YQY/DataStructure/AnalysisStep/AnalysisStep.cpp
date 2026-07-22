@@ -1,4 +1,5 @@
 #include "AnalysisStep.h"
+#include <algorithm>
 #include "DataStructure/Structure/StructureData.h"
 #include "DataStructure/Element/ElementBase.h"
 #include "Solver/Interface/ISolver.h"
@@ -67,6 +68,7 @@ void AnalysisStep::Init_DOF()
     for (auto& constraints : m_pData->m_Constraint)
     {
         auto pConstrain = constraints.second;
+        if (!pConstrain || (pConstrain->m_StepId > 0 && pConstrain->m_StepId > m_Id)) continue;
         auto pNode = pConstrain->m_pNode.lock();
         if (!pNode) continue;
 
@@ -512,6 +514,7 @@ void AnalysisStep::Assemble_Constraint(
     for (auto& constraintPair : m_pData->m_Constraint)
     {
         auto pConstraint = constraintPair.second;
+        if (!pConstraint || (pConstraint->m_StepId > 0 && pConstraint->m_StepId > m_Id)) continue;
         auto pNode = pConstraint->m_pNode.lock();
         if (!pNode) continue;
 
@@ -551,6 +554,7 @@ bool AnalysisStep::Solve()
 
     const bool outputHdf5 = m_pData->m_OutputControl.m_EnableHdf5;
     const bool dynamicAnalysis = (m_Type == EnumKeyword::StepType::DYNAMIC);
+    m_pData->GetOutputter().SetResultContext(m_Id, static_cast<int>(m_Type));
     m_pData->GetOutputter().SetKeepFramesInMemory(!dynamicAnalysis);
 
     if (dynamicAnalysis && outputHdf5)
@@ -575,14 +579,21 @@ bool AnalysisStep::Solve()
 
     if (dynamicAnalysis && outputHdf5)
     {
-        m_pData->GetOutputter().EndHdf5ResultStream();
+        m_pData->GetOutputter().EndHdf5ResultStream(solveOk);
     }
-    else if (!dynamicAnalysis && outputHdf5 && solveOk)
+    else if (!dynamicAnalysis && outputHdf5
+        && m_pData->GetOutputter().GetFrameCount() > 0)
     {
         m_pData->GetOutputter().SaveHdf5File(
             m_pData->m_OutputControl.m_Hdf5FileName,
             m_pData,
-            m_pData->m_OutputControl.m_SourceModelName);
+            m_pData->m_OutputControl.m_SourceModelName,
+            solveOk);
+        if (!solveOk)
+        {
+            qDebug().noquote() << QStringLiteral("静力求解未完成，已保存此前收敛的 %1 帧部分结果")
+                .arg(m_pData->GetOutputter().GetFrameCount());
+        }
     }
     else if (!solveOk)
     {
@@ -590,6 +601,29 @@ bool AnalysisStep::Solve()
     }
 
     return solveOk;
+}
+
+void AnalysisStep::SetRuntimeCallbacks(ProgressCallback progressCallback, CancelCallback cancelCallback)
+{
+    m_progressCallback = std::move(progressCallback);
+    m_cancelCallback = std::move(cancelCallback);
+}
+
+void AnalysisStep::ClearRuntimeCallbacks()
+{
+    m_progressCallback = {};
+    m_cancelCallback = {};
+}
+
+bool AnalysisStep::IsCancellationRequested() const
+{
+    return m_cancelCallback && m_cancelCallback();
+}
+
+void AnalysisStep::ReportProgress(double progress, const QString& message)
+{
+    if (m_progressCallback)
+        m_progressCallback(std::clamp(progress, 0.0, 1.0), message);
 }
 
 // ==========================================

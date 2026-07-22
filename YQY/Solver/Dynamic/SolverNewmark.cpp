@@ -7,7 +7,6 @@
 #include <QDebug>
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
 #include <limits>
 #include <stdexcept>
 
@@ -64,28 +63,16 @@ namespace SolverNameSpace
         qDebug().noquote() << QStringLiteral("总时间步数: %1, 标准时间步长: %2 s, 总时间: %3 s")
             .arg(numSteps).arg(m_param.dt).arg(duration);
 
-        const int barWidth = 50;
         double time = 0.0;
         for (int step = 1; step <= numSteps; ++step)
         {
+            if (model.IsCancellationRequested())
+                return false;
             const double dt = std::min(m_param.dt, duration - time);
             if (dt <= 0.0) break;
 
             ComputeCoeffs(dt);
             const double currentTime = time + dt;
-            const double progress = currentTime / duration;
-
-            const int pos = static_cast<int>(barWidth * progress);
-            std::printf("\rProgress: [");
-            for (int i = 0; i < barWidth; ++i)
-            {
-                if (i < pos) std::printf("=");
-                else if (i == pos) std::printf(">");
-                else std::printf(" ");
-            }
-            std::printf("] %d%% (%d/%d) t=%.4fs",
-                static_cast<int>(progress * 100.0), step, numSteps, currentTime);
-            std::fflush(stdout);
 
             Vec F1, F2;
             model.ComputeExternalForce(currentTime, 1.0, F1, F2);
@@ -139,9 +126,10 @@ namespace SolverNameSpace
             }
             model.OnStepCompleted(currentTime);
             time = currentTime;
+            model.ReportProgress(std::min(1.0, currentTime / duration),
+                QStringLiteral("动力时间步 %1/%2").arg(step).arg(numSteps));
         }
 
-        std::printf("\n");
         qDebug().noquote() << QStringLiteral("动力求解完成");
         return true;
     }

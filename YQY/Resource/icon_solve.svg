@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" width="64" height="64">
+<title>Solve</title>
+  <rect x="4" y="8" width="28" height="20" rx="3" fill="none" stroke="#003399" stroke-width="2.0" />
+  <polygon points="10,12 10,24 18,18" fill="#FF0000" stroke="#FF0000" stroke-width="1.5" stroke-linejoin="round" />
+  <polygon points="18,12 18,24 26,18" fill="#FF0000" stroke="#FF0000" stroke-width="1.5" stroke-linejoin="round" />
+</svg>

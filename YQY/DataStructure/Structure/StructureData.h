@@ -126,6 +126,14 @@ public:
      */
     void Clear();
 
+    /**
+     * @brief 创建完全独立的计算模型副本
+     *
+     * 重新创建全部实体并重绑节点、属性、约束和荷载引用，副本可在后台线程
+     * 独立编号自由度和修改求解状态，不会影响界面模型或其他算例。
+     */
+    std::shared_ptr<StructureData> CloneForAnalysis(QString* errorMessage = nullptr) const;
+
 private:
     /**
      * @brief 合并重复节点
@@ -154,6 +162,6 @@ public:
     /**
      * @brief 获取输出
      */
-    Outputter& GetOutputter() { return m_Outputter; }
-    const Outputter& GetOutputter() const { return m_Outputter; }
+	Outputter& GetOutputter() { return m_Outputter; }
+	const Outputter& GetOutputter() const { return m_Outputter; }
 };

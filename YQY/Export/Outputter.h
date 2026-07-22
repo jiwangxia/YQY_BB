@@ -96,7 +96,10 @@ public:
      * @brief 获取当前帧时间
      * @return 当前时间
      */
-    double GetTime() const { return m_currentTime; }
+	double GetTime() const { return m_currentTime; }
+    int GetStepId() const { return m_stepId; }
+    int GetIncrement() const { return m_increment; }
+    int GetAnalysisType() const { return m_analysisType; }
 
     /**
      * @brief 获取指定节点的指定结果
@@ -118,16 +121,19 @@ public:
      * @brief 获取当前帧的全部节点结果
      * @return 节点结果只读集合
      */
-    const std::map<int, NodeData>& GetNodeDatas() const { return m_nodeDatas; }
+	const std::map<int, NodeData>& GetNodeDatas() const { return m_nodeDatas; }
 
     /**
      * @brief 获取当前帧的全部单元结果
      * @return 单元结果只读集合
      */
-    const std::map<int, ElementData>& GetElementDatas() const { return m_elementDatas; }
+	const std::map<int, ElementData>& GetElementDatas() const { return m_elementDatas; }
 
 private:
     double m_currentTime = 0;                         // 当前时间
+    int m_stepId = 0;                                 // 所属分析步编号
+    int m_increment = 0;                              // 分析步内帧序号
+    int m_analysisType = 0;                           // EnumKeyword::StepType
     std::map<int, NodeData> m_nodeDatas;              // 节点编号 -> 节点结果
     std::map<int, ElementData> m_elementDatas;        // 单元编号 -> 单元结果
 };
@@ -155,7 +161,8 @@ public:
      * @brief 设置是否将结果帧保存在内存中
      * @param [in] keep true 表示保存到内存，false 表示只进行流式输出
      */
-    void SetKeepFramesInMemory(bool keep) { m_keepFramesInMemory = keep; }
+	void SetKeepFramesInMemory(bool keep) { m_keepFramesInMemory = keep; }
+    void SetResultContext(int stepId, int analysisType);
 
     /**
      * @brief 导出指定节点的时程结果
@@ -209,7 +216,7 @@ public:
     /**
      * @brief 结束 H5/HDF5 结果流式输出
      */
-    void EndHdf5ResultStream();
+    void EndHdf5ResultStream(bool resultComplete = true);
 
     /**
      * @brief 导出 BDF 模型文件
@@ -226,7 +233,8 @@ public:
      * @param [in] sourceModelName 原始模型文件名，可为空
      * @return 成功返回 true，失败返回 false
      */
-    bool SaveHdf5File(const QString& fileName, StructureData* pData, const QString& sourceModelName = QString());
+    bool SaveHdf5File(const QString& fileName, StructureData* pData,
+        const QString& sourceModelName = QString(), bool resultComplete = true);
 
     /**
      * @brief 从 H5/HDF5 文件转换输出 BDF 风格结果文件
@@ -249,7 +257,7 @@ public:
      * @brief 获取当前缓存的结果帧数量
      * @return 结果帧数量
      */
-    size_t GetFrameCount() const { return m_DataSet.size(); }
+	size_t GetFrameCount() const { return m_DataSet.size(); }
 
     /**
      * @brief 清除所有缓存结果并关闭流式输出
@@ -260,7 +268,7 @@ public:
      * @brief 获取结果数据集
      * @return 结果数据集只读引用
      */
-    const std::vector<DataFrame>& GetDataSet() const { return m_DataSet; }
+	const std::vector<DataFrame>& GetDataSet() const { return m_DataSet; }
 
 private:
     std::vector<DataFrame> m_DataSet;                 // 结果帧集合
@@ -270,6 +278,8 @@ private:
     std::unique_ptr<Hdf5ResultIO> m_hdf5Stream;       // H5/HDF5 流式输出对象
     int m_hdf5NextDomainId = 1;                       // H5/HDF5 下一帧域编号
     int m_hdf5NextIncrement = 0;                      // H5/HDF5 下一增量编号
+    int m_currentStepId = 0;                          // 当前输出分析步编号
+    int m_currentAnalysisType = 0;                    // 当前输出分析类型
     std::vector<int> m_streamNodeIds;                 // 流式输出节点编号
     std::vector<EnumKeyword::NodeResultType> m_streamNodeTypes;       // 流式输出节点结果类型
     std::vector<int> m_streamElementIds;              // 流式输出单元编号

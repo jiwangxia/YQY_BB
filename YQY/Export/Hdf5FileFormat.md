@@ -26,7 +26,6 @@ H5 文件可以有两种写入方式：
 | 属性名 | 类型 | 说明 |
 | --- | --- | --- |
 | `FORMAT` | string | 文件格式标识，当前为 `YQY_H5`。 |
-| `VERSION` | int | H5 格式版本号，当前为 `1`。后续字段变化时需要递增。 |
 | `CREATED_TIME` | string | 文件创建时间，格式为 `yyyy-MM-dd hh:mm:ss`。 |
 | `PROGRAM` | string | 生成文件的程序名，当前为 `YQY_CAE`。 |
 | `SOURCE_MODEL` | string | 原始模型文件名，可以为空。 |
@@ -238,6 +237,8 @@ H5 文件可以有两种写入方式：
 
 节点速度结果。
 
+仅动力分析帧写入记录；静力分析帧在对应索引中的 `LENGTH` 为 `0`。
+
 | 字段 | 对应结果 |
 | --- | --- |
 | `X` | `V1`，X 向速度。 |
@@ -247,6 +248,8 @@ H5 文件可以有两种写入方式：
 ### 5.4 `/YQY/RESULT/NODAL/ACCELERATION`
 
 节点加速度结果。
+
+仅动力分析帧写入记录；静力分析帧在对应索引中的 `LENGTH` 为 `0`。
 
 | 字段 | 对应结果 |
 | --- | --- |
@@ -270,7 +273,7 @@ H5 文件可以有两种写入方式：
 
 ### 6.1 `/YQY/RESULT/ELEMENTAL/ELEMENT_FORCE`
 
-单元内力结果。
+梁单元以及未知单元类型的完整内力结果。
 
 | 字段名 | 类型 | 说明 |
 | --- | --- | --- |
@@ -283,7 +286,28 @@ H5 文件可以有两种写入方式：
 | `MZ` | double | 绕局部 z 轴弯矩。 |
 | `DOMAIN_ID` | int | 结果域编号，对应 `/YQY/RESULT/DOMAINS` 中的 `ID`。 |
 
-### 6.2 `/YQY/RESULT/ELEMENTAL/STRESS`
+### 6.2 `/YQY/RESULT/ELEMENTAL/TRUSS_FORCE`
+
+桁架单元的紧凑内力结果。桁架只承受轴力，不保存剪力、扭矩和弯矩。
+
+| 字段名 | 类型 | 说明 |
+| --- | --- | --- |
+| `EID` | int | 单元编号。 |
+| `DOMAIN_ID` | int | 结果域编号。 |
+| `AXIAL` | double | 轴力。 |
+
+### 6.3 `/YQY/RESULT/ELEMENTAL/CABLE_FORCE`
+
+索单元的紧凑内力结果。保留轴力和扭矩，不保存剪力及弯矩。
+
+| 字段名 | 类型 | 说明 |
+| --- | --- | --- |
+| `EID` | int | 单元编号。 |
+| `DOMAIN_ID` | int | 结果域编号。 |
+| `AXIAL` | double | 轴力。 |
+| `TORQUE` | double | 扭矩；当前索单元尚未计算扭转时为 `0`，后续可直接写入。 |
+
+### 6.4 `/YQY/RESULT/ELEMENTAL/STRESS`
 
 单元应力结果。
 
@@ -295,7 +319,7 @@ H5 文件可以有两种写入方式：
 | `DS` | double | 增量应力，通常为当前应力相对初始应力或上一步应力的变化量，具体含义由求解器写入逻辑决定。 |
 | `DOMAIN_ID` | int | 结果域编号，对应 `/YQY/RESULT/DOMAINS` 中的 `ID`。 |
 
-### 6.3 `/YQY/RESULT/ELEMENTAL/STRAIN`
+### 6.5 `/YQY/RESULT/ELEMENTAL/STRAIN`
 
 单元应变结果。
 
@@ -314,6 +338,8 @@ H5 文件可以有两种写入方式：
 | 结果数据集 | 索引数据集 |
 | --- | --- |
 | `/YQY/RESULT/NODAL/DISPLACEMENT` | `/INDEX/YQY/RESULT/NODAL/DISPLACEMENT` |
+| `/YQY/RESULT/ELEMENTAL/TRUSS_FORCE` | `/INDEX/YQY/RESULT/ELEMENTAL/TRUSS_FORCE` |
+| `/YQY/RESULT/ELEMENTAL/CABLE_FORCE` | `/INDEX/YQY/RESULT/ELEMENTAL/CABLE_FORCE` |
 | `/YQY/RESULT/ELEMENTAL/STRESS` | `/INDEX/YQY/RESULT/ELEMENTAL/STRESS` |
 
 索引记录字段如下：
@@ -332,7 +358,7 @@ H5 文件可以有两种写入方式：
 
 ## 8. 枚举值说明
 
-当前 H5 中枚举值直接使用 C++ 枚举的整数值。后续如果调整枚举顺序，需要同步升级 `VERSION`，否则旧文件会被错误解释。
+当前 H5 中枚举值直接使用 C++ 枚举的整数值。
 
 ### 8.1 方向枚举 `Direction`
 

@@ -4,7 +4,6 @@
  */
 #include "SolverStatic.h"
 #include <QDebug>
-#include <iostream>
 namespace SolverNameSpace
 {
     bool SolverStatic::Solve(IAnalysisModel& model, double duration)
@@ -29,12 +28,11 @@ namespace SolverNameSpace
         m_R.resize(nDofs);
         m_cache.reset();
 
-        // 进度条参数
-        const int barWidth = 50;  // 进度条宽度
-
         // 增量步循环
         for (int inc = 1; inc <= m_param.numIncrements; ++inc)
         {
+            if (model.IsCancellationRequested())
+                return false;
             double factor = static_cast<double>(inc) / m_param.numIncrements;
             double currentTime = duration * factor;
 
@@ -44,18 +42,6 @@ namespace SolverNameSpace
             // 组装外荷载（增量步开始时做一次）
             Vec F1, F2;
             model.ComputeExternalForce(currentTime, factor, F1, F2);
-
-            // 显示进度条（使用 printf 支持 \r 动态刷新）
-            int pos = static_cast<int>(barWidth * factor);
-            printf("\rProgress: [");
-            for (int i = 0; i < barWidth; ++i)
-            {
-                if (i < pos) printf("=");
-                else if (i == pos) printf(">");
-                else printf(" ");
-            }
-            printf("] %d%% (%d/%d) t=%.4fs", int(factor * 100.0), inc, m_param.numIncrements, currentTime);
-            fflush(stdout);  // 强制刷新输出
 
             // 当前增量步的累计位移（用于相对收敛判据）
             Eigen::VectorXd m_x2 = Eigen::VectorXd::Zero(nDofs);
@@ -102,13 +88,6 @@ namespace SolverNameSpace
                     bool converged = disp_converged && force_converged;
 
 
-                    // 调试输出：如果不收敛，打印详细信息
-                    if (!converged && iter > m_param.maxIter - 3)
-                    {
-                        printf("  [t=%.4f, iter=%2d] norm_dx=%.3e, norm_x2=%.3e, relative_dx=%.3e\n",
-                            currentTime, iter, norm_dx, norm_x2, relative_dx);
-                    }
-
                     if (converged)
                     {
                         break;
@@ -144,6 +123,8 @@ namespace SolverNameSpace
             // Newton 迭代已经收敛，此时才提交塑性历史变量。
             model.CommitState();
             model.OnStepCompleted(currentTime);
+            model.ReportProgress(factor,
+                QStringLiteral("静力增量 %1/%2").arg(inc).arg(m_param.numIncrements));
 
             // 步回调
             if (m_callback)
@@ -151,9 +132,6 @@ namespace SolverNameSpace
                 m_callback(inc, currentTime, u);
             }
         }
-
-        // 进度条完成后换行
-        printf("\n");
 
         // 求解完成回调
         //model.OnStepCompleted(duration);

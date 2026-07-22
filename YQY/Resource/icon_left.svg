@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" width="64" height="64">
+  <title>Left View (Reversed Y, Z)</title>
+  <g fill="#003399" stroke="#003399" stroke-width="2.5" stroke-linecap="round" font-family="Arial, Helvetica, sans-serif" font-weight="bold" font-size="11px">
+    <!-- Y轴 (向左) - 原点设在(30,30) -->
+    <line x1="30" y1="30" x2="18" y2="30" />
+    <polygon points="11,30 18,27 18,33" stroke="none" />
+    <text x="9" y="33" stroke="none" text-anchor="end" fill="#FF0000">Y</text>
+    <!-- Z轴 (向上) -->
+    <line x1="30" y1="30" x2="30" y2="18" />
+    <polygon points="30,11 27,18 33,18" stroke="none" />
+    <text x="30" y="8" stroke="none" text-anchor="middle" fill="#FF0000">Z</text>
+  </g>
+</svg>

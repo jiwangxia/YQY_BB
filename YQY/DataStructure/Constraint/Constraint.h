@@ -2,6 +2,7 @@
 #include "Base/Base.h"
 
 #include <vector>
+#include <QString>
 
 class Node;
 
@@ -20,7 +21,10 @@ struct ConstraintTimePoint
 class Constraint : public Base
 {
 public:
-    Constraint() {}
+	Constraint() {}
+
+    QString m_Name;          ///< 用户可读名称；为空时界面回退为 Constraint-ID
+    int m_StepId = 0;        ///< 首次生效分析步；0 表示导入的全局/初始约束
 
     std::weak_ptr<Node> m_pNode;  ///< 约束所在节点
     EnumKeyword::Direction m_Direction = EnumKeyword::Direction::UNKNOWN;  ///< 约束方向

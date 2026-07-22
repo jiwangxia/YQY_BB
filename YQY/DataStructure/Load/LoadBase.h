@@ -22,7 +22,8 @@ enum class TimeFunctionType
 class LoadBase : public Base
 {
 public:
-    LoadBase() {};
+	LoadBase() {};
+    QString m_Name;                 // 用户可读名称；为空时界面回退为 Load-ID
     EnumKeyword::LoadType   m_LoadType = EnumKeyword::LoadType::UNKNOWN;  ///< 荷载类型
     EnumKeyword::Direction m_Direction = EnumKeyword::Direction::UNKNOWN;  ///< 荷载方向
 
@@ -45,10 +46,7 @@ public:
     double m_Period = 1.0;       // 周期（TRIANGULAR, SQUARE）
     double m_DutyCycle = 0.5;    // 占空比（SQUARE）
 
-    bool IsActive(double time) const
-    {
-        return (time >= m_StartTime && time <= m_EndTime);
-    }
+	bool IsActive(double time) const { return (time >= m_StartTime && time <= m_EndTime); }
 
     /**
      * @brief 计算当前时间的荷载缩放因子

@@ -91,6 +91,8 @@ namespace SolverNameSpace
         // 时间步循环
         for (int step = 1; step <= numSteps; ++step)
         {
+            if (model.IsCancellationRequested())
+                return false;
             double currentTime = step * dt;
 
             // ========== C1 子步 ==========
@@ -156,6 +158,8 @@ namespace SolverNameSpace
             // 步结束回调
             model.CommitState();
             model.OnStepCompleted(currentTime);
+            model.ReportProgress(std::min(1.0, currentTime / duration),
+                QStringLiteral("TSSBN 时间步 %1/%2").arg(step).arg(numSteps));
         }
 
         qDebug().noquote() << QStringLiteral("TSSBN 动力求解完成");

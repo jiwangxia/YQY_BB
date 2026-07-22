@@ -33,19 +33,19 @@ namespace SolverNameSpace
          * @brief 构造函数
          * @param[in] p 求解器参数
          */
-        explicit SolverStatic(Params p) : m_param(p) {}
+	explicit SolverStatic(Params p) : m_param(p) {}
 
         // ============ ISolver 接口实现 ============
         bool Solve(IAnalysisModel& model, double duration) override;
-        const char* GetName() const override { return "Newton-Raphson Static"; }
-        SolverType GetType() const override { return SolverType::Static; }
-        void SetStepCallback(StepCallback callback) override { m_callback = std::move(callback); }
+	const char* GetName() const override { return "Newton-Raphson Static"; }
+	SolverType GetType() const override { return SolverType::Static; }
+	void SetStepCallback(StepCallback callback) override { m_callback = std::move(callback); }
 
         
 
         // ============ 参数访问 ============
-        Params& GetParams() { return m_param; }
-        const Params& GetParams() const { return m_param; }
+	Params& GetParams() { return m_param; }
+	const Params& GetParams() const { return m_param; }
 
     private:
         Params m_param;

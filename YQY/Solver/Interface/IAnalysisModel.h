@@ -9,6 +9,7 @@
  */
 #pragma once
 #include <Eigen/Sparse>
+#include <QString>
 #include <functional>
 
 namespace SolverNameSpace
@@ -137,6 +138,16 @@ namespace SolverNameSpace
 
         virtual void BackupStepState() = 0;
         virtual void GetStepIncrement(SolverNameSpace::Vec& dx_step) const = 0;
+
+        /** @brief 查询宿主任务是否请求取消。求解器在增量/时间步边界调用。 */
+	virtual bool IsCancellationRequested() const { return false; }
+
+        /** @brief 向宿主任务报告当前分析步进度，progress 取值 0~1。 */
+        virtual void ReportProgress(double progress, const QString& message = QString())
+        {
+            Q_UNUSED(progress);
+            Q_UNUSED(message);
+        }
     };
 
     /** @brief 步回调函数类型 */

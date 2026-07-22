@@ -10,12 +10,15 @@
 #include <QDateTime>
 #include <QDebug>
 #include <QDir>
+#include <QSaveFile>
 #include <QFileInfo>
+#include <QMutex>
 #include <QHash>
 #include <QTextStream>
 #include <QUuid>
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstring>
 #include <memory>
@@ -23,6 +26,10 @@
 
 namespace
 {
+// VTK bundled HDF5 is built without H5_HAVE_THREADSAFE.  Solver jobs may run
+// concurrently, so every entry into the HDF5 C API must be serialized.
+QRecursiveMutex g_hdf5ApiMutex;
+
 constexpr int kModelDomainId = 1;
 
 QString MakeAsciiTempHdf5FileName()
@@ -73,8 +80,13 @@ struct H5Handle
     herr_t(*closeFunc)(hid_t) = nullptr;
 
     H5Handle() = default;
-    H5Handle(hid_t value, herr_t(*func)(hid_t)) : id(value), closeFunc(func) {}
-    ~H5Handle() { reset(); }
+        H5Handle(hid_t value, herr_t(*func)(hid_t)) : id(value), closeFunc(func)
+        {
+        }
+        ~H5Handle()
+        {
+            reset();
+        }
 
     H5Handle(const H5Handle&) = delete;
     H5Handle& operator=(const H5Handle&) = delete;
@@ -109,8 +121,14 @@ struct H5Handle
         closeFunc = func;
     }
 
-    bool valid() const { return id >= 0; }
-    operator hid_t() const { return id; }
+        bool valid() const
+        {
+            return id >= 0;
+        }
+        operator hid_t() const
+        {
+            return id;
+        }
 };
 
 struct GridRecord
@@ -270,6 +288,26 @@ struct ElementForceRecord
     int domainId = 0;
 };
 
+// Axial-only truss results deliberately use a compact record.  Keeping these
+// separate from beam forces avoids storing five permanently-zero components
+// for every truss in every result frame.
+struct TrussForceRecord
+{
+    int id = 0;
+    int domainId = 0;
+    double axial = 0.0;
+};
+
+// Cable results reserve torque because the cable formulation is expected to
+// support torsion, while shear forces and bending moments remain inapplicable.
+struct CableForceRecord
+{
+    int id = 0;
+    int domainId = 0;
+    double axial = 0.0;
+    double torque = 0.0;
+};
+
 struct ElementStressRecord
 {
     int id = 0;
@@ -404,6 +442,14 @@ bool WriteIntAttribute(hid_t object, const char* name, int value)
     }
 
     return H5Awrite(attr, H5T_NATIVE_INT, &value) >= 0;
+}
+
+bool ReadIntAttribute(hid_t object, const char* name, int& value)
+{
+    if (H5Aexists(object, name) <= 0)
+        return false;
+    H5Handle attr(H5Aopen(object, name, H5P_DEFAULT), H5Aclose);
+    return attr.valid() && H5Aread(attr, H5T_NATIVE_INT, &value) >= 0;
 }
 
 bool InsertArray(hid_t type, const char* name, size_t offset, hid_t baseType, hsize_t count)
@@ -789,6 +835,27 @@ H5Handle CreateElementForceType()
     return type;
 }
 
+H5Handle CreateTrussForceType()
+{
+    H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(TrussForceRecord)), H5Tclose);
+    if (!type.valid()) return {};
+    H5Tinsert(type, "EID", HOFFSET(TrussForceRecord, id), H5T_NATIVE_INT);
+    H5Tinsert(type, "DOMAIN_ID", HOFFSET(TrussForceRecord, domainId), H5T_NATIVE_INT);
+    H5Tinsert(type, "AXIAL", HOFFSET(TrussForceRecord, axial), H5T_NATIVE_DOUBLE);
+    return type;
+}
+
+H5Handle CreateCableForceType()
+{
+    H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(CableForceRecord)), H5Tclose);
+    if (!type.valid()) return {};
+    H5Tinsert(type, "EID", HOFFSET(CableForceRecord, id), H5T_NATIVE_INT);
+    H5Tinsert(type, "DOMAIN_ID", HOFFSET(CableForceRecord, domainId), H5T_NATIVE_INT);
+    H5Tinsert(type, "AXIAL", HOFFSET(CableForceRecord, axial), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "TORQUE", HOFFSET(CableForceRecord, torque), H5T_NATIVE_DOUBLE);
+    return type;
+}
+
 H5Handle CreateElementStressType()
 {
     H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(ElementStressRecord)), H5Tclose);
@@ -817,6 +884,16 @@ EnumKeyword::ElementType GetElementType(const std::shared_ptr<ElementBase>& pEle
     if (std::dynamic_pointer_cast<ElementCable>(pElement)) return EnumKeyword::ElementType::CABLE;
     if (std::dynamic_pointer_cast<ElementBeam_CR>(pElement)) return EnumKeyword::ElementType::CR3D;
     return EnumKeyword::ElementType::UNKNOWN;
+}
+
+QHash<int, EnumKeyword::ElementType> BuildElementTypeMap(const StructureData* pData)
+{
+    QHash<int, EnumKeyword::ElementType> result;
+    if (!pData)
+        return result;
+    for (const auto& [elementId, element] : pData->m_Elements)
+        result.insert(elementId, GetElementType(element));
+    return result;
 }
 
 EnumKeyword::SectionType GetSectionType(const std::shared_ptr<SectionBase>& pSection)
@@ -1173,6 +1250,7 @@ bool WriteInputData(hid_t file, const StructureData* pData)
 bool WriteResultData(hid_t file, const StructureData* pData)
 {
     const auto& frames = pData->GetOutputter().GetDataSet();
+    const auto elementTypes = BuildElementTypeMap(pData);
 
     std::vector<DomainRecord> domains;
     std::vector<NodalRecord> displacements;
@@ -1181,6 +1259,8 @@ bool WriteResultData(hid_t file, const StructureData* pData)
     std::vector<NodalRecord> accelerations;
     std::vector<NodalRecord> reactions;
     std::vector<ElementForceRecord> elementForces;
+    std::vector<TrussForceRecord> trussForces;
+    std::vector<CableForceRecord> cableForces;
     std::vector<ElementStressRecord> elementStresses;
     std::vector<ElementStrainRecord> elementStrains;
 
@@ -1190,21 +1270,31 @@ bool WriteResultData(hid_t file, const StructureData* pData)
     std::vector<IndexRecord> accelerationIndex;
     std::vector<IndexRecord> reactionIndex;
     std::vector<IndexRecord> elementForceIndex;
+    std::vector<IndexRecord> trussForceIndex;
+    std::vector<IndexRecord> cableForceIndex;
     std::vector<IndexRecord> elementStressIndex;
     std::vector<IndexRecord> elementStrainIndex;
 
     domains.reserve(frames.size());
     int domainId = 1;
-    int increment = 0;
     for (const DataFrame& frame : frames)
     {
+        const bool storesDynamicKinematics = frame.GetAnalysisType()
+            == static_cast<int>(EnumKeyword::StepType::DYNAMIC);
+
         DomainRecord domain;
         domain.id = domainId;
-        domain.increment = increment;
+        domain.stepId = frame.GetStepId();
+        domain.increment = frame.GetIncrement();
+        domain.analysis = frame.GetAnalysisType();
         domain.time = frame.GetTime();
         domains.push_back(domain);
 
-        const long long nodePosition = static_cast<long long>(displacements.size());
+        const long long displacementPosition = static_cast<long long>(displacements.size());
+        const long long currentCoordinatePosition = static_cast<long long>(currentCoordinates.size());
+        const long long velocityPosition = static_cast<long long>(velocities.size());
+        const long long accelerationPosition = static_cast<long long>(accelerations.size());
+        const long long reactionPosition = static_cast<long long>(reactions.size());
         for (const auto& pair : frame.GetNodeDatas())
         {
             const int nodeId = pair.first;
@@ -1228,21 +1318,24 @@ bool WriteResultData(hid_t file, const StructureData* pData)
             currentCoordinate.domainId = domainId;
             currentCoordinates.push_back(currentCoordinate);
 
-            NodalRecord velocity;
-            velocity.id = nodeId;
-            velocity.x = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::V1);
-            velocity.y = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::V2);
-            velocity.z = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::V3);
-            velocity.domainId = domainId;
-            velocities.push_back(velocity);
+            if (storesDynamicKinematics)
+            {
+                NodalRecord velocity;
+                velocity.id = nodeId;
+                velocity.x = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::V1);
+                velocity.y = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::V2);
+                velocity.z = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::V3);
+                velocity.domainId = domainId;
+                velocities.push_back(velocity);
 
-            NodalRecord acceleration;
-            acceleration.id = nodeId;
-            acceleration.x = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::A1);
-            acceleration.y = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::A2);
-            acceleration.z = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::A3);
-            acceleration.domainId = domainId;
-            accelerations.push_back(acceleration);
+                NodalRecord acceleration;
+                acceleration.id = nodeId;
+                acceleration.x = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::A1);
+                acceleration.y = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::A2);
+                acceleration.z = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::A3);
+                acceleration.domainId = domainId;
+                accelerations.push_back(acceleration);
+            }
 
             NodalRecord reaction;
             reaction.id = nodeId;
@@ -1254,27 +1347,58 @@ bool WriteResultData(hid_t file, const StructureData* pData)
         }
 
         const long long nodeLength = static_cast<long long>(frame.GetNodeDatas().size());
-        AppendFrameIndex(displacementIndex, domainId, nodePosition, nodeLength);
-        AppendFrameIndex(currentCoordinateIndex, domainId, nodePosition, nodeLength);
-        AppendFrameIndex(velocityIndex, domainId, nodePosition, nodeLength);
-        AppendFrameIndex(accelerationIndex, domainId, nodePosition, nodeLength);
-        AppendFrameIndex(reactionIndex, domainId, nodePosition, nodeLength);
+        const long long dynamicNodeLength = storesDynamicKinematics ? nodeLength : 0;
+        AppendFrameIndex(displacementIndex, domainId, displacementPosition, nodeLength);
+        AppendFrameIndex(currentCoordinateIndex, domainId, currentCoordinatePosition, nodeLength);
+        AppendFrameIndex(velocityIndex, domainId, velocityPosition, dynamicNodeLength);
+        AppendFrameIndex(accelerationIndex, domainId, accelerationPosition, dynamicNodeLength);
+        AppendFrameIndex(reactionIndex, domainId, reactionPosition, nodeLength);
 
         const long long elementPosition = static_cast<long long>(elementForces.size());
+        const long long trussPosition = static_cast<long long>(trussForces.size());
+        const long long cablePosition = static_cast<long long>(cableForces.size());
+        const long long stressPosition = static_cast<long long>(elementStresses.size());
+        const long long strainPosition = static_cast<long long>(elementStrains.size());
+        long long elementLength = 0;
+        long long trussLength = 0;
+        long long cableLength = 0;
         for (const auto& pair : frame.GetElementDatas())
         {
             const int elementId = pair.first;
-
-            ElementForceRecord force;
-            force.id = elementId;
-            force.axial = frame.GetElementData(elementId, EnumKeyword::ElementResultType::AxialForce);
-            force.shearY = frame.GetElementData(elementId, EnumKeyword::ElementResultType::ShearY);
-            force.shearZ = frame.GetElementData(elementId, EnumKeyword::ElementResultType::ShearZ);
-            force.torque = frame.GetElementData(elementId, EnumKeyword::ElementResultType::Torque);
-            force.momentY = frame.GetElementData(elementId, EnumKeyword::ElementResultType::MomentY);
-            force.momentZ = frame.GetElementData(elementId, EnumKeyword::ElementResultType::MomentZ);
-            force.domainId = domainId;
-            elementForces.push_back(force);
+            const auto elementType = elementTypes.value(elementId, EnumKeyword::ElementType::UNKNOWN);
+            if (elementType == EnumKeyword::ElementType::T3D2)
+            {
+                TrussForceRecord force;
+                force.id = elementId;
+                force.domainId = domainId;
+                force.axial = frame.GetElementData(elementId, EnumKeyword::ElementResultType::AxialForce);
+                trussForces.push_back(force);
+                ++trussLength;
+            }
+            else if (elementType == EnumKeyword::ElementType::CABLE)
+            {
+                CableForceRecord force;
+                force.id = elementId;
+                force.domainId = domainId;
+                force.axial = frame.GetElementData(elementId, EnumKeyword::ElementResultType::AxialForce);
+                force.torque = frame.GetElementData(elementId, EnumKeyword::ElementResultType::Torque);
+                cableForces.push_back(force);
+                ++cableLength;
+            }
+            else
+            {
+                ElementForceRecord force;
+                force.id = elementId;
+                force.axial = frame.GetElementData(elementId, EnumKeyword::ElementResultType::AxialForce);
+                force.shearY = frame.GetElementData(elementId, EnumKeyword::ElementResultType::ShearY);
+                force.shearZ = frame.GetElementData(elementId, EnumKeyword::ElementResultType::ShearZ);
+                force.torque = frame.GetElementData(elementId, EnumKeyword::ElementResultType::Torque);
+                force.momentY = frame.GetElementData(elementId, EnumKeyword::ElementResultType::MomentY);
+                force.momentZ = frame.GetElementData(elementId, EnumKeyword::ElementResultType::MomentZ);
+                force.domainId = domainId;
+                elementForces.push_back(force);
+                ++elementLength;
+            }
 
             ElementStressRecord stress;
             stress.id = elementId;
@@ -1291,19 +1415,22 @@ bool WriteResultData(hid_t file, const StructureData* pData)
             elementStrains.push_back(strain);
         }
 
-        const long long elementLength = static_cast<long long>(frame.GetElementDatas().size());
         AppendFrameIndex(elementForceIndex, domainId, elementPosition, elementLength);
-        AppendFrameIndex(elementStressIndex, domainId, elementPosition, elementLength);
-        AppendFrameIndex(elementStrainIndex, domainId, elementPosition, elementLength);
+        AppendFrameIndex(trussForceIndex, domainId, trussPosition, trussLength);
+        AppendFrameIndex(cableForceIndex, domainId, cablePosition, cableLength);
+        const long long resultElementLength = static_cast<long long>(frame.GetElementDatas().size());
+        AppendFrameIndex(elementStressIndex, domainId, stressPosition, resultElementLength);
+        AppendFrameIndex(elementStrainIndex, domainId, strainPosition, resultElementLength);
 
         ++domainId;
-        ++increment;
     }
 
     H5Handle domainType = CreateDomainType();
     H5Handle indexType = CreateIndexType();
     H5Handle nodalType = CreateNodalType();
     H5Handle elementForceType = CreateElementForceType();
+    H5Handle trussForceType = CreateTrussForceType();
+    H5Handle cableForceType = CreateCableForceType();
     H5Handle elementStressType = CreateElementStressType();
     H5Handle elementStrainType = CreateElementStrainType();
 
@@ -1311,6 +1438,8 @@ bool WriteResultData(hid_t file, const StructureData* pData)
         && indexType.valid()
         && nodalType.valid()
         && elementForceType.valid()
+        && trussForceType.valid()
+        && cableForceType.valid()
         && elementStressType.valid()
         && elementStrainType.valid()
         && WriteDataset(file, "/YQY/RESULT/DOMAINS", domainType, domains)
@@ -1320,6 +1449,8 @@ bool WriteResultData(hid_t file, const StructureData* pData)
         && WriteDataset(file, "/YQY/RESULT/NODAL/ACCELERATION", nodalType, accelerations)
         && WriteDataset(file, "/YQY/RESULT/NODAL/REACTION_FORCE", nodalType, reactions)
         && WriteDataset(file, "/YQY/RESULT/ELEMENTAL/ELEMENT_FORCE", elementForceType, elementForces)
+        && WriteDataset(file, "/YQY/RESULT/ELEMENTAL/TRUSS_FORCE", trussForceType, trussForces)
+        && WriteDataset(file, "/YQY/RESULT/ELEMENTAL/CABLE_FORCE", cableForceType, cableForces)
         && WriteDataset(file, "/YQY/RESULT/ELEMENTAL/STRESS", elementStressType, elementStresses)
         && WriteDataset(file, "/YQY/RESULT/ELEMENTAL/STRAIN", elementStrainType, elementStrains)
         && WriteDataset(file, "/INDEX/YQY/RESULT/NODAL/DISPLACEMENT", indexType, displacementIndex)
@@ -1328,6 +1459,8 @@ bool WriteResultData(hid_t file, const StructureData* pData)
         && WriteDataset(file, "/INDEX/YQY/RESULT/NODAL/ACCELERATION", indexType, accelerationIndex)
         && WriteDataset(file, "/INDEX/YQY/RESULT/NODAL/REACTION_FORCE", indexType, reactionIndex)
         && WriteDataset(file, "/INDEX/YQY/RESULT/ELEMENTAL/ELEMENT_FORCE", indexType, elementForceIndex)
+        && WriteDataset(file, "/INDEX/YQY/RESULT/ELEMENTAL/TRUSS_FORCE", indexType, trussForceIndex)
+        && WriteDataset(file, "/INDEX/YQY/RESULT/ELEMENTAL/CABLE_FORCE", indexType, cableForceIndex)
         && WriteDataset(file, "/INDEX/YQY/RESULT/ELEMENTAL/STRESS", indexType, elementStressIndex)
         && WriteDataset(file, "/INDEX/YQY/RESULT/ELEMENTAL/STRAIN", indexType, elementStrainIndex);
 }
@@ -1339,6 +1472,41 @@ public:
     H5Handle file;
     QString targetFileName;
     QString tempFileName;
+    H5Handle resultFile;
+    QString resultTempFileName;
+    QString resultSourceFileName;
+    std::vector<DomainRecord> resultDomains;
+    QHash<int, EnumKeyword::ElementType> elementTypes;
+    QHash<int, IndexRecord> displacementIndex;
+    QHash<int, IndexRecord> currentCoordinateIndex;
+    QHash<int, IndexRecord> elementForceIndex;
+    QHash<int, IndexRecord> trussForceIndex;
+    QHash<int, IndexRecord> cableForceIndex;
+    QHash<int, IndexRecord> stressIndex;
+    QHash<int, IndexRecord> strainIndex;
+
+    ~Impl()
+    {
+        CloseResult();
+    }
+
+    void CloseResult()
+    {
+        resultFile.reset();
+        if (!resultTempFileName.isEmpty())
+            QFile::remove(resultTempFileName);
+        resultTempFileName.clear();
+        resultSourceFileName.clear();
+        resultDomains.clear();
+        elementTypes.clear();
+        displacementIndex.clear();
+        currentCoordinateIndex.clear();
+        elementForceIndex.clear();
+        trussForceIndex.clear();
+        cableForceIndex.clear();
+        stressIndex.clear();
+        strainIndex.clear();
+    }
 
     bool Begin(const QString& fileName, const StructureData* pData, const QString& sourceModelName)
     {
@@ -1356,6 +1524,7 @@ public:
 
         targetFileName = fileInfo.absoluteFilePath();
         tempFileName = MakeAsciiTempHdf5FileName();
+        elementTypes = BuildElementTypeMap(pData);
 
         const QByteArray path = ToHdf5Path(tempFileName);
         file.reset(H5Fcreate(path.constData(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT), H5Fclose);
@@ -1371,7 +1540,7 @@ public:
         }
 
         const bool attrOk = WriteStringAttribute(file, "FORMAT", "YQY_H5")
-            && WriteIntAttribute(file, "VERSION", 1)
+            && WriteIntAttribute(file, "RESULT_COMPLETE", 0)
             && WriteStringAttribute(file, "CREATED_TIME", QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss"))
             && WriteStringAttribute(file, "PROGRAM", "YQY_CAE")
             && WriteStringAttribute(file, "SOURCE_MODEL", sourceModelName);
@@ -1385,6 +1554,8 @@ public:
         H5Handle indexType = CreateIndexType();
         H5Handle nodalType = CreateNodalType();
         H5Handle elementForceType = CreateElementForceType();
+        H5Handle trussForceType = CreateTrussForceType();
+        H5Handle cableForceType = CreateCableForceType();
         H5Handle elementStressType = CreateElementStressType();
         H5Handle elementStrainType = CreateElementStrainType();
 
@@ -1392,6 +1563,8 @@ public:
             && indexType.valid()
             && nodalType.valid()
             && elementForceType.valid()
+            && trussForceType.valid()
+            && cableForceType.valid()
             && elementStressType.valid()
             && elementStrainType.valid()
             && CreateExtendableDataset(file, "/YQY/RESULT/DOMAINS", domainType)
@@ -1401,6 +1574,8 @@ public:
             && CreateExtendableDataset(file, "/YQY/RESULT/NODAL/ACCELERATION", nodalType)
             && CreateExtendableDataset(file, "/YQY/RESULT/NODAL/REACTION_FORCE", nodalType)
             && CreateExtendableDataset(file, "/YQY/RESULT/ELEMENTAL/ELEMENT_FORCE", elementForceType)
+            && CreateExtendableDataset(file, "/YQY/RESULT/ELEMENTAL/TRUSS_FORCE", trussForceType)
+            && CreateExtendableDataset(file, "/YQY/RESULT/ELEMENTAL/CABLE_FORCE", cableForceType)
             && CreateExtendableDataset(file, "/YQY/RESULT/ELEMENTAL/STRESS", elementStressType)
             && CreateExtendableDataset(file, "/YQY/RESULT/ELEMENTAL/STRAIN", elementStrainType)
             && CreateExtendableDataset(file, "/INDEX/YQY/RESULT/NODAL/DISPLACEMENT", indexType)
@@ -1409,6 +1584,8 @@ public:
             && CreateExtendableDataset(file, "/INDEX/YQY/RESULT/NODAL/ACCELERATION", indexType)
             && CreateExtendableDataset(file, "/INDEX/YQY/RESULT/NODAL/REACTION_FORCE", indexType)
             && CreateExtendableDataset(file, "/INDEX/YQY/RESULT/ELEMENTAL/ELEMENT_FORCE", indexType)
+            && CreateExtendableDataset(file, "/INDEX/YQY/RESULT/ELEMENTAL/TRUSS_FORCE", indexType)
+            && CreateExtendableDataset(file, "/INDEX/YQY/RESULT/ELEMENTAL/CABLE_FORCE", indexType)
             && CreateExtendableDataset(file, "/INDEX/YQY/RESULT/ELEMENTAL/STRESS", indexType)
             && CreateExtendableDataset(file, "/INDEX/YQY/RESULT/ELEMENTAL/STRAIN", indexType);
     }
@@ -1434,6 +1611,9 @@ public:
         {
             return false;
         }
+
+        const bool storesDynamicKinematics = analysis
+            == static_cast<int>(EnumKeyword::StepType::DYNAMIC);
 
         std::vector<NodalRecord> displacements;
         std::vector<NodalRecord> currentCoordinates;
@@ -1469,21 +1649,24 @@ public:
             currentCoordinate.domainId = domainId;
             currentCoordinates.push_back(currentCoordinate);
 
-            NodalRecord velocity;
-            velocity.id = nodeId;
-            velocity.x = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::V1);
-            velocity.y = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::V2);
-            velocity.z = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::V3);
-            velocity.domainId = domainId;
-            velocities.push_back(velocity);
+            if (storesDynamicKinematics)
+            {
+                NodalRecord velocity;
+                velocity.id = nodeId;
+                velocity.x = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::V1);
+                velocity.y = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::V2);
+                velocity.z = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::V3);
+                velocity.domainId = domainId;
+                velocities.push_back(velocity);
 
-            NodalRecord acceleration;
-            acceleration.id = nodeId;
-            acceleration.x = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::A1);
-            acceleration.y = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::A2);
-            acceleration.z = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::A3);
-            acceleration.domainId = domainId;
-            accelerations.push_back(acceleration);
+                NodalRecord acceleration;
+                acceleration.id = nodeId;
+                acceleration.x = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::A1);
+                acceleration.y = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::A2);
+                acceleration.z = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::A3);
+                acceleration.domainId = domainId;
+                accelerations.push_back(acceleration);
+            }
 
             NodalRecord reaction;
             reaction.id = nodeId;
@@ -1495,6 +1678,8 @@ public:
         }
 
         std::vector<ElementForceRecord> elementForces;
+        std::vector<TrussForceRecord> trussForces;
+        std::vector<CableForceRecord> cableForces;
         std::vector<ElementStressRecord> elementStresses;
         std::vector<ElementStrainRecord> elementStrains;
         elementForces.reserve(frame.GetElementDatas().size());
@@ -1504,17 +1689,37 @@ public:
         for (const auto& pair : frame.GetElementDatas())
         {
             const int elementId = pair.first;
-
-            ElementForceRecord force;
-            force.id = elementId;
-            force.axial = frame.GetElementData(elementId, EnumKeyword::ElementResultType::AxialForce);
-            force.shearY = frame.GetElementData(elementId, EnumKeyword::ElementResultType::ShearY);
-            force.shearZ = frame.GetElementData(elementId, EnumKeyword::ElementResultType::ShearZ);
-            force.torque = frame.GetElementData(elementId, EnumKeyword::ElementResultType::Torque);
-            force.momentY = frame.GetElementData(elementId, EnumKeyword::ElementResultType::MomentY);
-            force.momentZ = frame.GetElementData(elementId, EnumKeyword::ElementResultType::MomentZ);
-            force.domainId = domainId;
-            elementForces.push_back(force);
+            const auto elementType = elementTypes.value(elementId, EnumKeyword::ElementType::UNKNOWN);
+            if (elementType == EnumKeyword::ElementType::T3D2)
+            {
+                TrussForceRecord force;
+                force.id = elementId;
+                force.domainId = domainId;
+                force.axial = frame.GetElementData(elementId, EnumKeyword::ElementResultType::AxialForce);
+                trussForces.push_back(force);
+            }
+            else if (elementType == EnumKeyword::ElementType::CABLE)
+            {
+                CableForceRecord force;
+                force.id = elementId;
+                force.domainId = domainId;
+                force.axial = frame.GetElementData(elementId, EnumKeyword::ElementResultType::AxialForce);
+                force.torque = frame.GetElementData(elementId, EnumKeyword::ElementResultType::Torque);
+                cableForces.push_back(force);
+            }
+            else
+            {
+                ElementForceRecord force;
+                force.id = elementId;
+                force.axial = frame.GetElementData(elementId, EnumKeyword::ElementResultType::AxialForce);
+                force.shearY = frame.GetElementData(elementId, EnumKeyword::ElementResultType::ShearY);
+                force.shearZ = frame.GetElementData(elementId, EnumKeyword::ElementResultType::ShearZ);
+                force.torque = frame.GetElementData(elementId, EnumKeyword::ElementResultType::Torque);
+                force.momentY = frame.GetElementData(elementId, EnumKeyword::ElementResultType::MomentY);
+                force.momentZ = frame.GetElementData(elementId, EnumKeyword::ElementResultType::MomentZ);
+                force.domainId = domainId;
+                elementForces.push_back(force);
+            }
 
             ElementStressRecord stress;
             stress.id = elementId;
@@ -1534,9 +1739,12 @@ public:
         H5Handle indexType = CreateIndexType();
         H5Handle nodalType = CreateNodalType();
         H5Handle elementForceType = CreateElementForceType();
+        H5Handle trussForceType = CreateTrussForceType();
+        H5Handle cableForceType = CreateCableForceType();
         H5Handle elementStressType = CreateElementStressType();
         H5Handle elementStrainType = CreateElementStrainType();
         if (!indexType.valid() || !nodalType.valid() || !elementForceType.valid()
+            || !trussForceType.valid() || !cableForceType.valid()
             || !elementStressType.valid() || !elementStrainType.valid())
         {
             return false;
@@ -1548,6 +1756,8 @@ public:
             && AppendRecordsWithIndex("/YQY/RESULT/NODAL/ACCELERATION", "/INDEX/YQY/RESULT/NODAL/ACCELERATION", nodalType, indexType, domainId, accelerations)
             && AppendRecordsWithIndex("/YQY/RESULT/NODAL/REACTION_FORCE", "/INDEX/YQY/RESULT/NODAL/REACTION_FORCE", nodalType, indexType, domainId, reactions)
             && AppendRecordsWithIndex("/YQY/RESULT/ELEMENTAL/ELEMENT_FORCE", "/INDEX/YQY/RESULT/ELEMENTAL/ELEMENT_FORCE", elementForceType, indexType, domainId, elementForces)
+            && AppendRecordsWithIndex("/YQY/RESULT/ELEMENTAL/TRUSS_FORCE", "/INDEX/YQY/RESULT/ELEMENTAL/TRUSS_FORCE", trussForceType, indexType, domainId, trussForces)
+            && AppendRecordsWithIndex("/YQY/RESULT/ELEMENTAL/CABLE_FORCE", "/INDEX/YQY/RESULT/ELEMENTAL/CABLE_FORCE", cableForceType, indexType, domainId, cableForces)
             && AppendRecordsWithIndex("/YQY/RESULT/ELEMENTAL/STRESS", "/INDEX/YQY/RESULT/ELEMENTAL/STRESS", elementStressType, indexType, domainId, elementStresses)
             && AppendRecordsWithIndex("/YQY/RESULT/ELEMENTAL/STRAIN", "/INDEX/YQY/RESULT/ELEMENTAL/STRAIN", elementStrainType, indexType, domainId, elementStrains);
     }
@@ -1572,10 +1782,11 @@ public:
         return AppendDataset(file, indexPath, indexType, indices, indexPosition);
     }
 
-    void End()
+    void End(bool resultComplete)
     {
         if (file.valid())
         {
+            WriteIntAttribute(file, "RESULT_COMPLETE", resultComplete ? 1 : 0);
             H5Fflush(file, H5F_SCOPE_GLOBAL);
         }
         file.reset();
@@ -1594,15 +1805,22 @@ Hdf5ResultIO::Hdf5ResultIO()
 {
 }
 
-Hdf5ResultIO::~Hdf5ResultIO() = default;
+Hdf5ResultIO::~Hdf5ResultIO()
+{
+    QMutexLocker locker(&g_hdf5ApiMutex);
+    m_impl.reset();
+}
 
 bool Hdf5ResultIO::ExportHdf5(const QString& fileName, const StructureData* pData) const
 {
+    QMutexLocker locker(&g_hdf5ApiMutex);
     return ExportHdf5(fileName, pData, QString());
 }
 
-bool Hdf5ResultIO::ExportHdf5(const QString& fileName, const StructureData* pData, const QString& sourceModelName) const
+bool Hdf5ResultIO::ExportHdf5(const QString& fileName, const StructureData* pData,
+    const QString& sourceModelName, bool resultComplete) const
 {
+    QMutexLocker locker(&g_hdf5ApiMutex);
     if (!pData || fileName.isEmpty())
     {
         return false;
@@ -1631,7 +1849,7 @@ bool Hdf5ResultIO::ExportHdf5(const QString& fileName, const StructureData* pDat
     }
 
     const bool attrOk = WriteStringAttribute(file, "FORMAT", "YQY_H5")
-        && WriteIntAttribute(file, "VERSION", 1)
+        && WriteIntAttribute(file, "RESULT_COMPLETE", resultComplete ? 1 : 0)
         && WriteStringAttribute(file, "CREATED_TIME", QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss"))
         && WriteStringAttribute(file, "PROGRAM", "YQY_CAE")
         && WriteStringAttribute(file, "SOURCE_MODEL", sourceModelName);
@@ -1652,17 +1870,20 @@ bool Hdf5ResultIO::ExportHdf5(const QString& fileName, const StructureData* pDat
 
 bool Hdf5ResultIO::BeginResultStream(const QString& fileName, const StructureData* pData, const QString& sourceModelName)
 {
+    QMutexLocker locker(&g_hdf5ApiMutex);
     return m_impl->Begin(fileName, pData, sourceModelName);
 }
 
 bool Hdf5ResultIO::WriteResultFrame(int domainId, int stepId, int increment, int analysis, double time, const DataFrame& frame)
 {
+    QMutexLocker locker(&g_hdf5ApiMutex);
     return m_impl->WriteFrame(domainId, stepId, increment, analysis, time, frame);
 }
 
-void Hdf5ResultIO::EndResultStream()
+void Hdf5ResultIO::EndResultStream(bool resultComplete)
 {
-    m_impl->End();
+    QMutexLocker locker(&g_hdf5ApiMutex);
+    m_impl->End(resultComplete);
 }
 
 namespace
@@ -1695,6 +1916,272 @@ bool ReadDatasetAll(hid_t file, const char* path, hid_t memoryType, std::vector<
     }
 
     return H5Dread(dataset, memoryType, H5S_ALL, H5S_ALL, H5P_DEFAULT, records.data()) >= 0;
+}
+
+bool ReadInputData(hid_t file, StructureData* data)
+{
+    if (!data)
+        return false;
+
+    H5Handle gridType = CreateGridType();
+    H5Handle materialType = CreateMaterialType();
+    H5Handle sectionType = CreateSectionType();
+    H5Handle propertyType = CreatePropertyType();
+    H5Handle elementType = CreateElementType();
+    H5Handle constraintType = CreateConstraintType();
+    H5Handle loadType = CreateLoadType();
+    H5Handle stepType = CreateStepType();
+    if (!gridType.valid() || !materialType.valid() || !sectionType.valid() || !propertyType.valid()
+        || !elementType.valid() || !constraintType.valid() || !loadType.valid() || !stepType.valid())
+    {
+        return false;
+    }
+
+    std::vector<GridRecord> grids;
+    std::vector<MaterialRecord> materials;
+    std::vector<SectionRecord> sections;
+    std::vector<PropertyRecord> properties;
+    std::vector<ElementRecord> elements;
+    std::vector<ConstraintRecord> constraints;
+    std::vector<LoadRecord> loads;
+    std::vector<StepRecord> steps;
+    if (!ReadDatasetAll(file, "/YQY/INPUT/NODE/GRID", gridType, grids)
+        || !ReadDatasetAll(file, "/YQY/INPUT/MATERIAL/MAT", materialType, materials)
+        || !ReadDatasetAll(file, "/YQY/INPUT/SECTION/SECTION", sectionType, sections)
+        || !ReadDatasetAll(file, "/YQY/INPUT/PROPERTY/PROPERTY", propertyType, properties)
+        || !ReadDatasetAll(file, "/YQY/INPUT/ELEMENT/ELEMENT", elementType, elements)
+        || !ReadDatasetAll(file, "/YQY/INPUT/CONSTRAINT/SPC", constraintType, constraints)
+        || !ReadDatasetAll(file, "/YQY/INPUT/LOAD/LOAD", loadType, loads)
+        || !ReadDatasetAll(file, "/YQY/INPUT/ANALYSIS_STEP/STEP", stepType, steps)
+        || grids.empty())
+    {
+        return false;
+    }
+
+    auto restored = std::make_unique<StructureData>();
+    for (const GridRecord& record : grids)
+    {
+        if (record.id <= 0 || restored->m_Nodes.find(record.id) != restored->m_Nodes.end())
+            return false;
+        auto node = std::make_shared<Node>();
+        node->m_Id = record.id;
+        node->m_X = record.x[0];
+        node->m_Y = record.x[1];
+        node->m_Z = record.x[2];
+        node->SetNumDOFs(std::max(3, record.dofCount));
+        restored->m_Nodes.emplace(record.id, std::move(node));
+    }
+
+    for (const MaterialRecord& record : materials)
+    {
+        auto material = std::make_shared<Material>();
+        material->m_Id = record.id;
+        material->m_Young = record.young;
+        material->m_Poisson = record.poisson;
+        material->m_Density = record.density;
+        material->m_MaxStress = record.maxStress;
+        material->m_Expansion = record.expansion;
+        restored->m_Material[record.id] = std::move(material);
+    }
+
+    for (const SectionRecord& record : sections)
+    {
+        std::shared_ptr<SectionBase> section;
+        const auto storedType = static_cast<EnumKeyword::SectionType>(record.type);
+        if (storedType == EnumKeyword::SectionType::RECTANGULAR
+            || (storedType == EnumKeyword::SectionType::UNKNOWN && record.width > 0.0 && record.height > 0.0))
+        {
+            auto rectangle = std::make_shared<SectionRectangle>();
+            rectangle->m_Width = record.width;
+            rectangle->m_Height = record.height;
+            section = std::move(rectangle);
+        }
+        else
+        {
+            section = std::make_shared<SectionCircular>();
+        }
+        section->m_Id = record.id;
+        section->m_Area = record.area;
+        section->m_Radius = record.radius;
+        section->Io = record.iy;
+        section->Irr = record.iz;
+        restored->m_Section[record.id] = std::move(section);
+    }
+
+    for (const PropertyRecord& record : properties)
+    {
+        auto property = std::make_shared<Property>();
+        property->m_Id = record.id;
+        if (record.materialId > 0)
+        {
+            const auto material = restored->m_Material.find(record.materialId);
+            if (material == restored->m_Material.end())
+                return false;
+            property->m_pMaterial = material->second;
+        }
+        if (record.sectionId > 0)
+        {
+            const auto section = restored->m_Section.find(record.sectionId);
+            if (section == restored->m_Section.end())
+                return false;
+            property->m_pSection = section->second;
+        }
+        restored->m_Property[record.id] = std::move(property);
+    }
+
+    for (const ElementRecord& record : elements)
+    {
+        std::shared_ptr<ElementBase> element;
+        switch (static_cast<EnumKeyword::ElementType>(record.type))
+        {
+        case EnumKeyword::ElementType::T3D2:
+            element = std::make_shared<ElementTruss>();
+            break;
+        case EnumKeyword::ElementType::CABLE:
+            element = std::make_shared<ElementCable>();
+            break;
+        case EnumKeyword::ElementType::CR3D:
+        {
+            auto beam = std::make_shared<ElementBeam_CR>();
+            beam->q0 = Eigen::Vector3d(record.q0[0], record.q0[1], record.q0[2]);
+            element = std::move(beam);
+            break;
+        }
+        default:
+            element = std::make_shared<ElementTruss>();
+            break;
+        }
+
+        element->m_Id = record.id;
+        element->m_InitStress = record.initStress;
+        if (element->m_pNode.size() < 2)
+        {
+            element->m_pNode.resize(2);
+        }
+        for (size_t nodeIndex = 0; nodeIndex < 2; ++nodeIndex)
+        {
+            const int nodeId = record.nodeIds[nodeIndex];
+            const auto node = restored->m_Nodes.find(nodeId);
+            if (node == restored->m_Nodes.end())
+                return false;
+            element->m_pNode[nodeIndex] = node->second;
+        }
+        if (record.propertyId > 0)
+        {
+            const auto property = restored->m_Property.find(record.propertyId);
+            if (property == restored->m_Property.end())
+                return false;
+            element->m_pProperty = property->second;
+        }
+        const auto firstNode = element->m_pNode[0].lock();
+        const auto secondNode = element->m_pNode[1].lock();
+        const double dx = secondNode->m_X - firstNode->m_X;
+        const double dy = secondNode->m_Y - firstNode->m_Y;
+        const double dz = secondNode->m_Z - firstNode->m_Z;
+        element->L0 = std::sqrt(dx * dx + dy * dy + dz * dz);
+        element->L = element->L0;
+        restored->m_Elements[record.id] = std::move(element);
+    }
+
+    for (const ConstraintRecord& record : constraints)
+    {
+        const auto node = restored->m_Nodes.find(record.nodeId);
+        if (node == restored->m_Nodes.end())
+            return false;
+        auto constraint = std::make_shared<Constraint>();
+        constraint->m_Id = record.id;
+        constraint->m_pNode = node->second;
+        constraint->m_Direction = static_cast<EnumKeyword::Direction>(record.direction);
+        constraint->m_Value = record.value;
+        restored->m_Constraint[record.id] = std::move(constraint);
+    }
+
+    for (const LoadRecord& record : loads)
+    {
+        std::shared_ptr<LoadBase> load;
+        switch (static_cast<EnumKeyword::LoadType>(record.type))
+        {
+        case EnumKeyword::LoadType::FORCE_NODE:
+        {
+            const auto node = restored->m_Nodes.find(record.targetId);
+            if (node == restored->m_Nodes.end())
+                return false;
+            auto nodeLoad = std::make_shared<Force_Node>();
+            nodeLoad->m_pNode = node->second;
+            nodeLoad->m_Value = record.value;
+            load = std::move(nodeLoad);
+            break;
+        }
+        case EnumKeyword::LoadType::FORCE_ELEMENT:
+        {
+            const auto element = restored->m_Elements.find(record.targetId);
+            if (element == restored->m_Elements.end())
+                return false;
+            auto elementLoad = std::make_shared<Force_Element>();
+            elementLoad->m_pElement = element->second;
+            elementLoad->m_Value = record.value;
+            load = std::move(elementLoad);
+            break;
+        }
+        case EnumKeyword::LoadType::FORCE_GRAVITY:
+        {
+            auto gravity = std::make_shared<Force_Gravity>();
+            gravity->m_g = record.value;
+            load = std::move(gravity);
+            break;
+        }
+        case EnumKeyword::LoadType::FORCE_WIND:
+        {
+            auto wind = std::make_shared<Force_Wind>();
+            wind->m_velocity = record.value;
+            load = std::move(wind);
+            break;
+        }
+        default:
+            continue;
+        }
+
+        load->m_Id = record.id;
+        load->m_Direction = static_cast<EnumKeyword::Direction>(record.direction);
+        load->m_StepId = record.stepId;
+        load->m_FunctionType = static_cast<TimeFunctionType>(record.functionType);
+        load->m_StartTime = record.startTime;
+        load->m_EndTime = record.endTime;
+        load->m_Amplitude = record.params[0];
+        load->m_Frequency = record.params[1];
+        load->m_Phase = record.params[2];
+        load->m_Offset = record.params[3];
+        load->m_RampT0 = record.params[4];
+        load->m_RampT1 = record.params[5];
+        load->m_Decay = record.params[6];
+        load->m_Period = record.params[7];
+        restored->m_Load[record.id] = std::move(load);
+    }
+
+    for (const StepRecord& record : steps)
+    {
+        AnalysisStepConfig config;
+        config.id = record.id;
+        config.name = QStringLiteral("Step-%1").arg(record.id);
+        config.type = static_cast<EnumKeyword::StepType>(record.type);
+        config.totalTime = record.time;
+        config.stepSize = record.stepSize;
+        config.tolerance = record.tolerance;
+        config.maxIterations = record.maxIterations;
+        config.dynamicSolverType = static_cast<SolverNameSpace::SolverType>(record.dynamicSolverType);
+        restored->AddAnalysisStep(config);
+    }
+
+    data->Clear();
+    data->m_Nodes = std::move(restored->m_Nodes);
+    data->m_Elements = std::move(restored->m_Elements);
+    data->m_Material = std::move(restored->m_Material);
+    data->m_Section = std::move(restored->m_Section);
+    data->m_Property = std::move(restored->m_Property);
+    data->m_Constraint = std::move(restored->m_Constraint);
+    data->m_Load = std::move(restored->m_Load);
+    data->m_AnalysisStep = std::move(restored->m_AnalysisStep);
+    return true;
 }
 
 template <typename Record>
@@ -1876,6 +2363,7 @@ bool Hdf5ResultIO::ExportBdfResultFromHdf5(const QString& hdf5FileName,
     const std::vector<int>& elementIds,
     const std::vector<EnumKeyword::ElementResultType>& elementTypes) const
 {
+    QMutexLocker locker(&g_hdf5ApiMutex);
     const QString tempHdf5FileName = CopyHdf5FileToAsciiTemp(QFileInfo(hdf5FileName).absoluteFilePath());
     if (tempHdf5FileName.isEmpty())
     {
@@ -1891,8 +2379,7 @@ bool Hdf5ResultIO::ExportBdfResultFromHdf5(const QString& hdf5FileName,
         qDebug() << "Failed to open HDF5 file:" << hdf5FileName;
         return false;
     }
-
-    QFile outFile(bdfFileName);
+    QSaveFile outFile(bdfFileName);
     if (!outFile.open(QIODevice::WriteOnly | QIODevice::Text))
     {
         qDebug() << "Failed to open BDF result file:" << bdfFileName;
@@ -1903,10 +2390,13 @@ bool Hdf5ResultIO::ExportBdfResultFromHdf5(const QString& hdf5FileName,
     H5Handle indexType = CreateIndexType();
     H5Handle nodalType = CreateNodalType();
     H5Handle elementForceType = CreateElementForceType();
+    H5Handle trussForceType = CreateTrussForceType();
+    H5Handle cableForceType = CreateCableForceType();
     H5Handle elementStressType = CreateElementStressType();
     H5Handle elementStrainType = CreateElementStrainType();
     if (!domainType.valid() || !indexType.valid() || !nodalType.valid()
-        || !elementForceType.valid() || !elementStressType.valid() || !elementStrainType.valid())
+        || !elementForceType.valid() || !trussForceType.valid() || !cableForceType.valid()
+        || !elementStressType.valid() || !elementStrainType.valid())
     {
         return false;
     }
@@ -1918,6 +2408,8 @@ bool Hdf5ResultIO::ExportBdfResultFromHdf5(const QString& hdf5FileName,
     std::vector<IndexRecord> accelerationIndexRecords;
     std::vector<IndexRecord> reactionIndexRecords;
     std::vector<IndexRecord> elementForceIndexRecords;
+    std::vector<IndexRecord> trussForceIndexRecords;
+    std::vector<IndexRecord> cableForceIndexRecords;
     std::vector<IndexRecord> elementStressIndexRecords;
     std::vector<IndexRecord> elementStrainIndexRecords;
 
@@ -1928,6 +2420,8 @@ bool Hdf5ResultIO::ExportBdfResultFromHdf5(const QString& hdf5FileName,
         || !ReadDatasetAll(file, "/INDEX/YQY/RESULT/NODAL/ACCELERATION", indexType, accelerationIndexRecords)
         || !ReadDatasetAll(file, "/INDEX/YQY/RESULT/NODAL/REACTION_FORCE", indexType, reactionIndexRecords)
         || !ReadDatasetAll(file, "/INDEX/YQY/RESULT/ELEMENTAL/ELEMENT_FORCE", indexType, elementForceIndexRecords)
+        || !ReadDatasetAll(file, "/INDEX/YQY/RESULT/ELEMENTAL/TRUSS_FORCE", indexType, trussForceIndexRecords)
+        || !ReadDatasetAll(file, "/INDEX/YQY/RESULT/ELEMENTAL/CABLE_FORCE", indexType, cableForceIndexRecords)
         || !ReadDatasetAll(file, "/INDEX/YQY/RESULT/ELEMENTAL/STRESS", indexType, elementStressIndexRecords)
         || !ReadDatasetAll(file, "/INDEX/YQY/RESULT/ELEMENTAL/STRAIN", indexType, elementStrainIndexRecords))
     {
@@ -1944,6 +2438,8 @@ bool Hdf5ResultIO::ExportBdfResultFromHdf5(const QString& hdf5FileName,
     const QHash<int, IndexRecord> accelerationIndex = BuildIndexMap(accelerationIndexRecords);
     const QHash<int, IndexRecord> reactionIndex = BuildIndexMap(reactionIndexRecords);
     const QHash<int, IndexRecord> elementForceIndex = BuildIndexMap(elementForceIndexRecords);
+    const QHash<int, IndexRecord> trussForceIndex = BuildIndexMap(trussForceIndexRecords);
+    const QHash<int, IndexRecord> cableForceIndex = BuildIndexMap(cableForceIndexRecords);
     const QHash<int, IndexRecord> elementStressIndex = BuildIndexMap(elementStressIndexRecords);
     const QHash<int, IndexRecord> elementStrainIndex = BuildIndexMap(elementStrainIndexRecords);
 
@@ -1974,6 +2470,8 @@ bool Hdf5ResultIO::ExportBdfResultFromHdf5(const QString& hdf5FileName,
         std::vector<NodalRecord> accelerationRecords;
         std::vector<NodalRecord> reactionRecords;
         std::vector<ElementForceRecord> forceRecords;
+        std::vector<TrussForceRecord> trussForceRecords;
+        std::vector<CableForceRecord> cableForceRecords;
         std::vector<ElementStressRecord> stressRecords;
         std::vector<ElementStrainRecord> strainRecords;
 
@@ -1983,6 +2481,8 @@ bool Hdf5ResultIO::ExportBdfResultFromHdf5(const QString& hdf5FileName,
         const IndexRecord accelerationInfo = accelerationIndex.value(domain.id);
         const IndexRecord reactionInfo = reactionIndex.value(domain.id);
         const IndexRecord forceInfo = elementForceIndex.value(domain.id);
+        const IndexRecord trussForceInfo = trussForceIndex.value(domain.id);
+        const IndexRecord cableForceInfo = cableForceIndex.value(domain.id);
         const IndexRecord stressInfo = elementStressIndex.value(domain.id);
         const IndexRecord strainInfo = elementStrainIndex.value(domain.id);
 
@@ -1992,6 +2492,8 @@ bool Hdf5ResultIO::ExportBdfResultFromHdf5(const QString& hdf5FileName,
             || !ReadDatasetBlock(file, "/YQY/RESULT/NODAL/ACCELERATION", nodalType, accelerationInfo.position, accelerationInfo.length, accelerationRecords)
             || !ReadDatasetBlock(file, "/YQY/RESULT/NODAL/REACTION_FORCE", nodalType, reactionInfo.position, reactionInfo.length, reactionRecords)
             || !ReadDatasetBlock(file, "/YQY/RESULT/ELEMENTAL/ELEMENT_FORCE", elementForceType, forceInfo.position, forceInfo.length, forceRecords)
+            || !ReadDatasetBlock(file, "/YQY/RESULT/ELEMENTAL/TRUSS_FORCE", trussForceType, trussForceInfo.position, trussForceInfo.length, trussForceRecords)
+            || !ReadDatasetBlock(file, "/YQY/RESULT/ELEMENTAL/CABLE_FORCE", cableForceType, cableForceInfo.position, cableForceInfo.length, cableForceRecords)
             || !ReadDatasetBlock(file, "/YQY/RESULT/ELEMENTAL/STRESS", elementStressType, stressInfo.position, stressInfo.length, stressRecords)
             || !ReadDatasetBlock(file, "/YQY/RESULT/ELEMENTAL/STRAIN", elementStrainType, strainInfo.position, strainInfo.length, strainRecords))
         {
@@ -2003,7 +2505,24 @@ bool Hdf5ResultIO::ExportBdfResultFromHdf5(const QString& hdf5FileName,
         const QHash<int, NodalRecord> velocities = BuildRecordMap(velocityRecords);
         const QHash<int, NodalRecord> accelerations = BuildRecordMap(accelerationRecords);
         const QHash<int, NodalRecord> reactions = BuildRecordMap(reactionRecords);
-        const QHash<int, ElementForceRecord> forces = BuildRecordMap(forceRecords);
+        QHash<int, ElementForceRecord> forces = BuildRecordMap(forceRecords);
+        for (const TrussForceRecord& value : trussForceRecords)
+        {
+            ElementForceRecord force;
+            force.id = value.id;
+            force.domainId = value.domainId;
+            force.axial = value.axial;
+            forces.insert(force.id, force);
+        }
+        for (const CableForceRecord& value : cableForceRecords)
+        {
+            ElementForceRecord force;
+            force.id = value.id;
+            force.domainId = value.domainId;
+            force.axial = value.axial;
+            force.torque = value.torque;
+            forces.insert(force.id, force);
+        }
         const QHash<int, ElementStressRecord> stresses = BuildRecordMap(stressRecords);
         const QHash<int, ElementStrainRecord> strains = BuildRecordMap(strainRecords);
 
@@ -2025,6 +2544,13 @@ bool Hdf5ResultIO::ExportBdfResultFromHdf5(const QString& hdf5FileName,
         stream << "\n";
     }
 
+    stream.flush();
+    if (stream.status() != QTextStream::Ok || !outFile.commit())
+    {
+        file.reset();
+        QFile::remove(tempHdf5FileName);
+        return false;
+    }
     qDebug().noquote() << QStringLiteral("H5/HDF5 结果已转换输出至") << bdfFileName;
     file.reset();
     QFile::remove(tempHdf5FileName);
@@ -2033,9 +2559,8 @@ bool Hdf5ResultIO::ExportBdfResultFromHdf5(const QString& hdf5FileName,
 
 bool Hdf5ResultIO::ImportHdf5(const QString& fileName, StructureData* pData) const
 {
-    Q_UNUSED(pData);
-
-    if (fileName.isEmpty())
+    QMutexLocker locker(&g_hdf5ApiMutex);
+    if (fileName.isEmpty() || !pData)
     {
         return false;
     }
@@ -2055,9 +2580,333 @@ bool Hdf5ResultIO::ImportHdf5(const QString& fileName, StructureData* pData) con
         qDebug() << "Failed to open HDF5 file:" << fileName;
         return false;
     }
-
-    qDebug().noquote() << QStringLiteral("H5/HDF5 文件读取接口已预留，模型对象恢复将在后续实现。");
+    const bool restored = H5Lexists(file, "/YQY/INPUT", H5P_DEFAULT) > 0
+        && ReadInputData(file, pData);
+    if (!restored)
+        qDebug().noquote() << QStringLiteral("H5/HDF5 模型数据读取失败：") << fileName;
     file.reset();
     QFile::remove(tempHdf5FileName);
-    return false;
+    return restored;
+}
+
+bool Hdf5ResultIO::InspectHdf5(const QString& fileName, Hdf5ResultSummary& summary) const
+{
+    QMutexLocker locker(&g_hdf5ApiMutex);
+    summary = {};
+    if (fileName.isEmpty())
+        return false;
+
+    const QString tempFileName = CopyHdf5FileToAsciiTemp(QFileInfo(fileName).absoluteFilePath());
+    if (tempFileName.isEmpty())
+        return false;
+
+    const QByteArray path = ToHdf5Path(tempFileName);
+    H5Handle file(H5Fopen(path.constData(), H5F_ACC_RDONLY, H5P_DEFAULT), H5Fclose);
+    if (!file.valid())
+    {
+        QFile::remove(tempFileName);
+        return false;
+    }
+    const auto datasetLength = [](hid_t fileId, const char* datasetPath) -> qint64 {
+        H5Handle dataset(H5Dopen2(fileId, datasetPath, H5P_DEFAULT), H5Dclose);
+        if (!dataset.valid())
+            return 0;
+        H5Handle space(H5Dget_space(dataset), H5Sclose);
+        if (!space.valid())
+            return 0;
+        hsize_t dimensions[1] = { 0 };
+        return H5Sget_simple_extent_dims(space, dimensions, nullptr) >= 0
+            ? static_cast<qint64>(dimensions[0]) : 0;
+    };
+
+    summary.hasModel = H5Lexists(file, "/YQY/INPUT", H5P_DEFAULT) > 0;
+    summary.hasResult = H5Lexists(file, "/YQY/RESULT", H5P_DEFAULT) > 0;
+    summary.frameCount = datasetLength(file, "/YQY/RESULT/DOMAINS");
+    summary.displacementRecordCount = datasetLength(file, "/YQY/RESULT/NODAL/DISPLACEMENT");
+    summary.stressRecordCount = datasetLength(file, "/YQY/RESULT/ELEMENTAL/STRESS");
+    summary.strainRecordCount = datasetLength(file, "/YQY/RESULT/ELEMENTAL/STRAIN");
+    int resultComplete = 1;
+    if (ReadIntAttribute(file, "RESULT_COMPLETE", resultComplete))
+        summary.partialResult = summary.frameCount > 0 && resultComplete == 0;
+
+    file.reset();
+    QFile::remove(tempFileName);
+    return summary.hasModel || summary.hasResult;
+}
+
+bool Hdf5ResultIO::OpenResultFile(const QString& fileName,
+    std::vector<Hdf5ResultFrameInfo>& frames)
+{
+    QMutexLocker locker(&g_hdf5ApiMutex);
+    frames.clear();
+    m_impl->CloseResult();
+    if (fileName.trimmed().isEmpty())
+        return false;
+
+    m_impl->resultTempFileName = CopyHdf5FileToAsciiTemp(QFileInfo(fileName).absoluteFilePath());
+    if (m_impl->resultTempFileName.isEmpty())
+        return false;
+
+    const QByteArray path = ToHdf5Path(m_impl->resultTempFileName);
+    m_impl->resultFile.reset(H5Fopen(path.constData(), H5F_ACC_RDONLY, H5P_DEFAULT), H5Fclose);
+    if (!m_impl->resultFile.valid())
+    {
+        m_impl->CloseResult();
+        return false;
+    }
+    H5Handle domainType = CreateDomainType();
+    H5Handle indexType = CreateIndexType();
+    std::vector<IndexRecord> displacement;
+    std::vector<IndexRecord> currentCoordinates;
+    std::vector<IndexRecord> forces;
+    std::vector<IndexRecord> trussForces;
+    std::vector<IndexRecord> cableForces;
+    std::vector<IndexRecord> stresses;
+    std::vector<IndexRecord> strains;
+    const bool ok = domainType.valid() && indexType.valid()
+        && ReadDatasetAll(m_impl->resultFile, "/YQY/RESULT/DOMAINS", domainType,
+            m_impl->resultDomains)
+        && ReadDatasetAll(m_impl->resultFile, "/INDEX/YQY/RESULT/NODAL/DISPLACEMENT",
+            indexType, displacement)
+        && ReadDatasetAll(m_impl->resultFile, "/INDEX/YQY/RESULT/NODAL/CURRENT_COORDINATE",
+            indexType, currentCoordinates)
+        && ReadDatasetAll(m_impl->resultFile, "/INDEX/YQY/RESULT/ELEMENTAL/ELEMENT_FORCE",
+            indexType, forces)
+        && ReadDatasetAll(m_impl->resultFile, "/INDEX/YQY/RESULT/ELEMENTAL/TRUSS_FORCE",
+            indexType, trussForces)
+        && ReadDatasetAll(m_impl->resultFile, "/INDEX/YQY/RESULT/ELEMENTAL/CABLE_FORCE",
+            indexType, cableForces)
+        && ReadDatasetAll(m_impl->resultFile, "/INDEX/YQY/RESULT/ELEMENTAL/STRESS",
+            indexType, stresses)
+        && ReadDatasetAll(m_impl->resultFile, "/INDEX/YQY/RESULT/ELEMENTAL/STRAIN",
+            indexType, strains);
+    if (!ok || m_impl->resultDomains.empty())
+    {
+        m_impl->CloseResult();
+        return false;
+    }
+
+    std::sort(m_impl->resultDomains.begin(), m_impl->resultDomains.end(),
+        [](const DomainRecord& lhs, const DomainRecord& rhs) { return lhs.id < rhs.id; });
+    m_impl->displacementIndex = BuildIndexMap(displacement);
+    m_impl->currentCoordinateIndex = BuildIndexMap(currentCoordinates);
+    m_impl->elementForceIndex = BuildIndexMap(forces);
+    m_impl->trussForceIndex = BuildIndexMap(trussForces);
+    m_impl->cableForceIndex = BuildIndexMap(cableForces);
+    m_impl->stressIndex = BuildIndexMap(stresses);
+    m_impl->strainIndex = BuildIndexMap(strains);
+    m_impl->resultSourceFileName = QFileInfo(fileName).absoluteFilePath();
+
+    frames.reserve(m_impl->resultDomains.size());
+    for (const DomainRecord& domain : m_impl->resultDomains)
+    {
+        Hdf5ResultFrameInfo info;
+        info.domainId = domain.id;
+        info.stepId = domain.stepId;
+        info.increment = domain.increment;
+        info.analysis = domain.analysis;
+        info.time = domain.time;
+        info.loadFactor = domain.loadFactor;
+        frames.push_back(info);
+    }
+    return true;
+}
+
+bool Hdf5ResultIO::ReadResultRanges(Hdf5ResultRanges& ranges) const
+{
+    QMutexLocker locker(&g_hdf5ApiMutex);
+    ranges = {};
+    if (!m_impl->resultFile.valid())
+        return false;
+
+    const auto includeValue = [](Hdf5ResultRange& range, double value)
+    {
+        if (!std::isfinite(value))
+            return;
+        if (!range.valid)
+        {
+            range.minimum = value;
+            range.maximum = value;
+            range.valid = true;
+            return;
+        }
+        range.minimum = std::min(range.minimum, value);
+        range.maximum = std::max(range.maximum, value);
+    };
+
+    H5Handle nodalType = CreateNodalType();
+    std::vector<NodalRecord> displacements;
+    if (!nodalType.valid()
+        || !ReadDatasetAll(m_impl->resultFile, "/YQY/RESULT/NODAL/DISPLACEMENT", nodalType, displacements))
+    {
+        return false;
+    }
+    for (const NodalRecord& value : displacements)
+    {
+        includeValue(ranges.displacementMagnitude,
+            std::sqrt(value.x * value.x + value.y * value.y + value.z * value.z));
+        includeValue(ranges.displacementX, value.x);
+        includeValue(ranges.displacementY, value.y);
+        includeValue(ranges.displacementZ, value.z);
+    }
+    displacements.clear();
+    displacements.shrink_to_fit();
+
+    H5Handle forceType = CreateElementForceType();
+    H5Handle trussForceType = CreateTrussForceType();
+    H5Handle cableForceType = CreateCableForceType();
+    std::vector<ElementForceRecord> forces;
+    std::vector<TrussForceRecord> trussForces;
+    std::vector<CableForceRecord> cableForces;
+    if (!forceType.valid() || !trussForceType.valid() || !cableForceType.valid()
+        || !ReadDatasetAll(m_impl->resultFile, "/YQY/RESULT/ELEMENTAL/ELEMENT_FORCE", forceType, forces)
+        || !ReadDatasetAll(m_impl->resultFile, "/YQY/RESULT/ELEMENTAL/TRUSS_FORCE",
+            trussForceType, trussForces)
+        || !ReadDatasetAll(m_impl->resultFile, "/YQY/RESULT/ELEMENTAL/CABLE_FORCE",
+            cableForceType, cableForces))
+    {
+        return false;
+    }
+    for (const ElementForceRecord& value : forces)
+        includeValue(ranges.axialForce, value.axial);
+    for (const TrussForceRecord& value : trussForces)
+        includeValue(ranges.axialForce, value.axial);
+    for (const CableForceRecord& value : cableForces)
+        includeValue(ranges.axialForce, value.axial);
+    forces.clear();
+    forces.shrink_to_fit();
+
+    H5Handle stressType = CreateElementStressType();
+    std::vector<ElementStressRecord> stresses;
+    if (!stressType.valid()
+        || !ReadDatasetAll(m_impl->resultFile, "/YQY/RESULT/ELEMENTAL/STRESS", stressType, stresses))
+    {
+        return false;
+    }
+    for (const ElementStressRecord& value : stresses)
+        includeValue(ranges.stress, value.currentStress);
+    stresses.clear();
+    stresses.shrink_to_fit();
+
+    H5Handle strainType = CreateElementStrainType();
+    std::vector<ElementStrainRecord> strains;
+    if (!strainType.valid()
+        || !ReadDatasetAll(m_impl->resultFile, "/YQY/RESULT/ELEMENTAL/STRAIN", strainType, strains))
+    {
+        return false;
+    }
+    for (const ElementStrainRecord& value : strains)
+        includeValue(ranges.strain, value.strain);
+
+    return ranges.displacementMagnitude.valid || ranges.displacementX.valid || ranges.displacementY.valid
+        || ranges.displacementZ.valid || ranges.axialForce.valid || ranges.stress.valid || ranges.strain.valid;
+}
+
+bool Hdf5ResultIO::ReadResultFrame(int frameIndex, Hdf5ResultFrame& frame) const
+{
+    QMutexLocker locker(&g_hdf5ApiMutex);
+    frame = {};
+    if (!m_impl->resultFile.valid() || frameIndex < 0
+        || frameIndex >= static_cast<int>(m_impl->resultDomains.size()))
+        return false;
+
+    const DomainRecord& domain = m_impl->resultDomains[static_cast<std::size_t>(frameIndex)];
+    const IndexRecord displacementInfo = m_impl->displacementIndex.value(domain.id);
+    const IndexRecord coordinateInfo = m_impl->currentCoordinateIndex.value(domain.id);
+    const IndexRecord forceInfo = m_impl->elementForceIndex.value(domain.id);
+    const IndexRecord trussForceInfo = m_impl->trussForceIndex.value(domain.id);
+    const IndexRecord cableForceInfo = m_impl->cableForceIndex.value(domain.id);
+    const IndexRecord stressInfo = m_impl->stressIndex.value(domain.id);
+    const IndexRecord strainInfo = m_impl->strainIndex.value(domain.id);
+
+    H5Handle nodalType = CreateNodalType();
+    H5Handle forceType = CreateElementForceType();
+    H5Handle trussForceType = CreateTrussForceType();
+    H5Handle cableForceType = CreateCableForceType();
+    H5Handle stressType = CreateElementStressType();
+    H5Handle strainType = CreateElementStrainType();
+    std::vector<NodalRecord> displacements;
+    std::vector<NodalRecord> coordinates;
+    std::vector<ElementForceRecord> forces;
+    std::vector<TrussForceRecord> trussForces;
+    std::vector<CableForceRecord> cableForces;
+    std::vector<ElementStressRecord> stresses;
+    std::vector<ElementStrainRecord> strains;
+    if (!nodalType.valid() || !forceType.valid() || !trussForceType.valid() || !cableForceType.valid()
+        || !stressType.valid() || !strainType.valid()
+        || !ReadDatasetBlock(m_impl->resultFile, "/YQY/RESULT/NODAL/DISPLACEMENT",
+            nodalType, displacementInfo.position, displacementInfo.length, displacements)
+        || !ReadDatasetBlock(m_impl->resultFile, "/YQY/RESULT/NODAL/CURRENT_COORDINATE",
+            nodalType, coordinateInfo.position, coordinateInfo.length, coordinates)
+        || !ReadDatasetBlock(m_impl->resultFile, "/YQY/RESULT/ELEMENTAL/ELEMENT_FORCE",
+            forceType, forceInfo.position, forceInfo.length, forces)
+        || !ReadDatasetBlock(m_impl->resultFile, "/YQY/RESULT/ELEMENTAL/TRUSS_FORCE",
+            trussForceType, trussForceInfo.position, trussForceInfo.length, trussForces)
+        || !ReadDatasetBlock(m_impl->resultFile, "/YQY/RESULT/ELEMENTAL/CABLE_FORCE",
+            cableForceType, cableForceInfo.position, cableForceInfo.length, cableForces)
+        || !ReadDatasetBlock(m_impl->resultFile, "/YQY/RESULT/ELEMENTAL/STRESS",
+            stressType, stressInfo.position, stressInfo.length, stresses)
+        || !ReadDatasetBlock(m_impl->resultFile, "/YQY/RESULT/ELEMENTAL/STRAIN",
+            strainType, strainInfo.position, strainInfo.length, strains))
+        return false;
+
+    frame.info = { domain.id, domain.stepId, domain.increment, domain.analysis,
+        domain.time, domain.loadFactor };
+    const QHash<int, NodalRecord> coordinateMap = BuildRecordMap(coordinates);
+    frame.nodes.reserve(displacements.size());
+    for (const NodalRecord& value : displacements)
+    {
+        Hdf5NodalResult result;
+        result.id = value.id;
+        result.displacement[0] = value.x;
+        result.displacement[1] = value.y;
+        result.displacement[2] = value.z;
+        const NodalRecord coordinate = coordinateMap.value(value.id);
+        result.currentCoordinate[0] = coordinate.x;
+        result.currentCoordinate[1] = coordinate.y;
+        result.currentCoordinate[2] = coordinate.z;
+        frame.nodes.push_back(result);
+    }
+
+    QHash<int, Hdf5ElementResult> elementMap;
+    for (const ElementForceRecord& value : forces)
+    {
+        auto& result = elementMap[value.id];
+        result.id = value.id;
+        result.axialForce = value.axial;
+    }
+    for (const TrussForceRecord& value : trussForces)
+    {
+        auto& result = elementMap[value.id];
+        result.id = value.id;
+        result.axialForce = value.axial;
+    }
+    for (const CableForceRecord& value : cableForces)
+    {
+        auto& result = elementMap[value.id];
+        result.id = value.id;
+        result.axialForce = value.axial;
+    }
+    for (const ElementStressRecord& value : stresses)
+    {
+        auto& result = elementMap[value.id];
+        result.id = value.id;
+        result.currentStress = value.currentStress;
+    }
+    for (const ElementStrainRecord& value : strains)
+    {
+        auto& result = elementMap[value.id];
+        result.id = value.id;
+        result.strain = value.strain;
+    }
+    frame.elements.reserve(static_cast<std::size_t>(elementMap.size()));
+    for (auto it = elementMap.cbegin(); it != elementMap.cend(); ++it)
+        frame.elements.push_back(it.value());
+    return true;
+}
+
+void Hdf5ResultIO::CloseResultFile()
+{
+    QMutexLocker locker(&g_hdf5ApiMutex);
+    m_impl->CloseResult();
 }

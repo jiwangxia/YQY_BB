@@ -49,7 +49,7 @@ public:
      *
      * 没有历史变量的单元使用默认空实现。
      */
-    virtual void CommitState() {}
+	virtual void CommitState() {}
 
     /**
     * @brief 组装单元阻尼矩阵，用vector保存四个阻尼值double trans_m = 0.0, double trans_k = 0.0, double rot_m = 0.0, double rot_k = 0.0
