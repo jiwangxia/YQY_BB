@@ -4,6 +4,7 @@
 #include "Solver/Interface/ISolver.h"
 #include <memory>
 #include <functional>
+#include <set>
 #include <Eigen/SparseLU>
 typedef Eigen::SparseMatrix<double> SpMat;
 typedef Eigen::Triplet<double> Tri;
@@ -13,6 +14,12 @@ class Force_Node;
 class Force_Element;
 class Force_Gravity;
 class Force_Wind;
+
+enum class AnalysisRegionScope
+{
+    AllEnabledRegions,
+    SelectedRegions
+};
 
 /**
  * @brief 分析步配置 - 描述一次分析任务的输入参数
@@ -27,6 +34,8 @@ struct AnalysisStepConfig
     double tolerance = 1e-5;
     int maxIterations = 32;
     SolverNameSpace::SolverType dynamicSolverType = SolverNameSpace::SolverType::Newmark;
+    AnalysisRegionScope regionScope = AnalysisRegionScope::AllEnabledRegions;
+    std::set<int> computeRegionIds;
 };
 
 /**
@@ -49,6 +58,8 @@ public:
     /// 可选: Newmark, CentralDifference, HHT
     /// 目前只实现了 Newmark，其他为预留
     SolverNameSpace::SolverType m_DynamicSolverType = SolverNameSpace::SolverType::Newmark;
+    AnalysisRegionScope m_RegionScope = AnalysisRegionScope::AllEnabledRegions;
+    std::set<int> m_ComputeRegionIds;
 
     int m_nFixed = 0;              // 约束自由度个数
     int m_nFree = 0;               // 自由自由度个数

@@ -1,6 +1,7 @@
 #include "Controllers/ModelController.h"
 
 #include "DataStructure/Structure/StructureData.h"
+#include "Export/Hdf5ModelIO.h"
 #include "Import/Input_Model.h"
 
 #include <QElapsedTimer>
@@ -65,6 +66,8 @@ int ModelController::adoptModel(
     if (!structure || structure->m_Nodes.empty() || filePath.trimmed().isEmpty())
         return -1;
 
+    structure->EnsureDefaultAnalysisConfiguration();
+
     const QString absolutePath = QFileInfo(filePath).absoluteFilePath();
     for (auto it = m_documents.begin(); it != m_documents.end(); ++it)
     {
@@ -111,10 +114,25 @@ void ModelController::startNextLoading()
         try
         {
             auto structure = std::make_shared<StructureData>();
-            Input_Model importer;
-            result.success = importer.InputData(absolutePath, structure);
-			if (!result.success)
-				result.errorMessage = importer.LastError();
+            if (QFileInfo(absolutePath).suffix().compare(QStringLiteral("h5"), Qt::CaseInsensitive) == 0
+                || QFileInfo(absolutePath).suffix().compare(QStringLiteral("hdf5"), Qt::CaseInsensitive) == 0)
+            {
+                Hdf5ModelIO importer;
+                result.success = importer.ImportHdf5(absolutePath, structure.get());
+                if (!result.success)
+                {
+                    result.errorMessage = QStringLiteral("H5模型格式不符合YQY统一模型协议。");
+                }
+            }
+            else
+            {
+                Input_Model importer;
+                result.success = importer.InputData(absolutePath, structure);
+                if (!result.success)
+                {
+                    result.errorMessage = importer.LastError();
+                }
+            }
             if (result.success && structure->m_Nodes.empty())
             {
                 result.success = false;

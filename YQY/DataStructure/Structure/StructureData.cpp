@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <algorithm>
+#include <iterator>
 
 StructureData::~StructureData()
 {
@@ -23,6 +24,8 @@ void StructureData::Clear()
     m_Constraint.clear();
     m_Load.clear();
     m_AnalysisStep.clear();
+    m_ModelSets.clear();
+    m_ComputeRegions.clear();
 }
 
 std::shared_ptr<StructureData> StructureData::CloneForAnalysis(QString* errorMessage) const
@@ -232,9 +235,475 @@ std::shared_ptr<StructureData> StructureData::CloneForAnalysis(QString* errorMes
         config.tolerance = source->m_Tolerance;
         config.maxIterations = source->m_MaxIterations;
         config.dynamicSolverType = source->m_DynamicSolverType;
+        config.regionScope = source->m_RegionScope;
+        config.computeRegionIds = source->m_ComputeRegionIds;
         clone->AddAnalysisStep(config);
     }
 
+    for (const auto& [id, source] : m_ModelSets)
+    {
+        if (!source)
+            return fail(QStringLiteral("集合 %1 为空").arg(id));
+        clone->m_ModelSets.emplace(id, std::make_shared<ModelSet>(*source));
+    }
+
+    for (const auto& [id, source] : m_ComputeRegions)
+    {
+        if (!source)
+            return fail(QStringLiteral("计算区域 %1 为空").arg(id));
+        clone->m_ComputeRegions.emplace(id, std::make_shared<ComputeRegion>(*source));
+    }
+
+    return clone;
+}
+
+int StructureData::AddModelSet(const QString& name, ModelSetType type, const std::set<int>& ids,
+    QString* errorMessage)
+{
+    if (ids.empty())
+    {
+        if (errorMessage)
+            *errorMessage = QStringLiteral("集合不能为空。");
+        return 0;
+    }
+
+    for (int id : ids)
+    {
+        const bool exists = type == ModelSetType::Node
+            ? m_Nodes.find(id) != m_Nodes.cend()
+            : m_Elements.find(id) != m_Elements.cend();
+        if (!exists)
+        {
+            if (errorMessage)
+                *errorMessage = QStringLiteral("集合引用了不存在的%1 ID %2。")
+                    .arg(type == ModelSetType::Node ? QStringLiteral("节点") : QStringLiteral("单元"))
+                    .arg(id);
+            return 0;
+        }
+    }
+
+    const int id = m_ModelSets.empty() ? 1 : m_ModelSets.rbegin()->first + 1;
+    auto modelSet = std::make_shared<ModelSet>(type);
+    modelSet->m_Id = id;
+    modelSet->m_Name = name.trimmed().isEmpty() ? QStringLiteral("集合-%1").arg(id) : name.trimmed();
+    modelSet->m_Ids = ids;
+    m_ModelSets.emplace(id, std::move(modelSet));
+    return id;
+}
+
+int StructureData::AddComputeRegion(const QString& name, const std::set<int>& nodeIds,
+    const std::set<int>& elementIds, const std::set<int>& sourceSetIds,
+    bool enabled, QString* errorMessage)
+{
+    std::set<int> effectiveNodeIds = nodeIds;
+    std::set<int> effectiveElementIds = elementIds;
+    for (int setId : sourceSetIds)
+    {
+        const auto setIt = m_ModelSets.find(setId);
+        if (setIt == m_ModelSets.cend() || !setIt->second)
+        {
+            if (errorMessage)
+                *errorMessage = QStringLiteral("计算区域引用了不存在的集合 ID %1。").arg(setId);
+            return 0;
+        }
+        if (setIt->second->m_Type == ModelSetType::Node)
+            effectiveNodeIds.insert(setIt->second->m_Ids.cbegin(), setIt->second->m_Ids.cend());
+        else
+            effectiveElementIds.insert(setIt->second->m_Ids.cbegin(), setIt->second->m_Ids.cend());
+    }
+    if (effectiveNodeIds.empty() && effectiveElementIds.empty())
+    {
+        if (errorMessage)
+            *errorMessage = QStringLiteral("计算区域必须包含节点或单元。");
+        return 0;
+    }
+
+    auto region = std::make_shared<ComputeRegion>();
+    region->m_Id = m_ComputeRegions.empty() ? 1 : m_ComputeRegions.rbegin()->first + 1;
+    region->m_Name = name.trimmed().isEmpty()
+        ? QStringLiteral("计算区域-%1").arg(region->m_Id) : name.trimmed();
+    region->m_Enabled = enabled;
+    region->m_SourceSetIds = sourceSetIds;
+    region->m_DirectNodeIds = nodeIds;
+    region->m_DirectElementIds = elementIds;
+    region->m_NodeIds = effectiveNodeIds;
+    region->m_ElementIds = effectiveElementIds;
+
+    for (int elementId : region->m_ElementIds)
+    {
+        const auto elementIt = m_Elements.find(elementId);
+        if (elementIt == m_Elements.cend() || !elementIt->second)
+        {
+            if (errorMessage)
+                *errorMessage = QStringLiteral("计算区域引用了不存在的单元 ID %1。").arg(elementId);
+            return 0;
+        }
+        for (const auto& nodeRef : elementIt->second->m_pNode)
+        {
+            const auto node = nodeRef.lock();
+            if (!node || m_Nodes.find(node->m_Id) == m_Nodes.cend())
+            {
+                if (errorMessage)
+                    *errorMessage = QStringLiteral("单元 %1 存在无效端点节点。").arg(elementId);
+                return 0;
+            }
+            region->m_NodeIds.insert(node->m_Id);
+        }
+    }
+
+    for (int nodeId : region->m_NodeIds)
+    {
+        if (m_Nodes.find(nodeId) == m_Nodes.cend())
+        {
+            if (errorMessage)
+                *errorMessage = QStringLiteral("计算区域引用了不存在的节点 ID %1。").arg(nodeId);
+            return 0;
+        }
+    }
+
+    if (region->m_ElementIds.empty() && !region->m_NodeIds.empty())
+    {
+        for (const auto& [elementId, element] : m_Elements)
+        {
+            if (!element || element->m_pNode.empty())
+                continue;
+            bool allNodesSelected = true;
+            for (const auto& nodeRef : element->m_pNode)
+            {
+                const auto node = nodeRef.lock();
+                if (!node || region->m_NodeIds.find(node->m_Id) == region->m_NodeIds.cend())
+                {
+                    allNodesSelected = false;
+                    break;
+                }
+            }
+            if (allNodesSelected)
+                region->m_ElementIds.insert(elementId);
+        }
+    }
+
+    if (region->m_ElementIds.empty())
+    {
+        if (errorMessage)
+            *errorMessage = QStringLiteral("计算区域中没有可计算单元。");
+        return 0;
+    }
+
+    if (m_ComputeRegions.size() == 1 && m_ComputeRegions.cbegin()->second
+        && m_ComputeRegions.cbegin()->second->m_AutoGenerated)
+    {
+        m_ComputeRegions.clear();
+    }
+    const int newId = region->m_Id;
+    const int representativeElementId = *region->m_ElementIds.cbegin();
+    m_ComputeRegions.emplace(newId, std::move(region));
+    if (!RebuildAndMergeComputeRegions(errorMessage))
+    {
+        m_ComputeRegions.erase(newId);
+        return 0;
+    }
+
+    for (const auto& [id, candidate] : m_ComputeRegions)
+    {
+        if (candidate && candidate->m_ElementIds.find(representativeElementId) != candidate->m_ElementIds.cend())
+            return id;
+    }
+    return newId;
+}
+
+int StructureData::AddComputeRegionFromSets(const QString& name,
+    const std::set<int>& sourceSetIds, bool enabled, QString* errorMessage)
+{
+    return AddComputeRegion(name, {}, {}, sourceSetIds, enabled, errorMessage);
+}
+
+bool StructureData::RemoveComputeRegion(int regionId)
+{
+    if (m_ComputeRegions.erase(regionId) == 0)
+        return false;
+
+    for (auto& [stepId, step] : m_AnalysisStep)
+    {
+        Q_UNUSED(stepId);
+        if (step)
+            step->m_ComputeRegionIds.erase(regionId);
+    }
+    return true;
+}
+
+bool StructureData::RebuildAndMergeComputeRegions(QString* errorMessage)
+{
+    for (auto& [regionId, region] : m_ComputeRegions)
+    {
+        if (!region)
+        {
+            if (errorMessage)
+                *errorMessage = QStringLiteral("计算区域 %1 为空。").arg(regionId);
+            return false;
+        }
+        region->m_NodeIds = region->m_DirectNodeIds;
+        region->m_ElementIds = region->m_DirectElementIds;
+        for (int setId : region->m_SourceSetIds)
+        {
+            const auto setIt = m_ModelSets.find(setId);
+            if (setIt == m_ModelSets.cend() || !setIt->second)
+            {
+                if (errorMessage)
+                    *errorMessage = QStringLiteral("计算区域 %1 引用了不存在的集合 %2。")
+                        .arg(regionId).arg(setId);
+                return false;
+            }
+            if (setIt->second->m_Type == ModelSetType::Node)
+            {
+                region->m_NodeIds.insert(setIt->second->m_Ids.cbegin(), setIt->second->m_Ids.cend());
+            }
+            else
+            {
+                region->m_ElementIds.insert(setIt->second->m_Ids.cbegin(), setIt->second->m_Ids.cend());
+            }
+        }
+        if (region->m_ElementIds.empty() && !region->m_NodeIds.empty())
+        {
+            for (const auto& [elementId, element] : m_Elements)
+            {
+                if (!element || element->m_pNode.empty())
+                    continue;
+                bool allNodesSelected = true;
+                for (const auto& nodeRef : element->m_pNode)
+                {
+                    const auto node = nodeRef.lock();
+                    if (!node || region->m_NodeIds.find(node->m_Id) == region->m_NodeIds.cend())
+                    {
+                        allNodesSelected = false;
+                        break;
+                    }
+                }
+                if (allNodesSelected)
+                    region->m_ElementIds.insert(elementId);
+            }
+        }
+        for (int elementId : region->m_ElementIds)
+        {
+            const auto elementIt = m_Elements.find(elementId);
+            if (elementIt == m_Elements.cend() || !elementIt->second)
+            {
+                if (errorMessage)
+                    *errorMessage = QStringLiteral("计算区域 %1 引用了不存在的单元 %2。")
+                        .arg(regionId).arg(elementId);
+                return false;
+            }
+            for (const auto& nodeRef : elementIt->second->m_pNode)
+            {
+                const auto node = nodeRef.lock();
+                if (!node)
+                {
+                    if (errorMessage)
+                        *errorMessage = QStringLiteral("计算区域 %1 的单元 %2 存在失效节点引用。")
+                            .arg(regionId).arg(elementId);
+                    return false;
+                }
+                region->m_NodeIds.insert(node->m_Id);
+            }
+        }
+    }
+
+    bool merged = true;
+    while (merged)
+    {
+        merged = false;
+        for (auto lhsIt = m_ComputeRegions.begin(); lhsIt != m_ComputeRegions.end() && !merged; ++lhsIt)
+        {
+            auto rhsIt = std::next(lhsIt);
+            while (rhsIt != m_ComputeRegions.end())
+            {
+                if (lhsIt->second->Overlaps(*rhsIt->second))
+                {
+                    const int removedId = rhsIt->first;
+                    lhsIt->second->MergeFrom(*rhsIt->second);
+                    lhsIt->second->m_Name = QStringLiteral("%1 + %2")
+                        .arg(lhsIt->second->m_Name, rhsIt->second->m_Name);
+                    rhsIt = m_ComputeRegions.erase(rhsIt);
+                    for (auto& [stepId, step] : m_AnalysisStep)
+                    {
+                        Q_UNUSED(stepId);
+                        if (step && step->m_ComputeRegionIds.erase(removedId) > 0)
+                            step->m_ComputeRegionIds.insert(lhsIt->first);
+                    }
+                    merged = true;
+                    break;
+                }
+                ++rhsIt;
+            }
+        }
+    }
+    return ValidateComputeRegions(errorMessage);
+}
+
+bool StructureData::ValidateComputeRegions(QString* errorMessage) const
+{
+    for (auto lhsIt = m_ComputeRegions.cbegin(); lhsIt != m_ComputeRegions.cend(); ++lhsIt)
+    {
+        const auto& region = lhsIt->second;
+        if (!region || region->m_ElementIds.empty() || region->m_NodeIds.empty())
+        {
+            if (errorMessage)
+                *errorMessage = QStringLiteral("计算区域 %1 没有有效节点或单元。").arg(lhsIt->first);
+            return false;
+        }
+        for (int nodeId : region->m_NodeIds)
+        {
+            if (m_Nodes.find(nodeId) == m_Nodes.cend())
+            {
+                if (errorMessage)
+                    *errorMessage = QStringLiteral("计算区域 %1 引用了不存在的节点 %2。")
+                        .arg(lhsIt->first).arg(nodeId);
+                return false;
+            }
+        }
+        auto rhsIt = std::next(lhsIt);
+        for (; rhsIt != m_ComputeRegions.cend(); ++rhsIt)
+        {
+            if (rhsIt->second && region->Overlaps(*rhsIt->second))
+            {
+                if (errorMessage)
+                    *errorMessage = QStringLiteral("计算区域 %1 与 %2 仍有共享节点或单元。")
+                        .arg(lhsIt->first).arg(rhsIt->first);
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+void StructureData::EnsureDefaultAnalysisConfiguration()
+{
+    if (m_ComputeRegions.empty() && !m_Elements.empty())
+    {
+        std::set<int> elementIds;
+        for (const auto& [elementId, element] : m_Elements)
+        {
+            if (element)
+                elementIds.insert(elementId);
+        }
+        QString ignoredError;
+        const int defaultRegionId = AddComputeRegion(
+            QStringLiteral("默认计算区域"), {}, elementIds, {}, true, &ignoredError);
+        const auto regionIt = m_ComputeRegions.find(defaultRegionId);
+        if (regionIt != m_ComputeRegions.end() && regionIt->second)
+            regionIt->second->m_AutoGenerated = true;
+    }
+
+    if (m_AnalysisStep.empty() && !m_ComputeRegions.empty())
+    {
+        AnalysisStepConfig config;
+        config.id = 1;
+        config.name = QStringLiteral("默认分析步");
+        config.type = EnumKeyword::StepType::STATIC;
+        config.totalTime = 1.0;
+        config.stepSize = 0.01;
+        config.tolerance = 1.0e-5;
+        config.maxIterations = 50;
+        config.regionScope = AnalysisRegionScope::AllEnabledRegions;
+        AddAnalysisStep(config);
+    }
+}
+
+std::vector<int> StructureData::ResolveAnalysisStepRegionIds(const AnalysisStep& step) const
+{
+    std::vector<int> result;
+    for (const auto& [regionId, region] : m_ComputeRegions)
+    {
+        if (!region || !region->m_Enabled)
+            continue;
+        if (step.m_RegionScope == AnalysisRegionScope::AllEnabledRegions
+            || step.m_ComputeRegionIds.find(regionId) != step.m_ComputeRegionIds.cend())
+        {
+            result.push_back(regionId);
+        }
+    }
+    return result;
+}
+
+std::shared_ptr<StructureData> StructureData::CloneRegionForAnalysis(int regionId,
+    int analysisStepId, QString* errorMessage) const
+{
+    const auto regionIt = m_ComputeRegions.find(regionId);
+    if (regionIt == m_ComputeRegions.cend() || !regionIt->second || !regionIt->second->m_Enabled)
+    {
+        if (errorMessage)
+            *errorMessage = QStringLiteral("计算区域 %1 不存在或未启用。").arg(regionId);
+        return nullptr;
+    }
+    if (m_AnalysisStep.find(analysisStepId) == m_AnalysisStep.cend())
+    {
+        if (errorMessage)
+            *errorMessage = QStringLiteral("分析步 %1 不存在。").arg(analysisStepId);
+        return nullptr;
+    }
+
+    auto clone = CloneForAnalysis(errorMessage);
+    if (!clone)
+        return nullptr;
+
+    const auto region = regionIt->second;
+    for (auto it = clone->m_Elements.begin(); it != clone->m_Elements.end(); )
+    {
+        if (region->m_ElementIds.find(it->first) == region->m_ElementIds.cend())
+            it = clone->m_Elements.erase(it);
+        else
+            ++it;
+    }
+    for (auto it = clone->m_Nodes.begin(); it != clone->m_Nodes.end(); )
+    {
+        if (region->m_NodeIds.find(it->first) == region->m_NodeIds.cend())
+            it = clone->m_Nodes.erase(it);
+        else
+            ++it;
+    }
+    for (auto it = clone->m_Constraint.begin(); it != clone->m_Constraint.end(); )
+    {
+        const auto node = it->second ? it->second->m_pNode.lock() : nullptr;
+        if (!node || clone->m_Nodes.find(node->m_Id) == clone->m_Nodes.cend())
+            it = clone->m_Constraint.erase(it);
+        else
+            ++it;
+    }
+    for (auto it = clone->m_Load.begin(); it != clone->m_Load.end(); )
+    {
+        bool keep = static_cast<bool>(it->second);
+        if (const auto nodeLoad = std::dynamic_pointer_cast<Force_Node>(it->second))
+        {
+            const auto node = nodeLoad->m_pNode.lock();
+            keep = node && clone->m_Nodes.find(node->m_Id) != clone->m_Nodes.cend();
+        }
+        else if (const auto elementLoad = std::dynamic_pointer_cast<Force_Element>(it->second))
+        {
+            const auto element = elementLoad->m_pElement.lock();
+            keep = element && clone->m_Elements.find(element->m_Id) != clone->m_Elements.cend();
+        }
+        if (!keep)
+            it = clone->m_Load.erase(it);
+        else
+            ++it;
+    }
+    for (auto it = clone->m_AnalysisStep.begin(); it != clone->m_AnalysisStep.end(); )
+    {
+        if (it->first != analysisStepId)
+            it = clone->m_AnalysisStep.erase(it);
+        else
+        {
+            it->second->m_RegionScope = AnalysisRegionScope::SelectedRegions;
+            it->second->m_ComputeRegionIds = {regionId};
+            ++it;
+        }
+    }
+    for (auto it = clone->m_ComputeRegions.begin(); it != clone->m_ComputeRegions.end(); )
+    {
+        if (it->first != regionId)
+            it = clone->m_ComputeRegions.erase(it);
+        else
+            ++it;
+    }
     return clone;
 }
 
@@ -434,6 +903,8 @@ void StructureData::AddAnalysisStep(const AnalysisStepConfig& config)
     pStep->m_Tolerance = config.tolerance;
     pStep->m_MaxIterations = config.maxIterations;
     pStep->m_DynamicSolverType = config.dynamicSolverType;
+    pStep->m_RegionScope = config.regionScope;
+    pStep->m_ComputeRegionIds = config.computeRegionIds;
     pStep->isDynamic = (config.type == EnumKeyword::StepType::DYNAMIC);
 
     m_AnalysisStep.insert(std::make_pair(pStep->m_Id, pStep));

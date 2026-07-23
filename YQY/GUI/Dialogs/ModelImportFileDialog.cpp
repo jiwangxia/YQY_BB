@@ -9,7 +9,7 @@
 
 ModelImportFileDialog::ModelImportFileDialog(const QString& directory, QWidget* parent)
     : ModelImportFileDialog(directory, QStringLiteral("导入模型"),
-                            QStringLiteral("模型文件 (*.bdf );;杆塔模型文件 (*.txt);;ABAQUS文件 (*.inp)"),
+                            QStringLiteral("模型文件 (*.bdf);;H5模型文件 (*.h5 *.hdf5);;杆塔模型文件 (*.txt);;ABAQUS文件 (*.inp)"),
                             QFileDialog::ExistingFiles, parent)
 {
 }

@@ -147,6 +147,7 @@ bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureDa
 
     // 合并重复节点、删除重复单元、删除孤立节点、重新编号
     m_Structure->CleanupModel();
+    m_Structure->EnsureDefaultAnalysisConfiguration();
 
 	if (!ValidateStructure(m_LastError))
 	{

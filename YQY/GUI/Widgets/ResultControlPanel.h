@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Export/Hdf5ResultIO.h"
+#include "Export/Hdf5ModelIO.h"
 
 #include <functional>
 #include <memory>
@@ -32,7 +32,7 @@ public:
     QLabel* timeValueLabel() const;
     QLabel* deformationValueLabel() const;
     QPushButton* exportButton() const;
-    Hdf5ResultIO* reader() const;
+    Hdf5ModelIO* reader() const;
     std::vector<Hdf5ResultFrameInfo>& frames();
     const std::vector<Hdf5ResultFrameInfo>& frames() const;
     QString& resultFilePath();
@@ -47,7 +47,7 @@ public:
 
 private:
     Ui::ResultControlPanelClass* m_ui = nullptr;
-    std::unique_ptr<Hdf5ResultIO> m_reader;
+    std::unique_ptr<Hdf5ModelIO> m_reader;
     std::vector<Hdf5ResultFrameInfo> m_frames;
     QString m_resultFilePath;
     bool m_partialResult = false;

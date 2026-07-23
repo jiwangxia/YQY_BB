@@ -555,7 +555,8 @@ bool AnalysisStep::Solve()
     const bool outputHdf5 = m_pData->m_OutputControl.m_EnableHdf5;
     const bool dynamicAnalysis = (m_Type == EnumKeyword::StepType::DYNAMIC);
     m_pData->GetOutputter().SetResultContext(m_Id, static_cast<int>(m_Type));
-    m_pData->GetOutputter().SetKeepFramesInMemory(!dynamicAnalysis);
+    m_pData->GetOutputter().SetKeepFramesInMemory(
+        !dynamicAnalysis || !m_pData->m_OutputControl.m_StreamResult);
 
     if (dynamicAnalysis && outputHdf5)
     {

@@ -1,8 +1,15 @@
 #include "AnalysisSolve.h"
+
 #include "DataStructure/AnalysisStep/AnalysisStep.h"
+
 #include <QDebug>
-#include <QElapsedTimer>
+#include <QThread>
+
 #include <algorithm>
+#include <future>
+#include <mutex>
+#include <stdexcept>
+#include <vector>
 
 void AnalysisRunner::SetStructure(std::shared_ptr<StructureData> pStructure)
 {
@@ -15,100 +22,199 @@ void AnalysisRunner::SetRuntimeCallbacks(ProgressCallback progressCallback, Canc
     m_cancelCallback = std::move(cancelCallback);
 }
 
+void AnalysisRunner::SetMaximumRegionThreads(int count)
+{
+    m_maximumRegionThreads = std::max(1, count);
+}
+
 bool AnalysisRunner::RunAll()
 {
-    m_wasCancelled = false;
-    QElapsedTimer timer;
-    timer.start();
-
-    auto pStructure = m_pStructure.lock();
-    if (!pStructure)
-    {
-        qDebug().noquote() << QStringLiteral("Error: Solver 未关联结构数据");
+    auto structure = m_pStructure.lock();
+    if (!structure || structure->m_AnalysisStep.empty())
         return false;
-    }
 
-    if (pStructure->m_AnalysisStep.empty())
+    std::vector<int> stepIds;
+    stepIds.reserve(structure->m_AnalysisStep.size());
+    for (const auto& [stepId, step] : structure->m_AnalysisStep)
     {
-        qDebug().noquote() << QStringLiteral("Warning: 没有分析步，无法运行分析");
-        return false;
+        if (step)
+            stepIds.push_back(stepId);
     }
-
-    double totalWeight = 0.0;
-    for (const auto& pair : pStructure->m_AnalysisStep)
-        totalWeight += std::max(1.0, pair.second ? pair.second->m_Time : 1.0);
-
-    double completedWeight = 0.0;
-    for (auto& pair : pStructure->m_AnalysisStep)
-    {
-        int stepId = pair.first;
-        auto& step = pair.second;
-        if (!step)
-            return false;
-        if (m_cancelCallback && m_cancelCallback())
-        {
-            m_wasCancelled = true;
-            return false;
-        }
-        step->m_Id = stepId;
-        step->SetStructure(pStructure);
-        const double stepWeight = std::max(1.0, step->m_Time);
-        step->SetRuntimeCallbacks(
-            [this, completedWeight, stepWeight, totalWeight, stepId](double progress, const QString& message) {
-                if (m_progressCallback)
-                {
-                    const double overall = (completedWeight + stepWeight * progress) / totalWeight;
-                    m_progressCallback(overall, message.isEmpty()
-                        ? QStringLiteral("分析步 %1").arg(stepId) : message);
-                }
-            },
-            m_cancelCallback);
-
-        if (!step->Solve())
-        {
-            step->ClearRuntimeCallbacks();
-            m_wasCancelled = m_cancelCallback && m_cancelCallback();
-            qDebug().noquote() << QStringLiteral("Error: 分析步失败，停止后续分析。Step ID=") << stepId;
-            return false;
-        }
-        step->ClearRuntimeCallbacks();
-        completedWeight += stepWeight;
-        if (m_progressCallback)
-            m_progressCallback(completedWeight / totalWeight,
-                QStringLiteral("分析步 %1 完成").arg(stepId));
-    }
-
-    qint64 elapsedMs = timer.elapsed();
-    Q_UNUSED(elapsedMs);
-    return true;
+    return RunSelectedByRegions(stepIds);
 }
 
 bool AnalysisRunner::RunStep(int stepId)
 {
+    return RunSelectedByRegions({stepId});
+}
+
+bool AnalysisRunner::RunSelectedByRegions(const std::vector<int>& stepIds)
+{
     m_wasCancelled = false;
-    auto pStructure = m_pStructure.lock();
-    if (!pStructure)
+    auto structure = m_pStructure.lock();
+    if (!structure)
+        return false;
+
+    struct WorkItem
     {
-        qDebug().noquote() << QStringLiteral("Error: Solver 未关联结构数据");
+        int stepId = 0;
+        int regionId = 0;
+    };
+    struct WorkResult
+    {
+        bool succeeded = false;
+        bool cancelled = false;
+        QString errorMessage;
+        std::shared_ptr<StructureData> model;
+    };
+
+    std::vector<WorkItem> workItems;
+    for (int stepId : stepIds)
+    {
+        const auto stepIt = structure->m_AnalysisStep.find(stepId);
+        if (stepIt == structure->m_AnalysisStep.cend() || !stepIt->second)
+            return false;
+        for (int regionId : structure->ResolveAnalysisStepRegionIds(*stepIt->second))
+            workItems.push_back({stepId, regionId});
+    }
+    if (workItems.empty())
+    {
+        qDebug().noquote() << QStringLiteral("Error: 分析步没有可运行的启用计算区域。");
         return false;
     }
 
-    auto it = pStructure->m_AnalysisStep.find(stepId);
-    if (it == pStructure->m_AnalysisStep.end())
+    QString validationError;
+    if (!structure->ValidateComputeRegions(&validationError))
     {
-        qDebug().noquote() << QStringLiteral("Error: 未找到分析步 ID=") << stepId;
+        qDebug().noquote() << QStringLiteral("Error:") << validationError;
         return false;
     }
 
-    auto& step = it->second;
+    if (workItems.size() == 1)
+    {
+        const WorkItem work = workItems.front();
+        const auto regionIt = structure->m_ComputeRegions.find(work.regionId);
+        if (regionIt != structure->m_ComputeRegions.cend() && regionIt->second
+            && regionIt->second->m_NodeIds.size() == structure->m_Nodes.size()
+            && regionIt->second->m_ElementIds.size() == structure->m_Elements.size())
+        {
+            return RunStepDirect(work.stepId);
+        }
+    }
+
+    structure->GetOutputter().Clear();
+    std::mutex progressMutex;
+    std::vector<double> progressValues(workItems.size(), 0.0);
+    std::vector<WorkResult> results(workItems.size());
+
+    const auto runWorkItem = [this, structure, &workItems, &progressValues,
+        &progressMutex](std::size_t index) -> WorkResult
+    {
+        WorkResult result;
+        const WorkItem work = workItems.at(index);
+        QString cloneError;
+        result.model = structure->CloneRegionForAnalysis(work.regionId, work.stepId, &cloneError);
+        if (!result.model)
+        {
+            result.errorMessage = cloneError;
+            return result;
+        }
+
+        result.model->m_OutputControl.m_EnableHdf5 = false;
+        result.model->m_OutputControl.m_StreamResult = false;
+        AnalysisRunner child;
+        child.SetStructure(result.model);
+        child.SetRuntimeCallbacks(
+            [this, index, work, &progressValues, &progressMutex](double progress, const QString& message)
+        {
+            double overall = 0.0;
+            {
+                std::lock_guard<std::mutex> lock(progressMutex);
+                progressValues.at(index) = progress;
+                for (double value : progressValues)
+                    overall += value;
+                overall /= static_cast<double>(progressValues.size());
+            }
+            if (m_progressCallback)
+            {
+                m_progressCallback(overall, QStringLiteral("区域 %1 · 分析步 %2 · %3")
+                    .arg(work.regionId).arg(work.stepId).arg(message));
+            }
+        }, m_cancelCallback);
+        result.succeeded = child.RunStepDirect(work.stepId);
+        result.cancelled = child.WasCancelled()
+            || (m_cancelCallback && m_cancelCallback());
+        if (!result.succeeded && !result.cancelled)
+        {
+            result.errorMessage = QStringLiteral("区域 %1 的分析步 %2 求解失败。")
+                .arg(work.regionId).arg(work.stepId);
+        }
+        return result;
+    };
+
+    const int idealThreads = std::max(1, QThread::idealThreadCount());
+    const int reservedThreads = std::max(1, (idealThreads + 3) / 4);
+    const int automaticLimit = std::max(1, std::min(12, idealThreads - reservedThreads));
+    const int configuredLimit = m_maximumRegionThreads > 0
+        ? m_maximumRegionThreads : automaticLimit;
+    const int parallelLimit = std::max(1,
+        std::min(configuredLimit, static_cast<int>(workItems.size())));
+
+    for (std::size_t first = 0; first < workItems.size(); first += parallelLimit)
+    {
+        if (m_cancelCallback && m_cancelCallback())
+        {
+            m_wasCancelled = true;
+            break;
+        }
+        const std::size_t last = std::min(workItems.size(), first + parallelLimit);
+        std::vector<std::future<WorkResult>> futures;
+        futures.reserve(last - first);
+        for (std::size_t index = first; index < last; ++index)
+            futures.push_back(std::async(std::launch::async, runWorkItem, index));
+        for (std::size_t index = first; index < last; ++index)
+            results.at(index) = futures.at(index - first).get();
+    }
+
+    bool succeeded = !m_wasCancelled;
+    for (const WorkResult& result : results)
+    {
+        if (result.model)
+            structure->GetOutputter().MergeFramesFrom(result.model->GetOutputter());
+        succeeded = succeeded && result.succeeded;
+        m_wasCancelled = m_wasCancelled || result.cancelled;
+        if (!result.errorMessage.isEmpty())
+            qDebug().noquote() << QStringLiteral("Error:") << result.errorMessage;
+    }
+
+    if (structure->m_OutputControl.m_EnableHdf5
+        && structure->GetOutputter().GetFrameCount() > 0)
+    {
+        succeeded = structure->GetOutputter().SaveHdf5File(
+            structure->m_OutputControl.m_Hdf5FileName,
+            structure.get(), structure->m_OutputControl.m_SourceModelName,
+            succeeded && !m_wasCancelled) && succeeded;
+    }
+    if (m_progressCallback && succeeded)
+        m_progressCallback(1.0, QStringLiteral("全部计算区域完成"));
+    return succeeded && !m_wasCancelled;
+}
+
+bool AnalysisRunner::RunStepDirect(int stepId)
+{
+    auto structure = m_pStructure.lock();
+    if (!structure)
+        return false;
+    const auto stepIt = structure->m_AnalysisStep.find(stepId);
+    if (stepIt == structure->m_AnalysisStep.end() || !stepIt->second)
+        return false;
+
+    auto& step = stepIt->second;
     step->m_Id = stepId;
-    step->SetStructure(pStructure);
+    step->SetStructure(structure);
     step->SetRuntimeCallbacks(m_progressCallback, m_cancelCallback);
-    qDebug().noquote() << QStringLiteral("\n----- 运行分析步 ") << stepId
-        << " [" << step->GetTypeName() << "] -----";
-
-    const bool ok = step->Solve();
+    const bool succeeded = step->Solve();
     step->ClearRuntimeCallbacks();
-    m_wasCancelled = !ok && m_cancelCallback && m_cancelCallback();
-    return ok;
+    m_wasCancelled = !succeeded && m_cancelCallback && m_cancelCallback();
+    return succeeded;
 }

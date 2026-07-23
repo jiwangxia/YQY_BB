@@ -17,6 +17,8 @@
 #include "DataStructure/Load/Force_Gravity.h"
 #include "DataStructure/Load/Force_Wind.h"
 #include "DataStructure/AnalysisStep/AnalysisStep.h"
+#include "DataStructure/Region/ModelSet.h"
+#include "DataStructure/Region/ComputeRegion.h"
 #include "Export/Outputter.h"
 #include "Import/AeroManager.h"
 
@@ -49,6 +51,8 @@ public:
     std::map<int, std::shared_ptr<Constraint>>        m_Constraint;   ///< 约束集合
     std::map<int, std::shared_ptr<LoadBase>>          m_Load;         ///< 荷载集合
     std::map<int, std::shared_ptr<AnalysisStep>>      m_AnalysisStep; ///< 分析步集合
+    std::map<int, std::shared_ptr<ModelSet>>          m_ModelSets;    ///< 节点/单元集合
+    std::map<int, std::shared_ptr<ComputeRegion>>     m_ComputeRegions; ///< 计算区域
     /// @}
 
     OutputControl m_OutputControl;                                      ///< 输出控制参数
@@ -114,6 +118,19 @@ public:
     void Add_Gravity(int direction, int idStep);
     void AddAnalysisStep(const AnalysisStepConfig& config);
 
+    int AddModelSet(const QString& name, ModelSetType type, const std::set<int>& ids,
+        QString* errorMessage = nullptr);
+    int AddComputeRegion(const QString& name, const std::set<int>& nodeIds,
+        const std::set<int>& elementIds, const std::set<int>& sourceSetIds = {},
+        bool enabled = true, QString* errorMessage = nullptr);
+    int AddComputeRegionFromSets(const QString& name, const std::set<int>& sourceSetIds,
+        bool enabled = true, QString* errorMessage = nullptr);
+    bool RemoveComputeRegion(int regionId);
+    bool RebuildAndMergeComputeRegions(QString* errorMessage = nullptr);
+    bool ValidateComputeRegions(QString* errorMessage = nullptr) const;
+    void EnsureDefaultAnalysisConfiguration();
+    std::vector<int> ResolveAnalysisStepRegionIds(const AnalysisStep& step) const;
+
 
     /**
      * @brief 模型清理（合并重复节点、删除重复单元、删除孤立节点、重新编号）
@@ -133,6 +150,8 @@ public:
      * 独立编号自由度和修改求解状态，不会影响界面模型或其他算例。
      */
     std::shared_ptr<StructureData> CloneForAnalysis(QString* errorMessage = nullptr) const;
+    std::shared_ptr<StructureData> CloneRegionForAnalysis(int regionId, int analysisStepId,
+        QString* errorMessage = nullptr) const;
 
 private:
     /**

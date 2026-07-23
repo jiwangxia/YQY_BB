@@ -1,8 +1,9 @@
 #pragma once
 
+#include <QHash>
 #include <QtWidgets/QMainWindow>
 
-#include "Export/Hdf5ResultIO.h"
+#include "Export/Hdf5ModelIO.h"
 #include "ui_YQY.h"
 
 class StructureData;
@@ -100,6 +101,7 @@ private:
     void initializeAnalysisEditor();
     void refreshAnalysisEditor();
     void openAnalysisManager(int initialPage);
+    void openComputeRegionManager();
     void handleAnalysisResourcesChanged(const QSet<int>& affectedStepIds);
     void closeAnalysisManagers();
     void showPropertyLibrary();
@@ -138,4 +140,5 @@ private:
     Hdf5ResultFrame m_cachedResultFrame;
     Hdf5ResultFrame m_cachedNextResultFrame;
     Hdf5ResultRanges m_resultRanges;
+    QHash<int, QString> m_resultFilesByModelId;
 };

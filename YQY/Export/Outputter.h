@@ -15,7 +15,7 @@ class QTextStream;
 class StructureData;
 class Node;
 class ElementBase;
-class Hdf5ResultIO;
+class Hdf5ModelIO;
 
 /**
  * @brief 单个节点在某一时刻的结果快照
@@ -264,6 +264,8 @@ public:
      */
     void Clear();
 
+    void MergeFramesFrom(const Outputter& source);
+
     /**
      * @brief 获取结果数据集
      * @return 结果数据集只读引用
@@ -275,7 +277,7 @@ private:
     bool m_keepFramesInMemory = true;                 // 是否将结果帧保存到内存
     std::unique_ptr<QFile> m_streamFile;              // 流式输出文件
     std::unique_ptr<QTextStream> m_stream;            // 流式输出文本流
-    std::unique_ptr<Hdf5ResultIO> m_hdf5Stream;       // H5/HDF5 流式输出对象
+    std::unique_ptr<Hdf5ModelIO> m_hdf5Stream;       // H5/HDF5 流式输出对象
     int m_hdf5NextDomainId = 1;                       // H5/HDF5 下一帧域编号
     int m_hdf5NextIncrement = 0;                      // H5/HDF5 下一增量编号
     int m_currentStepId = 0;                          // 当前输出分析步编号

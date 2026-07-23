@@ -1,9 +1,11 @@
 #include "Application/VerificationRunner.h"
 
 #include "DataStructure/Structure/StructureData.h"
-#include "Export/Hdf5ResultIO.h"
+#include "Export/Hdf5ModelIO.h"
 #include "GUI/Controllers/ModelController.h"
 #include "GUI/Controllers/SolveTaskController.h"
+#include "Import/Input_Model.h"
+#include "Solver/AnalysisSolve.h"
 
 namespace
 {
@@ -17,7 +19,7 @@ std::optional<int> verifyNodeExport(const QStringList& arguments)
 
     const QString source = arguments.at(index + 1);
     const QString target = arguments.at(index + 2);
-    Hdf5ResultIO exporter;
+    Hdf5ModelIO exporter;
     const bool exported =
         exporter.ExportBdfResultFromHdf5(source, target, {1},
                                          {EnumKeyword::NodeResultType::U1, EnumKeyword::NodeResultType::U2,
@@ -35,7 +37,7 @@ std::optional<int> verifyResultRead(const QStringList& arguments)
     if (index + 1 >= arguments.size())
         return 1;
 
-    Hdf5ResultIO reader;
+    Hdf5ModelIO reader;
     std::vector<Hdf5ResultFrameInfo> frames;
     if (!reader.OpenResultFile(arguments.at(index + 1), frames) || frames.empty())
         return 2;
@@ -60,7 +62,7 @@ std::optional<int> verifyHdf5Model(const QStringList& arguments)
         return 1;
 
     auto structure = std::make_shared<StructureData>();
-    Hdf5ResultIO reader;
+    Hdf5ModelIO reader;
     if (!reader.ImportHdf5(arguments.at(index + 1), structure.get()))
         return 2;
     for (const auto& [elementId, element] : structure->m_Elements)
@@ -77,6 +79,109 @@ std::optional<int> verifyHdf5Model(const QStringList& arguments)
                         << " materials=" << structure->m_Material.size()
                         << " sections=" << structure->m_Section.size() << Qt::endl;
     return structure->m_Nodes.empty() || structure->m_Elements.empty() ? 4 : 0;
+}
+
+std::optional<int> verifyHdf5ModelContract(const QStringList& arguments)
+{
+    const int index = arguments.indexOf(QStringLiteral("--verify-hdf5-model-contract"));
+    if (index < 0)
+        return std::nullopt;
+    if (index + 2 >= arguments.size())
+        return 1;
+
+    auto source = std::make_shared<StructureData>();
+    Input_Model importer;
+    if (!importer.InputData(arguments.at(index + 1), source))
+        return 2;
+    source->m_ModelSets.clear();
+    source->m_ComputeRegions.clear();
+    QString error;
+    const int firstSetId = source->AddModelSet(QStringLiteral("区域A单元"), ModelSetType::Element, {1}, &error);
+    const int secondSetId = source->AddModelSet(QStringLiteral("区域B单元"), ModelSetType::Element, {2}, &error);
+    const int firstRegionId = source->AddComputeRegionFromSets(
+        QStringLiteral("区域A"), {firstSetId}, true, &error);
+    const int secondRegionId = source->AddComputeRegionFromSets(
+        QStringLiteral("区域B"), {secondSetId}, true, &error);
+    if (firstSetId <= 0 || secondSetId <= 0 || firstRegionId <= 0 || secondRegionId <= 0)
+        return 3;
+
+    source->EnsureDefaultAnalysisConfiguration();
+    if (source->m_AnalysisStep.empty() || !source->m_AnalysisStep.begin()->second)
+        return 4;
+    auto sourceStep = source->m_AnalysisStep.begin()->second;
+    sourceStep->m_Name = QStringLiteral("导线区域分析");
+    sourceStep->m_RegionScope = AnalysisRegionScope::SelectedRegions;
+    sourceStep->m_ComputeRegionIds = {firstRegionId, secondRegionId};
+
+    Hdf5ModelIO writer;
+    if (!writer.ExportModelHdf5(arguments.at(index + 2), source.get(), arguments.at(index + 1)))
+        return 5;
+    Hdf5ResultSummary summary;
+    if (!writer.InspectHdf5(arguments.at(index + 2), summary) || !summary.hasModel || summary.hasResult)
+        return 6;
+
+    auto restored = std::make_shared<StructureData>();
+    if (!writer.ImportHdf5(arguments.at(index + 2), restored.get()))
+        return 7;
+    const auto restoredStep = restored->m_AnalysisStep.find(sourceStep->m_Id);
+    if (restored->m_ModelSets.size() != 2 || restored->m_ComputeRegions.size() != 2
+        || restoredStep == restored->m_AnalysisStep.cend() || !restoredStep->second
+        || restoredStep->second->m_Name != sourceStep->m_Name
+        || restoredStep->second->m_RegionScope != AnalysisRegionScope::SelectedRegions
+        || restoredStep->second->m_ComputeRegionIds.size() != 2)
+    {
+        return 8;
+    }
+    QTextStream(stdout) << "hdf5 contract sets=" << restored->m_ModelSets.size()
+        << " regions=" << restored->m_ComputeRegions.size()
+        << " steps=" << restored->m_AnalysisStep.size()
+        << " result=" << (summary.hasResult ? 1 : 0) << Qt::endl;
+    return 0;
+}
+
+std::optional<int> verifyComputeRegions(const QStringList& arguments)
+{
+    const int index = arguments.indexOf(QStringLiteral("--verify-compute-regions"));
+    if (index < 0)
+        return std::nullopt;
+    if (index + 1 >= arguments.size())
+        return 1;
+
+    auto structure = std::make_shared<StructureData>();
+    Input_Model importer;
+    if (!importer.InputData(arguments.at(index + 1), structure))
+        return 2;
+    structure->m_ComputeRegions.clear();
+    QString error;
+    const int firstRegionId = structure->AddComputeRegion(
+        QStringLiteral("区域 A"), {}, {1}, {}, true, &error);
+    const int secondRegionId = structure->AddComputeRegion(
+        QStringLiteral("区域 B"), {}, {2}, {}, true, &error);
+    if (firstRegionId <= 0 || secondRegionId <= 0 || structure->m_ComputeRegions.size() != 2)
+    {
+        QTextStream(stderr) << "region setup failed: " << error << Qt::endl;
+        return 3;
+    }
+    const int mergedRegionId = structure->AddComputeRegion(
+        QStringLiteral("区域 A 重叠候选"), {}, {1}, {}, true, &error);
+    if (mergedRegionId != firstRegionId || structure->m_ComputeRegions.size() != 2)
+    {
+        QTextStream(stderr) << "overlap merge failed: " << error << Qt::endl;
+        return 4;
+    }
+
+    structure->m_OutputControl.m_EnableHdf5 = false;
+    structure->m_OutputControl.m_StreamResult = false;
+    AnalysisRunner runner;
+    runner.SetStructure(structure);
+    if (!runner.RunAll() || structure->GetOutputter().GetDataSet().empty())
+        return 5;
+    const auto& frame = structure->GetOutputter().GetDataSet().back();
+    QTextStream(stdout) << "compute regions=" << structure->m_ComputeRegions.size()
+        << " merged_id=" << mergedRegionId
+        << " result_nodes=" << frame.GetNodeDatas().size()
+        << " result_elements=" << frame.GetElementDatas().size() << Qt::endl;
+    return frame.GetNodeDatas().size() == 4 && frame.GetElementDatas().size() == 2 ? 0 : 6;
 }
 
 std::optional<int> verifySolveTask(QApplication& application, const QStringList& arguments)
@@ -250,6 +355,10 @@ std::optional<int> VerificationRunner::run(QApplication& application, const QStr
     if (const auto result = verifyResultRead(arguments))
         return result;
     if (const auto result = verifyHdf5Model(arguments))
+        return result;
+    if (const auto result = verifyHdf5ModelContract(arguments))
+        return result;
+    if (const auto result = verifyComputeRegions(arguments))
         return result;
     if (const auto result = verifySolveTask(application, arguments))
         return result;

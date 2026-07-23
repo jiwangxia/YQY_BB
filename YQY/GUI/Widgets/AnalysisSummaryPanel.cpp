@@ -1,10 +1,13 @@
 #include "Widgets/AnalysisSummaryPanel.h"
 #include "ui_AnalysisSummaryPanel.h"
 #include <QPushButton>
-AnalysisSummaryPanel::AnalysisSummaryPanel(QWidget* p) : QWidget(p), m_ui(new Ui::AnalysisSummaryPanelClass)
+AnalysisSummaryPanel::AnalysisSummaryPanel(QWidget* p)
+    : QWidget(p)
+    , m_ui(new Ui::AnalysisSummaryPanelClass)
 {
     m_ui->setupUi(this);
-    const QList<QPushButton*> bs = {m_ui->stepsButton, m_ui->loadsButton, m_ui->constraintsButton};
+    const QList<QPushButton*> bs = {
+        m_ui->stepsButton, m_ui->loadsButton, m_ui->constraintsButton, m_ui->regionsButton};
     for (auto* b : bs)
     {
         b->setIconSize(QSize(22, 22));
@@ -31,4 +34,9 @@ QPushButton* AnalysisSummaryPanel::loadsButton() const
 QPushButton* AnalysisSummaryPanel::constraintsButton() const
 {
     return m_ui->constraintsButton;
+}
+
+QPushButton* AnalysisSummaryPanel::regionsButton() const
+{
+    return m_ui->regionsButton;
 }

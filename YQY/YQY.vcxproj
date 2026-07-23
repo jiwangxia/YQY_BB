@@ -128,6 +128,8 @@
     <ClCompile Include="Utility\CR.cpp" />
     <ClCompile Include="Utility\Logger\Logger.cpp" />
     <ClCompile Include="DataStructure\AnalysisStep\AnalysisStep.cpp" />
+    <ClCompile Include="DataStructure\Region\ComputeRegion.cpp" />
+    <ClCompile Include="DataStructure\Region\ModelSet.cpp" />
     <ClCompile Include="DataStructure\Constraint\Constraint.cpp" />
     <ClCompile Include="DataStructure\Load\LoadBase.cpp" />
     <ClCompile Include="DataStructure\Load\Force_Node.cpp" />
@@ -178,6 +180,8 @@
     <ClInclude Include="GUI\Widgets\ConductorModule.h" />
     <ClInclude Include="GUI\Widgets\CompactDoubleSpinBox.h" />
     <ClInclude Include="GUI\Dialogs\AnalysisManagerDialog.h" />
+    <ClInclude Include="GUI\Dialogs\ComputeRegionManagerDialog.h" />
+    <ClInclude Include="GUI\Dialogs\ModelSetManagerDialog.h" />
     <ClInclude Include="GUI\Dialogs\SolveTaskManagerDialog.h" />
     <ClInclude Include="GUI\Dialogs\PropertyItemEditorDialog.h" />
     <ClInclude Include="GUI\Dialogs\PropertyLibraryDialog.h" />
@@ -191,6 +195,8 @@
     <ClCompile Include="DataStructure\Element\ElementTruss.cpp" />
     <ClCompile Include="GUI\YQY.cpp" />
     <ClCompile Include="GUI\Dialogs\AnalysisManagerDialog.cpp" />
+    <ClCompile Include="GUI\Dialogs\ComputeRegionManagerDialog.cpp" />
+    <ClCompile Include="GUI\Dialogs\ModelSetManagerDialog.cpp" />
     <ClCompile Include="GUI\Dialogs\SolveTaskManagerDialog.cpp" />
     <ClCompile Include="GUI\Dialogs\PropertyItemEditorDialog.cpp" />
     <ClCompile Include="GUI\Dialogs\PropertyLibraryDialog.cpp" />
@@ -206,7 +212,7 @@
     <ClCompile Include="Application\ApplicationBootstrap.cpp" />
     <ClCompile Include="Application\VerificationRunner.cpp" />
     <ClCompile Include="Application\UiAuditRunner.cpp" />
-    <ClCompile Include="Export\Hdf5ResultIO.cpp" />
+    <ClCompile Include="Export\Hdf5ModelIO.cpp" />
     <ClCompile Include="Export\Outputter.cpp" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
@@ -221,6 +227,8 @@
     <ClInclude Include="Utility\CR.h" />
     <ClInclude Include="Utility\Logger\Logger.h" />
     <ClInclude Include="DataStructure\AnalysisStep\AnalysisStep.h" />
+    <ClInclude Include="DataStructure\Region\ComputeRegion.h" />
+    <ClInclude Include="DataStructure\Region\ModelSet.h" />
     <ClInclude Include="Base\Base.h" />
     <ClInclude Include="DataStructure\Constraint\Constraint.h" />
     <ClInclude Include="DataStructure\Load\LoadBase.h" />
@@ -251,7 +259,7 @@
     <ClInclude Include="Utility\ModelManager.h" />
     <ClInclude Include="Utility\EnumKeyword.h" />
     <ClInclude Include="DataStructure\Section\SectionBase.h" />
-    <ClInclude Include="Export\Hdf5ResultIO.h" />
+    <ClInclude Include="Export\Hdf5ModelIO.h" />
     <ClInclude Include="Export\Outputter.h" />
     <ClInclude Include="Utility\pch.h" />
   </ItemGroup>

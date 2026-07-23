@@ -70,6 +70,12 @@
     <ClInclude Include="GUI\Dialogs\AnalysisManagerDialog.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="GUI\Dialogs\ComputeRegionManagerDialog.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="GUI\Dialogs\ModelSetManagerDialog.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="GUI\Dialogs\SolveTaskManagerDialog.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="GUI\Dialogs\PropertyItemEditorDialog.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="GUI\Dialogs\PropertyLibraryDialog.h"><Filter>Header Files</Filter></ClInclude>
@@ -106,6 +112,12 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="GUI\Dialogs\AnalysisManagerDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GUI\Dialogs\ComputeRegionManagerDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GUI\Dialogs\ModelSetManagerDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="GUI\Dialogs\SolveTaskManagerDialog.cpp"><Filter>Source Files</Filter></ClCompile>
@@ -169,6 +181,12 @@
     <ClCompile Include="DataStructure\AnalysisStep\AnalysisStep.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="DataStructure\Region\ComputeRegion.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DataStructure\Region\ModelSet.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="DataStructure\Element\ElementCable.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -178,7 +196,7 @@
     <ClCompile Include="Export\Outputter.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Export\Hdf5ResultIO.cpp">
+    <ClCompile Include="Export\Hdf5ModelIO.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="DataStructure\Load\Force_Wind.cpp">
@@ -299,6 +317,12 @@
     <ClInclude Include="DataStructure\AnalysisStep\AnalysisStep.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="DataStructure\Region\ComputeRegion.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DataStructure\Region\ModelSet.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="DataStructure\Element\ElementCable.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -308,7 +332,7 @@
     <ClInclude Include="Export\Outputter.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Export\Hdf5ResultIO.h">
+    <ClInclude Include="Export\Hdf5ModelIO.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DataStructure\Load\Force_Wind.h">

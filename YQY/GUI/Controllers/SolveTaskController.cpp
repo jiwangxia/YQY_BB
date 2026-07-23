@@ -2,7 +2,7 @@
 
 #include "DataStructure/AnalysisStep/AnalysisStep.h"
 #include "DataStructure/Structure/StructureData.h"
-#include "Export/Hdf5ResultIO.h"
+#include "Export/Hdf5ModelIO.h"
 #include "Solver/AnalysisSolve.h"
 
 #include <QDateTime>
@@ -49,6 +49,8 @@ int SolveTaskController::submit(const std::shared_ptr<StructureData>& model, con
 
 int SolveTaskController::prepare(const std::shared_ptr<StructureData>& model, const QString& sourceFile, int analysisStepId)
 {
+    if (model)
+        model->EnsureDefaultAnalysisConfiguration();
     if (!model || sourceFile.trimmed().isEmpty() || model->m_AnalysisStep.empty())
         return -1;
     if (analysisStepId > 0 && model->m_AnalysisStep.find(analysisStepId) == model->m_AnalysisStep.end())
@@ -350,6 +352,7 @@ void SolveTaskController::runTask(const std::shared_ptr<TaskContext>& task)
 
         AnalysisRunner runner;
         runner.SetStructure(structure);
+        runner.SetMaximumRegionThreads(maximumThreadCount());
         runner.SetRuntimeCallbacks(
             [this, task, id = task->info.id](double progress, const QString& message) {
                 const qint64 nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -443,7 +446,7 @@ void SolveTaskController::finishTask(int taskId, Status status, const QString& m
             || resultFile.size() != task->previousOutputSize);
     if (outputWasUpdated)
     {
-        Hdf5ResultIO reader;
+        Hdf5ModelIO reader;
         std::vector<Hdf5ResultFrameInfo> frames;
         if (reader.OpenResultFile(task->info.outputFile, frames) && !frames.empty())
         {

@@ -2,6 +2,7 @@
 #include "DataStructure/Structure/StructureData.h"
 #include <memory>
 #include <functional>
+#include <vector>
 
 /**
  * @brief 分析运行器 - 编排模型中的一个或多个分析步
@@ -27,11 +28,16 @@ public:
     using ProgressCallback = std::function<void(double, const QString&)>;
     using CancelCallback = std::function<bool()>;
     void SetRuntimeCallbacks(ProgressCallback progressCallback, CancelCallback cancelCallback);
+    void SetMaximumRegionThreads(int count);
 	bool WasCancelled() const { return m_wasCancelled; }
 
 private:
+    bool RunSelectedByRegions(const std::vector<int>& stepIds);
+    bool RunStepDirect(int stepId);
+
     std::weak_ptr<StructureData> m_pStructure;
     ProgressCallback m_progressCallback;
     CancelCallback m_cancelCallback;
     bool m_wasCancelled = false;
+    int m_maximumRegionThreads = 0;
 };

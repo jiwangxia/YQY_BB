@@ -6,7 +6,7 @@
 #include <QSignalBlocker>
 
 ResultControlPanel::ResultControlPanel(QWidget* parent)
-    : QWidget(parent), m_ui(new Ui::ResultControlPanelClass), m_reader(std::make_unique<Hdf5ResultIO>()),
+    : QWidget(parent), m_ui(new Ui::ResultControlPanelClass), m_reader(std::make_unique<Hdf5ModelIO>()),
       m_playbackTimer(new QTimer(this))
 {
     m_ui->setupUi(this);
@@ -124,7 +124,7 @@ QPushButton* ResultControlPanel::exportButton() const
     return m_ui->exportButton;
 }
 
-Hdf5ResultIO* ResultControlPanel::reader() const
+Hdf5ModelIO* ResultControlPanel::reader() const
 {
     return m_reader.get();
 }

@@ -10,6 +10,7 @@
 #include "Widgets/PropertyModule.h"
 #include "Widgets/ConductorModule.h"
 #include "Dialogs/AnalysisManagerDialog.h"
+#include "Dialogs/ComputeRegionManagerDialog.h"
 #include "Dialogs/SolveTaskManagerDialog.h"
 #include "Dialogs/PropertyItemEditorDialog.h"
 #include "Dialogs/PropertyLibraryDialog.h"
@@ -1643,7 +1644,7 @@ void YQY::initializeSettingsModule()
     const int availableThreads = SolveTaskController::availableThreadCount();
     const int allowedThreads = SolveTaskController::maximumAllowedThreadCount();
     concurrencySpin->setRange(SolveTaskController::MinimumThreadCount, allowedThreads);
-    concurrencySpin->setSuffix(QStringLiteral(" 个分析步"));
+    concurrencySpin->setSuffix(QStringLiteral(" 个计算区域"));
     concurrencySpin->setMinimumWidth(150);
     concurrencySpin->setToolTip(
         QStringLiteral("本机可选范围 1～%1；降低上限不会中断正在计算的任务").arg(allowedThreads));
@@ -1659,7 +1660,7 @@ void YQY::initializeSettingsModule()
     const auto updateStatus = [status, availableThreads, allowedThreads](int count)
     {
         status->setText(
-            QStringLiteral("检测到 %1 个逻辑线程，本机安全上限为 %2；当前最多同时运行 %3 个分析步，其余任务保持排队。")
+            QStringLiteral("检测到 %1 个逻辑线程，本机安全上限为 %2；当前每个分析步最多同时运行 %3 个计算区域。")
                 .arg(availableThreads)
                 .arg(allowedThreads)
                 .arg(count));
@@ -1672,7 +1673,7 @@ void YQY::initializeSettingsModule()
                 const int applied = m_solveTaskController->maximumThreadCount();
                 QSettings().setValue(QStringLiteral("solver/maxConcurrentSteps"), applied);
                 updateStatus(applied);
-                setWorkspaceMessage(QStringLiteral("最大并发分析步已设置为 %1").arg(applied));
+                setWorkspaceMessage(QStringLiteral("最大并发计算区域已设置为 %1").arg(applied));
             });
 
     ui.settingsModuleLayout->insertWidget(1, m_settingsPanel);
@@ -2827,6 +2828,7 @@ void YQY::initializeInteractions()
                         break;
                     }
                 }
+                m_resultFilesByModelId.remove(modelId);
                 refreshModulePages();
             });
     connect(m_modelController, &ModelController::busyChanged, this,
@@ -2839,6 +2841,7 @@ void YQY::initializeInteractions()
                 const QSignalBlocker blocker(ui.documentTabBar);
                 while (ui.documentTabBar->count() > 0)
                     ui.documentTabBar->removeTab(0);
+                m_resultFilesByModelId.clear();
                 ui.modelViewport->clearModel();
                 ui.modelDataTree->clear();
                 new QTreeWidgetItem(ui.modelDataTree, {QStringLiteral("尚未加载模型")});
@@ -3014,6 +3017,19 @@ void YQY::refreshModulePages()
         auto* constraints =
             new QTreeWidgetItem(ui.analysisTree, {QStringLiteral("约束  %1").arg(structure->m_Constraint.size())});
         setTreeGlyph(constraints, TreeGlyph::Constraint);
+        auto* regions = new QTreeWidgetItem(ui.analysisTree,
+            {QStringLiteral("计算区域  %1").arg(structure->m_ComputeRegions.size())});
+        setTreeGlyph(regions, TreeGlyph::Model);
+        for (const auto& [regionId, region] : structure->m_ComputeRegions)
+        {
+            Q_UNUSED(regionId);
+            if (!region)
+                continue;
+            auto* regionItem = new QTreeWidgetItem(regions,
+                {QStringLiteral("%1  ·  节点 %2  ·  单元 %3")
+                    .arg(region->m_Name).arg(region->m_NodeIds.size()).arg(region->m_ElementIds.size())});
+            setTreeGlyph(regionItem, TreeGlyph::Model);
+        }
         ui.analysisTree->expandAll();
     }
     else
@@ -3043,6 +3059,7 @@ void YQY::initializeAnalysisEditor()
     m_analysisPanel->stepsButton()->setObjectName(QStringLiteral("analysisStepsButton"));
     m_analysisPanel->loadsButton()->setObjectName(QStringLiteral("analysisLoadsButton"));
     m_analysisPanel->constraintsButton()->setObjectName(QStringLiteral("analysisConstraintsButton"));
+    m_analysisPanel->regionsButton()->setObjectName(QStringLiteral("analysisRegionsButton"));
     ui.analysisModuleLayout->insertWidget(1, m_analysisPanel);
     connect(m_analysisPanel->stepsButton(), &QPushButton::clicked, this,
             [this]() { openAnalysisManager(static_cast<int>(AnalysisManagerDialog::Page::Steps)); });
@@ -3050,6 +3067,7 @@ void YQY::initializeAnalysisEditor()
             [this]() { openAnalysisManager(static_cast<int>(AnalysisManagerDialog::Page::Loads)); });
     connect(m_analysisPanel->constraintsButton(), &QPushButton::clicked, this,
             [this]() { openAnalysisManager(static_cast<int>(AnalysisManagerDialog::Page::Constraints)); });
+    connect(m_analysisPanel->regionsButton(), &QPushButton::clicked, this, &YQY::openComputeRegionManager);
     connect(ui.analysisTree, &QTreeWidget::itemDoubleClicked, this,
             [this](QTreeWidgetItem* item, int)
             {
@@ -3060,7 +3078,26 @@ void YQY::initializeAnalysisEditor()
                 const int page = ui.analysisTree->indexOfTopLevelItem(item);
                 if (page >= 0 && page <= 2 && m_modelController->model())
                     openAnalysisManager(page);
+                else if (page == 3 && m_modelController->model())
+                    openComputeRegionManager();
             });
+}
+
+void YQY::openComputeRegionManager()
+{
+    const auto structure = m_modelController->model();
+    if (!structure)
+        return;
+    ComputeRegionManagerDialog manager(structure, this);
+    manager.exec();
+    QSet<int> affectedStepIds;
+    for (const auto& [stepId, step] : structure->m_AnalysisStep)
+    {
+        if (step)
+            affectedStepIds.insert(stepId);
+    }
+    handleAnalysisResourcesChanged(affectedStepIds);
+    refreshModulePages();
 }
 
 void YQY::refreshAnalysisEditor()
@@ -3072,16 +3109,20 @@ void YQY::refreshAnalysisEditor()
     auto* stepsButton = m_analysisPanel->stepsButton();
     auto* loadsButton = m_analysisPanel->loadsButton();
     auto* constraintsButton = m_analysisPanel->constraintsButton();
+    auto* regionsButton = m_analysisPanel->regionsButton();
     stepsButton->setEnabled(enabled);
     loadsButton->setEnabled(enabled);
     constraintsButton->setEnabled(enabled);
+    regionsButton->setEnabled(enabled);
     stepsButton->setText(QStringLiteral("分析步 · %1").arg(structure ? structure->m_AnalysisStep.size() : 0));
     loadsButton->setText(QStringLiteral("荷载 · %1").arg(structure ? structure->m_Load.size() : 0));
     constraintsButton->setText(QStringLiteral("约束 · %1").arg(structure ? structure->m_Constraint.size() : 0));
+    regionsButton->setText(QStringLiteral("计算区域 · %1").arg(structure ? structure->m_ComputeRegions.size() : 0));
     const ThemeColors colors = themeColors(ui.themeComboBox->currentIndex());
     stepsButton->setIcon(treeIcon(TreeGlyph::AnalysisSteps, QColor(colors.text), QColor(colors.accentSecond)));
     loadsButton->setIcon(treeIcon(TreeGlyph::Load, QColor(colors.text), QColor(colors.accentSecond)));
     constraintsButton->setIcon(treeIcon(TreeGlyph::Constraint, QColor(colors.text), QColor(colors.accentSecond)));
+    regionsButton->setIcon(treeIcon(TreeGlyph::Model, QColor(colors.text), QColor(colors.accentSecond)));
 }
 
 void YQY::openAnalysisManager(int initialPage)
@@ -3621,7 +3662,7 @@ void YQY::openHdf5Result()
 
     ModelImportFileDialog dialog(initialDirectory, QStringLiteral("打开 H5 结果文件"),
                                  QStringLiteral("HDF5 结果文件 (*.h5 *.hdf5);;所有文件 (*.*)"),
-                                 QFileDialog::ExistingFile, this);
+                                 QFileDialog::ExistingFiles, this);
 
     if (dialog.exec() != QDialog::Accepted)
         return;
@@ -3630,7 +3671,24 @@ void YQY::openHdf5Result()
     if (selectedFiles.isEmpty())
         return;
 
-    loadHdf5Result(selectedFiles.first());
+    int loadedCount = 0;
+    QStringList failedFiles;
+    for (const QString& filePath : selectedFiles)
+    {
+        if (loadHdf5Result(filePath, false))
+            ++loadedCount;
+        else
+            failedFiles.append(QFileInfo(filePath).fileName());
+    }
+
+    if (!failedFiles.isEmpty())
+    {
+        QMessageBox::warning(this, QStringLiteral("部分 H5 文件未能打开"),
+                             QStringLiteral("以下文件没有有效的模型或结果数据：\n%1")
+                                 .arg(failedFiles.join(QLatin1Char('\n'))));
+    }
+    if (loadedCount > 0)
+        setWorkspaceMessage(QStringLiteral("已打开 %1 个 H5 结果文件").arg(loadedCount));
 }
 
 void YQY::exportNodeResults()
@@ -3712,7 +3770,7 @@ void YQY::exportNodeResults()
     watcher->setFuture(QtConcurrent::run(
         [sourceFile, outputFile, nodeIds, resultTypes]()
         {
-            Hdf5ResultIO exporter;
+            Hdf5ModelIO exporter;
             return exporter.ExportBdfResultFromHdf5(sourceFile, outputFile, nodeIds, resultTypes, {}, {});
         }));
 }
@@ -3758,7 +3816,7 @@ bool YQY::loadHdf5Result(const QString& filePath, bool showErrors, bool activate
     QElapsedTimer modelTimer;
     modelTimer.start();
     auto embeddedModel = std::make_shared<StructureData>();
-    Hdf5ResultIO modelReader;
+    Hdf5ModelIO modelReader;
     if (!modelReader.ImportHdf5(filePath, embeddedModel.get()))
     {
         m_resultReader->CloseResultFile();
@@ -3781,6 +3839,7 @@ bool YQY::loadHdf5Result(const QString& filePath, bool showErrors, bool activate
     }
 
     m_resultFilePath = QFileInfo(filePath).absoluteFilePath();
+    m_resultFilesByModelId.insert(m_modelController->activeModelId(), m_resultFilePath);
     m_resultIsPartial = partialResult;
     m_resultFrames = std::move(indexedFrames);
     if (!m_resultReader->ReadResultRanges(m_resultRanges))
@@ -4019,6 +4078,19 @@ void YQY::handleActiveModelChanged(int modelId)
     setWorkspaceMessage(QStringLiteral("当前模型：%1 · 共打开 %2 个模型")
                             .arg(QFileInfo(m_modelController->filePath(modelId)).fileName())
                             .arg(m_modelController->modelCount()));
+
+    const QString resultFilePath = m_resultFilesByModelId.value(modelId);
+    if (!resultFilePath.isEmpty() && QFileInfo(resultFilePath) != QFileInfo(m_resultPanel->resultFilePath()))
+    {
+        QTimer::singleShot(0, this, [this, modelId, resultFilePath]()
+        {
+            if (m_modelController->activeModelId() == modelId
+                && QFileInfo(resultFilePath) != QFileInfo(m_resultPanel->resultFilePath()))
+            {
+                loadHdf5Result(resultFilePath, false, false);
+            }
+        });
+    }
 }
 
 void YQY::handleModelLoadFailed(const QString& filePath, const QString& errorMessage)

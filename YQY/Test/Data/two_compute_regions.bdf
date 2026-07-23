@@ -1,0 +1,36 @@
+** Two disconnected bars used by the compute-region verification.
+
+*Material,1
+1 2.0e11 0.3 7850 2.5e8 0
+
+*Section,1
+1 0.01
+
+*Node,4
+1 0 0 0
+2 1 0 0
+3 0 2 0
+4 1 2 0
+
+*Element T3D2 2
+1 1 2 1 1
+2 3 4 1 1
+
+*Constraint,10
+1 1 0 0
+2 1 1 0
+3 1 2 0
+4 2 1 0
+5 2 2 0
+6 3 0 0
+7 3 1 0
+8 3 2 0
+9 4 1 0
+10 4 2 0
+
+*Load FORCE_NODE 2
+1 2 0 1000 1 0 1
+2 4 0 2000 1 0 1
+
+*Analysis_Step,1
+1 Static 1 1 1e-8 32

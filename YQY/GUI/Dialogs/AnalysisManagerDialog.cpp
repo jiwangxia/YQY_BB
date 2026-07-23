@@ -9,12 +9,15 @@
 #include "ui_ConstraintEditorDialog.h"
 
 #include <QDialogButtonBox>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
+#include <QGroupBox>
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QMessageBox>
 #include <QPainter>
 #include <QPainterPath>
@@ -113,7 +116,8 @@ QString stepDisplayName(int id, const std::shared_ptr<AnalysisStep>& step)
 class StepEditorDialog final : public QDialog
 {
 public:
-    explicit StepEditorDialog(int id, const std::shared_ptr<AnalysisStep>& step, QWidget* parent)
+    explicit StepEditorDialog(int id, const std::shared_ptr<StructureData>& structure,
+        const std::shared_ptr<AnalysisStep>& step, QWidget* parent)
         : QDialog(parent)
         , m_id(id)
     {
@@ -131,13 +135,57 @@ public:
         m_increment = form.incrementSpin;
         m_tolerance = form.toleranceSpin;
         m_iterations = form.iterationsSpin;
+        auto* regionGroup = new QGroupBox(QStringLiteral("计算区域"), this);
+        auto* regionLayout = new QVBoxLayout(regionGroup);
+        m_allRegions = new QCheckBox(QStringLiteral("全部启用计算区域"), regionGroup);
+        m_regionList = new QListWidget(regionGroup);
+        regionLayout->addWidget(m_allRegions);
+        regionLayout->addWidget(m_regionList);
+        form.rootLayout->insertWidget(form.rootLayout->count() - 1, regionGroup);
+        if (structure)
+        {
+            for (const auto& [regionId, region] : structure->m_ComputeRegions)
+            {
+                if (!region)
+                    continue;
+                auto* item = new QListWidgetItem(
+                    QStringLiteral("%1（节点 %2，单元 %3）")
+                        .arg(region->m_Name).arg(region->m_NodeIds.size()).arg(region->m_ElementIds.size()),
+                    m_regionList);
+                item->setData(Qt::UserRole, regionId);
+                item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+                item->setCheckState(Qt::Unchecked);
+            }
+        }
+        connect(m_allRegions, &QCheckBox::toggled, m_regionList, &QListWidget::setDisabled);
         m_time->setRange(1.0e-12, 1.0e12);
         m_increment->setRange(1.0e-12, 1.0e12);
         m_tolerance->setRange(1.0e-14, 1.0);
         auto* buttons = form.buttonBox;
         buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("确定"));
         buttons->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
-        connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
+        connect(buttons, &QDialogButtonBox::accepted, this, [this]()
+        {
+            if (!m_allRegions->isChecked())
+            {
+                bool hasCheckedRegion = false;
+                for (int row = 0; row < m_regionList->count(); ++row)
+                {
+                    if (m_regionList->item(row)->checkState() == Qt::Checked)
+                    {
+                        hasCheckedRegion = true;
+                        break;
+                    }
+                }
+                if (!hasCheckedRegion)
+                {
+                    QMessageBox::information(this, QStringLiteral("请选择计算区域"),
+                        QStringLiteral("分析步至少需要选择一个计算区域。"));
+                    return;
+                }
+            }
+            accept();
+        });
         connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
         if (step)
         {
@@ -147,6 +195,14 @@ public:
             m_increment->setValue(step->m_StepSize);
             m_tolerance->setValue(step->m_Tolerance);
             m_iterations->setValue(step->m_MaxIterations);
+            m_allRegions->setChecked(step->m_RegionScope == AnalysisRegionScope::AllEnabledRegions);
+            for (int row = 0; row < m_regionList->count(); ++row)
+            {
+                auto* item = m_regionList->item(row);
+                const int regionId = item->data(Qt::UserRole).toInt();
+                item->setCheckState(step->m_ComputeRegionIds.find(regionId)
+                    != step->m_ComputeRegionIds.cend() ? Qt::Checked : Qt::Unchecked);
+            }
         }
         else
         {
@@ -154,6 +210,7 @@ public:
             m_increment->setValue(0.01);
             m_tolerance->setValue(1.0e-5);
             m_iterations->setValue(50);
+            m_allRegions->setChecked(true);
         }
     }
 
@@ -167,6 +224,14 @@ public:
         value.stepSize = m_increment->value();
         value.tolerance = m_tolerance->value();
         value.maxIterations = m_iterations->value();
+        value.regionScope = m_allRegions->isChecked()
+            ? AnalysisRegionScope::AllEnabledRegions : AnalysisRegionScope::SelectedRegions;
+        for (int row = 0; row < m_regionList->count(); ++row)
+        {
+            const auto* item = m_regionList->item(row);
+            if (item->checkState() == Qt::Checked)
+                value.computeRegionIds.insert(item->data(Qt::UserRole).toInt());
+        }
         return value;
     }
 
@@ -178,6 +243,8 @@ private:
     QDoubleSpinBox* m_increment = nullptr;
     QDoubleSpinBox* m_tolerance = nullptr;
     QSpinBox* m_iterations = nullptr;
+    QCheckBox* m_allRegions = nullptr;
+    QListWidget* m_regionList = nullptr;
 };
 
 QString directionName(EnumKeyword::Direction direction)
@@ -555,6 +622,7 @@ AnalysisManagerDialog::AnalysisManagerDialog(
         m_stepTable = table;
         headers = { QStringLiteral("名称"), QStringLiteral("类型"), QStringLiteral("总时间"),
             QStringLiteral("增量"), QStringLiteral("生效荷载数"), QStringLiteral("生效约束数") };
+        headers.insert(4, QStringLiteral("计算区域"));
         addHandler = [this]() { editStep(); };
         editHandler = [this]() { editStep(currentId(m_stepTable)); };
         deleteHandler = [this]() { deleteSelectedStep(); };
@@ -598,13 +666,13 @@ AnalysisManagerDialog::AnalysisManagerDialog(
     connect(deleteButton, &QPushButton::clicked, this, deleteHandler);
     connect(table, &QTableWidget::itemDoubleClicked, this,
         [this, table, editHandler](QTableWidgetItem* item) {
-            if (table == m_stepTable && item && item->column() == 4)
+            if (table == m_stepTable && item && item->column() == 5)
             {
                 if (m_openManagerCallback)
                     m_openManagerCallback(Page::Loads);
                 return;
             }
-            if (table == m_stepTable && item && item->column() == 5)
+            if (table == m_stepTable && item && item->column() == 6)
             {
                 if (m_openManagerCallback)
                     m_openManagerCallback(Page::Constraints);
@@ -726,8 +794,21 @@ void AnalysisManagerDialog::refreshStepTable(int preferredId)
             ? QStringLiteral("动力") : QStringLiteral("未知")));
         m_stepTable->setItem(row, 2, tableItem(QString::number(step->m_Time, 'g', 10)));
         m_stepTable->setItem(row, 3, tableItem(QString::number(step->m_StepSize, 'g', 10)));
-        m_stepTable->setItem(row, 4, tableItem(QString::number(loadCount)));
-        m_stepTable->setItem(row, 5, tableItem(QString::number(constraintCount)));
+        QString regionText = QStringLiteral("全部启用区域");
+        if (step->m_RegionScope == AnalysisRegionScope::SelectedRegions)
+        {
+            QStringList regionNames;
+            for (int regionId : step->m_ComputeRegionIds)
+            {
+                const auto regionIt = m_structure->m_ComputeRegions.find(regionId);
+                regionNames.append(regionIt != m_structure->m_ComputeRegions.cend() && regionIt->second
+                    ? regionIt->second->m_Name : QStringLiteral("区域 %1（缺失）").arg(regionId));
+            }
+            regionText = regionNames.join(QStringLiteral("、"));
+        }
+        m_stepTable->setItem(row, 4, tableItem(regionText));
+        m_stepTable->setItem(row, 5, tableItem(QString::number(loadCount)));
+        m_stepTable->setItem(row, 6, tableItem(QString::number(constraintCount)));
     }
     selectId(m_stepTable, preferredId);
 }
@@ -820,7 +901,7 @@ void AnalysisManagerDialog::editStep(int stepId)
         stepId = nextId(m_structure->m_AnalysisStep);
     }
 
-    StepEditorDialog editor(stepId, existing, this);
+    StepEditorDialog editor(stepId, m_structure, existing, this);
     if (editor.exec() != QDialog::Accepted)
         return;
     const AnalysisStepConfig value = editor.config();
@@ -833,6 +914,8 @@ void AnalysisManagerDialog::editStep(int stepId)
         existing->m_StepSize = value.stepSize;
         existing->m_Tolerance = value.tolerance;
         existing->m_MaxIterations = value.maxIterations;
+        existing->m_RegionScope = value.regionScope;
+        existing->m_ComputeRegionIds = value.computeRegionIds;
     }
     else
     {

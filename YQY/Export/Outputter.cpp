@@ -1,18 +1,49 @@
 #include "Outputter.h"
 #include "DataStructure/Structure/StructureData.h"
-#include "Export/Hdf5ResultIO.h"
+#include "Export/Hdf5ModelIO.h"
 #include <QDebug>
 #include <QFile>
 #include <QTextStream>
 #include <iomanip>
 #include <sstream>
 #include <cmath>
+#include <algorithm>
 
 Outputter::Outputter() = default;
 
 Outputter::~Outputter()
 {
     Clear();
+}
+
+void Outputter::MergeFramesFrom(const Outputter& source)
+{
+    for (const DataFrame& sourceFrame : source.m_DataSet)
+    {
+        auto targetIt = std::find_if(m_DataSet.begin(), m_DataSet.end(),
+            [&sourceFrame](const DataFrame& targetFrame)
+        {
+            return targetFrame.m_stepId == sourceFrame.m_stepId
+                && targetFrame.m_increment == sourceFrame.m_increment
+                && targetFrame.m_analysisType == sourceFrame.m_analysisType
+                && std::abs(targetFrame.m_currentTime - sourceFrame.m_currentTime) <= 1.0e-12;
+        });
+        if (targetIt == m_DataSet.end())
+        {
+            m_DataSet.push_back(sourceFrame);
+            continue;
+        }
+        targetIt->m_nodeDatas.insert(sourceFrame.m_nodeDatas.cbegin(), sourceFrame.m_nodeDatas.cend());
+        targetIt->m_elementDatas.insert(sourceFrame.m_elementDatas.cbegin(), sourceFrame.m_elementDatas.cend());
+    }
+    std::sort(m_DataSet.begin(), m_DataSet.end(), [](const DataFrame& lhs, const DataFrame& rhs)
+    {
+        if (lhs.m_stepId != rhs.m_stepId)
+            return lhs.m_stepId < rhs.m_stepId;
+        if (lhs.m_currentTime != rhs.m_currentTime)
+            return lhs.m_currentTime < rhs.m_currentTime;
+        return lhs.m_increment < rhs.m_increment;
+    });
 }
 
 void NodeData::ExtractFromNode(const Node* pNode)
@@ -442,7 +473,7 @@ bool Outputter::BeginHdf5ResultStream(const QString& fileName, StructureData* pD
 {
     EndHdf5ResultStream(false);
 
-    m_hdf5Stream = std::make_unique<Hdf5ResultIO>();
+    m_hdf5Stream = std::make_unique<Hdf5ModelIO>();
     if (!m_hdf5Stream->BeginResultStream(fileName, pData, sourceModelName))
     {
         m_hdf5Stream.reset();
@@ -885,7 +916,7 @@ bool Outputter::SaveBdfModel(const QString& fileName, StructureData* pData)
 bool Outputter::SaveHdf5File(const QString& fileName, StructureData* pData,
     const QString& sourceModelName, bool resultComplete)
 {
-    Hdf5ResultIO hdf5ResultIO;
+    Hdf5ModelIO hdf5ResultIO;
     return hdf5ResultIO.ExportHdf5(fileName, pData, sourceModelName, resultComplete);
 }
 
@@ -896,7 +927,7 @@ bool Outputter::ExportBdfResultFromHdf5(const QString& hdf5FileName,
     const std::vector<int>& elementIds,
     const std::vector<EnumKeyword::ElementResultType>& elementTypes) const
 {
-    Hdf5ResultIO hdf5ResultIO;
+    Hdf5ModelIO hdf5ResultIO;
     return hdf5ResultIO.ExportBdfResultFromHdf5(hdf5FileName, bdfFileName,
         nodeIds, nodeTypes, elementIds, elementTypes);
 }

@@ -13,6 +13,7 @@ public:
     QPushButton* stepsButton() const;
     QPushButton* loadsButton() const;
     QPushButton* constraintsButton() const;
+    QPushButton* regionsButton() const;
 
 private:
     Ui::AnalysisSummaryPanelClass* m_ui = nullptr;
