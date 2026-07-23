@@ -90,8 +90,9 @@ public:
 
     /**
      * @brief 根据分析步类型调度求解
+     * @param [in] persistHdf5 是否由当前分析步直接持久化 H5；区域子任务传 false，由上层合并后统一写入
      */
-    bool Solve();
+    bool Solve(bool persistHdf5 = true);
 
     using ProgressCallback = std::function<void(double, const QString&)>;
     using CancelCallback = std::function<bool()>;

@@ -480,9 +480,20 @@ void AnalysisStep::Assemble_ForceWind(Force_Wind* pForceWind, VectorXd& F1, Vect
     int iDirection = static_cast<int>(pForceWind->m_Direction);
     double m_v = pForceWind->m_velocity;
     double m_vDensity = pForceWind->m_windDensity;
+    const bool hasAerodynamicTags = std::any_of(
+        m_pData->m_Elements.cbegin(),
+        m_pData->m_Elements.cend(),
+        [](const auto& pair)
+        {
+            return pair.second && pair.second->HasAerodynamicLoad();
+        });
     for (auto& pElement : m_pData->m_Elements)
     {
         auto pele = pElement.second;
+        if (!pele || (hasAerodynamicTags && !pele->HasAerodynamicLoad()))
+        {
+            continue;
+        }
         auto pPorety = pele->m_pProperty.lock();
 
         auto m_r = pPorety->m_pSection.lock()->m_Radius;
@@ -536,7 +547,7 @@ void AnalysisStep::Assemble_Constraint(
 // 求解方法实现
 // ==========================================
 
-bool AnalysisStep::Solve()
+bool AnalysisStep::Solve(bool persistHdf5)
 {
     if (!PrepareData()) return false;
     Init();
@@ -552,13 +563,12 @@ bool AnalysisStep::Solve()
         return false;
     }
 
-    const bool outputHdf5 = m_pData->m_OutputControl.m_EnableHdf5;
     const bool dynamicAnalysis = (m_Type == EnumKeyword::StepType::DYNAMIC);
     m_pData->GetOutputter().SetResultContext(m_Id, static_cast<int>(m_Type));
     m_pData->GetOutputter().SetKeepFramesInMemory(
         !dynamicAnalysis || !m_pData->m_OutputControl.m_StreamResult);
 
-    if (dynamicAnalysis && outputHdf5)
+    if (dynamicAnalysis && persistHdf5)
     {
         if (!m_pData->GetOutputter().BeginHdf5ResultStream(
             m_pData->m_OutputControl.m_Hdf5FileName,
@@ -577,20 +587,34 @@ bool AnalysisStep::Solve()
         qDebug().noquote() << QStringLiteral("求解失败: %1").arg(solver->GetName());
         solveOk = false;
     }
+    const bool solveCompleted = solveOk;
 
-    if (dynamicAnalysis && outputHdf5)
+    if (dynamicAnalysis && persistHdf5)
     {
         m_pData->GetOutputter().EndHdf5ResultStream(solveOk);
     }
-    else if (!dynamicAnalysis && outputHdf5
-        && m_pData->GetOutputter().GetFrameCount() > 0)
+    else if (!dynamicAnalysis && persistHdf5)
     {
-        m_pData->GetOutputter().SaveHdf5File(
-            m_pData->m_OutputControl.m_Hdf5FileName,
-            m_pData,
-            m_pData->m_OutputControl.m_SourceModelName,
-            solveOk);
-        if (!solveOk)
+        bool hdf5Saved = false;
+        if (m_pData->GetOutputter().GetFrameCount() == 0)
+        {
+            qDebug().noquote() << QStringLiteral("Error: 静力分析没有可写入 H5 的结果帧");
+            solveOk = false;
+        }
+        else
+        {
+            hdf5Saved = m_pData->GetOutputter().SaveHdf5File(
+                m_pData->m_OutputControl.m_Hdf5FileName,
+                m_pData,
+                m_pData->m_OutputControl.m_SourceModelName,
+                solveOk);
+            if (!hdf5Saved)
+            {
+                qDebug().noquote() << QStringLiteral("Error: H5/HDF5 结果文件保存失败");
+                solveOk = false;
+            }
+        }
+        if (!solveCompleted && hdf5Saved)
         {
             qDebug().noquote() << QStringLiteral("静力求解未完成，已保存此前收敛的 %1 帧部分结果")
                 .arg(m_pData->GetOutputter().GetFrameCount());

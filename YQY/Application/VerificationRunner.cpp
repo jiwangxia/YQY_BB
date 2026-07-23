@@ -1,11 +1,15 @@
 #include "Application/VerificationRunner.h"
 
+#include "Conductor/ConductorModelBuilder.h"
+#include "Conductor/PropertyLibrary.h"
 #include "DataStructure/Structure/StructureData.h"
 #include "Export/Hdf5ModelIO.h"
 #include "GUI/Controllers/ModelController.h"
 #include "GUI/Controllers/SolveTaskController.h"
 #include "Import/Input_Model.h"
 #include "Solver/AnalysisSolve.h"
+
+#include <QTemporaryDir>
 
 namespace
 {
@@ -170,7 +174,6 @@ std::optional<int> verifyComputeRegions(const QStringList& arguments)
         return 4;
     }
 
-    structure->m_OutputControl.m_EnableHdf5 = false;
     structure->m_OutputControl.m_StreamResult = false;
     AnalysisRunner runner;
     runner.SetStructure(structure);
@@ -182,6 +185,203 @@ std::optional<int> verifyComputeRegions(const QStringList& arguments)
         << " result_nodes=" << frame.GetNodeDatas().size()
         << " result_elements=" << frame.GetElementDatas().size() << Qt::endl;
     return frame.GetNodeDatas().size() == 4 && frame.GetElementDatas().size() == 2 ? 0 : 6;
+}
+
+std::optional<int> verifyConductorBundle(const QStringList& arguments)
+{
+    if (!arguments.contains(QStringLiteral("--verify-conductor-bundle")))
+        return std::nullopt;
+
+    auto structure = std::make_shared<StructureData>();
+    Conductor::PropertyLibrary library;
+    QString propertyError;
+    if (!library.load(propertyError) || !library.isReady())
+    {
+        QTextStream(stderr) << "conductor property library failed: " << propertyError << Qt::endl;
+        return 1;
+    }
+
+    auto property = library.instantiateProperty(0, 0, *structure, propertyError);
+    if (!property)
+    {
+        QTextStream(stderr) << "conductor property failed: " << propertyError << Qt::endl;
+        return 2;
+    }
+
+    Conductor::LineBuildConfig config;
+    config.start = Vector3d(0.0, 0.0, 20.0);
+    config.end = Vector3d(300.0, 0.0, 20.0);
+    config.property = property;
+    config.elementType = EnumKeyword::ElementType::T3D2;
+    config.conductor.nBundle = 4;
+    config.conductor.spacing = 0.45;
+    config.conductor.segments = 10;
+    config.conductor.stress0 = 50.0e6;
+    config.conductor.connecttype = Conductor::ConnectionMode::Parallel;
+    config.convergeBundleEnds = true;
+    config.setNamePrefix = QStringLiteral("验证单档");
+
+    Conductor::ConductorModelBuilder builder(structure);
+    Conductor::LineBuildResult result;
+    std::string buildError;
+    Conductor::SpanConductorBuildConfig spanConfig;
+    spanConfig.line = config;
+    spanConfig.useInnerSpacerLayout = true;
+    spanConfig.innerSpacerLayout.useEqualSpacing = false;
+    spanConfig.innerSpacerLayout.spacer.elementType = EnumKeyword::ElementType::CR3D;
+    spanConfig.innerSpacerLayout.spacer.property = property;
+    if (!builder.BuildSpanConductor(spanConfig, result, buildError))
+    {
+        QTextStream(stderr) << "conductor build failed: " << QString::fromStdString(buildError) << Qt::endl;
+        return 3;
+    }
+
+    if (result.subConductors.size() != 4
+        || result.leftSupportNodeId <= 0
+        || result.rightSupportNodeId <= 0
+        || result.leftTensionEnd.groupNodeIds.size() != 2
+        || result.rightTensionEnd.groupNodeIds.size() != 2
+        || result.leftTensionEnd.yokeElementIds.size() != 2
+        || result.rightTensionEnd.yokeElementIds.size() != 2
+        || result.leftTensionEnd.stabilizerElementId <= 0
+        || result.rightTensionEnd.stabilizerElementId <= 0
+        || result.innerSpacers.empty()
+        || structure->m_ModelSets.size() != 8)
+    {
+        return 4;
+    }
+
+    for (const auto& [wireId, sub] : result.subConductors)
+    {
+        if (sub.nodeIds.empty()
+            || sub.nodeSetId <= 0
+            || sub.elementSetId <= 0)
+        {
+            return 5;
+        }
+    }
+    if (result.subConductors.at(0).nodeIds.front() != result.subConductors.at(1).nodeIds.front()
+        || result.subConductors.at(2).nodeIds.front() != result.subConductors.at(3).nodeIds.front()
+        || result.subConductors.at(0).nodeIds.front() == result.subConductors.at(2).nodeIds.front())
+        return 10;
+
+    int expectedConductorNodeId = 1;
+    for (std::size_t groupIndex = 0; groupIndex < result.leftTensionEnd.groupNodeIds.size(); ++groupIndex)
+    {
+        const int leftGroupId = result.leftTensionEnd.groupNodeIds[groupIndex];
+        const int rightGroupId = result.rightTensionEnd.groupNodeIds[groupIndex];
+        if (leftGroupId != expectedConductorNodeId++)
+            return 12;
+        for (const auto& [wireId, sub] : result.subConductors)
+        {
+            if (sub.nodeIds.front() != leftGroupId)
+                continue;
+            for (std::size_t index = 1; index + 1 < sub.nodeIds.size(); ++index)
+            {
+                if (sub.nodeIds[index] != expectedConductorNodeId++)
+                    return 13;
+            }
+            if (sub.nodeIds.back() != rightGroupId)
+                return 14;
+        }
+        if (rightGroupId != expectedConductorNodeId++)
+            return 15;
+    }
+    if (result.leftSupportNodeId != expectedConductorNodeId++
+        || result.rightSupportNodeId != expectedConductorNodeId++)
+        return 16;
+
+    int expectedId = 1;
+    for (const auto& [nodeId, node] : structure->m_Nodes)
+    {
+        if (!node || nodeId != expectedId++)
+            return 6;
+    }
+    expectedId = 1;
+    for (const auto& [elementId, element] : structure->m_Elements)
+    {
+        if (!element || elementId != expectedId++)
+            return 7;
+    }
+
+    int expectedConductorElementId = 1;
+    for (const auto& [wireId, sub] : result.subConductors)
+    {
+        for (int elementId : sub.elementIds)
+        {
+            const auto element = structure->FindElement(elementId);
+            if (elementId != expectedConductorElementId++
+                || !element
+                || element->m_Role != ElementRole::Conductor
+                || element->m_WireId != wireId
+                || element->m_AeroProfileId != wireId
+                || !element->HasAerodynamicLoad())
+                return 17;
+        }
+    }
+    for (const auto* end : {&result.leftTensionEnd, &result.rightTensionEnd})
+    {
+        std::vector<int> hardwareIds = end->yokeElementIds;
+        if (end->stabilizerElementId > 0)
+            hardwareIds.push_back(end->stabilizerElementId);
+        for (int elementId : hardwareIds)
+        {
+            const auto element = structure->FindElement(elementId);
+            if (!element
+                || element->m_Role != ElementRole::TensionHardware
+                || element->HasAerodynamicLoad())
+                return 18;
+        }
+    }
+    for (const auto& spacer : result.innerSpacers)
+    {
+        for (int elementId : spacer.elementIds)
+        {
+            const auto element = structure->FindElement(elementId);
+            if (!element
+                || element->m_Role != ElementRole::IntraPhaseSpacer
+                || element->HasAerodynamicLoad())
+                return 19;
+        }
+    }
+
+    const auto firstWire = result.subConductors.find(0);
+    if (firstWire == result.subConductors.cend() || firstWire->second.nodeIds.size() < 3)
+        return 8;
+    const auto rightBottomNode = structure->FindNode(firstWire->second.nodeIds[1]);
+    if (!rightBottomNode || rightBottomNode->m_Y >= 0.0 || rightBottomNode->m_Z >= config.start.z())
+        return 9;
+    const double transitionDx = rightBottomNode->m_X - config.start.x();
+    const double transitionDy = rightBottomNode->m_Y - config.start.y();
+    if (std::hypot(transitionDx, transitionDy) < 0.5)
+        return 11;
+
+    QTemporaryDir temporaryDirectory;
+    const QString h5Path = temporaryDirectory.filePath(QStringLiteral("conductor_tags.h5"));
+    Hdf5ModelIO hdf5;
+    StructureData restored;
+    if (!temporaryDirectory.isValid()
+        || !hdf5.ExportModelHdf5(h5Path, structure.get(), QStringLiteral("verification"))
+        || !hdf5.ImportHdf5(h5Path, &restored)
+        || restored.m_Elements.size() != structure->m_Elements.size())
+        return 20;
+    for (const auto& [elementId, source] : structure->m_Elements)
+    {
+        const auto target = restored.FindElement(elementId);
+        if (!source || !target
+            || target->m_Role != source->m_Role
+            || target->m_WireId != source->m_WireId
+            || target->m_AeroProfileId != source->m_AeroProfileId)
+            return 21;
+    }
+
+    QTextStream(stdout)
+        << "conductor bundle nodes=" << structure->m_Nodes.size()
+        << " elements=" << structure->m_Elements.size()
+        << " sets=" << structure->m_ModelSets.size()
+        << " supports=" << result.leftSupportNodeId << "," << result.rightSupportNodeId
+        << Qt::endl;
+    return 0;
 }
 
 std::optional<int> verifySolveTask(QApplication& application, const QStringList& arguments)
@@ -359,6 +559,8 @@ std::optional<int> VerificationRunner::run(QApplication& application, const QStr
     if (const auto result = verifyHdf5ModelContract(arguments))
         return result;
     if (const auto result = verifyComputeRegions(arguments))
+        return result;
+    if (const auto result = verifyConductorBundle(arguments))
         return result;
     if (const auto result = verifySolveTask(application, arguments))
         return result;

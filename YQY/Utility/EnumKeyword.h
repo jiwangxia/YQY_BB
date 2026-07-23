@@ -22,8 +22,7 @@ public:
         CONSTRAINT_TABULAR, ///< 约束分段线性时程
         LOAD,           ///< 荷载
         STRESS,         ///< 初始应力
-        ANALYSIS_STEP,  ///< 分析步
-        OUTPUT          ///< 输出控制
+        ANALYSIS_STEP   ///< 分析步
     };
     static const QMap<QString, KeyData> MapKeyData;  ///< 关键字字符串到枚举的映射
 

@@ -27,9 +27,6 @@
  */
 struct OutputControl
 {
-    bool m_EnableHdf5 = false;       ///< 是否输出 H5/HDF5 文件
-    bool m_OutputModel = true;       ///< 是否写入模型数据
-    bool m_OutputResult = true;      ///< 是否写入结果数据
     bool m_StreamResult = true;      ///< 动力分析是否按时间步流式写入结果
     QString m_Hdf5FileName;          ///< H5/HDF5 输出文件名
     QString m_SourceModelName;       ///< 原始输入模型文件名

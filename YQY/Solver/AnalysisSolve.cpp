@@ -120,7 +120,6 @@ bool AnalysisRunner::RunSelectedByRegions(const std::vector<int>& stepIds)
             return result;
         }
 
-        result.model->m_OutputControl.m_EnableHdf5 = false;
         result.model->m_OutputControl.m_StreamResult = false;
         AnalysisRunner child;
         child.SetStructure(result.model);
@@ -141,7 +140,7 @@ bool AnalysisRunner::RunSelectedByRegions(const std::vector<int>& stepIds)
                     .arg(work.regionId).arg(work.stepId).arg(message));
             }
         }, m_cancelCallback);
-        result.succeeded = child.RunStepDirect(work.stepId);
+        result.succeeded = child.RunStepDirect(work.stepId, false);
         result.cancelled = child.WasCancelled()
             || (m_cancelCallback && m_cancelCallback());
         if (!result.succeeded && !result.cancelled)
@@ -187,20 +186,24 @@ bool AnalysisRunner::RunSelectedByRegions(const std::vector<int>& stepIds)
             qDebug().noquote() << QStringLiteral("Error:") << result.errorMessage;
     }
 
-    if (structure->m_OutputControl.m_EnableHdf5
-        && structure->GetOutputter().GetFrameCount() > 0)
+    if (structure->GetOutputter().GetFrameCount() > 0)
     {
         succeeded = structure->GetOutputter().SaveHdf5File(
             structure->m_OutputControl.m_Hdf5FileName,
             structure.get(), structure->m_OutputControl.m_SourceModelName,
             succeeded && !m_wasCancelled) && succeeded;
     }
+    else
+    {
+        qDebug().noquote() << QStringLiteral("Error: 分析没有可写入 H5 的结果帧");
+        succeeded = false;
+    }
     if (m_progressCallback && succeeded)
         m_progressCallback(1.0, QStringLiteral("全部计算区域完成"));
     return succeeded && !m_wasCancelled;
 }
 
-bool AnalysisRunner::RunStepDirect(int stepId)
+bool AnalysisRunner::RunStepDirect(int stepId, bool persistHdf5)
 {
     auto structure = m_pStructure.lock();
     if (!structure)
@@ -213,7 +216,7 @@ bool AnalysisRunner::RunStepDirect(int stepId)
     step->m_Id = stepId;
     step->SetStructure(structure);
     step->SetRuntimeCallbacks(m_progressCallback, m_cancelCallback);
-    const bool succeeded = step->Solve();
+    const bool succeeded = step->Solve(persistHdf5);
     step->ClearRuntimeCallbacks();
     m_wasCancelled = !succeeded && m_cancelCallback && m_cancelCallback();
     return succeeded;

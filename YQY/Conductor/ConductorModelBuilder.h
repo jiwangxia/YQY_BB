@@ -2,6 +2,7 @@
 
 #include "Base/Base.h"
 #include "Conductor.h"
+#include "DataStructure/Element/ElementBase.h"
 #include "Utility/EnumKeyword.h"
 
 #include <map>
@@ -11,7 +12,6 @@
 
 class Property;
 class StructureData;
-class ElementBase;
 
 namespace Conductor
 {
@@ -30,6 +30,11 @@ namespace Conductor
         EnumKeyword::ElementType elementType = EnumKeyword::ElementType::T3D2; ///< 导线单元类型，默认桁架单元
         ConductorConfig conductor;                                          ///< 裸导线几何和初始应力参数
         std::shared_ptr<Property> property;                                 ///< 导线材料和截面属性
+        bool convergeBundleEnds = true;                                     ///< 多分裂导线两端是否汇集到公共支点
+        double bundleEndTransitionLength = 1.0;                             ///< 公共支点到分裂截面的默认过渡弧长，单位 m
+        EnumKeyword::ElementType endFittingElementType = EnumKeyword::ElementType::CR3D; ///< 耐张端部联板/稳定梁单元类型
+        std::shared_ptr<Property> endFittingProperty;                       ///< 耐张端部属性；为空时复用导线属性
+        QString setNamePrefix = QStringLiteral("单档导线");                  ///< 自动生成子导线集合的名称前缀
     };
 
     /**
@@ -40,6 +45,8 @@ namespace Conductor
         int wireId = 0;                    ///< 子导线编号
         std::vector<int> nodeIds;          ///< 子导线节点 ID
         std::vector<int> elementIds;       ///< 子导线单元 ID
+        int nodeSetId = -1;                ///< 子导线节点集合 ID
+        int elementSetId = -1;             ///< 子导线单元集合 ID，可用于气动参数绑定
     };
 
     /**
@@ -64,8 +71,16 @@ namespace Conductor
         int count = 0;                                                      ///< 间隔棒数量
         double startOffset = 0.0;                                           ///< 距左端避让距离，单位 m
         double endOffset = 0.0;                                             ///< 距右端避让距离，单位 m
-        bool useEqualSpacing = true;                                        ///< true=在有效区间内均匀布置
+        bool useEqualSpacing = true;                                        ///< true=均匀布置；false=按 THOP 标准次档距布置
         InnerSpacerConfig spacer;                                           ///< 单个间隔棒的单元类型和属性
+    };
+
+    struct TensionEndModel
+    {
+        int supportNodeId = -1;                                             ///< 无塔模型时的耐张挂点
+        std::vector<int> groupNodeIds;                                      ///< 子导线分组汇集节点
+        std::vector<int> yokeElementIds;                                    ///< 挂点到分组节点的联板单元
+        int stabilizerElementId = -1;                                       ///< 两个分组节点之间的稳定梁
     };
 
     /**
@@ -100,6 +115,10 @@ namespace Conductor
         Vector3d start = Vector3d::Zero();                         ///< 左挂点坐标
         Vector3d end = Vector3d::Zero();                           ///< 右挂点坐标
         double spanLength = 0.0;                                   ///< 水平档距，单位 m
+        int leftSupportNodeId = -1;                                ///< 左端公共支点节点 ID
+        int rightSupportNodeId = -1;                               ///< 右端公共支点节点 ID
+        TensionEndModel leftTensionEnd;                             ///< 左侧 THOP 式耐张端部
+        TensionEndModel rightTensionEnd;                            ///< 右侧 THOP 式耐张端部
         std::map<int, SubConductorModel> subConductors;            ///< 子导线索引
         std::vector<InnerSpacerModel> innerSpacers;                ///< 相内间隔棒索引
         std::shared_ptr<Property> property;                        ///< 导线属性
@@ -165,6 +184,13 @@ namespace Conductor
         bool BuildInnerSpacers(LineBuildResult& line, const std::vector<InnerSpacerConfig>& configs, std::string& error);
 
         /**
+         * @brief 按内置 THOP 次档距规则计算间隔棒位置
+         * @param [in] spanLength 水平档距，单位 m
+         * @return 各间隔棒距左挂点的位置，单位 m
+         */
+        static std::vector<double> CalculateStandardInnerSpacerPositions(double spanLength);
+
+        /**
          * @brief 按规则生成相内间隔棒位置配置
          * @param [in] line 已生成的导线结果
          * @param [in] layout 间隔棒自动布置参数
@@ -184,9 +210,14 @@ namespace Conductor
         bool ValidateProperty(std::shared_ptr<Property> property, const std::string& objectName, std::string& error) const;
         std::shared_ptr<ElementBase> CreateLineElement(EnumKeyword::ElementType elementType, std::string& error) const;
         void PrepareElementLocalFrame(std::shared_ptr<ElementBase> element) const;
-        int FindNearestNodeOnSubConductor(const SubConductorModel& sub, const Vector3d& leftBase, const Vector2d& direction, double targetDistance) const;
-        bool AddElement(int iNodeId, int jNodeId, EnumKeyword::ElementType elementType, std::shared_ptr<Property> property, double initStress, int& elementId, std::string& error);
-        bool AddNodes(BundleResult& raw, LineBuildResult& result, std::string& error);
+        int FindNearestNodeOnSubConductor(const SubConductorModel& sub, const Vector3d& leftBase, const Vector2d& direction, double targetDistance, bool excludeEndpoints) const;
+        bool AddElement(int iNodeId, int jNodeId, EnumKeyword::ElementType elementType, std::shared_ptr<Property> property,
+            double initStress, int& elementId, std::string& error, ElementRole role = ElementRole::Generic,
+            int wireId = -1, int aeroProfileId = -1);
+        bool AddNodes(BundleResult& raw, const LineBuildConfig& config, LineBuildResult& result, std::string& error);
         bool AddElements(const BundleResult& raw, const LineBuildConfig& config, std::shared_ptr<Property> property, LineBuildResult& result, std::string& error);
+        bool AddTensionEndElements(const LineBuildConfig& config, LineBuildResult& result, std::string& error);
+        bool CreateSubConductorSets(const LineBuildConfig& config, LineBuildResult& result, std::string& error);
+        bool RenumberLineModel(LineBuildResult& result, std::string& error);
     };
 }

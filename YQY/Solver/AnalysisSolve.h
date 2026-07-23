@@ -33,7 +33,7 @@ public:
 
 private:
     bool RunSelectedByRegions(const std::vector<int>& stepIds);
-    bool RunStepDirect(int stepId);
+    bool RunStepDirect(int stepId, bool persistHdf5 = true);
 
     std::weak_ptr<StructureData> m_pStructure;
     ProgressCallback m_progressCallback;

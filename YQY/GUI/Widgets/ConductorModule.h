@@ -5,6 +5,7 @@
 class QCheckBox;
 class QComboBox;
 class QDoubleSpinBox;
+class QLabel;
 class QLineEdit;
 class QPushButton;
 class QSpinBox;
@@ -27,6 +28,7 @@ public:
         QString error;
         int nodeCount = 0;
         int elementCount = 0;
+        int spacerCount = 0;
 
         bool succeeded() const { return structure && !filePath.isEmpty(); }
     };
@@ -50,9 +52,18 @@ public:
     QDoubleSpinBox* spacingSpin() const;
     QSpinBox* segmentsSpin() const;
     QDoubleSpinBox* stressSpin() const;
+    QCheckBox* innerSpacerCheck() const;
+    QComboBox* spacerLayoutCombo() const;
+    QSpinBox* spacerCountSpin() const;
+    QComboBox* spacerElementCombo() const;
+    QComboBox* spacerMaterialCombo() const;
+    QComboBox* spacerSectionCombo() const;
     QCheckBox* analysisCheck() const;
     QPushButton* createButton() const;
 
 private:
+    void updateSpacerUi();
+    void updateSpacerPreview();
+
     Ui::ConductorModuleClass* m_ui = nullptr;
 };

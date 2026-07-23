@@ -1,17 +1,143 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ui version="4.0"><class>ConductorModuleClass</class><widget class="QWidget" name="ConductorModuleClass"><layout class="QVBoxLayout" name="rootLayout"><property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property><item><widget class="QScrollArea" name="scrollArea"><property name="frameShape"><enum>QFrame::NoFrame</enum></property><property name="widgetResizable"><bool>true</bool></property><property name="horizontalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property><widget class="QWidget" name="content"><layout class="QVBoxLayout" name="contentLayout"><property name="leftMargin"><number>8</number></property><property name="topMargin"><number>8</number></property><property name="rightMargin"><number>8</number></property><property name="bottomMargin"><number>8</number></property><property name="spacing"><number>10</number></property>
-<item><widget class="QGroupBox" name="propertyGroup"><property name="title"><string>材料与截面</string></property><layout class="QVBoxLayout" name="propertyLayout"><item><widget class="QLabel" name="propertySummary"><property name="text"><string>材料和截面在程序启动时加载；可在当前会话中修改，建模时复制为模型独立属性。</string></property><property name="wordWrap"><bool>true</bool></property></widget></item><item><widget class="QPushButton" name="viewLibraryButton"><property name="text"><string>查看所有已加载模型属性</string></property></widget></item></layout></widget></item>
-<item><widget class="QGroupBox" name="formGroup"><property name="title"><string>导线参数</string></property><layout class="QFormLayout" name="formLayout"><property name="fieldGrowthPolicy"><enum>QFormLayout::AllNonFixedFieldsGrow</enum></property><property name="rowWrapPolicy"><enum>QFormLayout::WrapLongRows</enum></property>
-<item row="0" column="0"><widget class="QLabel" name="nameLabel"><property name="text"><string>模型名称</string></property></widget></item><item row="0" column="1"><widget class="QLineEdit" name="nameEdit"><property name="text"><string>导线模型</string></property></widget></item>
-<item row="1" column="0"><widget class="QLabel" name="materialLabel"><property name="text"><string>材料</string></property></widget></item><item row="1" column="1"><widget class="QComboBox" name="materialCombo"/></item>
-<item row="2" column="0"><widget class="QLabel" name="sectionLabel"><property name="text"><string>截面</string></property></widget></item><item row="2" column="1"><widget class="QComboBox" name="sectionCombo"/></item>
-<item row="3" column="0"><widget class="QLabel" name="elementLabel"><property name="text"><string>单元类型</string></property></widget></item><item row="3" column="1"><widget class="QComboBox" name="elementCombo"><item><property name="text"><string>T3D2 桁架</string></property></item><item><property name="text"><string>CABLE 索</string></property></item></widget></item>
-<item row="4" column="0"><widget class="QLabel" name="startLabel"><property name="text"><string>左挂点 (m)</string></property></widget></item><item row="4" column="1"><widget class="QWidget" name="startCoordinates" native="true"><layout class="QVBoxLayout" name="startLayout"><property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property><property name="spacing"><number>4</number></property><item><widget class="QDoubleSpinBox" name="startX"><property name="minimum"><double>-1000000</double></property><property name="maximum"><double>1000000</double></property><property name="decimals"><number>3</number></property><property name="prefix"><string>X </string></property></widget></item><item><widget class="QDoubleSpinBox" name="startY"><property name="minimum"><double>-1000000</double></property><property name="maximum"><double>1000000</double></property><property name="decimals"><number>3</number></property><property name="prefix"><string>Y </string></property></widget></item><item><widget class="QDoubleSpinBox" name="startZ"><property name="minimum"><double>-1000000</double></property><property name="maximum"><double>1000000</double></property><property name="decimals"><number>3</number></property><property name="prefix"><string>Z </string></property></widget></item></layout></widget></item>
-<item row="5" column="0"><widget class="QLabel" name="endLabel"><property name="text"><string>右挂点 (m)</string></property></widget></item><item row="5" column="1"><widget class="QWidget" name="endCoordinates" native="true"><layout class="QVBoxLayout" name="endLayout"><property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property><property name="spacing"><number>4</number></property><item><widget class="QDoubleSpinBox" name="endX"><property name="minimum"><double>-1000000</double></property><property name="maximum"><double>1000000</double></property><property name="decimals"><number>3</number></property><property name="prefix"><string>X </string></property><property name="value"><double>300</double></property></widget></item><item><widget class="QDoubleSpinBox" name="endY"><property name="minimum"><double>-1000000</double></property><property name="maximum"><double>1000000</double></property><property name="decimals"><number>3</number></property><property name="prefix"><string>Y </string></property></widget></item><item><widget class="QDoubleSpinBox" name="endZ"><property name="minimum"><double>-1000000</double></property><property name="maximum"><double>1000000</double></property><property name="decimals"><number>3</number></property><property name="prefix"><string>Z </string></property></widget></item></layout></widget></item>
-<item row="6" column="0"><widget class="QLabel" name="bundleLabel"><property name="text"><string>分裂数</string></property></widget></item><item row="6" column="1"><widget class="QComboBox" name="bundleCombo"><property name="currentIndex"><number>2</number></property><item><property name="text"><string>1</string></property></item><item><property name="text"><string>2</string></property></item><item><property name="text"><string>4</string></property></item><item><property name="text"><string>6</string></property></item><item><property name="text"><string>8</string></property></item></widget></item>
-<item row="7" column="0"><widget class="QLabel" name="spacingLabel"><property name="text"><string>子导线间距</string></property></widget></item><item row="7" column="1"><widget class="QDoubleSpinBox" name="spacingSpin"><property name="maximum"><double>20</double></property><property name="decimals"><number>3</number></property><property name="value"><double>0.45</double></property><property name="suffix"><string> m</string></property></widget></item>
-<item row="8" column="0"><widget class="QLabel" name="segmentsLabel"><property name="text"><string>每根离散段数</string></property></widget></item><item row="8" column="1"><widget class="QSpinBox" name="segmentsSpin"><property name="minimum"><number>2</number></property><property name="maximum"><number>10000</number></property><property name="value"><number>60</number></property></widget></item>
-<item row="9" column="0"><widget class="QLabel" name="stressLabel"><property name="text"><string>初始应力</string></property></widget></item><item row="9" column="1"><widget class="QDoubleSpinBox" name="stressSpin"><property name="minimum"><double>0.001</double></property><property name="maximum"><double>10000</double></property><property name="decimals"><number>3</number></property><property name="value"><double>50</double></property><property name="suffix"><string> MPa</string></property></widget></item>
-<item row="10" column="0" colspan="2"><widget class="QCheckBox" name="analysisCheck"><property name="text"><string>同时创建静力分析步与约束</string></property><property name="toolTip"><string>创建静力分析步、重力和两端 XYZ 约束</string></property><property name="checked"><bool>true</bool></property></widget></item>
-</layout></widget></item><item><widget class="QPushButton" name="createButton"><property name="text"><string>创建并导入导线模型</string></property><property name="minimumSize"><size><width>0</width><height>40</height></size></property></widget></item><item><spacer name="contentSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint"><size><width>20</width><height>40</height></size></property></spacer></item>
-</layout></widget></widget></item></layout></widget><resources/><connections/></ui>
+<ui version="4.0">
+ <class>ConductorModuleClass</class>
+ <widget class="QWidget" name="ConductorModuleClass">
+  <layout class="QVBoxLayout" name="rootLayout">
+   <property name="leftMargin"><number>0</number></property>
+   <property name="topMargin"><number>0</number></property>
+   <property name="rightMargin"><number>0</number></property>
+   <property name="bottomMargin"><number>0</number></property>
+   <item>
+    <widget class="QScrollArea" name="scrollArea">
+     <property name="frameShape"><enum>QFrame::NoFrame</enum></property>
+     <property name="widgetResizable"><bool>true</bool></property>
+     <property name="horizontalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property>
+     <widget class="QWidget" name="content">
+      <layout class="QVBoxLayout" name="contentLayout">
+       <property name="leftMargin"><number>8</number></property>
+       <property name="topMargin"><number>8</number></property>
+       <property name="rightMargin"><number>8</number></property>
+       <property name="bottomMargin"><number>8</number></property>
+       <property name="spacing"><number>10</number></property>
+       <item>
+        <widget class="QGroupBox" name="propertyGroup">
+         <property name="title"><string>材料与截面</string></property>
+         <layout class="QVBoxLayout" name="propertyLayout">
+          <item><widget class="QLabel" name="propertySummary"><property name="text"><string>材料和截面在程序启动时加载；可在当前会话中修改，建模时复制为模型独立属性。</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+          <item><widget class="QPushButton" name="viewLibraryButton"><property name="text"><string>查看所有已加载模型属性</string></property></widget></item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="formGroup">
+         <property name="title"><string>导线参数</string></property>
+         <layout class="QFormLayout" name="formLayout">
+          <property name="fieldGrowthPolicy"><enum>QFormLayout::AllNonFixedFieldsGrow</enum></property>
+          <property name="rowWrapPolicy"><enum>QFormLayout::WrapLongRows</enum></property>
+          <item row="0" column="0"><widget class="QLabel" name="nameLabel"><property name="text"><string>模型名称</string></property></widget></item>
+          <item row="0" column="1"><widget class="QLineEdit" name="nameEdit"><property name="text"><string>导线模型</string></property></widget></item>
+          <item row="1" column="0"><widget class="QLabel" name="materialLabel"><property name="text"><string>材料</string></property></widget></item>
+          <item row="1" column="1"><widget class="QComboBox" name="materialCombo"/></item>
+          <item row="2" column="0"><widget class="QLabel" name="sectionLabel"><property name="text"><string>截面</string></property></widget></item>
+          <item row="2" column="1"><widget class="QComboBox" name="sectionCombo"/></item>
+          <item row="3" column="0"><widget class="QLabel" name="elementLabel"><property name="text"><string>单元类型</string></property></widget></item>
+          <item row="3" column="1">
+           <widget class="QComboBox" name="elementCombo">
+            <item><property name="text"><string>T3D2 桁架</string></property></item>
+            <item><property name="text"><string>CABLE 索</string></property></item>
+           </widget>
+          </item>
+          <item row="4" column="0"><widget class="QLabel" name="startLabel"><property name="text"><string>左挂点 (m)</string></property></widget></item>
+          <item row="4" column="1">
+           <widget class="QWidget" name="startCoordinates" native="true">
+            <layout class="QHBoxLayout" name="startLayout">
+             <property name="leftMargin"><number>0</number></property>
+             <property name="topMargin"><number>0</number></property>
+             <property name="rightMargin"><number>0</number></property>
+             <property name="bottomMargin"><number>0</number></property>
+             <property name="spacing"><number>4</number></property>
+             <item><widget class="QDoubleSpinBox" name="startX"><property name="minimum"><double>-1000000</double></property><property name="maximum"><double>1000000</double></property><property name="decimals"><number>3</number></property><property name="prefix"><string>X </string></property></widget></item>
+             <item><widget class="QDoubleSpinBox" name="startY"><property name="minimum"><double>-1000000</double></property><property name="maximum"><double>1000000</double></property><property name="decimals"><number>3</number></property><property name="prefix"><string>Y </string></property></widget></item>
+             <item><widget class="QDoubleSpinBox" name="startZ"><property name="minimum"><double>-1000000</double></property><property name="maximum"><double>1000000</double></property><property name="decimals"><number>3</number></property><property name="prefix"><string>Z </string></property></widget></item>
+            </layout>
+           </widget>
+          </item>
+          <item row="5" column="0"><widget class="QLabel" name="endLabel"><property name="text"><string>右挂点 (m)</string></property></widget></item>
+          <item row="5" column="1">
+           <widget class="QWidget" name="endCoordinates" native="true">
+            <layout class="QHBoxLayout" name="endLayout">
+             <property name="leftMargin"><number>0</number></property>
+             <property name="topMargin"><number>0</number></property>
+             <property name="rightMargin"><number>0</number></property>
+             <property name="bottomMargin"><number>0</number></property>
+             <property name="spacing"><number>4</number></property>
+             <item><widget class="QDoubleSpinBox" name="endX"><property name="minimum"><double>-1000000</double></property><property name="maximum"><double>1000000</double></property><property name="decimals"><number>3</number></property><property name="prefix"><string>X </string></property><property name="value"><double>300</double></property></widget></item>
+             <item><widget class="QDoubleSpinBox" name="endY"><property name="minimum"><double>-1000000</double></property><property name="maximum"><double>1000000</double></property><property name="decimals"><number>3</number></property><property name="prefix"><string>Y </string></property></widget></item>
+             <item><widget class="QDoubleSpinBox" name="endZ"><property name="minimum"><double>-1000000</double></property><property name="maximum"><double>1000000</double></property><property name="decimals"><number>3</number></property><property name="prefix"><string>Z </string></property></widget></item>
+            </layout>
+           </widget>
+          </item>
+          <item row="6" column="0"><widget class="QLabel" name="bundleLabel"><property name="text"><string>分裂数</string></property></widget></item>
+          <item row="6" column="1">
+           <widget class="QComboBox" name="bundleCombo">
+            <property name="currentIndex"><number>2</number></property>
+            <item><property name="text"><string>1</string></property></item>
+            <item><property name="text"><string>2</string></property></item>
+            <item><property name="text"><string>4</string></property></item>
+            <item><property name="text"><string>6</string></property></item>
+            <item><property name="text"><string>8</string></property></item>
+           </widget>
+          </item>
+          <item row="7" column="0"><widget class="QLabel" name="spacingLabel"><property name="text"><string>子导线间距</string></property></widget></item>
+          <item row="7" column="1"><widget class="QDoubleSpinBox" name="spacingSpin"><property name="maximum"><double>20</double></property><property name="decimals"><number>3</number></property><property name="value"><double>0.45</double></property><property name="suffix"><string> m</string></property></widget></item>
+          <item row="8" column="0"><widget class="QLabel" name="segmentsLabel"><property name="text"><string>每根离散段数</string></property></widget></item>
+          <item row="8" column="1"><widget class="QSpinBox" name="segmentsSpin"><property name="minimum"><number>2</number></property><property name="maximum"><number>10000</number></property><property name="value"><number>60</number></property></widget></item>
+          <item row="9" column="0"><widget class="QLabel" name="stressLabel"><property name="text"><string>初始应力</string></property></widget></item>
+          <item row="9" column="1"><widget class="QDoubleSpinBox" name="stressSpin"><property name="minimum"><double>0.001</double></property><property name="maximum"><double>10000</double></property><property name="decimals"><number>3</number></property><property name="value"><double>50</double></property><property name="suffix"><string> MPa</string></property></widget></item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="spacerGroup">
+         <property name="title"><string>相内间隔棒</string></property>
+         <layout class="QFormLayout" name="spacerFormLayout">
+          <property name="fieldGrowthPolicy"><enum>QFormLayout::AllNonFixedFieldsGrow</enum></property>
+          <property name="rowWrapPolicy"><enum>QFormLayout::WrapLongRows</enum></property>
+          <item row="0" column="0" colspan="2"><widget class="QCheckBox" name="innerSpacerCheck"><property name="text"><string>创建相内间隔棒</string></property><property name="toolTip"><string>二分裂生成横杆；四分裂以上生成外框多边形与中心辐射杆</string></property><property name="checked"><bool>true</bool></property></widget></item>
+          <item row="1" column="0"><widget class="QLabel" name="spacerLayoutLabel"><property name="text"><string>布置方式</string></property></widget></item>
+          <item row="1" column="1">
+           <widget class="QComboBox" name="spacerLayoutCombo">
+            <item><property name="text"><string>内置 THOP 次档距规则</string></property></item>
+            <item><property name="text"><string>指定数量等距布置</string></property></item>
+           </widget>
+          </item>
+          <item row="2" column="0"><widget class="QLabel" name="spacerCountLabel"><property name="text"><string>间隔棒数量</string></property></widget></item>
+          <item row="2" column="1"><widget class="QSpinBox" name="spacerCountSpin"><property name="minimum"><number>1</number></property><property name="maximum"><number>1000</number></property><property name="value"><number>4</number></property></widget></item>
+          <item row="3" column="0"><widget class="QLabel" name="spacerPreviewTitle"><property name="text"><string>预计生成</string></property></widget></item>
+          <item row="3" column="1"><widget class="QLabel" name="spacerCountPreview"><property name="text"><string>按当前档距自动计算</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+          <item row="4" column="0"><widget class="QLabel" name="spacerElementLabel"><property name="text"><string>单元类型</string></property></widget></item>
+          <item row="4" column="1">
+           <widget class="QComboBox" name="spacerElementCombo">
+            <item><property name="text"><string>CR3D 共旋梁</string></property></item>
+            <item><property name="text"><string>T3D2 桁架</string></property></item>
+           </widget>
+          </item>
+          <item row="5" column="0"><widget class="QLabel" name="spacerMaterialLabel"><property name="text"><string>材料</string></property></widget></item>
+          <item row="5" column="1"><widget class="QComboBox" name="spacerMaterialCombo"/></item>
+          <item row="6" column="0"><widget class="QLabel" name="spacerSectionLabel"><property name="text"><string>截面</string></property></widget></item>
+          <item row="6" column="1"><widget class="QComboBox" name="spacerSectionCombo"/></item>
+         </layout>
+        </widget>
+       </item>
+       <item><widget class="QCheckBox" name="analysisCheck"><property name="text"><string>同时创建静力分析步与约束</string></property><property name="toolTip"><string>创建静力分析步、重力和两端 XYZ 约束</string></property><property name="checked"><bool>true</bool></property></widget></item>
+       <item><widget class="QPushButton" name="createButton"><property name="text"><string>创建并导入导线模型</string></property><property name="minimumSize"><size><width>0</width><height>40</height></size></property></widget></item>
+       <item><spacer name="contentSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint"><size><width>20</width><height>40</height></size></property></spacer></item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

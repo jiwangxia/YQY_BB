@@ -379,9 +379,7 @@ void SolveTaskController::runTask(const std::shared_ptr<TaskContext>& task)
         else if (succeeded)
         {
             finalStatus = Status::Completed;
-            finalMessage = structure->m_OutputControl.m_EnableHdf5
-                ? QStringLiteral("计算完成，结果：%1").arg(task->info.outputFile)
-                : QStringLiteral("计算完成");
+            finalMessage = QStringLiteral("计算完成，结果：%1").arg(task->info.outputFile);
         }
         else
         {

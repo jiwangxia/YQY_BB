@@ -852,17 +852,26 @@ void ModelViewport::setStandardView(StandardView view)
     double viewUp[3] = { 0.0, 1.0, 0.0 };
     switch (view)
     {
-    case StandardView::Front: direction[2] = 1.0; break;
-    case StandardView::Back: direction[2] = -1.0; break;
-    case StandardView::Left: direction[0] = -1.0; direction[2] = 0.0; break;
-    case StandardView::Right: direction[0] = 1.0; direction[2] = 0.0; break;
-    case StandardView::Top:
+    case StandardView::Front:
+        direction[1] = -1.0; direction[2] = 0.0;
+        viewUp[1] = 0.0; viewUp[2] = 1.0;
+        break;
+    case StandardView::Back:
         direction[1] = 1.0; direction[2] = 0.0;
-        viewUp[0] = 0.0; viewUp[1] = 0.0; viewUp[2] = -1.0;
+        viewUp[1] = 0.0; viewUp[2] = 1.0;
+        break;
+    case StandardView::Left:
+        direction[0] = -1.0; direction[2] = 0.0;
+        viewUp[1] = 0.0; viewUp[2] = 1.0;
+        break;
+    case StandardView::Right:
+        direction[0] = 1.0; direction[2] = 0.0;
+        viewUp[1] = 0.0; viewUp[2] = 1.0;
+        break;
+    case StandardView::Top:
         break;
     case StandardView::Bottom:
-        direction[1] = -1.0; direction[2] = 0.0;
-        viewUp[0] = 0.0; viewUp[1] = 0.0; viewUp[2] = 1.0;
+        direction[2] = -1.0;
         break;
     case StandardView::Isometric:
         direction[0] = 1.0; direction[1] = 1.0; direction[2] = 1.0;

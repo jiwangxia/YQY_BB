@@ -2381,19 +2381,20 @@ void YQY::createConductorModel()
         return;
     }
 
-    ui.logEdit->appendPlainText(QStringLiteral("[导线建模] 已生成 %1 个节点、%2 个单元：%3")
+    ui.logEdit->appendPlainText(QStringLiteral("[导线建模] 已生成 %1 个节点、%2 个单元、%3 个相内间隔棒：%4")
                                     .arg(result.nodeCount)
                                     .arg(result.elementCount)
+                                    .arg(result.spacerCount)
                                     .arg(result.filePath));
-    const int accepted = m_modelController->loadModels({result.filePath});
-    if (accepted > 0)
+    const int modelId = m_modelController->adoptModel(result.structure, result.filePath);
+    if (modelId > 0)
     {
         switchModule(Module::Model);
-        setWorkspaceMessage(QStringLiteral("导线模型已生成，正在按标准导入规则验证"));
+        setWorkspaceMessage(QStringLiteral("导线模型已生成并加入当前工作区"));
     }
     else
     {
-        QMessageBox::warning(this, QStringLiteral("创建导线模型"), QStringLiteral("模型已保存，但未能加入导入队列。"));
+        QMessageBox::warning(this, QStringLiteral("创建导线模型"), QStringLiteral("模型已生成并保存，但未能加入当前工作区。"));
     }
 }
 

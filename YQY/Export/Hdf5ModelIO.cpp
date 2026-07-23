@@ -31,7 +31,7 @@ namespace
 QRecursiveMutex g_hdf5ApiMutex;
 
 constexpr int kModelDomainId = 1;
-constexpr int kSchemaVersion = 2;
+constexpr int kSchemaVersion = 3;
 constexpr size_t kEntityNameSize = 256;
 
 QString MakeAsciiTempHdf5FileName()
@@ -284,6 +284,9 @@ struct ElementRecord
     int nodeIds[2] = {};
     double q0[3] = {};
     double initStress = 0.0;
+    int role = static_cast<int>(ElementRole::Generic);
+    int wireId = -1;
+    int aeroProfileId = -1;
     int domainId = kModelDomainId;
 };
 
@@ -864,6 +867,9 @@ H5Handle CreateElementType()
     InsertArray(type, "G", HOFFSET(ElementRecord, nodeIds), H5T_NATIVE_INT, 2);
     InsertArray(type, "Q0", HOFFSET(ElementRecord, q0), H5T_NATIVE_DOUBLE, 3);
     H5Tinsert(type, "INIT_STRESS", HOFFSET(ElementRecord, initStress), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "ROLE", HOFFSET(ElementRecord, role), H5T_NATIVE_INT);
+    H5Tinsert(type, "WIRE_ID", HOFFSET(ElementRecord, wireId), H5T_NATIVE_INT);
+    H5Tinsert(type, "AERO_PROFILE_ID", HOFFSET(ElementRecord, aeroProfileId), H5T_NATIVE_INT);
     H5Tinsert(type, "DOMAIN_ID", HOFFSET(ElementRecord, domainId), H5T_NATIVE_INT);
     return type;
 }
@@ -1234,6 +1240,9 @@ std::vector<ElementRecord> BuildElementRecords(const StructureData* pData)
         record.id = pElement->m_Id;
         record.type = ToInt(GetElementType(pElement));
         record.initStress = pElement->m_InitStress;
+        record.role = static_cast<int>(pElement->m_Role);
+        record.wireId = pElement->m_WireId;
+        record.aeroProfileId = pElement->m_AeroProfileId;
         if (auto pProperty = pElement->m_pProperty.lock()) record.propertyId = pProperty->m_Id;
         if (pElement->m_pNode.size() > 0)
         {
@@ -2470,6 +2479,9 @@ bool ReadInputData(hid_t file, StructureData* data)
 
         element->m_Id = record.id;
         element->m_InitStress = record.initStress;
+        element->m_Role = static_cast<ElementRole>(record.role);
+        element->m_WireId = record.wireId;
+        element->m_AeroProfileId = record.aeroProfileId;
         if (element->m_pNode.size() < 2)
         {
             element->m_pNode.resize(2);

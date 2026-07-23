@@ -115,6 +115,9 @@ std::shared_ptr<StructureData> StructureData::CloneForAnalysis(QString* errorMes
         target->L = source->L;
         target->m_InitStress = source->m_InitStress;
         target->m_Stress = source->m_Stress;
+        target->m_Role = source->m_Role;
+        target->m_WireId = source->m_WireId;
+        target->m_AeroProfileId = source->m_AeroProfileId;
         target->m_inforce = source->m_inforce;
         target->m_pNode.clear();
         for (const auto& sourceNodeRef : source->m_pNode)

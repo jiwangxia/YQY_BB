@@ -119,14 +119,6 @@ private:
 	 */
 	bool InputAnalysisStep(QTextStream& flow, const QStringList& list_str);
 
-	/**
-	 * @brief 读取输出控制数据
-	 * @param [in] flow 文本流
-	 * @param [in] list_str 关键字行解析后的字符串列表
-	 * @return 读取成功返回 true
-	 */
-	bool InputOutput(QTextStream& flow, const QStringList& list_str);
-
 	/// @name 荷载处理函数映射
 	/// @{
 	/**

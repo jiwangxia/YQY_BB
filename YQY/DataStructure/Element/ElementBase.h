@@ -6,6 +6,15 @@
 #include "DataStructure/Node/Node.h"
 #include "Utility/CR.h"
 
+enum class ElementRole
+{
+    Generic = 0,
+    Conductor,
+    TensionHardware,
+    IntraPhaseSpacer,
+    InterPhaseSpacer
+};
+
 /**
  * @brief 单元基类 - 所有单元类型的公共基类
  */
@@ -20,6 +29,11 @@ public:
     double L0 = 0.0, L = 0.0;  ///< 单元初始长度、当前长度
     double m_InitStress = 0.0;                  // 初始应力
     double m_Stress = 0.0;                      // 单元应力
+    ElementRole m_Role = ElementRole::Generic;  ///< 单元在模型中的业务用途
+    int m_WireId = -1;                          ///< 子导线编号；非导线单元为 -1
+    int m_AeroProfileId = -1;                   ///< 气动参数编号；小于 0 表示不参与气动计算
+
+    bool HasAerodynamicLoad() const { return m_AeroProfileId >= 0; }
 
     /**
      * @brief 获取单元每个节点的自由度个数

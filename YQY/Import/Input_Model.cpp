@@ -135,9 +135,6 @@ bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureDa
         case EnumKeyword::KeyData::ANALYSIS_STEP:
             if (!InputAnalysisStep(flow, list_str)) return false;
             break;
-        case EnumKeyword::KeyData::OUTPUT:
-            if (!InputOutput(flow, list_str)) return false;
-            break;
 
         default:
             break;
@@ -1276,45 +1273,6 @@ bool Input_Model::InputAnalysisStep(QTextStream& flow, const QStringList& list_s
 
         m_Structure->AddAnalysisStep(config);
     }
-
-    return true;
-}
-
-bool Input_Model::InputOutput(QTextStream& flow, const QStringList& list_str)
-{
-    Q_UNUSED(flow);
-
-    // 格式：*OUTPUT, H5, 1[, fileName]
-    if (list_str.size() < 3)
-    {
-        qDebug().noquote() << QStringLiteral("Error: 输出控制格式错误，应为 *OUTPUT, H5, 0/1");
-        return false;
-    }
-
-    const QString outputType = list_str[1].trimmed().toUpper();
-    if (outputType != "H5" && outputType != "HDF5")
-    {
-        qDebug().noquote() << QStringLiteral("警告: 暂不支持的输出类型: ") << outputType;
-        return true;
-    }
-
-    const int enabled = list_str[2].toInt();
-    m_Structure->m_OutputControl.m_EnableHdf5 = (enabled != 0);
-    m_Structure->m_OutputControl.m_OutputModel = true;
-    m_Structure->m_OutputControl.m_OutputResult = true;
-    m_Structure->m_OutputControl.m_StreamResult = true;
-
-    if (list_str.size() >= 4)
-    {
-        QFileInfo hdf5FileInfo(list_str[3].trimmed());
-        m_Structure->m_OutputControl.m_Hdf5FileName = hdf5FileInfo.isRelative()
-            ? QDir(QDir::current().filePath("Export/ExportH5")).filePath(list_str[3].trimmed())
-            : hdf5FileInfo.absoluteFilePath();
-    }
-
-    qDebug().noquote() << QStringLiteral("H5 输出控制: ")
-        << (m_Structure->m_OutputControl.m_EnableHdf5 ? QStringLiteral("开启") : QStringLiteral("关闭"))
-        << QStringLiteral(", 文件: ") << m_Structure->m_OutputControl.m_Hdf5FileName;
 
     return true;
 }
