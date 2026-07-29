@@ -1,0 +1,58 @@
+** Le et al. (2012), Example 4, Fig. 8: rotating cantilever beam
+** Units are consistent with the paper.
+** Paper parameters:
+**   EA = 1.0e4, EI_y = EI_z = GJ = 500
+**   rho*A = 1, rho*J = diag(20, 10, 10)
+** Explicit section format:
+** ID, A, Iy, Iz, J, J_rho_x, J_rho_y, J_rho_z
+
+*MATERIAL, 1
+1, 1.0e4, -0.5, 1.0, 0.0, 0.0
+
+*SECTION, 1
+1, 1.0, 0.05, 0.05, 0.05, 20.0, 10.0, 10.0
+
+** Straight beam along global X, length 10, ten equal CR3D elements
+*NODE, 11
+1,   0.0, 0.0, 0.0
+2,   1.0, 0.0, 0.0
+3,   2.0, 0.0, 0.0
+4,   3.0, 0.0, 0.0
+5,   4.0, 0.0, 0.0
+6,   5.0, 0.0, 0.0
+7,   6.0, 0.0, 0.0
+8,   7.0, 0.0, 0.0
+9,   8.0, 0.0, 0.0
+10,  9.0, 0.0, 0.0
+11, 10.0, 0.0, 0.0
+
+** q0=(0,1,0)
+*ELEMENT, CR3D, 10
+1,  1,  2, 1, 1, 0.0, 1.0, 0.0
+2,  2,  3, 1, 1, 0.0, 1.0, 0.0
+3,  3,  4, 1, 1, 0.0, 1.0, 0.0
+4,  4,  5, 1, 1, 0.0, 1.0, 0.0
+5,  5,  6, 1, 1, 0.0, 1.0, 0.0
+6,  6,  7, 1, 1, 0.0, 1.0, 0.0
+7,  7,  8, 1, 1, 0.0, 1.0, 0.0
+8,  8,  9, 1, 1, 0.0, 1.0, 0.0
+9,  9, 10, 1, 1, 0.0, 1.0, 0.0
+10, 10, 11, 1, 1, 0.0, 1.0, 0.0
+
+** Node 1 may rotate only about global Z (RZ); DOFs 0..4 are fixed
+*CONSTRAINT, 5
+1, 1, 0, 0.0
+2, 1, 1, 0.0
+3, 1, 2, 0.0
+4, 1, 3, 0.0
+5, 1, 4, 0.0
+
+** Free-end Fy: rises 0->15 over 0..1 s and then remains 15
+** Free-end Fz: rises 0->15 over 0..1 s and falls 15->0 over 1..2 s
+*LOAD, FORCE_NODE, 2
+1, 11, 1, 15.0, 1, 0.0, 30.0, RAMP, 0.0, 1.0
+2, 11, 2, 15.0, 1, 0.0, 2.0, TRIANGULAR, 2.0
+
+** Standard average-acceleration Newmark: beta=0.25, gamma=0.5
+*ANALYSIS_STEP, 1
+1, DYNAMIC, 30.0, 0.20, 1.0e-5, 32

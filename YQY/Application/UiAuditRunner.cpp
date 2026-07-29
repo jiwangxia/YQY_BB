@@ -88,7 +88,7 @@ UiAuditRunner::UiAuditRunner(const QStringList& arguments)
         m_outputFile = arguments.at(analysisIndex + 2);
         m_modelFile = arguments.at(analysisIndex + 3);
         if (analysisIndex + 4 < arguments.size())
-            m_analysisManager = qBound(0, arguments.at(analysisIndex + 4).toInt(), 2);
+            m_analysisManager = qBound(0, arguments.at(analysisIndex + 4).toInt(), 3);
     }
 }
 

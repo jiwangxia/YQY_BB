@@ -81,7 +81,7 @@ namespace SolverNameSpace
         mutable LinearCache m_cache;
 
         // 工作区（避免重复分配内存）
-        SpMat m_K, m_M, m_C, m_Keff;
+        SpMat m_K, m_M, m_C, m_Kc, m_Keff;
         Vec m_R, m_dx;
         Vec m_Un, m_Vn, m_An;
 

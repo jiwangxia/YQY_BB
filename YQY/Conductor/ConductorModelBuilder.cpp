@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <limits>
 #include <set>
 
@@ -32,8 +33,21 @@ namespace Conductor
             nodeIds.insert(leftSupportNodeId);
         if (rightSupportNodeId > 0)
             nodeIds.insert(rightSupportNodeId);
+        nodeIds.insert(leftTensionEnd.supportNodeIds.begin(), leftTensionEnd.supportNodeIds.end());
+        nodeIds.insert(rightTensionEnd.supportNodeIds.begin(), rightTensionEnd.supportNodeIds.end());
         nodeIds.insert(leftTensionEnd.groupNodeIds.begin(), leftTensionEnd.groupNodeIds.end());
         nodeIds.insert(rightTensionEnd.groupNodeIds.begin(), rightTensionEnd.groupNodeIds.end());
+        for (const auto& suspension : suspensionPoints)
+        {
+            if (suspension.junctionNodeId > 0)
+                nodeIds.insert(suspension.junctionNodeId);
+            if (suspension.supportNodeId > 0)
+                nodeIds.insert(suspension.supportNodeId);
+            nodeIds.insert(suspension.wireNodeIds.begin(), suspension.wireNodeIds.end());
+            if (suspension.spacerCenterNodeId > 0)
+                nodeIds.insert(suspension.spacerCenterNodeId);
+            nodeIds.insert(suspension.spacerInnerNodeIds.begin(), suspension.spacerInnerNodeIds.end());
+        }
         return static_cast<int>(nodeIds.size());
     }
 
@@ -54,6 +68,13 @@ namespace Conductor
             elementIds.insert(leftTensionEnd.stabilizerElementId);
         if (rightTensionEnd.stabilizerElementId > 0)
             elementIds.insert(rightTensionEnd.stabilizerElementId);
+        for (const auto& suspension : suspensionPoints)
+        {
+            elementIds.insert(suspension.yokeElementIds.begin(), suspension.yokeElementIds.end());
+            if (suspension.stringElementId > 0)
+                elementIds.insert(suspension.stringElementId);
+            elementIds.insert(suspension.spacerElementIds.begin(), suspension.spacerElementIds.end());
+        }
         return static_cast<int>(elementIds.size());
     }
 
@@ -220,6 +241,8 @@ namespace Conductor
                     nodeIds.insert(result.leftSupportNodeId);
                 if (result.rightSupportNodeId > 0)
                     nodeIds.insert(result.rightSupportNodeId);
+                nodeIds.insert(result.leftTensionEnd.supportNodeIds.begin(), result.leftTensionEnd.supportNodeIds.end());
+                nodeIds.insert(result.rightTensionEnd.supportNodeIds.begin(), result.rightTensionEnd.supportNodeIds.end());
                 for (int elementId : elementIds)
                     m_structure->m_Elements.erase(elementId);
                 for (int nodeId : nodeIds)
@@ -273,6 +296,10 @@ namespace Conductor
                     {
                         m_structure->m_Nodes.erase(spacer.centerNodeId);
                     }
+                    for (int nodeId : spacer.innerNodeIds)
+                    {
+                        m_structure->m_Nodes.erase(nodeId);
+                    }
                 }
 
                 for (const auto& pair : result.subConductors)
@@ -306,6 +333,10 @@ namespace Conductor
                     m_structure->m_Nodes.erase(result.leftSupportNodeId);
                 if (result.rightSupportNodeId > 0)
                     m_structure->m_Nodes.erase(result.rightSupportNodeId);
+                for (int nodeId : result.leftTensionEnd.supportNodeIds)
+                    m_structure->m_Nodes.erase(nodeId);
+                for (int nodeId : result.rightTensionEnd.supportNodeIds)
+                    m_structure->m_Nodes.erase(nodeId);
                 result = LineBuildResult{};
             };
 
@@ -332,6 +363,604 @@ namespace Conductor
             return false;
         }
 
+        return true;
+    }
+
+    bool ConductorModelBuilder::BuildMultiSpanConductor(
+        const MultiSpanConductorBuildConfig& config,
+        LineBuildResult& result,
+        std::string& error)
+    {
+        result = LineBuildResult{};
+        if (!m_structure)
+        {
+            error = "StructureData 为空，无法生成多档导线";
+            return false;
+        }
+        if (config.stationCenters.size() < 3)
+        {
+            error = "多档导线至少需要三个导线束中心坐标";
+            return false;
+        }
+
+        const LineBuildConfig& lineConfig = config.span.line;
+        if (lineConfig.elementType == EnumKeyword::ElementType::UNKNOWN ||
+            config.suspensionElementType == EnumKeyword::ElementType::UNKNOWN)
+        {
+            error = "导线或悬垂串单元类型不能为 UNKNOWN";
+            return false;
+        }
+        if (!ValidateProperty(lineConfig.property, "导线", error))
+            return false;
+        auto material = lineConfig.property->m_pMaterial.lock();
+        auto section = lineConfig.property->m_pSection.lock();
+        if (!material || !section || material->m_Density <= 0.0 || section->m_Area <= 0.0)
+        {
+            error = "导线材料密度和截面面积必须大于 0";
+            return false;
+        }
+        if (lineConfig.conductor.nBundle != 1 &&
+            lineConfig.conductor.nBundle != 2 &&
+            lineConfig.conductor.nBundle != 4 &&
+            lineConfig.conductor.nBundle != 6 &&
+            lineConfig.conductor.nBundle != 8)
+        {
+            error = "导线分裂数仅支持 1、2、4、6、8";
+            return false;
+        }
+        if (lineConfig.conductor.nBundle > 1 && !lineConfig.convergeBundleEnds)
+        {
+            error = "多档多分裂导线必须启用首末耐张端汇集";
+            return false;
+        }
+        if (lineConfig.endFittingElementType == EnumKeyword::ElementType::UNKNOWN)
+        {
+            error = "耐张稳定梁单元类型不能为 UNKNOWN";
+            return false;
+        }
+        if (lineConfig.conductor.connecttype != ConnectionMode::Parallel ||
+            lineConfig.conductor.segments <= 0 ||
+            lineConfig.conductor.stress0 <= 0.0 ||
+            lineConfig.conductor.spacing < 0.0)
+        {
+            error = "多档导线的连接方式、离散段数、初始应力或分裂间距无效";
+            return false;
+        }
+        if (config.suspensionStringLength <= 0.0)
+        {
+            error = "悬垂串长度必须大于 0";
+            return false;
+        }
+
+        auto suspensionProperty = config.suspensionProperty
+            ? config.suspensionProperty : lineConfig.property;
+        if (!ValidateProperty(suspensionProperty, "悬垂串", error))
+            return false;
+        auto fittingProperty = lineConfig.endFittingProperty
+            ? lineConfig.endFittingProperty : lineConfig.property;
+        if (!ValidateProperty(fittingProperty, "耐张稳定梁", error))
+            return false;
+
+        std::set<int> originalNodeIds;
+        std::set<int> originalElementIds;
+        std::set<int> originalSetIds;
+        for (const auto& [id, node] : m_structure->m_Nodes)
+            originalNodeIds.insert(id);
+        for (const auto& [id, element] : m_structure->m_Elements)
+            originalElementIds.insert(id);
+        for (const auto& [id, modelSet] : m_structure->m_ModelSets)
+            originalSetIds.insert(id);
+        auto rollback = [&]()
+            {
+                for (auto it = m_structure->m_Elements.begin(); it != m_structure->m_Elements.end();)
+                {
+                    if (originalElementIds.find(it->first) == originalElementIds.end())
+                        it = m_structure->m_Elements.erase(it);
+                    else
+                        ++it;
+                }
+                for (auto it = m_structure->m_Nodes.begin(); it != m_structure->m_Nodes.end();)
+                {
+                    if (originalNodeIds.find(it->first) == originalNodeIds.end())
+                        it = m_structure->m_Nodes.erase(it);
+                    else
+                        ++it;
+                }
+                for (auto it = m_structure->m_ModelSets.begin(); it != m_structure->m_ModelSets.end();)
+                {
+                    if (originalSetIds.find(it->first) == originalSetIds.end())
+                        it = m_structure->m_ModelSets.erase(it);
+                    else
+                        ++it;
+                }
+                result = LineBuildResult{};
+            };
+
+        auto addNode = [&](const Vector3d& position, int& nodeId) -> bool
+            {
+                nodeId = NextNodeId();
+                auto node = std::make_shared<Node>();
+                node->m_Id = nodeId;
+                node->m_X = position.x();
+                node->m_Y = position.y();
+                node->m_Z = position.z();
+                return m_structure->m_Nodes.insert({ nodeId, node }).second;
+            };
+
+        const std::size_t spanCount = config.stationCenters.size() - 1;
+        const int wireCount = lineConfig.conductor.nBundle;
+        result.start = config.stationCenters.front();
+        result.end = config.stationCenters.back();
+        result.spanCount = static_cast<int>(spanCount);
+        result.spanLength = 0.0;
+        result.property = lineConfig.property;
+
+        ConductorConfig conductor = lineConfig.conductor;
+        conductor.unitWeight = material->m_Density * 9.81;
+        std::vector<BundleResult> rawSpans;
+        rawSpans.reserve(spanCount);
+        for (std::size_t spanIndex = 0; spanIndex < spanCount; ++spanIndex)
+        {
+            const Vector3d& start = config.stationCenters[spanIndex];
+            const Vector3d& end = config.stationCenters[spanIndex + 1];
+            const double horizontalLength = (end - start).head<2>().norm();
+            if (horizontalLength <= 1.0e-7)
+            {
+                error = "第 " + std::to_string(spanIndex + 1) + " 档水平档距过小";
+                rollback();
+                return false;
+            }
+            result.spanLength += horizontalLength;
+            const double transitionLength = std::min(
+                std::max(0.0, lineConfig.bundleEndTransitionLength),
+                horizontalLength * 0.1);
+            BundleResult raw = Generator::CreateBundle(
+                start.data(), end.data(), transitionLength, transitionLength, conductor);
+            if (raw.wiresNode.size() != static_cast<std::size_t>(wireCount))
+            {
+                error = "第 " + std::to_string(spanIndex + 1) + " 档导线几何生成失败";
+                rollback();
+                return false;
+            }
+            rawSpans.push_back(std::move(raw));
+        }
+
+        auto createTensionEnds = [&]() -> bool
+            {
+                if (wireCount == 1)
+                    return true;
+
+                const int firstGroupCount = wireCount == 2 ? 2 : wireCount / 2;
+                const int groupCount = wireCount == 2 ? 1 : 2;
+                std::vector<Vector3d> leftSums(groupCount, Vector3d::Zero());
+                std::vector<Vector3d> rightSums(groupCount, Vector3d::Zero());
+                std::vector<int> groupSizes(groupCount, 0);
+                for (int wireId = 0; wireId < wireCount; ++wireId)
+                {
+                    const int group = groupCount == 1 || wireId < firstGroupCount ? 0 : 1;
+                    const auto& leftNodes = rawSpans.front().wiresNode.at(wireId);
+                    const auto& rightNodes = rawSpans.back().wiresNode.at(wireId);
+                    if (leftNodes.size() < 2 || rightNodes.size() < 2)
+                        return false;
+                    leftSums[group] += Vector3d(
+                        (leftNodes[0].x + leftNodes[1].x) * 0.5,
+                        (leftNodes[0].y + leftNodes[1].y) * 0.5,
+                        (leftNodes[0].z + leftNodes[1].z) * 0.5);
+                    const std::size_t last = rightNodes.size() - 1;
+                    rightSums[group] += Vector3d(
+                        (rightNodes[last - 1].x + rightNodes[last].x) * 0.5,
+                        (rightNodes[last - 1].y + rightNodes[last].y) * 0.5,
+                        (rightNodes[last - 1].z + rightNodes[last].z) * 0.5);
+                    ++groupSizes[group];
+                }
+
+                std::vector<Vector3d> leftCenters(groupCount);
+                std::vector<Vector3d> rightCenters(groupCount);
+                for (int group = 0; group < groupCount; ++group)
+                {
+                    if (groupSizes[group] <= 0)
+                        return false;
+                    leftCenters[group] = leftSums[group] / groupSizes[group];
+                    rightCenters[group] = rightSums[group] / groupSizes[group];
+                    int leftGroupId = -1;
+                    int rightGroupId = -1;
+                    if (!addNode(leftCenters[group], leftGroupId) ||
+                        !addNode(rightCenters[group], rightGroupId))
+                        return false;
+                    result.leftTensionEnd.groupNodeIds.push_back(leftGroupId);
+                    result.rightTensionEnd.groupNodeIds.push_back(rightGroupId);
+                }
+
+                const bool dualSupport = lineConfig.endTopology == BundleEndTopology::DualSupportByGroup;
+                if (!dualSupport)
+                {
+                    if (!addNode(result.start, result.leftSupportNodeId) ||
+                        !addNode(result.end, result.rightSupportNodeId))
+                        return false;
+                    result.leftTensionEnd.supportNodeId = result.leftSupportNodeId;
+                    result.rightTensionEnd.supportNodeId = result.rightSupportNodeId;
+                    result.leftTensionEnd.supportNodeIds = { result.leftSupportNodeId };
+                    result.rightTensionEnd.supportNodeIds = { result.rightSupportNodeId };
+                    return true;
+                }
+
+                if (groupCount != 2)
+                    return false;
+                const double spacing = lineConfig.dualSupportSpacing > 1.0e-7
+                    ? lineConfig.dualSupportSpacing : lineConfig.conductor.spacing;
+                auto addDual = [&](const Vector3d& base,
+                                   const std::vector<Vector3d>& centers,
+                                   TensionEndModel& endModel,
+                                   int& primaryId) -> bool
+                    {
+                        Vector3d direction = centers[0] - centers[1];
+                        if (direction.norm() <= 1.0e-7 || spacing <= 1.0e-7)
+                            return false;
+                        direction.normalize();
+                        int firstId = -1;
+                        int secondId = -1;
+                        if (!addNode(base + direction * spacing * 0.5, firstId) ||
+                            !addNode(base - direction * spacing * 0.5, secondId))
+                            return false;
+                        primaryId = firstId;
+                        endModel.supportNodeId = firstId;
+                        endModel.supportNodeIds = { firstId, secondId };
+                        return true;
+                    };
+                return addDual(result.start, leftCenters, result.leftTensionEnd, result.leftSupportNodeId) &&
+                    addDual(result.end, rightCenters, result.rightTensionEnd, result.rightSupportNodeId);
+            };
+        if (!createTensionEnds())
+        {
+            error = "创建多档导线耐张端失败";
+            rollback();
+            return false;
+        }
+
+        std::vector<std::map<int, int>> stationWireNodeIds(config.stationCenters.size());
+        if (wireCount == 1)
+        {
+            if (!addNode(result.start, result.leftSupportNodeId) ||
+                !addNode(result.end, result.rightSupportNodeId))
+            {
+                error = "创建单分裂耐张端节点失败";
+                rollback();
+                return false;
+            }
+            result.leftTensionEnd.supportNodeId = result.leftSupportNodeId;
+            result.rightTensionEnd.supportNodeId = result.rightSupportNodeId;
+            result.leftTensionEnd.supportNodeIds = { result.leftSupportNodeId };
+            result.rightTensionEnd.supportNodeIds = { result.rightSupportNodeId };
+            stationWireNodeIds.front()[0] = result.leftSupportNodeId;
+            stationWireNodeIds.back()[0] = result.rightSupportNodeId;
+        }
+
+        auto stationDirection = [&](std::size_t stationIndex) -> Vector2d
+            {
+                Vector2d direction = Vector2d::Zero();
+                if (stationIndex > 0)
+                {
+                    Vector2d previous =
+                        (config.stationCenters[stationIndex] - config.stationCenters[stationIndex - 1]).head<2>();
+                    if (previous.norm() > 1.0e-7)
+                        direction += previous.normalized();
+                }
+                if (stationIndex + 1 < config.stationCenters.size())
+                {
+                    Vector2d next =
+                        (config.stationCenters[stationIndex + 1] - config.stationCenters[stationIndex]).head<2>();
+                    if (next.norm() > 1.0e-7)
+                        direction += next.normalized();
+                }
+                if (direction.norm() <= 1.0e-7 && stationIndex + 1 < config.stationCenters.size())
+                    direction = (config.stationCenters[stationIndex + 1] -
+                                 config.stationCenters[stationIndex]).head<2>();
+                return direction.normalized();
+            };
+        auto bundleOffset = [&](int wireId, const Vector2d& direction) -> Vector3d
+            {
+                if (wireCount == 1)
+                    return Vector3d::Zero();
+                double startAngle = 0.0;
+                double radius = 0.0;
+                if (wireCount == 2)
+                    radius = conductor.spacing * 0.5;
+                else if (wireCount == 4)
+                {
+                    startAngle = -Math_PI / 4.0;
+                    radius = conductor.spacing / (2.0 * std::sin(Math_PI / 4.0));
+                }
+                else if (wireCount == 6)
+                {
+                    startAngle = -Math_PI / 3.0;
+                    radius = conductor.spacing / (2.0 * std::sin(Math_PI / 6.0));
+                }
+                else if (wireCount == 8)
+                {
+                    startAngle = -3.0 * Math_PI / 8.0;
+                    radius = conductor.spacing / (2.0 * std::sin(Math_PI / 8.0));
+                }
+                const double angle = startAngle + 2.0 * Math_PI * wireId / wireCount;
+                const Vector2d right(direction.y(), -direction.x());
+                return Vector3d(
+                    right.x() * std::cos(angle) * radius,
+                    right.y() * std::cos(angle) * radius,
+                    std::sin(angle) * radius);
+            };
+
+        for (std::size_t stationIndex = 1; stationIndex + 1 < config.stationCenters.size(); ++stationIndex)
+        {
+            SuspensionPointModel suspension;
+            suspension.stationIndex = static_cast<int>(stationIndex);
+            suspension.center = config.stationCenters[stationIndex];
+            const Vector2d direction = stationDirection(stationIndex);
+            for (int wireId = 0; wireId < wireCount; ++wireId)
+            {
+                int nodeId = -1;
+                if (!addNode(suspension.center + bundleOffset(wireId, direction), nodeId))
+                {
+                    error = "创建中间悬垂点的子导线节点失败";
+                    rollback();
+                    return false;
+                }
+                stationWireNodeIds[stationIndex][wireId] = nodeId;
+                suspension.wireNodeIds.push_back(nodeId);
+            }
+
+            double rise = 0.0;
+            if (wireCount > 1)
+            {
+                rise = conductor.spacing * 0.5 *
+                    (1.0 + 1.0 / std::tan(Math_PI / wireCount));
+            }
+            const Vector3d junctionPosition = suspension.center + Vector3d(0.0, 0.0, rise);
+            if (wireCount == 1)
+                suspension.junctionNodeId = suspension.wireNodeIds.front();
+            else if (!addNode(junctionPosition, suspension.junctionNodeId))
+            {
+                error = "创建中间悬垂汇集节点失败";
+                rollback();
+                return false;
+            }
+            if (!addNode(
+                    junctionPosition + Vector3d(0.0, 0.0, config.suspensionStringLength),
+                    suspension.supportNodeId))
+            {
+                error = "创建中间悬垂约束挂点失败";
+                rollback();
+                return false;
+            }
+
+            std::vector<int> topWireIds;
+            if (wireCount == 2)
+                topWireIds = { 0, 1 };
+            else if (wireCount == 4)
+                topWireIds = { 1, 2 };
+            else if (wireCount == 6)
+                topWireIds = { 2, 3 };
+            else if (wireCount == 8)
+                topWireIds = { 3, 4 };
+            for (int wireId : topWireIds)
+            {
+                int elementId = -1;
+                if (!AddElement(
+                        suspension.wireNodeIds[wireId],
+                        suspension.junctionNodeId,
+                        // H 型悬垂顶部两根联板按杆单元处理，使 J-P 悬垂串和
+                        // 上部挂点仅引入平动自由度，避免转角自由度导致奇异。
+                        EnumKeyword::ElementType::T3D2,
+                        lineConfig.property,
+                        0.0,
+                        elementId,
+                        error,
+                        ElementRole::SuspensionHardware))
+                {
+                    error = "创建悬垂端联板失败：" + error;
+                    rollback();
+                    return false;
+                }
+                suspension.yokeElementIds.push_back(elementId);
+            }
+            if (!AddElement(
+                    suspension.junctionNodeId,
+                    suspension.supportNodeId,
+                    config.suspensionElementType,
+                    suspensionProperty,
+                    0.0,
+                    suspension.stringElementId,
+                    error,
+                    ElementRole::SuspensionHardware))
+            {
+                error = "创建悬垂串失败：" + error;
+                rollback();
+                return false;
+            }
+
+            // 悬垂线夹处的分裂截面同样需要相内间隔棒保持几何连接。
+            // 复用界面中选择的间隔棒单元、属性和拓扑形式，而不是使用导线单元。
+            const InnerSpacerConfig* suspensionSpacerConfig = nullptr;
+            if (!config.span.innerSpacers.empty())
+                suspensionSpacerConfig = &config.span.innerSpacers.front();
+            else if (config.span.useInnerSpacerLayout)
+                suspensionSpacerConfig = &config.span.innerSpacerLayout.spacer;
+            if (wireCount > 1 && suspensionSpacerConfig)
+            {
+                if (!BuildSuspensionSpacer(suspension, *suspensionSpacerConfig, error))
+                {
+                    error = "创建悬垂端相内间隔棒失败：" + error;
+                    rollback();
+                    return false;
+                }
+            }
+            result.suspensionPoints.push_back(std::move(suspension));
+        }
+
+        std::vector<LineBuildResult> spanResults(spanCount);
+        for (int wireId = 0; wireId < wireCount; ++wireId)
+        {
+            SubConductorModel globalSub;
+            globalSub.wireId = wireId;
+            result.subConductors[wireId] = std::move(globalSub);
+        }
+
+        const int firstGroupCount = wireCount == 2 ? 2 : wireCount / 2;
+        const int groupCount = wireCount == 2 ? 1 : 2;
+        auto groupForWire = [&](int wireId) -> int
+            {
+                return groupCount == 1 || wireId < firstGroupCount ? 0 : 1;
+            };
+
+        for (std::size_t spanIndex = 0; spanIndex < spanCount; ++spanIndex)
+        {
+            auto& spanResult = spanResults[spanIndex];
+            spanResult.start = config.stationCenters[spanIndex];
+            spanResult.end = config.stationCenters[spanIndex + 1];
+            spanResult.spanLength = (spanResult.end - spanResult.start).head<2>().norm();
+            spanResult.property = lineConfig.property;
+            auto& raw = rawSpans[spanIndex];
+
+            for (int wireId = 0; wireId < wireCount; ++wireId)
+            {
+                auto& rawNodes = raw.wiresNode.at(wireId);
+                if (rawNodes.size() < 2)
+                {
+                    error = "多档子导线节点列表不足";
+                    rollback();
+                    return false;
+                }
+
+                int firstNodeId = -1;
+                if (spanIndex == 0)
+                {
+                    firstNodeId = wireCount == 1
+                        ? result.leftSupportNodeId
+                        : result.leftTensionEnd.groupNodeIds[groupForWire(wireId)];
+                }
+                else
+                {
+                    firstNodeId = stationWireNodeIds[spanIndex].at(wireId);
+                }
+                int lastNodeId = -1;
+                if (spanIndex + 1 == spanCount)
+                {
+                    lastNodeId = wireCount == 1
+                        ? result.rightSupportNodeId
+                        : result.rightTensionEnd.groupNodeIds[groupForWire(wireId)];
+                }
+                else
+                {
+                    lastNodeId = stationWireNodeIds[spanIndex + 1].at(wireId);
+                }
+                rawNodes.front().id = firstNodeId;
+                rawNodes.back().id = lastNodeId;
+
+                SubConductorModel spanSub;
+                spanSub.wireId = wireId;
+                spanSub.nodeIds.push_back(firstNodeId);
+                for (std::size_t nodeIndex = 1; nodeIndex + 1 < rawNodes.size(); ++nodeIndex)
+                {
+                    int nodeId = -1;
+                    if (!addNode(
+                            Vector3d(rawNodes[nodeIndex].x, rawNodes[nodeIndex].y, rawNodes[nodeIndex].z),
+                            nodeId))
+                    {
+                        error = "添加多档导线内部节点失败";
+                        rollback();
+                        return false;
+                    }
+                    rawNodes[nodeIndex].id = nodeId;
+                    spanSub.nodeIds.push_back(nodeId);
+                }
+                spanSub.nodeIds.push_back(lastNodeId);
+                spanResult.subConductors[wireId] = spanSub;
+
+                auto& globalNodes = result.subConductors[wireId].nodeIds;
+                if (globalNodes.empty())
+                    globalNodes.push_back(firstNodeId);
+                globalNodes.insert(
+                    globalNodes.end(),
+                    std::next(spanSub.nodeIds.begin()),
+                    spanSub.nodeIds.end());
+            }
+
+            for (const auto& [wireId, rawElements] : raw.wiresElement)
+            {
+                auto& rawNodes = raw.wiresNode.at(wireId);
+                auto& spanSub = spanResult.subConductors.at(wireId);
+                auto& globalSub = result.subConductors.at(wireId);
+                for (const auto& rawElement : rawElements)
+                {
+                    const int iIndex = rawElement.iNode - 1;
+                    const int jIndex = rawElement.jNode - 1;
+                    if (iIndex < 0 || jIndex < 0 ||
+                        iIndex >= static_cast<int>(rawNodes.size()) ||
+                        jIndex >= static_cast<int>(rawNodes.size()))
+                    {
+                        error = "多档导线单元局部节点索引越界";
+                        rollback();
+                        return false;
+                    }
+                    int elementId = -1;
+                    if (!AddElement(
+                            rawNodes[iIndex].id,
+                            rawNodes[jIndex].id,
+                            lineConfig.elementType,
+                            lineConfig.property,
+                            rawElement.stress0,
+                            elementId,
+                            error,
+                            ElementRole::Conductor,
+                            wireId,
+                            wireId))
+                    {
+                        error = "添加多档导线单元失败：" + error;
+                        rollback();
+                        return false;
+                    }
+                    spanSub.elementIds.push_back(elementId);
+                    globalSub.elementIds.push_back(elementId);
+                }
+            }
+        }
+
+        if (!AddTensionEndElements(lineConfig, result, error))
+        {
+            rollback();
+            return false;
+        }
+
+        for (std::size_t spanIndex = 0; spanIndex < spanCount; ++spanIndex)
+        {
+            auto& spanResult = spanResults[spanIndex];
+            if (!config.span.innerSpacers.empty() &&
+                !BuildInnerSpacers(spanResult, config.span.innerSpacers, error))
+            {
+                rollback();
+                return false;
+            }
+            if (config.span.useInnerSpacerLayout)
+            {
+                std::vector<InnerSpacerConfig> autoSpacers;
+                if (!CalculateInnerSpacerConfigs(
+                        spanResult, config.span.innerSpacerLayout, autoSpacers, error) ||
+                    !BuildInnerSpacers(spanResult, autoSpacers, error))
+                {
+                    rollback();
+                    return false;
+                }
+            }
+            result.innerSpacers.insert(
+                result.innerSpacers.end(),
+                spanResult.innerSpacers.begin(),
+                spanResult.innerSpacers.end());
+        }
+
+        if (!CreateSubConductorSets(lineConfig, result, error) ||
+            !RenumberLineModel(result, error))
+        {
+            rollback();
+            return false;
+        }
         return true;
     }
 
@@ -536,6 +1165,148 @@ namespace Conductor
         return true;
     }
 
+    bool ConductorModelBuilder::BuildSuspensionSpacer(
+        SuspensionPointModel& suspension,
+        const InnerSpacerConfig& config,
+        std::string& error)
+    {
+        if (suspension.wireNodeIds.size() < 2)
+            return true;
+        if (!ValidateProperty(config.property, "悬垂端相内间隔棒", error))
+            return false;
+        if (config.elementType == EnumKeyword::ElementType::UNKNOWN)
+        {
+            error = "悬垂端相内间隔棒单元类型不能为 UNKNOWN";
+            return false;
+        }
+
+        std::vector<int> createdNodeIds;
+        std::vector<int> createdElementIds;
+        auto rollback = [&]()
+            {
+                for (int elementId : createdElementIds)
+                    m_structure->m_Elements.erase(elementId);
+                for (int nodeId : createdNodeIds)
+                    m_structure->m_Nodes.erase(nodeId);
+                suspension.spacerCenterNodeId = -1;
+                suspension.spacerInnerNodeIds.clear();
+                suspension.spacerElementIds.clear();
+            };
+        auto addNode = [&](const Vector3d& position, int& nodeId) -> bool
+            {
+                nodeId = NextNodeId();
+                auto node = std::make_shared<Node>();
+                node->m_Id = nodeId;
+                node->m_X = position.x();
+                node->m_Y = position.y();
+                node->m_Z = position.z();
+                if (!m_structure->m_Nodes.insert({ nodeId, node }).second)
+                    return false;
+                createdNodeIds.push_back(nodeId);
+                return true;
+            };
+        auto addSpacerElement = [&](int iNodeId, int jNodeId) -> bool
+            {
+                int elementId = -1;
+                if (!AddElement(
+                        iNodeId,
+                        jNodeId,
+                        config.elementType,
+                        config.property,
+                        0.0,
+                        elementId,
+                        error,
+                        ElementRole::IntraPhaseSpacer))
+                    return false;
+                createdElementIds.push_back(elementId);
+                suspension.spacerElementIds.push_back(elementId);
+                return true;
+            };
+
+        std::vector<Vector3d> wirePositions;
+        wirePositions.reserve(suspension.wireNodeIds.size());
+        Vector3d center = Vector3d::Zero();
+        for (int nodeId : suspension.wireNodeIds)
+        {
+            const auto node = m_structure->FindNode(nodeId);
+            if (!node)
+            {
+                error = "悬垂端相内间隔棒引用的子导线节点不存在";
+                rollback();
+                return false;
+            }
+            const Vector3d position(node->m_X, node->m_Y, node->m_Z);
+            wirePositions.push_back(position);
+            center += position;
+        }
+        center /= static_cast<double>(wirePositions.size());
+
+        const int wireCount = static_cast<int>(suspension.wireNodeIds.size());
+        const int outerEdgeCount = wireCount == 2 ? 1 : wireCount;
+        for (int wireId = 0; wireId < outerEdgeCount; ++wireId)
+        {
+            const int nextWireId = wireCount == 2 ? 1 : (wireId + 1) % wireCount;
+            if (!addSpacerElement(
+                    suspension.wireNodeIds[wireId],
+                    suspension.wireNodeIds[nextWireId]))
+            {
+                rollback();
+                return false;
+            }
+        }
+
+        if (wireCount == 2 || config.style == InnerSpacerStyle::OuterPolygon)
+            return true;
+
+        if (config.style == InnerSpacerStyle::CenterBraced)
+        {
+            if (!addNode(center, suspension.spacerCenterNodeId))
+            {
+                error = "添加悬垂端间隔棒中心节点失败";
+                rollback();
+                return false;
+            }
+            for (int wireId = 0; wireId < wireCount; ++wireId)
+            {
+                if (!addSpacerElement(suspension.wireNodeIds[wireId], suspension.spacerCenterNodeId))
+                {
+                    rollback();
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        const double scale = std::clamp(config.innerPolygonScale, 0.05, 0.95);
+        for (int wireId = 0; wireId < wireCount; ++wireId)
+        {
+            int innerNodeId = -1;
+            const Vector3d innerPosition = center + (wirePositions[wireId] - center) * scale;
+            if (!addNode(innerPosition, innerNodeId))
+            {
+                error = "添加悬垂端间隔棒内圈节点失败";
+                rollback();
+                return false;
+            }
+            suspension.spacerInnerNodeIds.push_back(innerNodeId);
+        }
+        for (int wireId = 0; wireId < wireCount; ++wireId)
+        {
+            const int nextWireId = (wireId + 1) % wireCount;
+            if (!addSpacerElement(
+                    suspension.spacerInnerNodeIds[wireId],
+                    suspension.spacerInnerNodeIds[nextWireId]) ||
+                !addSpacerElement(
+                    suspension.wireNodeIds[wireId],
+                    suspension.spacerInnerNodeIds[wireId]))
+            {
+                rollback();
+                return false;
+            }
+        }
+        return true;
+    }
+
     bool ConductorModelBuilder::BuildInnerSpacer(LineBuildResult& line, const InnerSpacerConfig& config, InnerSpacerModel& spacer, std::string& error)
     {
         spacer = InnerSpacerModel{};
@@ -642,7 +1413,7 @@ namespace Conductor
         center /= static_cast<double>(wireNodeIds.size());
 
         int centerNodeId = -1;
-        if (wireNodeIds.size() > 2 && config.createCenterNode)
+        if (wireNodeIds.size() > 2 && config.style == InnerSpacerStyle::CenterBraced)
         {
             centerNodeId = NextNodeId();
             auto centerNode = std::make_shared<Node>();
@@ -727,6 +1498,52 @@ namespace Conductor
                     }
                 }
             }
+
+            if (config.style == InnerSpacerStyle::InnerPolygon)
+            {
+                const double scale = std::clamp(config.innerPolygonScale, 1.0e-4, 0.9999);
+                std::vector<int> innerNodeIds;
+                innerNodeIds.reserve(wireNodeIds.size());
+                for (int nodeId : wireNodeIds)
+                {
+                    auto outerNode = m_structure->FindNode(nodeId);
+                    if (!outerNode)
+                    {
+                        error = "添加相内间隔棒内圈时找不到外框节点";
+                        rollback();
+                        return false;
+                    }
+                    const Vector3d outer(outerNode->m_X, outerNode->m_Y, outerNode->m_Z);
+                    const Vector3d inner = center + scale * (outer - center);
+                    const int innerNodeId = NextNodeId();
+                    auto innerNode = std::make_shared<Node>();
+                    innerNode->m_Id = innerNodeId;
+                    innerNode->m_X = inner.x();
+                    innerNode->m_Y = inner.y();
+                    innerNode->m_Z = inner.z();
+                    if (!m_structure->m_Nodes.insert({ innerNodeId, innerNode }).second)
+                    {
+                        error = "添加相内间隔棒内圈节点失败";
+                        rollback();
+                        return false;
+                    }
+                    createdNodeIds.push_back(innerNodeId);
+                    spacer.nodeIds.push_back(innerNodeId);
+                    spacer.innerNodeIds.push_back(innerNodeId);
+                    innerNodeIds.push_back(innerNodeId);
+                }
+                for (int i = 0; i < static_cast<int>(wireNodeIds.size()); ++i)
+                {
+                    const int j = (i + 1) % static_cast<int>(wireNodeIds.size());
+                    if (!addSpacerElement(innerNodeIds[i], innerNodeIds[j]) ||
+                        !addSpacerElement(wireNodeIds[i], innerNodeIds[i]))
+                    {
+                        error = "添加相内间隔棒内圈单元失败";
+                        rollback();
+                        return false;
+                    }
+                }
+            }
         }
 
         line.innerSpacers.push_back(spacer);
@@ -749,9 +1566,9 @@ namespace Conductor
                         m_structure->m_Elements.erase(elementId);
                     }
                     if (line.innerSpacers[i].centerNodeId != -1)
-                    {
                         m_structure->m_Nodes.erase(line.innerSpacers[i].centerNodeId);
-                    }
+                    for (int nodeId : line.innerSpacers[i].innerNodeIds)
+                        m_structure->m_Nodes.erase(nodeId);
                 }
                 line.innerSpacers.resize(oldSpacerCount);
                 return false;
@@ -874,7 +1691,6 @@ namespace Conductor
                 InnerSpacerConfig config = layout.spacer;
                 config.position = position;
                 config.useRatio = false;
-                config.createCenterNode = line.subConductors.size() > 2;
                 configs.push_back(config);
             }
             return true;
@@ -904,7 +1720,6 @@ namespace Conductor
             InnerSpacerConfig config = layout.spacer;
             config.position = start + spacing * i;
             config.useRatio = false;
-            config.createCenterNode = line.subConductors.size() > 2;
             configs.push_back(config);
         }
 
@@ -946,15 +1761,22 @@ namespace Conductor
         std::map<int, int> rightGroupByWire;
         if (convergeEnds)
         {
-            if (!addNode(config.start, result.leftSupportNodeId) ||
-                !addNode(config.end, result.rightSupportNodeId))
+            const bool dualSupport = config.endTopology == BundleEndTopology::DualSupportByGroup;
+            if (!dualSupport &&
+                (!addNode(config.start, result.leftSupportNodeId) ||
+                 !addNode(config.end, result.rightSupportNodeId)))
             {
                 error = "添加耐张导线挂点失败";
                 rollback();
                 return false;
             }
-            result.leftTensionEnd.supportNodeId = result.leftSupportNodeId;
-            result.rightTensionEnd.supportNodeId = result.rightSupportNodeId;
+            if (!dualSupport)
+            {
+                result.leftTensionEnd.supportNodeId = result.leftSupportNodeId;
+                result.rightTensionEnd.supportNodeId = result.rightSupportNodeId;
+                result.leftTensionEnd.supportNodeIds.push_back(result.leftSupportNodeId);
+                result.rightTensionEnd.supportNodeIds.push_back(result.rightSupportNodeId);
+            }
 
             const int wireCount = static_cast<int>(raw.wiresNode.size());
             const int firstGroupCount = wireCount == 2 ? 2 : wireCount / 2;
@@ -985,13 +1807,22 @@ namespace Conductor
                 ++groupSizes[group];
             }
 
+            std::vector<Vector3d> leftCenters(groupCount, Vector3d::Zero());
+            std::vector<Vector3d> rightCenters(groupCount, Vector3d::Zero());
             for (int group = 0; group < groupCount; ++group)
             {
                 int leftGroupId = -1;
                 int rightGroupId = -1;
-                if (groupSizes[group] <= 0 ||
-                    !addNode(leftSums[group] / groupSizes[group], leftGroupId) ||
-                    !addNode(rightSums[group] / groupSizes[group], rightGroupId))
+                if (groupSizes[group] <= 0)
+                {
+                    error = "耐张端部分组节点数量无效";
+                    rollback();
+                    return false;
+                }
+                leftCenters[group] = leftSums[group] / groupSizes[group];
+                rightCenters[group] = rightSums[group] / groupSizes[group];
+                if (!addNode(leftCenters[group], leftGroupId) ||
+                    !addNode(rightCenters[group], rightGroupId))
                 {
                     error = "添加耐张端部分组节点失败";
                     rollback();
@@ -999,6 +1830,42 @@ namespace Conductor
                 }
                 result.leftTensionEnd.groupNodeIds.push_back(leftGroupId);
                 result.rightTensionEnd.groupNodeIds.push_back(rightGroupId);
+            }
+
+            if (dualSupport)
+            {
+                if (groupCount != 2)
+                {
+                    error = "分组双挂点端部要求至少四分裂导线";
+                    rollback();
+                    return false;
+                }
+                const double spacing = config.dualSupportSpacing > 1.0e-7
+                    ? config.dualSupportSpacing : config.conductor.spacing;
+                auto addDualSupports = [&](const Vector3d& base, const std::vector<Vector3d>& centers,
+                                           TensionEndModel& endModel, int& primaryId) -> bool
+                    {
+                        Vector3d direction = centers[0] - centers[1];
+                        if (direction.norm() <= 1.0e-7 || spacing <= 1.0e-7)
+                            return false;
+                        direction.normalize();
+                        int firstId = -1;
+                        int secondId = -1;
+                        if (!addNode(base + direction * (spacing * 0.5), firstId) ||
+                            !addNode(base - direction * (spacing * 0.5), secondId))
+                            return false;
+                        primaryId = firstId;
+                        endModel.supportNodeId = firstId;
+                        endModel.supportNodeIds = { firstId, secondId };
+                        return true;
+                    };
+                if (!addDualSupports(config.start, leftCenters, result.leftTensionEnd, result.leftSupportNodeId) ||
+                    !addDualSupports(config.end, rightCenters, result.rightTensionEnd, result.rightSupportNodeId))
+                {
+                    error = "添加分组双挂点失败：请检查双挂点间距和分裂导线几何";
+                    rollback();
+                    return false;
+                }
             }
 
             for (const auto& pair : raw.wiresNode)
@@ -1147,8 +2014,8 @@ namespace Conductor
             return false;
         }
 
-        auto property = config.endFittingProperty ? config.endFittingProperty : config.property;
-        if (!ValidateProperty(property, "耐张端部", error))
+        auto stabilizerProperty = config.endFittingProperty ? config.endFittingProperty : config.property;
+        if (!ValidateProperty(stabilizerProperty, "耐张稳定梁", error))
             return false;
 
         std::vector<int> createdElementIds;
@@ -1164,14 +2031,17 @@ namespace Conductor
 
         auto buildSide = [&](TensionEndModel& endModel) -> bool
             {
-                for (int groupNodeId : endModel.groupNodeIds)
+                for (std::size_t groupIndex = 0; groupIndex < endModel.groupNodeIds.size(); ++groupIndex)
                 {
+                    const int groupNodeId = endModel.groupNodeIds[groupIndex];
+                    const int supportNodeId = endModel.supportNodeIds.size() == endModel.groupNodeIds.size()
+                        ? endModel.supportNodeIds[groupIndex] : endModel.supportNodeId;
                     int elementId = -1;
                     if (!AddElement(
-                            endModel.supportNodeId,
+                            supportNodeId,
                             groupNodeId,
-                            config.endFittingElementType,
-                            property,
+                            config.elementType,
+                            config.property,
                             0.0,
                             elementId,
                             error,
@@ -1188,7 +2058,7 @@ namespace Conductor
                             endModel.groupNodeIds[0],
                             endModel.groupNodeIds[1],
                             config.endFittingElementType,
-                            property,
+                            stabilizerProperty,
                             0.0,
                             elementId,
                             error,
@@ -1300,6 +2170,8 @@ namespace Conductor
             generatedNodeIds.insert(result.leftSupportNodeId);
         if (result.rightSupportNodeId > 0)
             generatedNodeIds.insert(result.rightSupportNodeId);
+        generatedNodeIds.insert(result.leftTensionEnd.supportNodeIds.begin(), result.leftTensionEnd.supportNodeIds.end());
+        generatedNodeIds.insert(result.rightTensionEnd.supportNodeIds.begin(), result.rightTensionEnd.supportNodeIds.end());
         generatedNodeIds.insert(
             result.leftTensionEnd.groupNodeIds.begin(), result.leftTensionEnd.groupNodeIds.end());
         generatedNodeIds.insert(
@@ -1312,6 +2184,25 @@ namespace Conductor
             generatedElementIds.insert(result.leftTensionEnd.stabilizerElementId);
         if (result.rightTensionEnd.stabilizerElementId > 0)
             generatedElementIds.insert(result.rightTensionEnd.stabilizerElementId);
+        for (const auto& suspension : result.suspensionPoints)
+        {
+            if (suspension.junctionNodeId > 0)
+                generatedNodeIds.insert(suspension.junctionNodeId);
+            if (suspension.supportNodeId > 0)
+                generatedNodeIds.insert(suspension.supportNodeId);
+            generatedNodeIds.insert(
+                suspension.wireNodeIds.begin(), suspension.wireNodeIds.end());
+            if (suspension.spacerCenterNodeId > 0)
+                generatedNodeIds.insert(suspension.spacerCenterNodeId);
+            generatedNodeIds.insert(
+                suspension.spacerInnerNodeIds.begin(), suspension.spacerInnerNodeIds.end());
+            generatedElementIds.insert(
+                suspension.yokeElementIds.begin(), suspension.yokeElementIds.end());
+            if (suspension.stringElementId > 0)
+                generatedElementIds.insert(suspension.stringElementId);
+            generatedElementIds.insert(
+                suspension.spacerElementIds.begin(), suspension.spacerElementIds.end());
+        }
         for (const auto& spacer : result.innerSpacers)
         {
             generatedNodeIds.insert(spacer.nodeIds.begin(), spacer.nodeIds.end());
@@ -1349,11 +2240,31 @@ namespace Conductor
             }
         }
 
-        appendUnique(nodeOrder, seenNodes, result.leftSupportNodeId);
-        appendUnique(nodeOrder, seenNodes, result.rightSupportNodeId);
+        if (result.leftTensionEnd.supportNodeIds.size() > 1)
+        {
+            for (int nodeId : result.leftTensionEnd.supportNodeIds)
+                appendUnique(nodeOrder, seenNodes, nodeId);
+            for (int nodeId : result.rightTensionEnd.supportNodeIds)
+                appendUnique(nodeOrder, seenNodes, nodeId);
+        }
+        else
+        {
+            appendUnique(nodeOrder, seenNodes, result.leftSupportNodeId);
+            appendUnique(nodeOrder, seenNodes, result.rightSupportNodeId);
+        }
+        for (const auto& suspension : result.suspensionPoints)
+        {
+            appendUnique(nodeOrder, seenNodes, suspension.junctionNodeId);
+            appendUnique(nodeOrder, seenNodes, suspension.supportNodeId);
+            appendUnique(nodeOrder, seenNodes, suspension.spacerCenterNodeId);
+            for (int nodeId : suspension.spacerInnerNodeIds)
+                appendUnique(nodeOrder, seenNodes, nodeId);
+        }
         for (const auto& spacer : result.innerSpacers)
         {
             appendUnique(nodeOrder, seenNodes, spacer.centerNodeId);
+            for (int nodeId : spacer.innerNodeIds)
+                appendUnique(nodeOrder, seenNodes, nodeId);
         }
         for (int nodeId : generatedNodeIds)
             appendUnique(nodeOrder, seenNodes, nodeId);
@@ -1371,6 +2282,14 @@ namespace Conductor
         for (int elementId : result.rightTensionEnd.yokeElementIds)
             appendUnique(elementOrder, seenElements, elementId);
         appendUnique(elementOrder, seenElements, result.rightTensionEnd.stabilizerElementId);
+        for (const auto& suspension : result.suspensionPoints)
+        {
+            for (int elementId : suspension.yokeElementIds)
+                appendUnique(elementOrder, seenElements, elementId);
+            appendUnique(elementOrder, seenElements, suspension.stringElementId);
+            for (int elementId : suspension.spacerElementIds)
+                appendUnique(elementOrder, seenElements, elementId);
+        }
         for (const auto& spacer : result.innerSpacers)
         {
             for (int elementId : spacer.elementIds)
@@ -1462,12 +2381,25 @@ namespace Conductor
         remapId(result.rightSupportNodeId, nodeIdMap);
         remapId(result.leftTensionEnd.supportNodeId, nodeIdMap);
         remapId(result.rightTensionEnd.supportNodeId, nodeIdMap);
+        remapVector(result.leftTensionEnd.supportNodeIds, nodeIdMap);
+        remapVector(result.rightTensionEnd.supportNodeIds, nodeIdMap);
         remapVector(result.leftTensionEnd.groupNodeIds, nodeIdMap);
         remapVector(result.rightTensionEnd.groupNodeIds, nodeIdMap);
         remapVector(result.leftTensionEnd.yokeElementIds, elementIdMap);
         remapVector(result.rightTensionEnd.yokeElementIds, elementIdMap);
         remapId(result.leftTensionEnd.stabilizerElementId, elementIdMap);
         remapId(result.rightTensionEnd.stabilizerElementId, elementIdMap);
+        for (auto& suspension : result.suspensionPoints)
+        {
+            remapId(suspension.junctionNodeId, nodeIdMap);
+            remapId(suspension.supportNodeId, nodeIdMap);
+            remapVector(suspension.wireNodeIds, nodeIdMap);
+            remapVector(suspension.yokeElementIds, elementIdMap);
+            remapId(suspension.stringElementId, elementIdMap);
+            remapId(suspension.spacerCenterNodeId, nodeIdMap);
+            remapVector(suspension.spacerInnerNodeIds, nodeIdMap);
+            remapVector(suspension.spacerElementIds, elementIdMap);
+        }
         for (auto& [wireId, sub] : result.subConductors)
         {
             remapVector(sub.nodeIds, nodeIdMap);
@@ -1477,6 +2409,7 @@ namespace Conductor
         {
             remapId(spacer.id, elementIdMap);
             remapId(spacer.centerNodeId, nodeIdMap);
+            remapVector(spacer.innerNodeIds, nodeIdMap);
             remapVector(spacer.nodeIds, nodeIdMap);
             remapVector(spacer.elementIds, elementIdMap);
         }

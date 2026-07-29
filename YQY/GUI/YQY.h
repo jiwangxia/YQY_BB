@@ -3,7 +3,7 @@
 #include <QHash>
 #include <QtWidgets/QMainWindow>
 
-#include "Export/Hdf5ModelIO.h"
+#include "Export/Hdf5ResultData.h"
 #include "ui_YQY.h"
 
 class StructureData;
@@ -75,6 +75,7 @@ private:
     void displayResultPosition(double framePosition);
     bool cacheResultFramePair(int firstIndex, int secondIndex);
     void updateResultVisualization();
+    void clearActiveResultContext();
     bool loadModelFile(const QString& filePath);
     void handleModelLoaded(int modelId, const QString& filePath, qint64 elapsedMs);
     void handleModelLoadFailed(const QString& filePath, const QString& errorMessage);
@@ -107,6 +108,8 @@ private:
     void showPropertyLibrary();
     void createConductorModel();
     void exportNodeResults();
+    void exportElementResults();
+    void exportIterationHistory();
     void refreshPropertyModule();
     void applyModelPropertyEdits();
     void editPropertyItem(QTreeWidgetItem* item, int column);
@@ -132,6 +135,7 @@ private:
     QPointer<AnalysisManagerDialog> m_analysisStepManager;
     QPointer<AnalysisManagerDialog> m_analysisLoadManager;
     QPointer<AnalysisManagerDialog> m_analysisConstraintManager;
+    QPointer<AnalysisManagerDialog> m_analysisMPCManager;
     int m_modelLoadTotal = 0;
     int m_modelLoadSucceeded = 0;
     int m_modelLoadFailed = 0;

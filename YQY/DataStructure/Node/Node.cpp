@@ -134,15 +134,17 @@ void Node::ApplyNewmarkCorrection(const Eigen::Vector3d& deltaTranslation,
 
     if (numDOF < 6) return;
 
-    const Eigen::Vector3d oldStepRotation = m_StepRotation;
     Eigen::Matrix3d updatedRotation;
     Utility::CR::Update_NodalRotation(deltaRotation, m_Rg, updatedRotation);
     m_Rg = updatedRotation;
     Utility::CR::Extract_RotationVector(m_Rg * m_Rg_n.transpose(), m_StepRotation);
 
-    // Le 等（2012）式 (43)、(44)。
+    // Le 等（2012）式 (43)~(46)：Newton 求得的是空间自旋修正，
+    // 需先经 Ts^{-1} 转为空间增量转角，再转到步初材料坐标系。
+    Eigen::Matrix3d spatialSpinInverse;
+    Utility::CR::Calculate_Ts_Inv(m_StepRotation, spatialSpinInverse);
     const Eigen::Vector3d deltaH = m_Rg_n.transpose()
-        * (m_StepRotation - oldStepRotation);
+        * spatialSpinInverse * deltaRotation;
     m_OmegaMaterial += a1 * deltaH;
     m_AlphaMaterial += a0 * deltaH;
 

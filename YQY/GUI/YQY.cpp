@@ -15,14 +15,24 @@
 #include "Dialogs/PropertyItemEditorDialog.h"
 #include "Dialogs/PropertyLibraryDialog.h"
 #include "Dialogs/NodeResultExportDialog.h"
+#include "Dialogs/ElementResultExportDialog.h"
 #include "Dialogs/ModelImportFileDialog.h"
+#include "Application/ApplicationPaths.h"
 #include "DataStructure/Structure/StructureData.h"
+#include "Export/Hdf5ModelIO.h"
+#include "Export/Outputter.h"
+#include "Export/ResultFrameUtilities.h"
 #include "DataStructure/Material/Material.h"
 #include "DataStructure/Section/SectionCircular.h"
 #include "DataStructure/Section/SectionRectangle.h"
 #include "Conductor/PropertyLibrary.h"
+#include "Widgets/ProgressBarAnimation.h"
 
 #include <cmath>
+#include <QComboBox>
+#include <QFileDialog>
+#include <QFileInfo>
+#include <QMessageBox>
 
 #ifdef Q_OS_WIN
 #ifndef NOMINMAX
@@ -43,90 +53,6 @@ QString solveTaskDisplayStatus(const SolveTaskController::TaskInfo& info)
     return SolveTaskController::statusText(info.status);
 }
 
-bool modelsMatchForResults(
-    const std::shared_ptr<StructureData>& current, const std::shared_ptr<StructureData>& embedded)
-{
-    if (!current || !embedded || current->m_Nodes.size() != embedded->m_Nodes.size()
-        || current->m_Elements.size() != embedded->m_Elements.size())
-    {
-        return false;
-    }
-
-    constexpr double coordinateTolerance = 1.0e-10;
-    for (const auto& [nodeId, embeddedNode] : embedded->m_Nodes)
-    {
-        const auto found = current->m_Nodes.find(nodeId);
-        if (found == current->m_Nodes.end() || !found->second || !embeddedNode
-            || std::abs(found->second->m_X - embeddedNode->m_X) > coordinateTolerance
-            || std::abs(found->second->m_Y - embeddedNode->m_Y) > coordinateTolerance
-            || std::abs(found->second->m_Z - embeddedNode->m_Z) > coordinateTolerance)
-        {
-            return false;
-        }
-    }
-
-    for (const auto& [elementId, embeddedElement] : embedded->m_Elements)
-    {
-        const auto found = current->m_Elements.find(elementId);
-        if (found == current->m_Elements.end() || !found->second || !embeddedElement
-            || found->second->m_pNode.size() != embeddedElement->m_pNode.size())
-        {
-            return false;
-        }
-        for (int nodeIndex = 0; nodeIndex < embeddedElement->m_pNode.size(); ++nodeIndex)
-        {
-            const auto currentNode = found->second->m_pNode[nodeIndex].lock();
-            const auto embeddedNode = embeddedElement->m_pNode[nodeIndex].lock();
-            if (!currentNode || !embeddedNode || currentNode->m_Id != embeddedNode->m_Id)
-                return false;
-        }
-    }
-    return true;
-}
-
-Hdf5ResultFrame interpolateResultFrames(
-    const Hdf5ResultFrame& first, const Hdf5ResultFrame& second, double interpolation)
-{
-    interpolation = std::clamp(interpolation, 0.0, 1.0);
-    const double firstWeight = 1.0 - interpolation;
-    Hdf5ResultFrame result = first;
-    result.info.time = first.info.time * firstWeight + second.info.time * interpolation;
-    result.info.loadFactor = first.info.loadFactor * firstWeight + second.info.loadFactor * interpolation;
-
-    if (result.nodes.size() == second.nodes.size())
-    {
-        for (std::size_t index = 0; index < result.nodes.size(); ++index)
-        {
-            Hdf5NodalResult& target = result.nodes[index];
-            const Hdf5NodalResult& next = second.nodes[index];
-            if (target.id != next.id)
-                continue;
-            for (int component = 0; component < 3; ++component)
-            {
-                target.displacement[component] = target.displacement[component] * firstWeight
-                    + next.displacement[component] * interpolation;
-                target.currentCoordinate[component] = target.currentCoordinate[component] * firstWeight
-                    + next.currentCoordinate[component] * interpolation;
-            }
-        }
-    }
-
-    if (result.elements.size() == second.elements.size())
-    {
-        for (std::size_t index = 0; index < result.elements.size(); ++index)
-        {
-            Hdf5ElementResult& target = result.elements[index];
-            const Hdf5ElementResult& next = second.elements[index];
-            if (target.id != next.id)
-                continue;
-            target.axialForce = target.axialForce * firstWeight + next.axialForce * interpolation;
-            target.currentStress = target.currentStress * firstWeight + next.currentStress * interpolation;
-            target.strain = target.strain * firstWeight + next.strain * interpolation;
-        }
-    }
-    return result;
-}
-
 const Hdf5ResultRange& resultRangeForField(
     const Hdf5ResultRanges& ranges, ModelViewport::ResultField field)
 {
@@ -141,82 +67,6 @@ const Hdf5ResultRange& resultRangeForField(
     case ModelViewport::ResultField::Strain: return ranges.strain;
     }
     return ranges.displacementMagnitude;
-}
-
-void animateProgressBar(QProgressBar* progressBar, int targetValue)
-{
-    if (!progressBar)
-        return;
-
-    targetValue = qBound(progressBar->minimum(), targetValue, progressBar->maximum());
-    progressBar->setProperty("smoothTargetValue", targetValue);
-
-    // A solve may only produce a handful of visible progress events.  Keep one
-    // lightweight 60 FPS timer alive per bar and let the displayed value catch
-    // up with the latest value instead of restarting an animation on every event.
-    auto* timer = progressBar->findChild<QTimer*>(QStringLiteral("smoothProgressTimer"), Qt::FindDirectChildrenOnly);
-    if (!timer)
-    {
-        timer = new QTimer(progressBar);
-        timer->setObjectName(QStringLiteral("smoothProgressTimer"));
-        timer->setInterval(16);
-        QObject::connect(timer, &QTimer::timeout, progressBar,
-                         [progressBar, timer]()
-                         {
-                             const int target = progressBar->property("smoothTargetValue").toInt();
-                             const int current = progressBar->value();
-                             const int distance = target - current;
-                             if (distance == 0)
-                             {
-                                 timer->stop();
-                                 return;
-                             }
-
-                             const int step = qMax(1, qRound(qAbs(distance) * 0.38));
-                             const int next =
-                                 distance > 0 ? qMin(target, current + step) : qMax(target, current - step);
-                             progressBar->setValue(next);
-                         });
-    }
-
-    // A restarted calculation must return to zero immediately. Forward progress
-    // is interpolated so even a very small model remains visually continuous.
-    if (targetValue < progressBar->value())
-        progressBar->setValue(targetValue);
-    else if (targetValue != progressBar->value() && !timer->isActive())
-        timer->start();
-}
-
-QString importFileDirectory()
-{
-    const QStringList candidates = {
-        QDir::current().absoluteFilePath(QStringLiteral("YQY/Import/ImportFile")),
-        QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(QStringLiteral("../../YQY/Import/ImportFile")),
-        QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(QStringLiteral("../../Import/ImportFile")),
-        QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(QStringLiteral("../Import/ImportFile"))};
-    for (const QString& candidate : candidates)
-    {
-        const QDir directory(candidate);
-        if (directory.exists())
-            return directory.absolutePath();
-    }
-    return QDir::currentPath();
-}
-
-QString hdf5ResultDirectory()
-{
-    const QStringList candidates = {
-        QDir::current().absoluteFilePath(QStringLiteral("YQY/Export/ExportH5")),
-        QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(QStringLiteral("../../YQY/Export/ExportH5")),
-        QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(QStringLiteral("../../Export/ExportH5")),
-        QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(QStringLiteral("../Export/ExportH5"))};
-    for (const QString& candidate : candidates)
-    {
-        const QDir directory(candidate);
-        if (directory.exists())
-            return directory.absolutePath();
-    }
-    return importFileDirectory();
 }
 
 enum class ToolbarGlyph
@@ -264,6 +114,7 @@ enum class TreeGlyph
     AnalysisStep,
     Load,
     Constraint,
+    MPC,
     SolveTask,
     StopTask,
     ResultFile,
@@ -1036,6 +887,13 @@ QIcon treeIcon(TreeGlyph glyph, const QColor& color, const QColor& accent)
         painter.drawLine(QPointF(8, 12.5), QPointF(6.5, 15));
         painter.drawLine(QPointF(12, 12.5), QPointF(10.5, 15));
         break;
+    case TreeGlyph::MPC:
+        painter.drawEllipse(QPointF(3.5, 8), 2.0, 2.0);
+        painter.drawEllipse(QPointF(12.5, 8), 2.0, 2.0);
+        painter.drawLine(QPointF(5.7, 8), QPointF(10.3, 8));
+        painter.setPen(QPen(accent, 1.5, Qt::SolidLine, Qt::RoundCap));
+        painter.drawLine(QPointF(8, 4.5), QPointF(8, 11.5));
+        break;
     case TreeGlyph::SolveTask:
         painter.drawEllipse(QRectF(1.5, 1.5, 13, 13));
         painter.setBrush(accent);
@@ -1184,29 +1042,34 @@ QMessageBox QPushButton { min-width: 76px; min-height: 26px; }
 QDialog#analysisStepManagerDialog,
 QDialog#analysisLoadManagerDialog,
 QDialog#analysisConstraintManagerDialog,
+QDialog#analysisMPCManagerDialog,
 QDialog#solveTaskManagerDialog,
 QDialog#analysisStepEditorDialog,
 QDialog#analysisLoadEditorDialog,
 QDialog#analysisConstraintEditorDialog,
+QDialog#analysisMPCEditorDialog,
 QDialog#nodeResultExportDialog {
     background: $PANEL;
     color: $TEXT;
 }
-QDialog#analysisStepManagerDialog QWidget#analysisManagerPage,
-QDialog#analysisLoadManagerDialog QWidget#analysisManagerPage,
-QDialog#analysisConstraintManagerDialog QWidget#analysisManagerPage {
+QDialog#analysisStepManagerDialog QWidget#managerPage,
+QDialog#analysisLoadManagerDialog QWidget#managerPage,
+QDialog#analysisConstraintManagerDialog QWidget#managerPage,
+QDialog#analysisMPCManagerDialog QWidget#managerPage {
     background: $FIELD;
     color: $TEXT;
 }
 QDialog#analysisStepManagerDialog QDialogButtonBox#analysisManagerButtonBox,
 QDialog#analysisLoadManagerDialog QDialogButtonBox#analysisManagerButtonBox,
-QDialog#analysisConstraintManagerDialog QDialogButtonBox#analysisManagerButtonBox {
+QDialog#analysisConstraintManagerDialog QDialogButtonBox#analysisManagerButtonBox,
+QDialog#analysisMPCManagerDialog QDialogButtonBox#analysisManagerButtonBox {
     background: transparent;
     border: none;
 }
 QDialog#analysisStepEditorDialog QLabel,
 QDialog#analysisLoadEditorDialog QLabel,
-QDialog#analysisConstraintEditorDialog QLabel {
+QDialog#analysisConstraintEditorDialog QLabel,
+QDialog#analysisMPCEditorDialog QLabel {
     background: transparent;
     color: $TEXT;
 }
@@ -1217,7 +1080,14 @@ QDialog#nodeResultExportDialog #exportFieldHint { color: $MUTED; }
 QDialog#nodeResultExportDialog #exportSectionCard {
     background: $ELEVATED; border: 1px solid $BORDER; border-radius: 12px;
 }
+QDialog#nodeResultExportDialog QGroupBox#exportSectionCard {
+    margin-top: 10px; padding: 10px 12px 12px 12px;
+}
+QDialog#nodeResultExportDialog QGroupBox#exportSectionCard::title {
+    subcontrol-origin: margin; left: 10px; padding: 0 5px; color: $TEXT; font-weight: 700;
+}
 QDialog#nodeResultExportDialog #exportSectionTitle { color: $TEXT; font-weight: 700; }
+QDialog#nodeResultExportDialog #exportFieldCaption { color: $MUTED; font-weight: 700; }
 QDialog#nodeResultExportDialog #exportFieldGroup {
     background: $FIELD; border: 1px solid $BORDER; border-radius: 9px;
     margin-top: 8px; padding-top: 4px;
@@ -1641,6 +1511,7 @@ void YQY::initializeSettingsModule()
 {
     m_settingsPanel = new SettingsPanel(ui.settingsModulePage);
     auto* concurrencySpin = m_settingsPanel->concurrencySpin();
+    auto* nodeLabelModeCombo = m_settingsPanel->nodeLabelModeCombo();
     const int availableThreads = SolveTaskController::availableThreadCount();
     const int allowedThreads = SolveTaskController::maximumAllowedThreadCount();
     concurrencySpin->setRange(SolveTaskController::MinimumThreadCount, allowedThreads);
@@ -1650,6 +1521,19 @@ void YQY::initializeSettingsModule()
         QStringLiteral("本机可选范围 1～%1；降低上限不会中断正在计算的任务").arg(allowedThreads));
 
     QSettings settings;
+    const bool adaptiveNodeLabels = settings.value(
+        QStringLiteral("view/adaptiveNodeLabels"), false).toBool();
+    nodeLabelModeCombo->setCurrentIndex(adaptiveNodeLabels ? 1 : 0);
+    ui.modelViewport->setAdaptiveNodeLabels(adaptiveNodeLabels);
+    connect(nodeLabelModeCombo, qOverload<int>(&QComboBox::currentIndexChanged), this,
+            [this](int index)
+            {
+                const bool adaptive = index == 1;
+                ui.modelViewport->setAdaptiveNodeLabels(adaptive);
+                QSettings().setValue(QStringLiteral("view/adaptiveNodeLabels"), adaptive);
+                setWorkspaceMessage(adaptive ? QStringLiteral("节点编号显示已切换为自适应")
+                                             : QStringLiteral("节点编号显示已切换为全部"));
+            });
     const int savedConcurrency = qBound(
         SolveTaskController::MinimumThreadCount,
         settings.value(QStringLiteral("solver/maxConcurrentSteps"), SolveTaskController::defaultThreadCount()).toInt(),
@@ -1716,6 +1600,8 @@ bool YQY::saveAnalysisManagerPreview(const QString& filePath, int managerIndex)
         manager = std::make_unique<AnalysisLoadManagerDialog>(structure, this);
     else if (managerIndex == 2)
         manager = std::make_unique<AnalysisConstraintManagerDialog>(structure, this);
+    else if (managerIndex == 3)
+        manager = std::make_unique<AnalysisMPCManagerDialog>(structure, this);
     else
         manager = std::make_unique<AnalysisStepManagerDialog>(structure, this);
     manager->show();
@@ -1759,13 +1645,33 @@ void YQY::initializeResultModule()
 {
     m_resultPanel = new ResultControlPanel(ui.resultModulePage);
     setActionGlyph(m_resultPanel->exportButton(), ActionGlyph::Export);
+    setActionGlyph(m_resultPanel->exportElementButton(), ActionGlyph::Export);
+    setActionGlyph(m_resultPanel->exportIterationButton(), ActionGlyph::Export);
     ui.resultModuleLayout->insertWidget(3, m_resultPanel);
     m_resultPanel->setFrameChangedHandler([this](double framePosition)
     {
         displayResultPosition(framePosition);
     });
     m_resultPanel->setVisualizationChangedHandler([this]() { updateResultVisualization(); });
+    m_resultPanel->setPlaybackStateChangedHandler([this](bool playing)
+    {
+        // Label generation and rendering are expensive for large models.  IDs
+        // are therefore forcibly hidden and unavailable for the entire run.
+        const QSignalBlocker nodeIdsBlocker(ui.showNodeIdsButton);
+        const QSignalBlocker elementIdsBlocker(ui.showElementIdsButton);
+        ui.modelViewport->setIdLabelsPlaybackLocked(playing);
+        if (playing)
+        {
+            ui.showNodeIdsButton->setChecked(false);
+            ui.showElementIdsButton->setChecked(false);
+        }
+        const bool idsAvailable = !playing && ui.modelViewport->hasModel();
+        ui.showNodeIdsButton->setEnabled(idsAvailable);
+        ui.showElementIdsButton->setEnabled(idsAvailable);
+    });
     m_resultPanel->setExportHandler([this]() { exportNodeResults(); });
+    m_resultPanel->setElementExportHandler([this]() { exportElementResults(); });
+    m_resultPanel->setIterationExportHandler([this]() { exportIterationHistory(); });
 }
 
 void YQY::initializeConductorModule()
@@ -2368,7 +2274,8 @@ void YQY::showPropertyLibrary()
 
 void YQY::createConductorModel()
 {
-    const QString generatedDirectory = QDir(importFileDirectory()).absoluteFilePath(QStringLiteral("Generated"));
+    const QString generatedDirectory =
+        QDir(ApplicationPaths::importFileDirectory()).absoluteFilePath(QStringLiteral("Generated"));
     if (!m_propertyLibrary)
     {
         QMessageBox::critical(this, QStringLiteral("创建导线模型"), QStringLiteral("启动属性库不可用。"));
@@ -2790,7 +2697,7 @@ void YQY::initializeInteractions()
 
     connect(ui.importButton, &QPushButton::clicked, this, [this]()
     {
-        ModelImportFileDialog dialog(importFileDirectory(), this);
+        ModelImportFileDialog dialog(ApplicationPaths::importFileDirectory(), this);
         if (dialog.exec() != QDialog::Accepted)
             return;
         const QStringList paths = dialog.selectedFiles();
@@ -3018,6 +2925,33 @@ void YQY::refreshModulePages()
         auto* constraints =
             new QTreeWidgetItem(ui.analysisTree, {QStringLiteral("约束  %1").arg(structure->m_Constraint.size())});
         setTreeGlyph(constraints, TreeGlyph::Constraint);
+        auto* mpcs = new QTreeWidgetItem(
+            ui.analysisTree,
+            {QStringLiteral("MPC  %1").arg(structure->m_MPCConstraints.size())});
+        setTreeGlyph(mpcs, TreeGlyph::MPC);
+        for (const auto& [mpcId, mpc] : structure->m_MPCConstraints)
+        {
+            if (!mpc)
+                continue;
+            const std::vector<int> nodeIds = mpc->GetNodeIds();
+            const QString directions = [&mpc]()
+            {
+                QString value;
+                for (const int direction : mpc->m_SlaveDirections)
+                    value.append(QString::number(direction));
+                return value;
+            }();
+            auto* mpcItem = new QTreeWidgetItem(mpcs,
+                {QStringLiteral("%1  ·  %2 → %3  ·  %4")
+                    .arg(mpc->m_Name.trimmed().isEmpty()
+                        ? QStringLiteral("MPC-%1").arg(mpcId) : mpc->m_Name)
+                    .arg(nodeIds.size() == 2 ? QString::number(nodeIds[0])
+                                             : QStringLiteral("--"))
+                    .arg(nodeIds.size() == 2 ? QString::number(nodeIds[1])
+                                             : QStringLiteral("--"))
+                    .arg(directions)});
+            setTreeGlyph(mpcItem, TreeGlyph::MPC);
+        }
         auto* regions = new QTreeWidgetItem(ui.analysisTree,
             {QStringLiteral("计算区域  %1").arg(structure->m_ComputeRegions.size())});
         setTreeGlyph(regions, TreeGlyph::Model);
@@ -3060,6 +2994,7 @@ void YQY::initializeAnalysisEditor()
     m_analysisPanel->stepsButton()->setObjectName(QStringLiteral("analysisStepsButton"));
     m_analysisPanel->loadsButton()->setObjectName(QStringLiteral("analysisLoadsButton"));
     m_analysisPanel->constraintsButton()->setObjectName(QStringLiteral("analysisConstraintsButton"));
+    m_analysisPanel->mpcsButton()->setObjectName(QStringLiteral("analysisMPCsButton"));
     m_analysisPanel->regionsButton()->setObjectName(QStringLiteral("analysisRegionsButton"));
     ui.analysisModuleLayout->insertWidget(1, m_analysisPanel);
     connect(m_analysisPanel->stepsButton(), &QPushButton::clicked, this,
@@ -3068,6 +3003,8 @@ void YQY::initializeAnalysisEditor()
             [this]() { openAnalysisManager(static_cast<int>(AnalysisManagerDialog::Page::Loads)); });
     connect(m_analysisPanel->constraintsButton(), &QPushButton::clicked, this,
             [this]() { openAnalysisManager(static_cast<int>(AnalysisManagerDialog::Page::Constraints)); });
+    connect(m_analysisPanel->mpcsButton(), &QPushButton::clicked, this,
+            [this]() { openAnalysisManager(static_cast<int>(AnalysisManagerDialog::Page::MPCs)); });
     connect(m_analysisPanel->regionsButton(), &QPushButton::clicked, this, &YQY::openComputeRegionManager);
     connect(ui.analysisTree, &QTreeWidget::itemDoubleClicked, this,
             [this](QTreeWidgetItem* item, int)
@@ -3077,9 +3014,9 @@ void YQY::initializeAnalysisEditor()
                 while (item->parent())
                     item = item->parent();
                 const int page = ui.analysisTree->indexOfTopLevelItem(item);
-                if (page >= 0 && page <= 2 && m_modelController->model())
+                if (page >= 0 && page <= 3 && m_modelController->model())
                     openAnalysisManager(page);
-                else if (page == 3 && m_modelController->model())
+                else if (page == 4 && m_modelController->model())
                     openComputeRegionManager();
             });
 }
@@ -3110,19 +3047,25 @@ void YQY::refreshAnalysisEditor()
     auto* stepsButton = m_analysisPanel->stepsButton();
     auto* loadsButton = m_analysisPanel->loadsButton();
     auto* constraintsButton = m_analysisPanel->constraintsButton();
+    auto* mpcsButton = m_analysisPanel->mpcsButton();
     auto* regionsButton = m_analysisPanel->regionsButton();
     stepsButton->setEnabled(enabled);
     loadsButton->setEnabled(enabled);
     constraintsButton->setEnabled(enabled);
+    mpcsButton->setEnabled(enabled);
     regionsButton->setEnabled(enabled);
     stepsButton->setText(QStringLiteral("分析步 · %1").arg(structure ? structure->m_AnalysisStep.size() : 0));
     loadsButton->setText(QStringLiteral("荷载 · %1").arg(structure ? structure->m_Load.size() : 0));
     constraintsButton->setText(QStringLiteral("约束 · %1").arg(structure ? structure->m_Constraint.size() : 0));
+    mpcsButton->setText(QStringLiteral("MPC · %1").arg(
+        structure ? structure->m_MPCConstraints.size() : 0));
     regionsButton->setText(QStringLiteral("计算区域 · %1").arg(structure ? structure->m_ComputeRegions.size() : 0));
     const ThemeColors colors = themeColors(ui.themeComboBox->currentIndex());
     stepsButton->setIcon(treeIcon(TreeGlyph::AnalysisSteps, QColor(colors.text), QColor(colors.accentSecond)));
     loadsButton->setIcon(treeIcon(TreeGlyph::Load, QColor(colors.text), QColor(colors.accentSecond)));
     constraintsButton->setIcon(treeIcon(TreeGlyph::Constraint, QColor(colors.text), QColor(colors.accentSecond)));
+    mpcsButton->setIcon(treeIcon(
+        TreeGlyph::MPC, QColor(colors.text), QColor(colors.accentSecond)));
     regionsButton->setIcon(treeIcon(TreeGlyph::Model, QColor(colors.text), QColor(colors.accentSecond)));
 }
 
@@ -3134,14 +3077,16 @@ void YQY::openAnalysisManager(int initialPage)
         QMessageBox::information(this, QStringLiteral("分析资源管理器"), QStringLiteral("请先加载或创建模型。"));
         return;
     }
-    const int boundedPage = qBound(0, initialPage, 2);
+    const int boundedPage = qBound(0, initialPage, 3);
     QPointer<AnalysisManagerDialog>* managerSlot = nullptr;
     if (boundedPage == static_cast<int>(AnalysisManagerDialog::Page::Steps))
         managerSlot = &m_analysisStepManager;
     else if (boundedPage == static_cast<int>(AnalysisManagerDialog::Page::Loads))
         managerSlot = &m_analysisLoadManager;
-    else
+    else if (boundedPage == static_cast<int>(AnalysisManagerDialog::Page::Constraints))
         managerSlot = &m_analysisConstraintManager;
+    else
+        managerSlot = &m_analysisMPCManager;
 
     if (*managerSlot)
     {
@@ -3156,8 +3101,10 @@ void YQY::openAnalysisManager(int initialPage)
         manager = new AnalysisStepManagerDialog(structure, this);
     else if (boundedPage == static_cast<int>(AnalysisManagerDialog::Page::Loads))
         manager = new AnalysisLoadManagerDialog(structure, this);
-    else
+    else if (boundedPage == static_cast<int>(AnalysisManagerDialog::Page::Constraints))
         manager = new AnalysisConstraintManagerDialog(structure, this);
+    else
+        manager = new AnalysisMPCManagerDialog(structure, this);
 
     *managerSlot = manager;
     manager->setAttribute(Qt::WA_DeleteOnClose);
@@ -3189,12 +3136,14 @@ void YQY::handleAnalysisResourcesChanged(const QSet<int>& affectedStepIds)
     }
     ui.logEdit->appendPlainText(
         QStringLiteral(
-            "[INFO] 分析资源已增量更新：影响 %1 个分析步，准备 %2 个算例；当前共 %3 个分析步、%4 个荷载、%5 个约束")
+            "[INFO] 分析资源已增量更新：影响 %1 个分析步，准备 %2 个算例；"
+            "当前共 %3 个分析步、%4 个荷载、%5 个约束、%6 个 MPC")
             .arg(affectedStepIds.size())
             .arg(preparedCount)
             .arg(structure->m_AnalysisStep.size())
             .arg(structure->m_Load.size())
-            .arg(structure->m_Constraint.size()));
+            .arg(structure->m_Constraint.size())
+            .arg(structure->m_MPCConstraints.size()));
     setWorkspaceMessage(QStringLiteral("分析资源已增量同步，未受影响的计算状态保持不变"));
     refreshModulePages();
 
@@ -3204,6 +3153,8 @@ void YQY::handleAnalysisResourcesChanged(const QSet<int>& affectedStepIds)
         m_analysisLoadManager->refreshFromModel();
     if (m_analysisConstraintManager)
         m_analysisConstraintManager->refreshFromModel();
+    if (m_analysisMPCManager)
+        m_analysisMPCManager->refreshFromModel();
 }
 
 void YQY::closeAnalysisManagers()
@@ -3224,6 +3175,12 @@ void YQY::closeAnalysisManagers()
     {
         auto* manager = m_analysisConstraintManager.data();
         m_analysisConstraintManager.clear();
+        manager->close();
+    }
+    if (m_analysisMPCManager)
+    {
+        auto* manager = m_analysisMPCManager.data();
+        m_analysisMPCManager.clear();
         manager->close();
     }
 }
@@ -3576,7 +3533,7 @@ void YQY::updateSolveTaskRow(int taskId)
     const auto info = m_solveTaskController->taskInfo(taskId);
     auto* progress = qobject_cast<QProgressBar*>(ui.solveStepTree->itemWidget(item, 1));
     if (progress)
-        animateProgressBar(progress, qRound(info.progress * 1000.0));
+        ProgressBarAnimation::animateTo(progress, qRound(info.progress * 1000.0));
 
     item->setText(2, solveTaskDisplayStatus(info));
     item->setToolTip(0, info.message);
@@ -3646,7 +3603,7 @@ void YQY::updateTaskMonitor(int taskId)
 
     const auto info = m_solveTaskController->taskInfo(taskId);
     ui.solveProgress->setRange(0, 1000);
-    animateProgressBar(ui.solveProgress, qRound(info.progress * 1000.0));
+    ProgressBarAnimation::animateTo(ui.solveProgress, qRound(info.progress * 1000.0));
     ui.solveProgress->setFormat(QStringLiteral("%1%").arg(ui.solveProgress->value() / 10.0, 0, 'f', 1));
     ui.incrementLabel->setText(QStringLiteral("%1 · %2 · %3 ms")
                                    .arg(info.name, SolveTaskController::statusText(info.status))
@@ -3659,7 +3616,7 @@ void YQY::updateTaskMonitor(int taskId)
 
 void YQY::openHdf5Result()
 {
-    const QString initialDirectory = hdf5ResultDirectory();
+    const QString initialDirectory = ApplicationPaths::hdf5ResultDirectory();
 
     ModelImportFileDialog dialog(initialDirectory, QStringLiteral("打开 H5 结果文件"),
                                  QStringLiteral("HDF5 结果文件 (*.h5 *.hdf5);;所有文件 (*.*)"),
@@ -3697,6 +3654,7 @@ void YQY::exportNodeResults()
     auto* m_resultPlayButton = m_resultPanel->playButton();
     auto* m_resultFrameSlider = m_resultPanel->frameSlider();
     auto* m_exportNodeResultsButton = m_resultPanel->exportButton();
+    auto* m_exportElementResultsButton = m_resultPanel->exportElementButton();
     const auto& m_resultFrames = m_resultPanel->frames();
     const QString& m_resultFilePath = m_resultPanel->resultFilePath();
     const auto structure = m_modelController->model();
@@ -3736,13 +3694,14 @@ void YQY::exportNodeResults()
     m_resultPlayButton->setEnabled(false);
     m_resultFrameSlider->setEnabled(false);
     m_exportNodeResultsButton->setEnabled(false);
+    m_exportElementResultsButton->setEnabled(false);
     m_exportNodeResultsButton->setText(QStringLiteral("正在导出…"));
     setWorkspaceMessage(QStringLiteral("正在导出 %1 个节点的时程数据…").arg(nodeIds.size()));
 
     const QString sourceFile = m_resultFilePath;
     auto* watcher = new QFutureWatcher<bool>(this);
     connect(watcher, &QFutureWatcher<bool>::finished, this,
-            [this, watcher, outputFile, m_resultPlayButton, m_resultFrameSlider, m_exportNodeResultsButton,
+            [this, watcher, outputFile, m_resultPlayButton, m_resultFrameSlider, m_exportNodeResultsButton, m_exportElementResultsButton,
              nodeCount = nodeIds.size(), fieldCount = resultTypes.size()]()
             {
                 const bool succeeded = watcher->result();
@@ -3750,6 +3709,7 @@ void YQY::exportNodeResults()
                 m_exportNodeResultsButton->setText(QStringLiteral("导出节点数据…"));
                 const auto& frames = m_resultPanel->frames();
                 m_exportNodeResultsButton->setEnabled(!m_resultPanel->resultFilePath().isEmpty() && !frames.empty());
+                m_exportElementResultsButton->setEnabled(!m_resultPanel->resultFilePath().isEmpty() && !frames.empty());
                 m_resultFrameSlider->setEnabled(!frames.empty());
                 m_resultPlayButton->setEnabled(frames.size() > 1);
 
@@ -3776,11 +3736,125 @@ void YQY::exportNodeResults()
         }));
 }
 
+void YQY::exportElementResults()
+{
+    auto* playButton = m_resultPanel->playButton();
+    auto* frameSlider = m_resultPanel->frameSlider();
+    auto* exportButton = m_resultPanel->exportElementButton();
+    const auto& frames = m_resultPanel->frames();
+    const QString& resultFilePath = m_resultPanel->resultFilePath();
+    const auto structure = m_modelController->model();
+    if (!structure || resultFilePath.isEmpty() || frames.empty())
+    {
+        QMessageBox::information(this, QStringLiteral("尚无可导出结果"), QStringLiteral("请先加载模型及其 H5 结果文件。"));
+        return;
+    }
+
+    QSet<int> availableElements;
+    for (const auto& [elementId, element] : structure->m_Elements)
+        if (element) availableElements.insert(elementId);
+    ElementResultExportDialog dialog(resultFilePath, availableElements, this);
+    if (dialog.exec() != QDialog::Accepted) return;
+
+    const std::vector<int> elementIds = dialog.elementIds();
+    const std::vector<EnumKeyword::ElementResultType> resultTypes = dialog.resultTypes();
+    QString outputFile = dialog.outputFile();
+    if (QFileInfo(outputFile).suffix().isEmpty()) outputFile += QStringLiteral(".bdf");
+    if (QFileInfo::exists(outputFile) && QMessageBox::question(this, QStringLiteral("替换已有文件"),
+        QStringLiteral("文件已经存在，是否替换？\n%1").arg(outputFile), QMessageBox::Yes | QMessageBox::Cancel,
+        QMessageBox::Cancel) != QMessageBox::Yes) return;
+
+    m_resultPanel->stopPlayback();
+    playButton->setEnabled(false); frameSlider->setEnabled(false); exportButton->setEnabled(false);
+    m_resultPanel->exportButton()->setEnabled(false);
+    exportButton->setText(QStringLiteral("正在导出…"));
+    const QString sourceFile = resultFilePath;
+    auto* watcher = new QFutureWatcher<bool>(this);
+    connect(watcher, &QFutureWatcher<bool>::finished, this,
+        [this, watcher, outputFile, playButton, frameSlider, exportButton, elementCount = elementIds.size(), fieldCount = resultTypes.size()]()
+        {
+            const bool succeeded = watcher->result(); watcher->deleteLater();
+            exportButton->setText(QStringLiteral("导出单元数据…"));
+            const auto& currentFrames = m_resultPanel->frames();
+            const bool enabled = !m_resultPanel->resultFilePath().isEmpty() && !currentFrames.empty();
+            exportButton->setEnabled(enabled); m_resultPanel->exportButton()->setEnabled(enabled);
+            frameSlider->setEnabled(!currentFrames.empty()); playButton->setEnabled(currentFrames.size() > 1);
+            if (succeeded) {
+                ui.logEdit->appendPlainText(QStringLiteral("[INFO] 单元结果已导出：%1 个单元，%2 个分量 → %3").arg(elementCount).arg(fieldCount).arg(outputFile));
+                setWorkspaceMessage(QStringLiteral("单元结果导出完成 · %1").arg(QFileInfo(outputFile).fileName()));
+            } else {
+                setWorkspaceMessage(QStringLiteral("单元结果导出失败"));
+                QMessageBox::critical(this, QStringLiteral("导出失败"), QStringLiteral("无法导出单元结果，请检查结果文件和保存路径。"));
+            }
+        });
+    watcher->setFuture(QtConcurrent::run([sourceFile, outputFile, elementIds, resultTypes]() {
+        Hdf5ModelIO exporter;
+        return exporter.ExportBdfResultFromHdf5(sourceFile, outputFile, {}, {}, elementIds, resultTypes);
+    }));
+}
+
+void YQY::exportIterationHistory()
+{
+    const QString sourceFile = m_resultPanel->resultFilePath();
+    if (sourceFile.isEmpty())
+    {
+        QMessageBox::information(this, QStringLiteral("暂无迭代步"),
+            QStringLiteral("请先加载计算结果文件。"));
+        return;
+    }
+
+    Hdf5ModelIO reader;
+    std::vector<Hdf5ResultFrameInfo> frames;
+    std::vector<SolverIterationRecord> records;
+    const bool readOk = reader.OpenResultFile(sourceFile, frames)
+        && reader.ReadSolverIterationHistory(records);
+    reader.CloseResultFile();
+    if (!readOk || records.empty())
+    {
+        QMessageBox::information(this, QStringLiteral("暂无迭代步"),
+            QStringLiteral("当前 H5 结果文件中没有迭代步数据。"));
+        return;
+    }
+
+    const QString defaultOutputFile = QDir(ApplicationPaths::iterationResultDirectory())
+        .absoluteFilePath(QStringLiteral("iteration_history.bdf"));
+    QString outputFile = QFileDialog::getSaveFileName(this,
+        QStringLiteral("保存迭代步"), defaultOutputFile,
+        QStringLiteral("BDF 文件 (*.bdf);;所有文件 (*.*)"), nullptr,
+        QFileDialog::DontUseNativeDialog);
+    if (outputFile.isEmpty())
+        return;
+    if (QFileInfo(outputFile).suffix().isEmpty())
+        outputFile += QStringLiteral(".bdf");
+    if (QFileInfo::exists(outputFile)
+        && QMessageBox::question(this, QStringLiteral("替换已有文件"),
+            QStringLiteral("文件已经存在，是否替换？\n%1").arg(outputFile),
+            QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
+    {
+        return;
+    }
+
+    Outputter exporter;
+    exporter.SetSolverIterationRecords(std::move(records));
+    if (exporter.ExportSolverIterationHistory(outputFile))
+    {
+        ui.logEdit->appendPlainText(QStringLiteral("[INFO] 迭代步已导出：%1").arg(outputFile));
+        setWorkspaceMessage(QStringLiteral("迭代步导出完成 · %1").arg(QFileInfo(outputFile).fileName()));
+    }
+    else
+    {
+        QMessageBox::critical(this, QStringLiteral("导出失败"),
+            QStringLiteral("无法导出迭代步，请检查保存路径。"));
+    }
+}
+
 bool YQY::loadHdf5Result(const QString& filePath, bool showErrors, bool activateResultModule, bool partialResult)
 {
     auto* m_resultPlayButton = m_resultPanel->playButton();
     auto* m_resultFrameSlider = m_resultPanel->frameSlider();
     auto* m_exportNodeResultsButton = m_resultPanel->exportButton();
+    auto* m_exportElementResultsButton = m_resultPanel->exportElementButton();
+    auto* m_exportIterationButton = m_resultPanel->exportIterationButton();
     auto* m_resultReader = m_resultPanel->reader();
     auto& m_resultFrames = m_resultPanel->frames();
     auto& m_resultFilePath = m_resultPanel->resultFilePath();
@@ -3827,8 +3901,11 @@ bool YQY::loadHdf5Result(const QString& filePath, bool showErrors, bool activate
         return false;
     }
 
+    const auto currentModel = m_modelController->model();
+    const bool sameModelAsCurrent =
+        ResultFrameUtilities::modelsMatch(currentModel, embeddedModel);
     const bool shouldActivateEmbeddedModel = activateResultModule
-        || !modelsMatchForResults(m_modelController->model(), embeddedModel);
+        || !sameModelAsCurrent;
     if (shouldActivateEmbeddedModel
         && m_modelController->adoptModel(embeddedModel, filePath, modelTimer.elapsed()) < 0)
     {
@@ -3861,6 +3938,8 @@ bool YQY::loadHdf5Result(const QString& filePath, bool showErrors, bool activate
     m_resultFrameSlider->setRange(0, static_cast<int>(m_resultFrames.size()) - 1);
     m_resultPlayButton->setEnabled(m_resultFrames.size() > 1);
     m_exportNodeResultsButton->setEnabled(true);
+    m_exportElementResultsButton->setEnabled(true);
+    m_exportIterationButton->setEnabled(true);
 
     ui.resultFileLabel->setText(partialResult ? QStringLiteral("%1 · 部分结果").arg(QFileInfo(filePath).fileName())
                                               : QFileInfo(filePath).fileName());
@@ -3976,7 +4055,10 @@ void YQY::displayResultPosition(double framePosition)
     }
     Hdf5ResultFrame frame = interpolation <= 1.0e-9
         ? m_cachedResultFrame
-        : interpolateResultFrames(m_cachedResultFrame, m_cachedNextResultFrame, interpolation);
+        : ResultFrameUtilities::interpolate(
+            m_cachedResultFrame,
+            m_cachedNextResultFrame,
+            interpolation);
     const auto field = static_cast<ModelViewport::ResultField>(m_resultFieldCombo->currentIndex());
     const Hdf5ResultRange& scalarRange = resultRangeForField(m_resultRanges, field);
     if (scalarRange.valid)
@@ -4002,6 +4084,41 @@ void YQY::updateResultVisualization()
 {
     if (m_resultPanel && !m_resultPanel->frames().empty())
         displayResultFrame(m_resultPanel->frameSlider()->value());
+}
+
+void YQY::clearActiveResultContext()
+{
+    if (!m_resultPanel)
+        return;
+
+    // A result reader and its playback timer belong to one model only.  Keeping
+    // them alive while another document is active can apply old node IDs and
+    // scalar values to the new geometry.
+    m_resultPanel->stopPlayback();
+    m_resultPanel->reader()->CloseResultFile();
+    m_resultPanel->frames().clear();
+    m_resultPanel->resultFilePath().clear();
+    m_resultPanel->partialResult() = false;
+    m_resultPanel->automaticScale() = 1.0;
+    m_resultRanges = {};
+    m_cachedResultFrameIndex = -1;
+    m_cachedNextResultFrameIndex = -1;
+
+    {
+        const QSignalBlocker blocker(m_resultPanel->frameSlider());
+        m_resultPanel->frameSlider()->setRange(0, 0);
+        m_resultPanel->frameSlider()->setValue(0);
+    }
+    m_resultPanel->frameSlider()->setEnabled(false);
+    m_resultPanel->playButton()->setEnabled(false);
+    m_resultPanel->exportButton()->setEnabled(false);
+    m_resultPanel->exportElementButton()->setEnabled(false);
+    m_resultPanel->exportIterationButton()->setEnabled(false);
+    m_resultPanel->frameLabel()->setText(QStringLiteral("--"));
+    m_resultPanel->timeValueLabel()->setText(QStringLiteral("--"));
+    m_resultPanel->deformationValueLabel()->setText(QStringLiteral("--"));
+    ui.resultFileLabel->setText(QStringLiteral("--"));
+    ui.resultTree->clear();
 }
 
 bool YQY::loadModelFile(const QString& filePath)
@@ -4058,6 +4175,11 @@ void YQY::handleActiveModelChanged(int modelId)
     if (!structure)
         return;
 
+    // Stop and detach the previous model's post-processing before rebuilding the
+    // shared VTK viewport.  The selected model's result file is restored below.
+    clearActiveResultContext();
+    ui.modelViewport->clearResultDisplay();
+
     {
         const QSignalBlocker blocker(ui.documentTabBar);
         for (int index = 0; index < ui.documentTabBar->count(); ++index)
@@ -4081,12 +4203,12 @@ void YQY::handleActiveModelChanged(int modelId)
                             .arg(m_modelController->modelCount()));
 
     const QString resultFilePath = m_resultFilesByModelId.value(modelId);
-    if (!resultFilePath.isEmpty() && QFileInfo(resultFilePath) != QFileInfo(m_resultPanel->resultFilePath()))
+    if (!resultFilePath.isEmpty())
     {
         QTimer::singleShot(0, this, [this, modelId, resultFilePath]()
         {
             if (m_modelController->activeModelId() == modelId
-                && QFileInfo(resultFilePath) != QFileInfo(m_resultPanel->resultFilePath()))
+                && m_resultPanel->resultFilePath().isEmpty())
             {
                 loadHdf5Result(resultFilePath, false, false);
             }

@@ -73,7 +73,9 @@ public:
     void setThemeIndex(int themeIndex);
     void setNodeSize(int nodeSize);
     void setNodeLabelsVisible(bool visible);
+    void setAdaptiveNodeLabels(bool adaptive);
     void setElementLabelsVisible(bool visible);
+    void setIdLabelsPlaybackLocked(bool locked);
     void setNodesVisible(bool visible);
     void setElementsVisible(bool visible);
     void setSolidVisible(bool visible);
@@ -129,7 +131,9 @@ private:
     int m_themeIndex = 0;
     int m_nodeSize = 5;
     bool m_nodeLabelsVisible = false;
+    bool m_adaptiveNodeLabels = false;
     bool m_elementLabelsVisible = false;
+    bool m_idLabelsPlaybackLocked = false;
     bool m_nodesVisible = true;
     bool m_elementsVisible = true;
     bool m_solidVisible = false;

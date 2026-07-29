@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Export/Hdf5ModelIO.h"
+#include "Export/Hdf5ResultData.h"
 
 #include <functional>
 #include <memory>
@@ -13,6 +13,7 @@ class QLabel;
 class QPushButton;
 class QSlider;
 class QTimer;
+class Hdf5ModelIO;
 namespace Ui
 {
 class ResultControlPanelClass;
@@ -32,6 +33,8 @@ public:
     QLabel* timeValueLabel() const;
     QLabel* deformationValueLabel() const;
     QPushButton* exportButton() const;
+    QPushButton* exportElementButton() const;
+    QPushButton* exportIterationButton() const;
     Hdf5ModelIO* reader() const;
     std::vector<Hdf5ResultFrameInfo>& frames();
     const std::vector<Hdf5ResultFrameInfo>& frames() const;
@@ -42,7 +45,10 @@ public:
     QTimer* playbackTimer() const;
     void setFrameChangedHandler(std::function<void(double)> handler);
     void setVisualizationChangedHandler(std::function<void()> handler);
+    void setPlaybackStateChangedHandler(std::function<void(bool)> handler);
     void setExportHandler(std::function<void()> handler);
+    void setElementExportHandler(std::function<void()> handler);
+    void setIterationExportHandler(std::function<void()> handler);
     void stopPlayback();
 
 private:
@@ -56,5 +62,8 @@ private:
     QTimer* m_playbackTimer = nullptr;
     std::function<void(double)> m_frameChangedHandler;
     std::function<void()> m_visualizationChangedHandler;
+    std::function<void(bool)> m_playbackStateChangedHandler;
     std::function<void()> m_exportHandler;
+    std::function<void()> m_elementExportHandler;
+    std::function<void()> m_iterationExportHandler;
 };

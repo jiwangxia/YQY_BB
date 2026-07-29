@@ -7,6 +7,15 @@ void SectionRectangle::Calculate_Area()
 
 void SectionRectangle::Calculate_I(double& Iy, double& Iz,double& J)
 {
+    if (m_HasExplicitSectionInertia)
+    {
+        Iy = m_ExplicitIy;
+        Iz = m_ExplicitIz;
+        J = m_ExplicitJ;
+        Io = Iy + Iz;
+        return;
+    }
+
     Calculate_Area();
     Iy = (m_Width * pow(m_Height, 3)) / 12.0;  // 绕y轴的惯性矩
     Iz = (m_Height * pow(m_Width, 3)) / 12.0;  // 绕z轴的惯性矩

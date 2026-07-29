@@ -80,8 +80,12 @@
     <ClInclude Include="GUI\Dialogs\PropertyItemEditorDialog.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="GUI\Dialogs\PropertyLibraryDialog.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="GUI\Dialogs\NodeResultExportDialog.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="GUI\Dialogs\ElementResultExportDialog.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="GUI\Dialogs\ModelImportFileDialog.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="GUI\Widgets\ProgressBarAnimation.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="Application\ApplicationPaths.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="Application\ApplicationBootstrap.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="Application\PaperBeamDynamicsVerification.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="Application\VerificationRunner.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="Application\UiAuditRunner.h"><Filter>Header Files</Filter></ClInclude>
     <ClCompile Include="Utility\pch.cpp">
@@ -106,7 +110,10 @@
     <ClCompile Include="GUI\Widgets\AnalysisSummaryPanel.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="GUI\Widgets\PropertyModule.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="GUI\Widgets\ConductorModule.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="GUI\Widgets\ProgressBarAnimation.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="Application\ApplicationPaths.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="Application\ApplicationBootstrap.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="Application\PaperBeamDynamicsVerification.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="Application\VerificationRunner.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="Application\UiAuditRunner.cpp"><Filter>Source Files</Filter></ClCompile>
   </ItemGroup>
@@ -199,6 +206,9 @@
     <ClCompile Include="Export\Hdf5ModelIO.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Export\ResultFrameUtilities.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="DataStructure\Load\Force_Wind.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -223,7 +233,7 @@
     <ClCompile Include="Solver\AnalysisRunner.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Import\AeroManager.cpp">
+    <ClCompile Include="DataStructure\Aerodynamics\AeroManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="DataStructure\Element\ElementBeam_CR2D.cpp">
@@ -335,6 +345,12 @@
     <ClInclude Include="Export\Hdf5ModelIO.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Export\Hdf5ResultData.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Export\ResultFrameUtilities.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="DataStructure\Load\Force_Wind.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -371,7 +387,7 @@
     <ClInclude Include="Solver\Static\SolverStatic.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Import\AeroManager.h">
+    <ClInclude Include="DataStructure\Aerodynamics\AeroManager.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DataStructure\Element\ElementBeam_CR2D.h">

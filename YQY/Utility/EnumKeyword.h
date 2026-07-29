@@ -20,6 +20,7 @@ public:
         ELEMENT,        ///< 单元
         CONSTRAINT,     ///< 约束
         CONSTRAINT_TABULAR, ///< 约束分段线性时程
+        MPC,            ///< 主从多点约束
         LOAD,           ///< 荷载
         STRESS,         ///< 初始应力
         ANALYSIS_STEP   ///< 分析步

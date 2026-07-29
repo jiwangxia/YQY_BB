@@ -11,6 +11,7 @@
 #include "DataStructure/Element/ElementBeam_CR.h"
 #include "DataStructure/Property/Property.h"
 #include "DataStructure/Constraint/Constraint.h"
+#include "DataStructure/Constraint/NonlinearMPCConstraint.h"
 #include "DataStructure/Load/LoadBase.h"
 #include "DataStructure/Load/Force_Node.h"
 #include "DataStructure/Load/Force_Element.h"
@@ -20,7 +21,7 @@
 #include "DataStructure/Region/ModelSet.h"
 #include "DataStructure/Region/ComputeRegion.h"
 #include "Export/Outputter.h"
-#include "Import/AeroManager.h"
+#include "DataStructure/Aerodynamics/AeroManager.h"
 
 /**
  * @brief 输出控制参数 - 保存输入文件中定义的结果输出请求
@@ -46,6 +47,8 @@ public:
     std::map<int, std::shared_ptr<SectionBase>>       m_Section;      ///< 截面集合
     std::map<int, std::shared_ptr<Property>>          m_Property;     ///< 属性集合
     std::map<int, std::shared_ptr<Constraint>>        m_Constraint;   ///< 约束集合
+    std::map<int, std::shared_ptr<NonlinearMPCConstraint>>
+                                                       m_MPCConstraints; ///< 主从约束集合
     std::map<int, std::shared_ptr<LoadBase>>          m_Load;         ///< 荷载集合
     std::map<int, std::shared_ptr<AnalysisStep>>      m_AnalysisStep; ///< 分析步集合
     std::map<int, std::shared_ptr<ModelSet>>          m_ModelSets;    ///< 节点/单元集合
@@ -136,7 +139,9 @@ public:
     void CleanupModel(double tolerance = 1e-6);
 
     /**
-     * @brief 清空所有数据
+     * @brief 恢复为空模型
+     *
+     * 关闭并清除结果输出流，清空全部模型实体，并重置输出控制和气动数据。
      */
     void Clear();
 

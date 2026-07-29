@@ -1,5 +1,6 @@
 #pragma once
 #include "Utility/EnumKeyword.h"
+#include "Widgets/DialogSizing.h"
 #include "ui_NodeResultExportDialog.h"
 #include <QCheckBox>
 #include <QCoreApplication>
@@ -52,6 +53,7 @@ public:
         setObjectName(QStringLiteral("nodeResultExportDialog"));
         setModal(true);
         resize(700, 650);
+        DialogSizing::lockCurrentHeight(this);
         form.titleLabel->setObjectName(QStringLiteral("exportDialogTitle"));
         form.subtitleLabel->setObjectName(QStringLiteral("exportDialogSubtitle"));
         for (auto* card : { form.nodeCard, form.fieldCard, form.fileCard })

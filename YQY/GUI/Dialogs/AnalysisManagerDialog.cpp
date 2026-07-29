@@ -3,6 +3,7 @@
 
 #include "DataStructure/Structure/StructureData.h"
 #include "Widgets/CompactDoubleSpinBox.h"
+#include "Widgets/DialogSizing.h"
 #include "ui_AnalysisManagerDialog.h"
 #include "ui_StepEditorDialog.h"
 #include "ui_LoadEditorDialog.h"
@@ -16,6 +17,7 @@
 #include <QGroupBox>
 #include <QHeaderView>
 #include <QHBoxLayout>
+#include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMessageBox>
@@ -27,11 +29,12 @@
 #include <QTableWidget>
 #include <QVBoxLayout>
 
+#include <algorithm>
 #include <limits>
 
 namespace
 {
-enum class ManagerGlyph { Add, Edit, Delete, Steps, Load, Constraint };
+enum class ManagerGlyph { Add, Edit, Delete, Steps, Load, Constraint, MPC };
 
 QIcon managerIcon(ManagerGlyph glyph, const QPalette& palette)
 {
@@ -89,6 +92,13 @@ QIcon managerIcon(ManagerGlyph glyph, const QPalette& palette)
         painter.setPen(QPen(accent, 1.5, Qt::SolidLine, Qt::RoundCap));
         painter.drawLine(QPointF(8, 3), QPointF(8, 13));
         painter.drawLine(QPointF(11, 3), QPointF(11, 13));
+        break;
+    case ManagerGlyph::MPC:
+        painter.drawEllipse(QPointF(4, 8), 2.2, 2.2);
+        painter.drawEllipse(QPointF(12, 8), 2.2, 2.2);
+        painter.drawLine(QPointF(6.3, 8), QPointF(9.7, 8));
+        painter.setPen(QPen(accent, 1.6, Qt::SolidLine, Qt::RoundCap));
+        painter.drawLine(QPointF(8, 4), QPointF(8, 12));
         break;
     }
     return QIcon(pixmap);
@@ -313,6 +323,7 @@ public:
         setObjectName(QStringLiteral("analysisLoadEditorDialog"));
         setWindowTitle(load ? QStringLiteral("编辑荷载") : QStringLiteral("新增荷载"));
         setModal(true);
+        DialogSizing::lockHeightToContents(this);
         m_name = form.nameEdit;
         m_name->setPlaceholderText(QStringLiteral("Load-%1").arg(id));
         m_step = form.stepCombo;
@@ -478,6 +489,276 @@ QString constraintDisplayName(int id, const std::shared_ptr<Constraint>& constra
         ? constraint->m_Name.trimmed() : QStringLiteral("Constraint-%1").arg(id);
 }
 
+QString mpcDisplayName(
+    int id, const std::shared_ptr<NonlinearMPCConstraint>& mpc)
+{
+    return mpc && !mpc->m_Name.trimmed().isEmpty()
+        ? mpc->m_Name.trimmed() : QStringLiteral("MPC-%1").arg(id);
+}
+
+QString mpcDirectionText(
+    const std::shared_ptr<NonlinearMPCConstraint>& mpc)
+{
+    QString result;
+    if (mpc)
+        for (const int direction : mpc->m_SlaveDirections)
+            result.append(QString::number(direction));
+    return result;
+}
+
+QString mpcRelationText(
+    const std::shared_ptr<NonlinearMPCConstraint>& mpc)
+{
+    if (std::dynamic_pointer_cast<DistanceMPCConstraint>(mpc))
+        return QStringLiteral("定长");
+    if (std::dynamic_pointer_cast<RigidOffsetMPCConstraint>(mpc))
+        return QStringLiteral("刚性偏置");
+    if (std::dynamic_pointer_cast<PlanarShearReleaseMPCConstraint>(mpc))
+        return QStringLiteral("非线性剪力释放");
+    return QStringLiteral("非线性关系");
+}
+
+class MPCEditorDialog final : public QDialog
+{
+public:
+    MPCEditorDialog(
+        int id,
+        const std::shared_ptr<StructureData>& structure,
+        const std::shared_ptr<NonlinearMPCConstraint>& mpc,
+        QWidget* parent)
+        : QDialog(parent)
+        , m_id(id)
+        , m_structure(structure)
+    {
+        setObjectName(QStringLiteral("analysisMPCEditorDialog"));
+        setWindowTitle(mpc ? QStringLiteral("编辑 MPC") : QStringLiteral("新增 MPC"));
+        setModal(true);
+        resize(480, 310);
+        DialogSizing::lockHeightToContents(this);
+
+        auto* root = new QVBoxLayout(this);
+        auto* form = new QFormLayout();
+        m_name = new QLineEdit(this);
+        m_name->setPlaceholderText(QStringLiteral("MPC-%1").arg(id));
+        m_step = new QComboBox(this);
+        m_step->addItem(QStringLiteral("初始 / 全局"), 0);
+        if (structure)
+        {
+            for (const auto& [stepId, step] : structure->m_AnalysisStep)
+                if (step)
+                    m_step->addItem(stepDisplayName(stepId, step), stepId);
+        }
+        m_master = new QSpinBox(this);
+        m_slave = new QSpinBox(this);
+        m_master->setRange(1, std::numeric_limits<int>::max());
+        m_slave->setRange(1, std::numeric_limits<int>::max());
+        m_direction = new QComboBox(this);
+        m_direction->setEditable(true);
+        m_direction->addItems({
+            QStringLiteral("0"), QStringLiteral("1"), QStringLiteral("2"),
+            QStringLiteral("05"), QStringLiteral("012") });
+        m_direction->setToolTip(QStringLiteral(
+            "输入从节点消元自由度。当前求解器支持单个平动方向 0/1/2，"
+            "非线性剪力释放 05，以及完整平动方向 012。"));
+        form->addRow(QStringLiteral("名称"), m_name);
+        form->addRow(QStringLiteral("生效分析步"), m_step);
+        form->addRow(QStringLiteral("主节点"), m_master);
+        form->addRow(QStringLiteral("从节点"), m_slave);
+        form->addRow(QStringLiteral("从节点方向"), m_direction);
+        root->addLayout(form);
+
+        auto* hint = new QLabel(QStringLiteral(
+            "关系由程序根据 SlaveDirection 自动建立：单方向使用初始定长关系，"
+            "05 使用论文非线性剪力释放关系，012 使用大转动刚性偏置关系。"), this);
+        hint->setWordWrap(true);
+        hint->setObjectName(QStringLiteral("analysisMPCHint"));
+        root->addWidget(hint);
+        auto* buttons = new QDialogButtonBox(
+            QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
+        buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("确定"));
+        buttons->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
+        root->addWidget(buttons);
+        connect(buttons, &QDialogButtonBox::accepted, this, &MPCEditorDialog::accept);
+        connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+
+        if (mpc)
+        {
+            m_name->setText(mpc->m_Name);
+            int stepIndex = m_step->findData(mpc->m_StepId);
+            if (stepIndex < 0)
+            {
+                m_step->addItem(
+                    QStringLiteral("Step-%1（缺失）").arg(mpc->m_StepId),
+                    mpc->m_StepId);
+                stepIndex = m_step->count() - 1;
+            }
+            m_step->setCurrentIndex(stepIndex);
+            const std::vector<int> nodeIds = mpc->GetNodeIds();
+            if (nodeIds.size() == 2)
+            {
+                m_master->setValue(nodeIds[0]);
+                m_slave->setValue(nodeIds[1]);
+            }
+            m_direction->setCurrentText(mpcDirectionText(mpc));
+        }
+        else if (structure && !structure->m_Nodes.empty())
+        {
+            m_master->setValue(structure->m_Nodes.cbegin()->first);
+            auto slaveIt = structure->m_Nodes.cbegin();
+            if (slaveIt != structure->m_Nodes.cend())
+                ++slaveIt;
+            m_slave->setValue(slaveIt != structure->m_Nodes.cend()
+                ? slaveIt->first : structure->m_Nodes.cbegin()->first);
+        }
+    }
+
+    std::shared_ptr<NonlinearMPCConstraint> value() const { return m_result; }
+
+protected:
+    void accept() override
+    {
+        if (!m_structure)
+            return;
+        const auto master = m_structure->FindNode(m_master->value());
+        const auto slave = m_structure->FindNode(m_slave->value());
+        if (!master || !slave || master == slave)
+        {
+            QMessageBox::warning(this, QStringLiteral("无效主从节点"),
+                QStringLiteral("主节点和从节点必须存在，并且不能是同一个节点。"));
+            return;
+        }
+
+        const QString directionText = m_direction->currentText().trimmed();
+        std::vector<int> directions;
+        std::set<int> uniqueDirections;
+        for (const QChar character : directionText)
+        {
+            if (!character.isDigit())
+            {
+                QMessageBox::warning(this, QStringLiteral("无效从节点方向"),
+                    QStringLiteral("SlaveDirection 只能由数字 0 到 5 组成。"));
+                return;
+            }
+            const int direction = character.digitValue();
+            if (direction < 0 || direction > 5
+                || !uniqueDirections.insert(direction).second)
+            {
+                QMessageBox::warning(this, QStringLiteral("无效从节点方向"),
+                    QStringLiteral("SlaveDirection 包含越界或重复自由度。"));
+                return;
+            }
+            directions.push_back(direction);
+        }
+        if (!((directions.size() == 1 && directions.front() < 3)
+            || directions == std::vector<int>({0, 5})
+            || directions == std::vector<int>({0, 1, 2})))
+        {
+            QMessageBox::information(this, QStringLiteral("当前求解范围"),
+                QStringLiteral(
+                    "当前阶段支持单个平动方向 0/1/2、非线性剪力释放 05，"
+                    "或完整平动方向 012。"));
+            return;
+        }
+        for (const int direction : directions)
+        {
+            if (direction >= slave->m_DOF.size())
+            {
+                QMessageBox::warning(this, QStringLiteral("从自由度越界"),
+                    QStringLiteral("节点 %1 没有自由度 %2。")
+                        .arg(slave->m_Id).arg(direction));
+                return;
+            }
+            for (const auto& [constraintId, constraint] :
+                 m_structure->m_Constraint)
+            {
+                const auto constrainedNode =
+                    constraint ? constraint->m_pNode.lock() : nullptr;
+                if (constrainedNode
+                    && constrainedNode->m_Id == slave->m_Id
+                    && static_cast<int>(constraint->m_Direction) == direction)
+                {
+                    QMessageBox::warning(this, QStringLiteral("从自由度冲突"),
+                        QStringLiteral(
+                            "节点 %1 的自由度 %2 已被位移约束 %3 固定。")
+                            .arg(slave->m_Id).arg(direction).arg(constraintId));
+                    return;
+                }
+            }
+        }
+
+        for (const auto& [otherId, other] : m_structure->m_MPCConstraints)
+        {
+            if (otherId == m_id || !other)
+                continue;
+            const std::vector<int> otherNodes = other->GetNodeIds();
+            if (otherNodes.size() != 2 || otherNodes[1] != slave->m_Id)
+                continue;
+            for (const int direction : directions)
+            {
+                if (std::find(other->m_SlaveDirections.cbegin(),
+                        other->m_SlaveDirections.cend(), direction)
+                    != other->m_SlaveDirections.cend())
+                {
+                    QMessageBox::warning(this, QStringLiteral("从自由度重复"),
+                        QStringLiteral("节点 %1 的自由度 %2 已被 MPC %3 使用。")
+                            .arg(slave->m_Id).arg(direction).arg(otherId));
+                    return;
+                }
+            }
+        }
+
+        std::shared_ptr<NonlinearMPCConstraint> result;
+        if (directions.size() == 1)
+        {
+            auto distance = std::make_shared<DistanceMPCConstraint>();
+            distance->m_pNodeA = slave;
+            distance->m_pNodeB = master;
+            distance->m_pSlaveNode = slave;
+            distance->m_SlaveDirection = directions.front();
+            distance->m_Length = Eigen::Vector3d(
+                slave->m_X - master->m_X,
+                slave->m_Y - master->m_Y,
+                slave->m_Z - master->m_Z).norm();
+            result = std::move(distance);
+        }
+        else if (directions == std::vector<int>({0, 5}))
+        {
+            auto release =
+                std::make_shared<PlanarShearReleaseMPCConstraint>();
+            release->m_pMasterNode = master;
+            release->m_pSlaveNode = slave;
+            result = std::move(release);
+        }
+        else
+        {
+            auto rigid = std::make_shared<RigidOffsetMPCConstraint>();
+            rigid->m_pMasterNode = master;
+            rigid->m_pSlaveNode = slave;
+            rigid->m_Offset = Eigen::Vector3d(
+                slave->m_X - master->m_X,
+                slave->m_Y - master->m_Y,
+                slave->m_Z - master->m_Z);
+            result = std::move(rigid);
+        }
+        result->m_Id = m_id;
+        result->m_Name = m_name->text().trimmed();
+        result->m_StepId = m_step->currentData().toInt();
+        result->m_SlaveDirections = std::move(directions);
+        m_result = std::move(result);
+        QDialog::accept();
+    }
+
+private:
+    int m_id = 0;
+    std::shared_ptr<StructureData> m_structure;
+    std::shared_ptr<NonlinearMPCConstraint> m_result;
+    QLineEdit* m_name = nullptr;
+    QComboBox* m_step = nullptr;
+    QSpinBox* m_master = nullptr;
+    QSpinBox* m_slave = nullptr;
+    QComboBox* m_direction = nullptr;
+};
+
 class ConstraintEditorDialog final : public QDialog
 {
 public:
@@ -491,6 +772,7 @@ public:
         setObjectName(QStringLiteral("analysisConstraintEditorDialog"));
         setWindowTitle(constraint ? QStringLiteral("编辑约束") : QStringLiteral("新增约束"));
         setModal(true);
+        DialogSizing::lockHeightToContents(this);
         m_name = form.nameEdit;
         m_name->setPlaceholderText(QStringLiteral("Constraint-%1").arg(id));
         m_step = form.stepCombo;
@@ -597,14 +879,19 @@ AnalysisManagerDialog::AnalysisManagerDialog(
     form.setupUi(this);
     const bool isStepManager = initialPage == Page::Steps;
     const bool isLoadManager = initialPage == Page::Loads;
+    const bool isConstraintManager = initialPage == Page::Constraints;
     setObjectName(isStepManager ? QStringLiteral("analysisStepManagerDialog")
         : isLoadManager ? QStringLiteral("analysisLoadManagerDialog")
-        : QStringLiteral("analysisConstraintManagerDialog"));
+        : isConstraintManager ? QStringLiteral("analysisConstraintManagerDialog")
+        : QStringLiteral("analysisMPCManagerDialog"));
     setWindowTitle(isStepManager ? QStringLiteral("分析步管理器")
         : isLoadManager ? QStringLiteral("荷载管理器")
-        : QStringLiteral("边界条件管理器"));
+        : isConstraintManager ? QStringLiteral("边界条件管理器")
+        : QStringLiteral("MPC 管理器"));
     setWindowIcon(managerIcon(isStepManager ? ManagerGlyph::Steps
-        : isLoadManager ? ManagerGlyph::Load : ManagerGlyph::Constraint, palette()));
+        : isLoadManager ? ManagerGlyph::Load
+        : isConstraintManager ? ManagerGlyph::Constraint
+        : ManagerGlyph::MPC, palette()));
     setModal(false);
     setWindowModality(Qt::NonModal);
     resize(920, 560);
@@ -621,7 +908,8 @@ AnalysisManagerDialog::AnalysisManagerDialog(
     {
         m_stepTable = table;
         headers = { QStringLiteral("名称"), QStringLiteral("类型"), QStringLiteral("总时间"),
-            QStringLiteral("增量"), QStringLiteral("生效荷载数"), QStringLiteral("生效约束数") };
+            QStringLiteral("增量"), QStringLiteral("生效荷载数"),
+            QStringLiteral("生效约束数"), QStringLiteral("生效 MPC 数") };
         headers.insert(4, QStringLiteral("计算区域"));
         addHandler = [this]() { editStep(); };
         editHandler = [this]() { editStep(currentId(m_stepTable)); };
@@ -636,7 +924,7 @@ AnalysisManagerDialog::AnalysisManagerDialog(
         editHandler = [this]() { editLoad(currentId(m_loadTable)); };
         deleteHandler = [this]() { deleteSelectedLoad(); };
     }
-    else
+    else if (isConstraintManager)
     {
         m_constraintTable = table;
         headers = { QStringLiteral("名称"), QStringLiteral("分析步"), QStringLiteral("节点"),
@@ -644,6 +932,16 @@ AnalysisManagerDialog::AnalysisManagerDialog(
         addHandler = [this]() { editConstraint(); };
         editHandler = [this]() { editConstraint(currentId(m_constraintTable)); };
         deleteHandler = [this]() { deleteSelectedConstraint(); };
+    }
+    else
+    {
+        m_mpcTable = table;
+        headers = { QStringLiteral("名称"), QStringLiteral("分析步"),
+            QStringLiteral("主节点"), QStringLiteral("从节点"),
+            QStringLiteral("SlaveDirection"), QStringLiteral("约束关系") };
+        addHandler = [this]() { editMPC(); };
+        editHandler = [this]() { editMPC(currentId(m_mpcTable)); };
+        deleteHandler = [this]() { deleteSelectedMPC(); };
     }
     table->setColumnCount(headers.size());
     table->setHorizontalHeaderLabels(headers);
@@ -676,6 +974,12 @@ AnalysisManagerDialog::AnalysisManagerDialog(
             {
                 if (m_openManagerCallback)
                     m_openManagerCallback(Page::Constraints);
+                return;
+            }
+            if (table == m_stepTable && item && item->column() == 7)
+            {
+                if (m_openManagerCallback)
+                    m_openManagerCallback(Page::MPCs);
                 return;
             }
             editHandler();
@@ -734,6 +1038,7 @@ void AnalysisManagerDialog::refreshAll()
     refreshStepTable();
     refreshLoadTable();
     refreshConstraintTable();
+    refreshMPCTable();
 }
 
 int AnalysisManagerDialog::currentId(QTableWidget* table) const
@@ -774,6 +1079,7 @@ void AnalysisManagerDialog::refreshStepTable(int preferredId)
             continue;
         int loadCount = 0;
         int constraintCount = 0;
+        int mpcCount = 0;
         for (const auto& [loadId, load] : m_structure->m_Load)
         {
             Q_UNUSED(loadId);
@@ -785,6 +1091,12 @@ void AnalysisManagerDialog::refreshStepTable(int preferredId)
             Q_UNUSED(constraintId);
             if (isEffectiveAtStep(constraint, stepId))
                 ++constraintCount;
+        }
+        for (const auto& [mpcId, mpc] : m_structure->m_MPCConstraints)
+        {
+            Q_UNUSED(mpcId);
+            if (isEffectiveAtStep(mpc, stepId))
+                ++mpcCount;
         }
         const int row = m_stepTable->rowCount();
         m_stepTable->insertRow(row);
@@ -809,6 +1121,7 @@ void AnalysisManagerDialog::refreshStepTable(int preferredId)
         m_stepTable->setItem(row, 4, tableItem(regionText));
         m_stepTable->setItem(row, 5, tableItem(QString::number(loadCount)));
         m_stepTable->setItem(row, 6, tableItem(QString::number(constraintCount)));
+        m_stepTable->setItem(row, 7, tableItem(QString::number(mpcCount)));
     }
     selectId(m_stepTable, preferredId);
 }
@@ -884,6 +1197,44 @@ void AnalysisManagerDialog::refreshConstraintTable(int preferredId)
     }
     selectId(m_constraintTable, preferredId);
 }
+
+void AnalysisManagerDialog::refreshMPCTable(int preferredId)
+{
+    if (!m_mpcTable)
+        return;
+    if (preferredId < 0)
+        preferredId = currentId(m_mpcTable);
+    m_mpcTable->setRowCount(0);
+    if (!m_structure)
+        return;
+    for (const auto& [mpcId, mpc] : m_structure->m_MPCConstraints)
+    {
+        if (!mpc)
+            continue;
+        QString stepName = QStringLiteral("初始 / 全局");
+        if (mpc->m_StepId > 0)
+        {
+            const auto step = m_structure->m_AnalysisStep.find(mpc->m_StepId);
+            stepName = step != m_structure->m_AnalysisStep.cend()
+                ? stepDisplayName(step->first, step->second)
+                : QStringLiteral("Step-%1（缺失）").arg(mpc->m_StepId);
+        }
+        const std::vector<int> nodeIds = mpc->GetNodeIds();
+        const int row = m_mpcTable->rowCount();
+        m_mpcTable->insertRow(row);
+        m_mpcTable->setItem(
+            row, 0, tableItem(mpcDisplayName(mpcId, mpc), mpcId));
+        m_mpcTable->setItem(row, 1, tableItem(stepName));
+        m_mpcTable->setItem(row, 2, tableItem(nodeIds.size() == 2
+            ? QString::number(nodeIds[0]) : QStringLiteral("--")));
+        m_mpcTable->setItem(row, 3, tableItem(nodeIds.size() == 2
+            ? QString::number(nodeIds[1]) : QStringLiteral("--")));
+        m_mpcTable->setItem(row, 4, tableItem(mpcDirectionText(mpc)));
+        m_mpcTable->setItem(row, 5, tableItem(mpcRelationText(mpc)));
+    }
+    selectId(m_mpcTable, preferredId);
+}
+
 void AnalysisManagerDialog::editStep(int stepId)
 {
     if (!m_structure)
@@ -991,6 +1342,48 @@ void AnalysisManagerDialog::editConstraint(int constraintId)
     markModelChanged(affected);
     selectId(m_constraintTable, constraintId);
 }
+
+void AnalysisManagerDialog::editMPC(int mpcId)
+{
+    if (!m_structure)
+        return;
+    std::shared_ptr<NonlinearMPCConstraint> existing;
+    if (mpcId >= 0)
+    {
+        const auto found = m_structure->m_MPCConstraints.find(mpcId);
+        if (found == m_structure->m_MPCConstraints.end() || !found->second)
+            return;
+        existing = found->second;
+    }
+    else
+    {
+        mpcId = nextId(m_structure->m_MPCConstraints);
+    }
+    const int oldStepId = existing ? existing->m_StepId : -1;
+    MPCEditorDialog editor(mpcId, m_structure, existing, this);
+    if (editor.exec() != QDialog::Accepted || !editor.value())
+        return;
+
+    m_structure->m_MPCConstraints[mpcId] = editor.value();
+    QString regionError;
+    if (!m_structure->RebuildAndMergeComputeRegions(&regionError))
+    {
+        if (existing)
+            m_structure->m_MPCConstraints[mpcId] = existing;
+        else
+            m_structure->m_MPCConstraints.erase(mpcId);
+        m_structure->RebuildAndMergeComputeRegions();
+        QMessageBox::warning(this, QStringLiteral("无法更新 MPC"), regionError);
+        return;
+    }
+
+    QSet<int> affected = affectedStepsFrom(editor.value()->m_StepId);
+    if (oldStepId >= 0)
+        affected.unite(affectedStepsFrom(oldStepId));
+    markModelChanged(affected);
+    selectId(m_mpcTable, mpcId);
+}
+
 void AnalysisManagerDialog::deleteSelectedStep()
 {
     if (!m_structure)
@@ -1001,6 +1394,7 @@ void AnalysisManagerDialog::deleteSelectedStep()
         return;
     int loadCount = 0;
     int constraintCount = 0;
+    int mpcCount = 0;
     for (const auto& [id, load] : m_structure->m_Load)
     {
         Q_UNUSED(id);
@@ -1013,8 +1407,17 @@ void AnalysisManagerDialog::deleteSelectedStep()
         if (constraint && constraint->m_StepId == stepId)
             ++constraintCount;
     }
-    const QString prompt = QStringLiteral("确定删除“%1”吗？\n同时会删除归属于该步的 %2 个荷载和 %3 个约束。")
-        .arg(stepDisplayName(stepId, found->second)).arg(loadCount).arg(constraintCount);
+    for (const auto& [id, mpc] : m_structure->m_MPCConstraints)
+    {
+        Q_UNUSED(id);
+        if (mpc && mpc->m_StepId == stepId)
+            ++mpcCount;
+    }
+    const QString prompt = QStringLiteral(
+        "确定删除“%1”吗？\n同时会删除归属于该步的 %2 个荷载、"
+        "%3 个约束和 %4 个 MPC。")
+        .arg(stepDisplayName(stepId, found->second))
+        .arg(loadCount).arg(constraintCount).arg(mpcCount);
     if (QMessageBox::question(this, QStringLiteral("删除分析步"), prompt,
         QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes)
         return;
@@ -1028,6 +1431,12 @@ void AnalysisManagerDialog::deleteSelectedStep()
         it = it->second && it->second->m_StepId == stepId ? m_structure->m_Load.erase(it) : std::next(it);
     for (auto it = m_structure->m_Constraint.begin(); it != m_structure->m_Constraint.end(); )
         it = it->second && it->second->m_StepId == stepId ? m_structure->m_Constraint.erase(it) : std::next(it);
+    for (auto it = m_structure->m_MPCConstraints.begin();
+         it != m_structure->m_MPCConstraints.end(); )
+    {
+        it = it->second && it->second->m_StepId == stepId
+            ? m_structure->m_MPCConstraints.erase(it) : std::next(it);
+    }
     markModelChanged(affectedStepIds);
 }
 void AnalysisManagerDialog::deleteSelectedLoad()
@@ -1060,5 +1469,25 @@ void AnalysisManagerDialog::deleteSelectedConstraint()
         return;
     const int firstAffectedStep = found->second ? found->second->m_StepId : 0;
     m_structure->m_Constraint.erase(found);
+    markModelChanged(affectedStepsFrom(firstAffectedStep));
+}
+
+void AnalysisManagerDialog::deleteSelectedMPC()
+{
+    if (!m_structure)
+        return;
+    const int mpcId = currentId(m_mpcTable);
+    const auto found = m_structure->m_MPCConstraints.find(mpcId);
+    if (found == m_structure->m_MPCConstraints.end())
+        return;
+    if (QMessageBox::question(this, QStringLiteral("删除 MPC"),
+        QStringLiteral("确定删除“%1”吗？").arg(mpcDisplayName(mpcId, found->second)),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes)
+    {
+        return;
+    }
+    const int firstAffectedStep = found->second ? found->second->m_StepId : 0;
+    m_structure->m_MPCConstraints.erase(found);
+    m_structure->RebuildAndMergeComputeRegions();
     markModelChanged(affectedStepsFrom(firstAffectedStep));
 }

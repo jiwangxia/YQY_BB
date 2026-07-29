@@ -10,22 +10,28 @@
 #include <algorithm>
 #include <iterator>
 
-StructureData::~StructureData()
-{
-}
+StructureData::~StructureData() = default;
 
 void StructureData::Clear()
 {
+    // 先关闭并清理仍可能引用当前模型的结果流，再释放模型实体。
+    m_Outputter.Clear();
+
     m_Nodes.clear();
     m_Elements.clear();
     m_Material.clear();
     m_Section.clear();
     m_Property.clear();
     m_Constraint.clear();
+    m_MPCConstraints.clear();
     m_Load.clear();
     m_AnalysisStep.clear();
     m_ModelSets.clear();
     m_ComputeRegions.clear();
+
+    // Clear 表示恢复为一个全新的空模型，不能保留上一次导入或求解的状态。
+    m_OutputControl = OutputControl{};
+    m_AeroManager = AeroManager{};
 }
 
 std::shared_ptr<StructureData> StructureData::CloneForAnalysis(QString* errorMessage) const
@@ -153,6 +159,16 @@ std::shared_ptr<StructureData> StructureData::CloneForAnalysis(QString* errorMes
             target->m_pNode = found->second;
         }
         clone->m_Constraint.emplace(id, std::move(target));
+    }
+
+    for (const auto& [id, source] : m_MPCConstraints)
+    {
+        if (!source)
+            return fail(QStringLiteral("MPC %1 为空").arg(id));
+        auto target = source->Clone(clone->m_Nodes);
+        if (!target)
+            return fail(QStringLiteral("MPC %1 的节点引用无效").arg(id));
+        clone->m_MPCConstraints.emplace(id, std::move(target));
     }
 
     const auto copyLoadBase = [](const LoadBase& source, LoadBase& target) {
@@ -508,6 +524,47 @@ bool StructureData::RebuildAndMergeComputeRegions(QString* errorMessage)
                 region->m_NodeIds.insert(node->m_Id);
             }
         }
+
+        // MPC ownership follows the master node.  Once a master belongs to
+        // this region, every dependent node must be available in the same
+        // regional solve.  Repeat to support chains such as A->B->C.
+        bool mpcExpanded = true;
+        while (mpcExpanded)
+        {
+            mpcExpanded = false;
+            for (const auto& [mpcId, mpc] : m_MPCConstraints)
+            {
+                if (!mpc)
+                {
+                    if (errorMessage)
+                        *errorMessage = QStringLiteral("MPC %1 为空。").arg(mpcId);
+                    return false;
+                }
+                const std::vector<int> nodeIds = mpc->GetNodeIds();
+                if (nodeIds.size() != 2)
+                {
+                    if (errorMessage)
+                        *errorMessage = QStringLiteral(
+                            "MPC %1 没有有效的主从节点。").arg(mpcId);
+                    return false;
+                }
+                const int masterNodeId = nodeIds[0];
+                const int slaveNodeId = nodeIds[1];
+                if (m_Nodes.find(masterNodeId) == m_Nodes.cend()
+                    || m_Nodes.find(slaveNodeId) == m_Nodes.cend())
+                {
+                    if (errorMessage)
+                        *errorMessage = QStringLiteral(
+                            "MPC %1 引用了不存在的节点。").arg(mpcId);
+                    return false;
+                }
+                if (region->ContainsNode(masterNodeId)
+                    && region->m_NodeIds.insert(slaveNodeId).second)
+                {
+                    mpcExpanded = true;
+                }
+            }
+        }
     }
 
     bool merged = true;
@@ -560,6 +617,34 @@ bool StructureData::ValidateComputeRegions(QString* errorMessage) const
                 if (errorMessage)
                     *errorMessage = QStringLiteral("计算区域 %1 引用了不存在的节点 %2。")
                         .arg(lhsIt->first).arg(nodeId);
+                return false;
+            }
+        }
+        for (const auto& [mpcId, mpc] : m_MPCConstraints)
+        {
+            if (!mpc)
+            {
+                if (errorMessage)
+                    *errorMessage = QStringLiteral("MPC %1 为空。").arg(mpcId);
+                return false;
+            }
+            const std::vector<int> nodeIds = mpc->GetNodeIds();
+            if (nodeIds.size() != 2)
+            {
+                if (errorMessage)
+                    *errorMessage = QStringLiteral(
+                        "MPC %1 没有有效的主从节点。").arg(mpcId);
+                return false;
+            }
+            if (region->ContainsNode(nodeIds[0])
+                && !region->ContainsNode(nodeIds[1]))
+            {
+                if (errorMessage)
+                    *errorMessage = QStringLiteral(
+                        "计算区域 %1 包含 MPC %2 的主节点 %3，"
+                        "但没有包含从节点 %4。")
+                        .arg(lhsIt->first).arg(mpcId)
+                        .arg(nodeIds[0]).arg(nodeIds[1]);
                 return false;
             }
         }
@@ -670,6 +755,43 @@ std::shared_ptr<StructureData> StructureData::CloneRegionForAnalysis(int regionI
             it = clone->m_Constraint.erase(it);
         else
             ++it;
+    }
+    for (auto it = clone->m_MPCConstraints.begin();
+         it != clone->m_MPCConstraints.end(); )
+    {
+        if (!it->second)
+        {
+            if (errorMessage)
+                *errorMessage = QStringLiteral("MPC %1 为空。").arg(it->first);
+            return nullptr;
+        }
+        const std::vector<int> nodeIds = it->second->GetNodeIds();
+        if (nodeIds.size() != 2)
+        {
+            if (errorMessage)
+                *errorMessage = QStringLiteral(
+                    "MPC %1 没有有效的主从节点。").arg(it->first);
+            return nullptr;
+        }
+
+        // MPC remains permanently stored in the source model.  A regional
+        // analysis clone owns it exactly when it owns the master node.
+        if (!region->ContainsNode(nodeIds[0]))
+        {
+            it = clone->m_MPCConstraints.erase(it);
+            continue;
+        }
+        if (!region->ContainsNode(nodeIds[1])
+            || clone->m_Nodes.find(nodeIds[0]) == clone->m_Nodes.cend()
+            || clone->m_Nodes.find(nodeIds[1]) == clone->m_Nodes.cend())
+        {
+            if (errorMessage)
+                *errorMessage = QStringLiteral(
+                    "计算区域 %1 中 MPC %2 的主从节点不完整。")
+                    .arg(regionId).arg(it->first);
+            return nullptr;
+        }
+        ++it;
     }
     for (auto it = clone->m_Load.begin(); it != clone->m_Load.end(); )
     {
@@ -947,6 +1069,18 @@ void StructureData::MergeDuplicateNodes(double tolerance)
 {
     if (m_Nodes.empty()) return;
 
+    // Coincident master/slave nodes are meaningful for releases and must
+    // remain distinct. Merging either endpoint would destroy the MPC before
+    // the analysis starts.
+    std::unordered_set<int> mpcNodeIds;
+    for (const auto& [mpcId, mpc] : m_MPCConstraints)
+    {
+        (void)mpcId;
+        if (!mpc) continue;
+        for (const int nodeId : mpc->GetNodeIds())
+            mpcNodeIds.insert(nodeId);
+    }
+
     // 1. 预处理：计算边界并扁平化数据
     std::vector<TempNode> linearNodes;
     linearNodes.reserve(m_Nodes.size());
@@ -1041,6 +1175,10 @@ void StructureData::MergeDuplicateNodes(double tolerance)
                             // 确保 id2 > id1，且避免自身比较
                             if (originalId2 <= originalId1) continue;
 
+                            if (mpcNodeIds.count(originalId1) != 0
+                                || mpcNodeIds.count(originalId2) != 0)
+                                continue;
+
                             // 如果对方已经被合并，跳过
                             if (nodeIdMapping.count(originalId2)) continue;
 
@@ -1104,6 +1242,23 @@ void StructureData::MergeDuplicateNodes(double tolerance)
             if (newId != ptr->m_Id)
             {
                 conPair.second->m_pNode = m_Nodes[newId];
+            }
+        }
+    }
+
+    // 更新主从约束。Clone 会把节点引用重新绑定到合并后的节点。
+    if (!m_MPCConstraints.empty())
+    {
+        std::map<int, std::shared_ptr<Node>> reboundNodes = m_Nodes;
+        for (const auto& [oldId, newId] : nodeIdMapping)
+            reboundNodes[oldId] = m_Nodes[newId];
+
+        for (auto& mpcPair : m_MPCConstraints)
+        {
+            if (auto rebound = mpcPair.second->Clone(reboundNodes))
+            {
+                rebound->m_Id = mpcPair.second->m_Id;
+                mpcPair.second = std::move(rebound);
             }
         }
     }
@@ -1232,6 +1387,16 @@ void StructureData::RemoveOrphanNodes()
         }
     }
 
+    for (const auto& mpcPair : m_MPCConstraints)
+    {
+        if (!mpcPair.second) continue;
+        for (const int nodeId : mpcPair.second->GetNodeIds())
+        {
+            if (nodeId >= 0 && nodeId <= maxNodeId)
+                isNodeUsed[nodeId] = true;
+        }
+    }
+
     // 荷载引用的节点也不能删
     for (const auto& loadPair : m_Load)
     {
@@ -1304,6 +1469,16 @@ void StructureData::RenumberAll()
         newId++;
     }
     m_Constraint = std::move(newConstraints);
+
+    std::map<int, std::shared_ptr<NonlinearMPCConstraint>> newMpcs;
+    newId = 1;
+    for (auto& pair : m_MPCConstraints)
+    {
+        pair.second->m_Id = newId;
+        newMpcs[newId] = pair.second;
+        ++newId;
+    }
+    m_MPCConstraints = std::move(newMpcs);
 
     // 重新编号荷载
     std::map<int, std::shared_ptr<LoadBase>> newLoads;

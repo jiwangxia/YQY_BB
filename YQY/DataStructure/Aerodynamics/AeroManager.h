@@ -1,12 +1,7 @@
 ﻿#pragma once
-#include <iostream>
 #include <vector>
+
 #include <string>
-#include <fstream>
-#include <sstream>
-#include <cmath>
-#include <algorithm>
-#include <iomanip>
 #include <filesystem>
 #include <map>
 

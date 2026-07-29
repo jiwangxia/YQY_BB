@@ -28,7 +28,7 @@
         <property name="horizontalSpacing"><number>18</number></property>
         <property name="verticalSpacing"><number>8</number></property>
         <item row="0" column="0"><widget class="QLabel" name="concurrencyLabel"><property name="text"><string>最大并发分析步</string></property></widget></item>
-        <item row="0" column="1">
+       <item row="0" column="1">
          <widget class="QSpinBox" name="concurrencySpin">
           <property name="minimumSize"><size><width>150</width><height>0</height></size></property>
           <property name="minimum"><number>1</number></property>
@@ -36,7 +36,15 @@
           <property name="value"><number>5</number></property>
           <property name="suffix"><string> 个分析步</string></property>
          </widget>
-        </item>
+       </item>
+       <item row="1" column="0"><widget class="QLabel" name="nodeLabelModeLabel"><property name="text"><string>节点编号显示</string></property></widget></item>
+       <item row="1" column="1">
+        <widget class="QComboBox" name="nodeLabelModeCombo">
+         <property name="minimumSize"><size><width>150</width><height>0</height></size></property>
+         <item><property name="text"><string>全部</string></property></item>
+         <item><property name="text"><string>自适应</string></property></item>
+        </widget>
+       </item>
        </layout>
       </item>
       <item><widget class="QLabel" name="statusLabel"><property name="text"><string>正在检测本机可用线程……</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>

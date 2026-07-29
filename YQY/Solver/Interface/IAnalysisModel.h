@@ -11,6 +11,7 @@
 #include <Eigen/Sparse>
 #include <QString>
 #include <functional>
+#include "Solver/Constraint/NonlinearMPC.h"
 
 namespace SolverNameSpace
 {
@@ -82,6 +83,37 @@ namespace SolverNameSpace
          */
         virtual void Assemble_Matrix(SpMat& Keff, bool isDynamic) = 0;
 
+        /**
+         * @brief 组装当前试探状态的一致质量矩阵、陀螺切线和惯性力
+         */
+        virtual void AssembleDynamicSystem(
+            SpMat& mass,
+            SpMat& gyroscopic,
+            SpMat& centrifugal)
+        {
+            mass.resize(GetFreeDofs(), GetFreeDofs());
+            gyroscopic.resize(GetFreeDofs(), GetFreeDofs());
+            centrifugal.resize(GetFreeDofs(), GetFreeDofs());
+            mass.setZero();
+            gyroscopic.setZero();
+            centrifugal.setZero();
+        }
+
+        /** @brief 组装当前试探状态下的非线性主从约束。 */
+        virtual bool AssembleNonlinearMPC(
+            NonlinearMPCData& constraints)
+        {
+            constraints.Clear();
+            return true;
+        }
+
+        /** @brief 保存收敛状态的MPC乘子，用于约束力和反力恢复。 */
+        virtual void SetNonlinearMPCMultipliers(
+            const Vec& multipliers)
+        {
+            Q_UNUSED(multipliers);
+        }
+
         // ============ 力计算 ============
         /**
          * @brief 计算外荷载向量
@@ -118,6 +150,16 @@ namespace SolverNameSpace
         virtual void ComputeResidual(const Vec& F_ext, Vec& R) = 0;
 
         /**
+         * @brief 计算不含惯性力的静力残差 F_ext-F_int
+         *
+         * HHT-alpha 方法使用该量在相邻时间步之间进行加权。
+         */
+        virtual void ComputeStaticResidual(const Vec& F_ext, Vec& R)
+        {
+            ComputeResidual(F_ext, R);
+        }
+
+        /**
          * @brief 计算反力向量
          * @param [out] F1 约束自由度对应的反力向量
          */
@@ -130,6 +172,12 @@ namespace SolverNameSpace
          * @param[in] time 当前时间
          */
         virtual void OnStepCompleted(double time) = 0;
+
+        virtual void RecordStepIterations(double time, int iterations)
+        {
+            Q_UNUSED(time);
+            Q_UNUSED(iterations);
+        }
 
         /**
          * @brief 提交当前已经收敛或接受的增量步内部状态

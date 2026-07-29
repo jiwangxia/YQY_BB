@@ -13,6 +13,7 @@ public:
     QPushButton* stepsButton() const;
     QPushButton* loadsButton() const;
     QPushButton* constraintsButton() const;
+    QPushButton* mpcsButton() const;
     QPushButton* regionsButton() const;
 
 private:

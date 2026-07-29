@@ -109,8 +109,18 @@ public:
     void SetTrialKinematics(const SolverNameSpace::Vec& v, const SolverNameSpace::Vec& a) override;
     void GetState(SolverNameSpace::Vec& u, SolverNameSpace::Vec& v, SolverNameSpace::Vec& a) const override;
     void Assemble_Matrix(SpMat& Keff, bool isDynamic);          //组装整体等效刚度矩阵
+    void AssembleDynamicSystem(
+        SpMat& mass, SpMat& gyroscopic, SpMat& centrifugal) override;
+    bool AssembleNonlinearMPC(
+        SolverNameSpace::NonlinearMPCData& constraints) override;
+    void SetNonlinearMPCMultipliers(
+        const SolverNameSpace::Vec& multipliers) override;
     void ComputeResidual(const SolverNameSpace::Vec& F_ext, SolverNameSpace::Vec& R) override;
+    void ComputeStaticResidual(
+        const SolverNameSpace::Vec& F_ext,
+        SolverNameSpace::Vec& R) override;
     void OnStepCompleted(double time) override;
+    void RecordStepIterations(double time, int iterations) override;
     void CommitState() override;
     bool IsCancellationRequested() const override;
     void ReportProgress(double progress, const QString& message = QString()) override;
@@ -120,6 +130,8 @@ private:
     StructureData* m_pData = nullptr;           // 结构数据的缓存指针
     ProgressCallback m_progressCallback;
     CancelCallback m_cancelCallback;
+    SolverNameSpace::Vec m_mpcMultipliers;
+    SolverNameSpace::Vec m_dynamicInertiaForce;
 
     struct SolverCache 
     {

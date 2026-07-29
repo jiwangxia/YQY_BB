@@ -102,14 +102,25 @@ void AnalysisStep::Init_Nodevector()
     {
         auto pNode = nodePair.second;
         int numDOF = pNode->m_DOF.size();
-        if (pNode->m_Displacement.size() < numDOF)
-            pNode->m_Displacement.resize(numDOF, 0.0);
-        if (pNode->m_Force.size() < numDOF)
-            pNode->m_Force.resize(numDOF, 0.0);
-        if (pNode->m_Velocity.size() < numDOF)
-            pNode->m_Velocity.resize(numDOF, 0.0);
-        if (pNode->m_Acceleration.size() < numDOF)
-            pNode->m_Acceleration.resize(numDOF, 0.0);
+        // A solve always starts from the model geometry.  Nodes are also used
+        // as the live solution state, so a repeated solve (or an analysis
+        // clone made after a solve) may otherwise inherit the previous result.
+        // That stale displacement would be written as the new t = 0 frame.
+        pNode->m_Displacement.assign(numDOF, 0.0);
+        pNode->m_Displacement_n.assign(numDOF, 0.0);
+        pNode->m_Velocity.assign(numDOF, 0.0);
+        pNode->m_Velocity_n.assign(numDOF, 0.0);
+        pNode->m_Acceleration.assign(numDOF, 0.0);
+        pNode->m_Acceleration_n.assign(numDOF, 0.0);
+        pNode->m_Force.assign(numDOF, 0.0);
+        pNode->m_ReactionForce.assign(numDOF, 0.0);
+        pNode->m_Rg.setIdentity();
+        pNode->m_Rg_n.setIdentity();
+        pNode->m_OmegaMaterial.setZero();
+        pNode->m_AlphaMaterial.setZero();
+        pNode->m_OmegaMaterial_n.setZero();
+        pNode->m_AlphaMaterial_n.setZero();
+        pNode->m_StepRotation.setZero();
     }
 }
 
@@ -539,6 +550,24 @@ void AnalysisStep::Assemble_Constraint(
                 pConstraint->GetValue(currentTime, factor);
             x1[dof] = value;
             pNode->m_Displacement[iDirection] = value;
+            if (pNode->m_DOF.size() == 6 && iDirection >= 3)
+            {
+                // Six-DOF beam elements use m_Rg as the authoritative
+                // rotational state. Keep an imposed rotation synchronized
+                // with the scalar boundary-condition value; otherwise a
+                // prescribed UR would be visible in output but invisible to
+                // both the element and nonlinear MPC equations.
+                const Eigen::Vector3d rotationVector(
+                    pNode->m_Displacement[3],
+                    pNode->m_Displacement[4],
+                    pNode->m_Displacement[5]);
+                Eigen::Matrix3d imposedRotation;
+                Utility::CR::Update_NodalRotation(
+                    rotationVector,
+                    Eigen::Matrix3d::Identity(),
+                    imposedRotation);
+                pNode->m_Rg = imposedRotation;
+            }
         }
     }
 }
@@ -578,7 +607,13 @@ bool AnalysisStep::Solve(bool persistHdf5)
             qDebug().noquote() << QStringLiteral("Error: H5/HDF5 动力结果流式输出初始化失败");
             return false;
         }
+
     }
+
+    // Every analysis result starts with the accepted model state at t = 0.
+    // Dynamic analyses write it directly to the opened H5 stream; static
+    // analyses keep it in memory and include it in the final H5 export.
+    OnStepCompleted(0.0);
 
     // 执行求解
     bool solveOk = true;
@@ -686,6 +721,22 @@ void AnalysisStep::CalculateReactions(VectorXd& F1)
                 pNode->m_ReactionForce[i] = 0.0;
             }
         }
+    }
+    int multiplierOffset = 0;
+    for (const auto& [id, mpc] : m_pData->m_MPCConstraints)
+    {
+        if (!mpc || (mpc->m_StepId > 0 && mpc->m_StepId > m_Id))
+            continue;
+        SolverNameSpace::NonlinearMPCData contribution;
+        if (!mpc->Evaluate(m_nFixed, m_nFree, contribution))
+            continue;
+        const int count = static_cast<int>(contribution.value.size());
+        if (multiplierOffset + count > m_mpcMultipliers.size())
+            break;
+        mpc->AccumulateReactions(
+            m_nFixed,
+            m_mpcMultipliers.segment(multiplierOffset, count));
+        multiplierOffset += count;
     }
 }
 
@@ -803,6 +854,7 @@ void AnalysisStep::BeginDynamicStep(double dt, double beta, double gamma)
         pNode->BeginNewmarkStep(dt, beta, gamma,
             translationActive, rotationActive);
     }
+
 }
 
 void AnalysisStep::ApplyDynamicCorrection(const SolverNameSpace::Vec& dx,
@@ -862,6 +914,7 @@ void AnalysisStep::SetTrialKinematics(const SolverNameSpace::Vec& v, const Solve
             }
         }
     }
+
 }
 
 void AnalysisStep::GetState(SolverNameSpace::Vec& u, SolverNameSpace::Vec& v, SolverNameSpace::Vec& a) const
@@ -909,6 +962,120 @@ void AnalysisStep::Assemble_Matrix(SpMat& Keff, bool isDynamic)
     //std::cout << MatrixXd(Keff);
 }
 
+void AnalysisStep::AssembleDynamicSystem(
+    SpMat& mass, SpMat& gyroscopic, SpMat& centrifugal)
+{
+    std::list<Tri> mass11, mass21, mass22;
+    std::list<Tri> gyroscopic11, gyroscopic21, gyroscopic22;
+    std::list<Tri> centrifugal11, centrifugal21, centrifugal22;
+    m_dynamicInertiaForce = VectorXd::Zero(m_nFree);
+
+    MatrixXd elementMass;
+    MatrixXd elementGyroscopic;
+    MatrixXd elementCentrifugal;
+    VectorXd elementInertiaForce;
+    std::vector<int> dofs;
+    for (const auto& elementPair : m_pData->m_Elements)
+    {
+        const auto& element = elementPair.second;
+        element->GetDOFs(dofs);
+        const int elementDofs = static_cast<int>(dofs.size());
+        elementMass = MatrixXd::Zero(elementDofs, elementDofs);
+        elementGyroscopic = MatrixXd::Zero(elementDofs, elementDofs);
+        elementCentrifugal = MatrixXd::Zero(elementDofs, elementDofs);
+        elementInertiaForce = VectorXd::Zero(elementDofs);
+        element->GetDynamicContributions(
+            elementMass,
+            elementInertiaForce,
+            elementGyroscopic,
+            elementCentrifugal);
+
+        Assemble(dofs, elementMass, mass11, mass21, mass22);
+        Assemble(
+            dofs, elementGyroscopic,
+            gyroscopic11, gyroscopic21, gyroscopic22);
+        Assemble(
+            dofs, elementCentrifugal,
+            centrifugal11, centrifugal21, centrifugal22);
+        for (int i = 0; i < static_cast<int>(dofs.size()); ++i)
+        {
+            const int dof = dofs[i];
+            if (dof >= m_nFixed && dof < m_nFixed + m_nFree)
+                m_dynamicInertiaForce[dof - m_nFixed] +=
+                    elementInertiaForce[i];
+        }
+    }
+
+    mass.resize(m_nFree, m_nFree);
+    gyroscopic.resize(m_nFree, m_nFree);
+    centrifugal.resize(m_nFree, m_nFree);
+    mass.setFromTriplets(mass22.begin(), mass22.end());
+    gyroscopic.setFromTriplets(
+        gyroscopic22.begin(), gyroscopic22.end());
+    centrifugal.setFromTriplets(
+        centrifugal22.begin(), centrifugal22.end());
+}
+
+bool AnalysisStep::AssembleNonlinearMPC(
+    SolverNameSpace::NonlinearMPCData& constraints)
+{
+    constraints.Clear();
+    if (!m_pData || m_pData->m_MPCConstraints.empty())
+        return true;
+
+    std::vector<SolverNameSpace::NonlinearMPCData> contributions;
+    int equationCount = 0;
+    for (const auto& [id, mpc] : m_pData->m_MPCConstraints)
+    {
+        if (!mpc || (mpc->m_StepId > 0 && mpc->m_StepId > m_Id))
+            continue;
+        SolverNameSpace::NonlinearMPCData contribution;
+        if (!mpc->Evaluate(m_nFixed, m_nFree, contribution))
+        {
+            qDebug().noquote()
+                << QStringLiteral("Error: MPC %1在当前状态无法组装，"
+                                  "请检查从自由度和约束Jacobian。")
+                       .arg(id);
+            return false;
+        }
+        equationCount += static_cast<int>(contribution.value.size());
+        contributions.push_back(std::move(contribution));
+    }
+    if (equationCount == 0)
+        return true;
+
+    constraints.value = Eigen::VectorXd::Zero(equationCount);
+    constraints.jacobian =
+        Eigen::MatrixXd::Zero(equationCount, m_nFree);
+    constraints.hessians.reserve(equationCount);
+    constraints.slaveDofs.reserve(equationCount);
+
+    int row = 0;
+    for (const auto& contribution : contributions)
+    {
+        const int rows = static_cast<int>(contribution.value.size());
+        constraints.value.segment(row, rows) = contribution.value;
+        constraints.jacobian.middleRows(row, rows) =
+            contribution.jacobian;
+        constraints.hessians.insert(
+            constraints.hessians.end(),
+            contribution.hessians.begin(),
+            contribution.hessians.end());
+        constraints.slaveDofs.insert(
+            constraints.slaveDofs.end(),
+            contribution.slaveDofs.begin(),
+            contribution.slaveDofs.end());
+        row += rows;
+    }
+    return constraints.IsValid(m_nFree);
+}
+
+void AnalysisStep::SetNonlinearMPCMultipliers(
+    const SolverNameSpace::Vec& multipliers)
+{
+    m_mpcMultipliers = multipliers;
+}
+
 void AnalysisStep::ComputeExternalForce(double time, double loadFactor, VectorXd& F1, VectorXd& F2)
 {
     double factor = loadFactor;
@@ -931,12 +1098,24 @@ void AnalysisStep::ComputeResidual(const SolverNameSpace::Vec& F_ext, SolverName
     // 动力学：加上惯性力和阻尼力
     if (m_Type == EnumKeyword::StepType::DYNAMIC)
     {
-        VectorXd v_curr = GetCurrentVelocity();
-        VectorXd a_curr = GetCurrentAcceleration();
-        //f_int += m_M22 * a_curr + m_C22 * v_curr;
+        if (m_dynamicInertiaForce.size() == m_nFree)
+            f_int += m_dynamicInertiaForce;
     }
 
     R = F_ext - f_int;
+}
+
+void AnalysisStep::ComputeStaticResidual(
+    const SolverNameSpace::Vec& F_ext,
+    SolverNameSpace::Vec& R)
+{
+    VectorXd internalForce = VectorXd::Zero(m_nFree);
+    for (auto& nodePair : m_pData->m_Nodes)
+        std::fill(
+            nodePair.second->m_Force.begin(),
+            nodePair.second->m_Force.end(), 0.0);
+    Get_CurrentInforce(internalForce);
+    R = F_ext - internalForce;
 }
 
 void AnalysisStep::OnStepCompleted(double time)
@@ -945,6 +1124,12 @@ void AnalysisStep::OnStepCompleted(double time)
     {
         m_pData->GetOutputter().SaveDataFromNodes(time, m_pData);
     }
+}
+
+void AnalysisStep::RecordStepIterations(double time, int iterations)
+{
+    if (m_pData)
+        m_pData->GetOutputter().RecordSolverIteration(time, iterations);
 }
 
 void AnalysisStep::CommitState()

@@ -6,6 +6,7 @@
 
 #include <map>
 #include <memory>
+#include <utility>
 #include <vector>
 #include <QString>
 #include "Utility/EnumKeyword.h"
@@ -16,6 +17,14 @@ class StructureData;
 class Node;
 class ElementBase;
 class Hdf5ModelIO;
+
+struct SolverIterationRecord
+{
+    int stepId = 0;
+    int analysisType = 0;
+    double time = 0.0;
+    int iterations = 0;
+};
 
 /**
  * @brief 单个节点在某一时刻的结果快照
@@ -258,6 +267,7 @@ public:
      * @return 结果帧数量
      */
 	size_t GetFrameCount() const { return m_DataSet.size(); }
+    const std::vector<DataFrame>& GetFrames() const { return m_DataSet; }
 
     /**
      * @brief 清除所有缓存结果并关闭流式输出
@@ -266,6 +276,17 @@ public:
 
     void MergeFramesFrom(const Outputter& source);
 
+    void RecordSolverIteration(double time, int iterations);
+    const std::vector<SolverIterationRecord>& GetSolverIterationRecords() const
+    {
+        return m_solverIterationRecords;
+    }
+    void SetSolverIterationRecords(std::vector<SolverIterationRecord> records)
+    {
+        m_solverIterationRecords = std::move(records);
+    }
+    bool ExportSolverIterationHistory(const QString& fileName) const;
+
     /**
      * @brief 获取结果数据集
      * @return 结果数据集只读引用
@@ -273,6 +294,7 @@ public:
 	const std::vector<DataFrame>& GetDataSet() const { return m_DataSet; }
 
 private:
+    std::vector<SolverIterationRecord> m_solverIterationRecords;
     std::vector<DataFrame> m_DataSet;                 // 结果帧集合
     bool m_keepFramesInMemory = true;                 // 是否将结果帧保存到内存
     std::unique_ptr<QFile> m_streamFile;              // 流式输出文件

@@ -78,24 +78,25 @@ void ElementTruss::Get_ke(MatrixXd& ke)
     {
         // ===== 对数应变公式 (True Strain / Logarithmic Strain, 体积不变) =====
         // ε = ln(L / L0), 当前面积 A_current = A * L0 / L (体积守恒)
-        double A_current = A * L0 / length_current;
-        double materialStiffness = E * A_current / L0;
+        // Work-conjugate Hencky axial law: N = EA*ln(L/L0),
+        // hence dN/dL = EA/L.
+        double materialStiffness = E * A / length_current;
         ke = B_matrix * B_matrix.transpose() * materialStiffness;
 
         double strain = log(length_current / L0);  // 对数应变
         m_Stress = E * strain + m_InitStress;      // 真应力，保留单元初始应力
-        double axialForce = m_Stress * A_current;
+        double axialForce = m_Stress * A;
 
         m_inforce = B_matrix * axialForce;
 
         // 几何刚度矩阵
-        if (0.0 != m_Stress)
+        if (0.0 != axialForce)
         {
             Matrix3d I = Matrix3d::Identity();
             Vector3d directionVector;
             directionVector << dirCos_x, dirCos_y, dirCos_z;
 
-            double geometricStiffCoeff = A_current * m_Stress / length_current;
+            double geometricStiffCoeff = axialForce / length_current;
             Matrix3d Kg_block = geometricStiffCoeff * (I - directionVector * directionVector.transpose());
 
             ke.block<3, 3>(0, 0) += Kg_block;

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "Base/Base.h"
 
 /**
@@ -15,6 +15,14 @@ public:
     double Irr = 0.0;
     double Sy = 0.0;
     double Sz = 0.0;
+
+    bool m_HasExplicitSectionInertia = false;
+    double m_ExplicitIy = 0.0;
+    double m_ExplicitIz = 0.0;
+    double m_ExplicitJ = 0.0;
+
+    Eigen::Vector3d m_MassInertiaPerLength = Eigen::Vector3d::Zero();
+
     /**
      * @brief 计算截面面积（纯虚函数）
      */

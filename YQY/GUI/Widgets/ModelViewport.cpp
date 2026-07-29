@@ -552,6 +552,17 @@ void ModelViewport::displayModel(const std::shared_ptr<StructureData>& structure
     m_solidCellElementIds.clear();
     m_elementLabelPositions.clear();
     m_originalNodeCoordinates.clear();
+    // The VTK data objects are reused across documents.  A previous result frame
+    // may have left scalar arrays and scalar visibility enabled on their mappers.
+    // Clear those before attaching the new geometry so result colours can never
+    // leak from one model into the next one.
+    m_elementData->GetPointData()->SetScalars(nullptr);
+    m_elementData->GetCellData()->SetScalars(nullptr);
+    m_nodeData->GetPointData()->SetScalars(nullptr);
+    m_elementMapper->ScalarVisibilityOff();
+    m_nodeMapper->ScalarVisibilityOff();
+    clearResultScalarRange();
+    m_activeDeformationScale = 1.0;
     m_resultDisplayActive = false;
     m_originalElementActor->SetVisibility(false);
     m_resultScalarBar->SetVisibility(false);
@@ -709,6 +720,7 @@ void ModelViewport::setNodeSize(int nodeSize)
 
 void ModelViewport::setNodeLabelsVisible(bool visible)
 {
+    visible = visible && !m_idLabelsPlaybackLocked;
     const bool changed = m_nodeLabelsVisible != visible;
     m_nodeLabelsVisible = visible;
     if (visible)
@@ -719,8 +731,20 @@ void ModelViewport::setNodeLabelsVisible(bool visible)
         emit nodeLabelsVisibilityChanged(visible);
 }
 
+void ModelViewport::setAdaptiveNodeLabels(bool adaptive)
+{
+    if (m_adaptiveNodeLabels == adaptive)
+        return;
+
+    m_adaptiveNodeLabels = adaptive;
+    if (m_nodeLabelsVisible)
+        updateAdaptiveLabels();
+    requestRender();
+}
+
 void ModelViewport::setElementLabelsVisible(bool visible)
 {
+    visible = visible && !m_idLabelsPlaybackLocked;
     const bool changed = m_elementLabelsVisible != visible;
     m_elementLabelsVisible = visible;
     if (visible)
@@ -729,6 +753,19 @@ void ModelViewport::setElementLabelsVisible(bool visible)
     requestRender();
     if (changed)
         emit elementLabelsVisibilityChanged(visible);
+}
+
+void ModelViewport::setIdLabelsPlaybackLocked(bool locked)
+{
+    if (m_idLabelsPlaybackLocked == locked)
+        return;
+
+    m_idLabelsPlaybackLocked = locked;
+    if (locked)
+    {
+        setNodeLabelsVisible(false);
+        setElementLabelsVisible(false);
+    }
 }
 
 void ModelViewport::setNodesVisible(bool visible)
@@ -778,7 +815,15 @@ void ModelViewport::resetCamera()
 {
     if (!hasModel())
         return;
-    m_renderer->GetActiveCamera()->ParallelProjectionOn();
+
+    // vtkRenderer::ResetCamera() fits the current bounds but deliberately
+    // preserves the previous camera direction.  Restore the application's
+    // canonical front view (+Z up, viewing along the Y axis) before fitting.
+    vtkCamera* camera = m_renderer->GetActiveCamera();
+    camera->ParallelProjectionOn();
+    camera->SetFocalPoint(0.0, 0.0, 0.0);
+    camera->SetPosition(0.0, -1.0, 0.0);
+    camera->SetViewUp(0.0, 0.0, 1.0);
     m_renderer->ResetCamera();
     m_renderer->ResetCameraClippingRange();
     double bounds[6] = {};
@@ -1193,18 +1238,23 @@ void ModelViewport::updateAdaptiveLabels()
         labelIds->SetName("NodeIds");
         labelIds->SetNumberOfComponents(1);
         std::unordered_set<long long> occupiedCells;
-        occupiedCells.reserve(maximumLabelsPerType);
+        if (m_adaptiveNodeLabels)
+            occupiedCells.reserve(maximumLabelsPerType);
 
         const vtkIdType pointCount = std::min<vtkIdType>(m_points->GetNumberOfPoints(),
             static_cast<vtkIdType>(m_pointNodeIds.size()));
-        for (vtkIdType pointId = 0; pointId < pointCount
-            && static_cast<int>(occupiedCells.size()) < maximumLabelsPerType; ++pointId)
+        for (vtkIdType pointId = 0; pointId < pointCount; ++pointId)
         {
             double world[3] = {};
             m_points->GetPoint(pointId, world);
-            long long gridKey = 0;
-            if (!projectToGrid(world, gridKey) || !occupiedCells.insert(gridKey).second)
-                continue;
+            if (m_adaptiveNodeLabels)
+            {
+                long long gridKey = 0;
+                if (!projectToGrid(world, gridKey)
+                    || !occupiedCells.insert(gridKey).second
+                    || static_cast<int>(occupiedCells.size()) > maximumLabelsPerType)
+                    continue;
+            }
             const vtkIdType labelPointId = labelPoints->InsertNextPoint(world);
             labelVertices->InsertNextCell(1, &labelPointId);
             labelIds->InsertNextValue(
@@ -1767,6 +1817,8 @@ void ModelViewport::contextMenuEvent(QContextMenuEvent* event)
     solidAction->setEnabled(hasSolidGeometry());
     nodeIdsAction->setChecked(m_nodeLabelsVisible);
     elementIdsAction->setChecked(m_elementLabelsVisible);
+    nodeIdsAction->setEnabled(!m_idLabelsPlaybackLocked);
+    elementIdsAction->setEnabled(!m_idLabelsPlaybackLocked);
 
     menu.addSeparator();
     QMenu* viewsMenu = menu.addMenu(QStringLiteral("标准视图"));
@@ -1834,8 +1886,19 @@ void ModelViewport::updateThemeColors()
     m_nodeActor->GetProperty()->SetColor(
         colors.node[0], colors.node[1], colors.node[2]);
     if (m_solidActor)
+    {
         m_solidActor->GetProperty()->SetColor(
             colors.solid[0], colors.solid[1], colors.solid[2]);
+        // Keep solid faces legible in every theme, including faces turned away
+        // from the scene light.  Without ambient light they can render black.
+        m_solidActor->GetProperty()->SetAmbient(0.48);
+        m_solidActor->GetProperty()->SetDiffuse(0.65);
+        m_solidActor->GetProperty()->SetSpecular(0.20);
+        m_solidActor->GetProperty()->SetSpecularPower(18.0);
+        m_solidActor->GetProperty()->EdgeVisibilityOn();
+        m_solidActor->GetProperty()->SetEdgeColor(
+            colors.element[0], colors.element[1], colors.element[2]);
+    }
     if (m_nodeLabelMapper)
         m_nodeLabelMapper->GetLabelTextProperty()->SetColor(
             colors.node[0], colors.node[1], colors.node[2]);

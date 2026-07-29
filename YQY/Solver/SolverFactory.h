@@ -6,6 +6,7 @@
 #include "Dynamic/SolverTSSBN.h"
 #include "Dynamic/SolverAdaptiveTSSBN.h"
 #include <memory>
+#include <algorithm>
 
 namespace SolverNameSpace
 {
@@ -22,6 +23,9 @@ namespace SolverNameSpace
                 p.numIncrements = static_cast<int>(step.m_Time / step.m_StepSize);
                 if (p.numIncrements < 1) p.numIncrements = 1;
                 p.maxIter = step.m_MaxIterations;
+                p.tol_R = step.m_Tolerance;
+                p.tol_dx = std::max(1.0e-10, step.m_Tolerance);
+                p.tol_C = std::max(1.0e-12, step.m_Tolerance);
                 return std::make_unique<SolverStatic>(p);
             }
             case EnumKeyword::StepType::DYNAMIC:

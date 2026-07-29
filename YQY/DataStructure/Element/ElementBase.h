@@ -12,7 +12,8 @@ enum class ElementRole
     Conductor,
     TensionHardware,
     IntraPhaseSpacer,
-    InterPhaseSpacer
+    InterPhaseSpacer,
+    SuspensionHardware
 };
 
 /**
@@ -56,6 +57,41 @@ public:
     virtual void Get_ke(MatrixXd& _OUT ke) = 0;
     virtual void Get_me_Lumped(MatrixXd& _OUT me) = 0;       //集中质量矩阵
     virtual void Get_me_Consistent(MatrixXd& _OUT me) = 0;   //一致质量矩阵
+    /**
+     * @brief 计算当前试探状态的单元惯性力
+     *
+     * 默认实现为 M*a。具有有限转动自由度的单元可重写该函数，
+     * 以加入陀螺力矩等构型相关项。
+     */
+    virtual void Get_InertiaForce(VectorXd& _OUT inertiaForce);
+
+    /**
+     * @brief 计算惯性力对速度的切线矩阵
+     *
+     * Newmark 有效切线中的系数为 gamma/(beta*dt)。
+     * 不含陀螺项的单元使用默认零矩阵。
+     */
+    virtual void Get_GyroscopicMatrix(MatrixXd& _OUT gyroscopicMatrix);
+
+    /**
+     * @brief 计算惯性力对当前构型的切线矩阵
+     *
+     * 该项不乘 Newmark 的 a0 或 a1 系数。无有限转动惯性项的单元
+     * 使用默认零矩阵。
+     */
+    virtual void Get_CentrifugalMatrix(MatrixXd& _OUT centrifugalMatrix);
+
+    /**
+     * @brief 一次性计算当前试探状态的全部动力学贡献。
+     *
+     * 默认实现保留旧单元的逐项计算方式；具有共同高斯积分过程的单元可
+     * 重写此接口，从而避免重复计算质量、惯性力和动力切线。
+     */
+    virtual void GetDynamicContributions(
+        MatrixXd& massMatrix,
+        VectorXd& inertiaForce,
+        MatrixXd& gyroscopicMatrix,
+        MatrixXd& centrifugalMatrix);
     virtual void Get_L0() = 0;
 
     /**

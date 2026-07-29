@@ -1,6 +1,7 @@
 #include "Hdf5ModelIO.h"
 
 #include "DataStructure/Structure/StructureData.h"
+#include "Export/Outputter.h"
 
 #ifndef H5_BUILT_AS_DYNAMIC_LIB
 #define H5_BUILT_AS_DYNAMIC_LIB
@@ -31,7 +32,6 @@ namespace
 QRecursiveMutex g_hdf5ApiMutex;
 
 constexpr int kModelDomainId = 1;
-constexpr int kSchemaVersion = 3;
 constexpr size_t kEntityNameSize = 256;
 
 QString MakeAsciiTempHdf5FileName()
@@ -299,6 +299,18 @@ struct ConstraintRecord
     int domainId = kModelDomainId;
 };
 
+struct MPCRecord
+{
+    int id = 0;
+    int relationType = 0;
+    int masterNodeId = 0;
+    int slaveNodeId = 0;
+    int slaveDirectionMask = 0;
+    int stepId = 0;
+    double parameters[3] = {};
+    int domainId = kModelDomainId;
+};
+
 struct LoadRecord
 {
     int id = 0;
@@ -408,6 +420,14 @@ struct DomainRecord
     int analysis = 0;
     double time = 0.0;
     double loadFactor = 1.0;
+};
+
+struct SolverIterationH5Record
+{
+    int stepId = 0;
+    int analysisType = 0;
+    double time = 0.0;
+    int iterations = 0;
 };
 
 struct IndexRecord
@@ -886,6 +906,21 @@ H5Handle CreateConstraintType()
     return type;
 }
 
+H5Handle CreateMPCType()
+{
+    H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(MPCRecord)), H5Tclose);
+    if (!type.valid()) return {};
+    H5Tinsert(type, "ID", HOFFSET(MPCRecord, id), H5T_NATIVE_INT);
+    H5Tinsert(type, "RELATION_TYPE", HOFFSET(MPCRecord, relationType), H5T_NATIVE_INT);
+    H5Tinsert(type, "MASTER_G", HOFFSET(MPCRecord, masterNodeId), H5T_NATIVE_INT);
+    H5Tinsert(type, "SLAVE_G", HOFFSET(MPCRecord, slaveNodeId), H5T_NATIVE_INT);
+    H5Tinsert(type, "SLAVE_DIRECTION_MASK", HOFFSET(MPCRecord, slaveDirectionMask), H5T_NATIVE_INT);
+    H5Tinsert(type, "STEP_ID", HOFFSET(MPCRecord, stepId), H5T_NATIVE_INT);
+    InsertArray(type, "PARAMETERS", HOFFSET(MPCRecord, parameters), H5T_NATIVE_DOUBLE, 3);
+    H5Tinsert(type, "DOMAIN_ID", HOFFSET(MPCRecord, domainId), H5T_NATIVE_INT);
+    return type;
+}
+
 H5Handle CreateLoadType()
 {
     H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(LoadRecord)), H5Tclose);
@@ -1027,6 +1062,17 @@ H5Handle CreateDomainType()
     H5Tinsert(type, "ANALYSIS", HOFFSET(DomainRecord, analysis), H5T_NATIVE_INT);
     H5Tinsert(type, "TIME", HOFFSET(DomainRecord, time), H5T_NATIVE_DOUBLE);
     H5Tinsert(type, "LOAD_FACTOR", HOFFSET(DomainRecord, loadFactor), H5T_NATIVE_DOUBLE);
+    return type;
+}
+
+H5Handle CreateSolverIterationType()
+{
+    H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(SolverIterationH5Record)), H5Tclose);
+    if (!type.valid()) return {};
+    H5Tinsert(type, "STEP_ID", HOFFSET(SolverIterationH5Record, stepId), H5T_NATIVE_INT);
+    H5Tinsert(type, "ANALYSIS_TYPE", HOFFSET(SolverIterationH5Record, analysisType), H5T_NATIVE_INT);
+    H5Tinsert(type, "TIME", HOFFSET(SolverIterationH5Record, time), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "ITERATIONS", HOFFSET(SolverIterationH5Record, iterations), H5T_NATIVE_INT);
     return type;
 }
 
@@ -1277,6 +1323,53 @@ std::vector<ConstraintRecord> BuildConstraintRecords(const StructureData* pData)
         if (auto pNode = pConstraint->m_pNode.lock()) record.nodeId = pNode->m_Id;
         record.direction = ToInt(pConstraint->m_Direction);
         record.value = pConstraint->m_Value;
+        records.push_back(record);
+    }
+    return records;
+}
+
+std::vector<MPCRecord> BuildMPCRecords(const StructureData* pData)
+{
+    std::vector<MPCRecord> records;
+    records.reserve(pData->m_MPCConstraints.size());
+    for (const auto& [id, mpc] : pData->m_MPCConstraints)
+    {
+        if (!mpc)
+            continue;
+        const std::vector<int> nodeIds = mpc->GetNodeIds();
+        if (nodeIds.size() != 2)
+            continue;
+        MPCRecord record;
+        record.id = id;
+        record.masterNodeId = nodeIds[0];
+        record.slaveNodeId = nodeIds[1];
+        record.stepId = mpc->m_StepId;
+        for (const int direction : mpc->m_SlaveDirections)
+            if (direction >= 0 && direction < 6)
+                record.slaveDirectionMask |= (1 << direction);
+        if (const auto distance =
+            std::dynamic_pointer_cast<DistanceMPCConstraint>(mpc))
+        {
+            record.relationType = 0;
+            record.parameters[0] = distance->m_Length;
+        }
+        else if (const auto rigid =
+            std::dynamic_pointer_cast<RigidOffsetMPCConstraint>(mpc))
+        {
+            record.relationType = 1;
+            record.parameters[0] = rigid->m_Offset.x();
+            record.parameters[1] = rigid->m_Offset.y();
+            record.parameters[2] = rigid->m_Offset.z();
+        }
+        else if (std::dynamic_pointer_cast<
+            PlanarShearReleaseMPCConstraint>(mpc))
+        {
+            record.relationType = 2;
+        }
+        else
+        {
+            continue;
+        }
         records.push_back(record);
     }
     return records;
@@ -1534,6 +1627,7 @@ bool WriteInputData(hid_t file, const StructureData* pData)
     H5Handle propertyType = CreatePropertyType();
     H5Handle elementType = CreateElementType();
     H5Handle constraintType = CreateConstraintType();
+    H5Handle mpcType = CreateMPCType();
     H5Handle loadType = CreateLoadType();
     H5Handle stepType = CreateStepType();
     H5Handle modelSetType = CreateModelSetType();
@@ -1566,6 +1660,7 @@ bool WriteInputData(hid_t file, const StructureData* pData)
         && propertyType.valid()
         && elementType.valid()
         && constraintType.valid()
+        && mpcType.valid()
         && loadType.valid()
         && stepType.valid()
         && modelSetType.valid()
@@ -1582,6 +1677,7 @@ bool WriteInputData(hid_t file, const StructureData* pData)
         && WriteDataset(file, "/YQY/INPUT/PROPERTY/PROPERTY", propertyType, BuildPropertyRecords(pData))
         && WriteDataset(file, "/YQY/INPUT/ELEMENT/ELEMENT", elementType, BuildElementRecords(pData))
         && WriteDataset(file, "/YQY/INPUT/CONSTRAINT/SPC", constraintType, BuildConstraintRecords(pData))
+        && WriteDataset(file, "/YQY/INPUT/CONSTRAINT/MPC", mpcType, BuildMPCRecords(pData))
         && WriteDataset(file, "/YQY/INPUT/LOAD/LOAD", loadType, BuildLoadRecords(pData))
         && WriteDataset(file, "/YQY/INPUT/ANALYSIS_STEP/STEP", stepType, BuildStepRecords(pData))
         && WriteDataset(file, "/YQY/INPUT/ANALYSIS_STEP/METADATA", stepMetadataType, stepMetadata)
@@ -1599,6 +1695,7 @@ bool WriteInputData(hid_t file, const StructureData* pData)
 bool WriteResultData(hid_t file, const StructureData* pData)
 {
     const auto& frames = pData->GetOutputter().GetDataSet();
+    const auto& iterationHistory = pData->GetOutputter().GetSolverIterationRecords();
     const auto elementTypes = BuildElementTypeMap(pData);
 
     std::vector<DomainRecord> domains;
@@ -1612,6 +1709,10 @@ bool WriteResultData(hid_t file, const StructureData* pData)
     std::vector<CableForceRecord> cableForces;
     std::vector<ElementStressRecord> elementStresses;
     std::vector<ElementStrainRecord> elementStrains;
+    std::vector<SolverIterationH5Record> iterations;
+    iterations.reserve(iterationHistory.size());
+    for (const SolverIterationRecord& record : iterationHistory)
+        iterations.push_back({record.stepId, record.analysisType, record.time, record.iterations});
 
     std::vector<IndexRecord> displacementIndex;
     std::vector<IndexRecord> currentCoordinateIndex;
@@ -1775,6 +1876,7 @@ bool WriteResultData(hid_t file, const StructureData* pData)
     }
 
     H5Handle domainType = CreateDomainType();
+    H5Handle iterationType = CreateSolverIterationType();
     H5Handle indexType = CreateIndexType();
     H5Handle nodalType = CreateNodalType();
     H5Handle elementForceType = CreateElementForceType();
@@ -1784,6 +1886,7 @@ bool WriteResultData(hid_t file, const StructureData* pData)
     H5Handle elementStrainType = CreateElementStrainType();
 
     return domainType.valid()
+        && iterationType.valid()
         && indexType.valid()
         && nodalType.valid()
         && elementForceType.valid()
@@ -1792,6 +1895,7 @@ bool WriteResultData(hid_t file, const StructureData* pData)
         && elementStressType.valid()
         && elementStrainType.valid()
         && WriteDataset(file, "/YQY/RESULT/DOMAINS", domainType, domains)
+        && WriteDataset(file, "/YQY/RESULT/SOLVER_ITERATION", iterationType, iterations)
         && WriteDataset(file, "/YQY/RESULT/NODAL/DISPLACEMENT", nodalType, displacements)
         && WriteDataset(file, "/YQY/RESULT/NODAL/CURRENT_COORDINATE", nodalType, currentCoordinates)
         && WriteDataset(file, "/YQY/RESULT/NODAL/VELOCITY", nodalType, velocities)
@@ -1889,7 +1993,6 @@ public:
         }
 
         const bool attrOk = WriteStringAttribute(file, "FORMAT", "YQY_H5")
-            && WriteIntAttribute(file, "SCHEMA_VERSION", kSchemaVersion)
             && WriteStringAttribute(file, "FILE_KIND", "MODEL_RESULT")
             && WriteIntAttribute(file, "RESULT_COMPLETE", 0)
             && WriteStringAttribute(file, "CREATED_TIME", QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss"))
@@ -1902,6 +2005,7 @@ public:
     bool CreateStreamDatasets()
     {
         H5Handle domainType = CreateDomainType();
+        H5Handle iterationType = CreateSolverIterationType();
         H5Handle indexType = CreateIndexType();
         H5Handle nodalType = CreateNodalType();
         H5Handle elementForceType = CreateElementForceType();
@@ -1911,6 +2015,7 @@ public:
         H5Handle elementStrainType = CreateElementStrainType();
 
         return domainType.valid()
+            && iterationType.valid()
             && indexType.valid()
             && nodalType.valid()
             && elementForceType.valid()
@@ -1919,6 +2024,7 @@ public:
             && elementStressType.valid()
             && elementStrainType.valid()
             && CreateExtendableDataset(file, "/YQY/RESULT/DOMAINS", domainType)
+            && CreateExtendableDataset(file, "/YQY/RESULT/SOLVER_ITERATION", iterationType)
             && CreateExtendableDataset(file, "/YQY/RESULT/NODAL/DISPLACEMENT", nodalType)
             && CreateExtendableDataset(file, "/YQY/RESULT/NODAL/CURRENT_COORDINATE", nodalType)
             && CreateExtendableDataset(file, "/YQY/RESULT/NODAL/VELOCITY", nodalType)
@@ -2133,6 +2239,20 @@ public:
         return AppendDataset(file, indexPath, indexType, indices, indexPosition);
     }
 
+    bool WriteSolverIterationHistory(const std::vector<SolverIterationRecord>& records)
+    {
+        if (!file.valid())
+            return false;
+        std::vector<SolverIterationH5Record> h5Records;
+        h5Records.reserve(records.size());
+        for (const SolverIterationRecord& record : records)
+            h5Records.push_back({record.stepId, record.analysisType, record.time, record.iterations});
+        H5Handle type = CreateSolverIterationType();
+        long long position = 0;
+        return type.valid() && AppendDataset(
+            file, "/YQY/RESULT/SOLVER_ITERATION", type, h5Records, position);
+    }
+
     void End(bool resultComplete)
     {
         if (file.valid())
@@ -2200,7 +2320,6 @@ bool Hdf5ModelIO::ExportHdf5(const QString& fileName, const StructureData* pData
     }
 
     const bool attrOk = WriteStringAttribute(file, "FORMAT", "YQY_H5")
-        && WriteIntAttribute(file, "SCHEMA_VERSION", kSchemaVersion)
         && WriteStringAttribute(file, "FILE_KIND", "MODEL_RESULT")
         && WriteIntAttribute(file, "RESULT_COMPLETE", resultComplete ? 1 : 0)
         && WriteStringAttribute(file, "CREATED_TIME", QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss"))
@@ -2246,7 +2365,6 @@ bool Hdf5ModelIO::ExportModelHdf5(const QString& fileName, const StructureData* 
     }
 
     const bool written = WriteStringAttribute(file, "FORMAT", "YQY_H5")
-        && WriteIntAttribute(file, "SCHEMA_VERSION", kSchemaVersion)
         && WriteStringAttribute(file, "FILE_KIND", "MODEL")
         && WriteIntAttribute(file, "RESULT_COMPLETE", 0)
         && WriteStringAttribute(file, "CREATED_TIME", QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss"))
@@ -2272,6 +2390,12 @@ bool Hdf5ModelIO::WriteResultFrame(int domainId, int stepId, int increment, int 
 {
     QMutexLocker locker(&g_hdf5ApiMutex);
     return m_impl->WriteFrame(domainId, stepId, increment, analysis, time, frame);
+}
+
+bool Hdf5ModelIO::WriteSolverIterationHistory(const std::vector<SolverIterationRecord>& records)
+{
+    QMutexLocker locker(&g_hdf5ApiMutex);
+    return m_impl->WriteSolverIterationHistory(records);
 }
 
 void Hdf5ModelIO::EndResultStream(bool resultComplete)
@@ -2313,10 +2437,12 @@ bool ReadDatasetAll(hid_t file, const char* path, hid_t memoryType, std::vector<
 }
 
 template <typename Record>
-bool ReadOptionalDatasetAll(hid_t file, const char* path, hid_t memoryType, std::vector<Record>& records)
+bool ReadOptionalDatasetAll(hid_t file, const char* path, hid_t memoryType,
+    std::vector<Record>& records)
 {
     records.clear();
-    return !LinkExistsQuietly(file, path) || ReadDatasetAll(file, path, memoryType, records);
+    return !LinkExistsQuietly(file, path)
+        || ReadDatasetAll(file, path, memoryType, records);
 }
 
 bool ReadInputData(hid_t file, StructureData* data)
@@ -2330,6 +2456,7 @@ bool ReadInputData(hid_t file, StructureData* data)
     H5Handle propertyType = CreatePropertyType();
     H5Handle elementType = CreateElementType();
     H5Handle constraintType = CreateConstraintType();
+    H5Handle mpcType = CreateMPCType();
     H5Handle loadType = CreateLoadType();
     H5Handle stepType = CreateStepType();
     H5Handle modelSetType = CreateModelSetType();
@@ -2339,7 +2466,8 @@ bool ReadInputData(hid_t file, StructureData* data)
     H5Handle stepMetadataType = CreateStepMetadataType();
     H5Handle stepRegionLinkType = CreateStepRegionLinkType();
     if (!gridType.valid() || !materialType.valid() || !sectionType.valid() || !propertyType.valid()
-        || !elementType.valid() || !constraintType.valid() || !loadType.valid() || !stepType.valid()
+        || !elementType.valid() || !constraintType.valid() || !mpcType.valid()
+        || !loadType.valid() || !stepType.valid()
         || !modelSetType.valid() || !modelSetMemberType.valid() || !computeRegionType.valid()
         || !regionLinkType.valid() || !stepMetadataType.valid() || !stepRegionLinkType.valid())
     {
@@ -2352,6 +2480,7 @@ bool ReadInputData(hid_t file, StructureData* data)
     std::vector<PropertyRecord> properties;
     std::vector<ElementRecord> elements;
     std::vector<ConstraintRecord> constraints;
+    std::vector<MPCRecord> mpcs;
     std::vector<LoadRecord> loads;
     std::vector<StepRecord> steps;
     std::vector<ModelSetRecord> modelSets;
@@ -2368,6 +2497,7 @@ bool ReadInputData(hid_t file, StructureData* data)
         || !ReadDatasetAll(file, "/YQY/INPUT/PROPERTY/PROPERTY", propertyType, properties)
         || !ReadDatasetAll(file, "/YQY/INPUT/ELEMENT/ELEMENT", elementType, elements)
         || !ReadDatasetAll(file, "/YQY/INPUT/CONSTRAINT/SPC", constraintType, constraints)
+        || !ReadOptionalDatasetAll(file, "/YQY/INPUT/CONSTRAINT/MPC", mpcType, mpcs)
         || !ReadDatasetAll(file, "/YQY/INPUT/LOAD/LOAD", loadType, loads)
         || !ReadDatasetAll(file, "/YQY/INPUT/ANALYSIS_STEP/STEP", stepType, steps)
         || !ReadOptionalDatasetAll(file, "/YQY/INPUT/ANALYSIS_STEP/METADATA", stepMetadataType, stepMetadata)
@@ -2608,6 +2738,71 @@ bool ReadInputData(hid_t file, StructureData* data)
         restored->m_Constraint[record.id] = std::move(constraint);
     }
 
+    for (const MPCRecord& record : mpcs)
+    {
+        const auto master = restored->m_Nodes.find(record.masterNodeId);
+        const auto slave = restored->m_Nodes.find(record.slaveNodeId);
+        if (record.id <= 0 || master == restored->m_Nodes.cend()
+            || slave == restored->m_Nodes.cend()
+            || master == slave
+            || restored->m_MPCConstraints.find(record.id)
+                != restored->m_MPCConstraints.cend())
+        {
+            return false;
+        }
+
+        std::shared_ptr<NonlinearMPCConstraint> mpc;
+        if (record.relationType == 0)
+        {
+            auto distance = std::make_shared<DistanceMPCConstraint>();
+            distance->m_pNodeA = slave->second;
+            distance->m_pNodeB = master->second;
+            distance->m_pSlaveNode = slave->second;
+            distance->m_Length = record.parameters[0];
+            for (int direction = 0; direction < 6; ++direction)
+            {
+                if ((record.slaveDirectionMask & (1 << direction)) != 0)
+                {
+                    distance->m_SlaveDirection = direction;
+                    break;
+                }
+            }
+            mpc = std::move(distance);
+        }
+        else if (record.relationType == 1)
+        {
+            auto rigid = std::make_shared<RigidOffsetMPCConstraint>();
+            rigid->m_pMasterNode = master->second;
+            rigid->m_pSlaveNode = slave->second;
+            rigid->m_Offset = Eigen::Vector3d(
+                record.parameters[0],
+                record.parameters[1],
+                record.parameters[2]);
+            mpc = std::move(rigid);
+        }
+        else if (record.relationType == 2)
+        {
+            auto release =
+                std::make_shared<PlanarShearReleaseMPCConstraint>();
+            release->m_pMasterNode = master->second;
+            release->m_pSlaveNode = slave->second;
+            mpc = std::move(release);
+        }
+        else
+        {
+            return false;
+        }
+
+        mpc->m_Id = record.id;
+        mpc->m_StepId = record.stepId;
+        for (int direction = 0; direction < 6; ++direction)
+            if ((record.slaveDirectionMask & (1 << direction)) != 0)
+                mpc->m_SlaveDirections.push_back(direction);
+        if (mpc->m_SlaveDirections.empty())
+            return false;
+        restored->m_MPCConstraints[record.id] = std::move(mpc);
+    }
+
     for (const LoadRecord& record : loads)
     {
         std::shared_ptr<LoadBase> load;
@@ -2723,6 +2918,7 @@ bool ReadInputData(hid_t file, StructureData* data)
     data->m_Section = std::move(restored->m_Section);
     data->m_Property = std::move(restored->m_Property);
     data->m_Constraint = std::move(restored->m_Constraint);
+    data->m_MPCConstraints = std::move(restored->m_MPCConstraints);
     data->m_Load = std::move(restored->m_Load);
     data->m_AnalysisStep = std::move(restored->m_AnalysisStep);
     data->m_ModelSets = std::move(restored->m_ModelSets);
@@ -3440,6 +3636,11 @@ bool Hdf5ModelIO::ReadResultFrame(int frameIndex, Hdf5ResultFrame& frame) const
         auto& result = elementMap[value.id];
         result.id = value.id;
         result.axialForce = value.axial;
+        result.shearY = value.shearY;
+        result.shearZ = value.shearZ;
+        result.torque = value.torque;
+        result.momentY = value.momentY;
+        result.momentZ = value.momentZ;
     }
     for (const TrussForceRecord& value : trussForces)
     {
@@ -3452,12 +3653,15 @@ bool Hdf5ModelIO::ReadResultFrame(int frameIndex, Hdf5ResultFrame& frame) const
         auto& result = elementMap[value.id];
         result.id = value.id;
         result.axialForce = value.axial;
+        result.torque = value.torque;
     }
     for (const ElementStressRecord& value : stresses)
     {
         auto& result = elementMap[value.id];
         result.id = value.id;
+        result.initStress = value.initStress;
         result.currentStress = value.currentStress;
+        result.deltaStress = value.deltaStress;
     }
     for (const ElementStrainRecord& value : strains)
     {
@@ -3468,6 +3672,24 @@ bool Hdf5ModelIO::ReadResultFrame(int frameIndex, Hdf5ResultFrame& frame) const
     frame.elements.reserve(static_cast<std::size_t>(elementMap.size()));
     for (auto it = elementMap.cbegin(); it != elementMap.cend(); ++it)
         frame.elements.push_back(it.value());
+    return true;
+}
+
+bool Hdf5ModelIO::ReadSolverIterationHistory(std::vector<SolverIterationRecord>& records) const
+{
+    records.clear();
+    if (!m_impl->resultFile.valid())
+        return false;
+    H5Handle type = CreateSolverIterationType();
+    std::vector<SolverIterationH5Record> h5Records;
+    if (!type.valid() || !ReadDatasetAll(
+        m_impl->resultFile, "/YQY/RESULT/SOLVER_ITERATION", type, h5Records))
+    {
+        return false;
+    }
+    records.reserve(h5Records.size());
+    for (const SolverIterationH5Record& record : h5Records)
+        records.push_back({record.stepId, record.analysisType, record.time, record.iterations});
     return true;
 }
 

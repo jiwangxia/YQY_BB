@@ -3,6 +3,7 @@
 #include "ui_SettingsPanel.h"
 
 #include <QLabel>
+#include <QComboBox>
 #include <QSpinBox>
 
 SettingsPanel::SettingsPanel(QWidget* parent)
@@ -23,6 +24,11 @@ SettingsPanel::~SettingsPanel()
 QSpinBox* SettingsPanel::concurrencySpin() const
 {
     return m_ui->concurrencySpin;
+}
+
+QComboBox* SettingsPanel::nodeLabelModeCombo() const
+{
+    return m_ui->nodeLabelModeCombo;
 }
 
 QLabel* SettingsPanel::statusLabel() const

@@ -1,4 +1,5 @@
 #include "Widgets/ResultControlPanel.h"
+#include "Export/Hdf5ModelIO.h"
 #include "ui_ResultControlPanel.h"
 
 #include <cmath>
@@ -46,6 +47,8 @@ ResultControlPanel::ResultControlPanel(QWidget* parent)
             m_playbackTimer->start();
         }
         m_ui->playButton->setText(playing ? QStringLiteral("播放") : QStringLiteral("暂停"));
+        if (m_playbackStateChangedHandler)
+            m_playbackStateChangedHandler(!playing);
     });
     connect(m_ui->frameSlider, &QSlider::valueChanged, this, [this](int frameIndex)
     {
@@ -74,6 +77,16 @@ ResultControlPanel::ResultControlPanel(QWidget* parent)
     {
         if (m_exportHandler)
             m_exportHandler();
+    });
+    connect(m_ui->exportElementButton, &QPushButton::clicked, this, [this]()
+    {
+        if (m_elementExportHandler)
+            m_elementExportHandler();
+    });
+    connect(m_ui->exportIterationButton, &QPushButton::clicked, this, [this]()
+    {
+        if (m_iterationExportHandler)
+            m_iterationExportHandler();
     });
 }
 ResultControlPanel::~ResultControlPanel()
@@ -122,6 +135,16 @@ QLabel* ResultControlPanel::deformationValueLabel() const
 QPushButton* ResultControlPanel::exportButton() const
 {
     return m_ui->exportButton;
+}
+
+QPushButton* ResultControlPanel::exportElementButton() const
+{
+    return m_ui->exportElementButton;
+}
+
+QPushButton* ResultControlPanel::exportIterationButton() const
+{
+    return m_ui->exportIterationButton;
 }
 
 Hdf5ModelIO* ResultControlPanel::reader() const
@@ -174,13 +197,31 @@ void ResultControlPanel::setVisualizationChangedHandler(std::function<void()> ha
     m_visualizationChangedHandler = std::move(handler);
 }
 
+void ResultControlPanel::setPlaybackStateChangedHandler(std::function<void(bool)> handler)
+{
+    m_playbackStateChangedHandler = std::move(handler);
+}
+
 void ResultControlPanel::setExportHandler(std::function<void()> handler)
 {
     m_exportHandler = std::move(handler);
 }
 
+void ResultControlPanel::setElementExportHandler(std::function<void()> handler)
+{
+    m_elementExportHandler = std::move(handler);
+}
+
+void ResultControlPanel::setIterationExportHandler(std::function<void()> handler)
+{
+    m_iterationExportHandler = std::move(handler);
+}
+
 void ResultControlPanel::stopPlayback()
 {
+    const bool wasPlaying = m_playbackTimer->isActive();
     m_playbackTimer->stop();
     m_ui->playButton->setText(QStringLiteral("播放"));
+    if (wasPlaying && m_playbackStateChangedHandler)
+        m_playbackStateChangedHandler(false);
 }

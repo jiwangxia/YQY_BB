@@ -1,9 +1,11 @@
 #include "Dialogs/PropertyItemEditorDialog.h"
+#include "Widgets/DialogSizing.h"
 #include "ui_PropertyItemEditorDialog.h"
 #include <QDoubleSpinBox>
 PropertyItemEditorDialog::PropertyItemEditorDialog(QWidget* p) : QDialog(p), m_ui(new Ui::PropertyItemEditorDialogClass)
 {
     m_ui->setupUi(this);
+    DialogSizing::lockHeightToContents(this);
 }
 PropertyItemEditorDialog::~PropertyItemEditorDialog()
 {

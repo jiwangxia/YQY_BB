@@ -74,6 +74,10 @@
       <PrecompiledHeaderFile>Utility\pch.h</PrecompiledHeaderFile>
       <ForcedIncludeFiles>Utility\pch.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
       <WarningLevel>Level3</WarningLevel>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <TreatAngleIncludeAsExternal>true</TreatAngleIncludeAsExternal>
+      <ExternalWarningLevel>TurnOffAllWarnings</ExternalWarningLevel>
+      <DisableAnalyzeExternal>true</DisableAnalyzeExternal>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
@@ -91,6 +95,10 @@
       <PrecompiledHeaderFile>Utility\pch.h</PrecompiledHeaderFile>
       <ForcedIncludeFiles>Utility\pch.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
       <WarningLevel>Level3</WarningLevel>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <TreatAngleIncludeAsExternal>true</TreatAngleIncludeAsExternal>
+      <ExternalWarningLevel>TurnOffAllWarnings</ExternalWarningLevel>
+      <DisableAnalyzeExternal>true</DisableAnalyzeExternal>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
@@ -131,6 +139,7 @@
     <ClCompile Include="DataStructure\Region\ComputeRegion.cpp" />
     <ClCompile Include="DataStructure\Region\ModelSet.cpp" />
     <ClCompile Include="DataStructure\Constraint\Constraint.cpp" />
+    <ClCompile Include="DataStructure\Constraint\NonlinearMPCConstraint.cpp" />
     <ClCompile Include="DataStructure\Load\LoadBase.cpp" />
     <ClCompile Include="DataStructure\Load\Force_Node.cpp" />
     <ClCompile Include="DataStructure\Node\Node.cpp" />
@@ -142,7 +151,7 @@
     <ClCompile Include="DataStructure\Load\Force_Wind.cpp" />
     <ClCompile Include="DataStructure\Element\ElementBeam_CR2D.cpp" />
     <ClCompile Include="DataStructure\Element\ElementBeam_CR.cpp" />
-    <ClCompile Include="Import\AeroManager.cpp" />
+    <ClCompile Include="DataStructure\Aerodynamics\AeroManager.cpp" />
     <ClCompile Include="Import\Input_Model.cpp" />
     <ClCompile Include="DataStructure\Structure\StructureData.cpp" />
     <ClCompile Include="DataStructure\Section\SectionCircular.cpp" />
@@ -150,6 +159,7 @@
     <ClCompile Include="Solver\Dynamic\SolverNewmark.cpp" />
     <ClCompile Include="Solver\AnalysisSolve.cpp" />
     <ClCompile Include="Solver\Static\SolverStatic.cpp" />
+    <ClCompile Include="Solver\Constraint\NonlinearMPC.cpp" />
     <ClCompile Include="Utility\ModelManager.cpp" />
     <ClCompile Include="Utility\EnumKeyword.cpp" />
     <ClCompile Include="DataStructure\Section\SectionBase.cpp" />
@@ -186,8 +196,12 @@
     <ClInclude Include="GUI\Dialogs\PropertyItemEditorDialog.h" />
     <ClInclude Include="GUI\Dialogs\PropertyLibraryDialog.h" />
     <ClInclude Include="GUI\Dialogs\NodeResultExportDialog.h" />
+    <ClInclude Include="GUI\Dialogs\ElementResultExportDialog.h" />
     <ClInclude Include="GUI\Dialogs\ModelImportFileDialog.h" />
+    <ClInclude Include="GUI\Widgets\ProgressBarAnimation.h" />
+    <ClInclude Include="Application\ApplicationPaths.h" />
     <ClInclude Include="Application\ApplicationBootstrap.h" />
+    <ClInclude Include="Application\PaperBeamDynamicsVerification.h" />
     <ClInclude Include="Application\VerificationRunner.h" />
     <ClInclude Include="Application\UiAuditRunner.h" />
     <ClCompile Include="Base\Base.cpp" />
@@ -209,10 +223,14 @@
     <ClCompile Include="GUI\Widgets\AnalysisSummaryPanel.cpp" />
     <ClCompile Include="GUI\Widgets\PropertyModule.cpp" />
     <ClCompile Include="GUI\Widgets\ConductorModule.cpp" />
+    <ClCompile Include="GUI\Widgets\ProgressBarAnimation.cpp" />
+    <ClCompile Include="Application\ApplicationPaths.cpp" />
     <ClCompile Include="Application\ApplicationBootstrap.cpp" />
+    <ClCompile Include="Application\PaperBeamDynamicsVerification.cpp" />
     <ClCompile Include="Application\VerificationRunner.cpp" />
     <ClCompile Include="Application\UiAuditRunner.cpp" />
     <ClCompile Include="Export\Hdf5ModelIO.cpp" />
+    <ClCompile Include="Export\ResultFrameUtilities.cpp" />
     <ClCompile Include="Export\Outputter.cpp" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
@@ -231,6 +249,7 @@
     <ClInclude Include="DataStructure\Region\ModelSet.h" />
     <ClInclude Include="Base\Base.h" />
     <ClInclude Include="DataStructure\Constraint\Constraint.h" />
+    <ClInclude Include="DataStructure\Constraint\NonlinearMPCConstraint.h" />
     <ClInclude Include="DataStructure\Load\LoadBase.h" />
     <ClInclude Include="DataStructure\Load\Force_Node.h" />
     <ClInclude Include="DataStructure\Node\Node.h" />
@@ -244,7 +263,7 @@
     <ClInclude Include="DataStructure\Load\Force_Wind.h" />
     <ClInclude Include="DataStructure\Element\ElementBeam_CR2D.h" />
     <ClInclude Include="DataStructure\Element\ElementBeam_CR.h" />
-    <ClInclude Include="Import\AeroManager.h" />
+    <ClInclude Include="DataStructure\Aerodynamics\AeroManager.h" />
     <ClInclude Include="Import\Input_Model.h" />
     <ClInclude Include="DataStructure\Structure\StructureData.h" />
     <ClInclude Include="DataStructure\Section\SectionCircular.h" />
@@ -256,10 +275,13 @@
     <ClInclude Include="Solver\AnalysisSolve.h" />
     <ClInclude Include="Solver\SolverFactory.h" />
     <ClInclude Include="Solver\Static\SolverStatic.h" />
+    <ClInclude Include="Solver\Constraint\NonlinearMPC.h" />
     <ClInclude Include="Utility\ModelManager.h" />
     <ClInclude Include="Utility\EnumKeyword.h" />
     <ClInclude Include="DataStructure\Section\SectionBase.h" />
     <ClInclude Include="Export\Hdf5ModelIO.h" />
+    <ClInclude Include="Export\Hdf5ResultData.h" />
+    <ClInclude Include="Export\ResultFrameUtilities.h" />
     <ClInclude Include="Export\Outputter.h" />
     <ClInclude Include="Utility\pch.h" />
   </ItemGroup>

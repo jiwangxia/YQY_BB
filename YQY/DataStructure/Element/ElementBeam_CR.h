@@ -13,12 +13,26 @@ public:
     void Get_ke(MatrixXd& ke);
     void Get_me_Lumped(MatrixXd& me);         //集中质量矩阵
     void Get_me_Consistent(MatrixXd& me);     //一致质量矩阵
+    void Get_InertiaForce(VectorXd& inertiaForce) override;
+    void Get_GyroscopicMatrix(MatrixXd& gyroscopicMatrix) override;
+    void Get_CentrifugalMatrix(MatrixXd& centrifugalMatrix) override;
+    void GetDynamicContributions(
+        MatrixXd& massMatrix,
+        VectorXd& inertiaForce,
+        MatrixXd& gyroscopicMatrix,
+        MatrixXd& centrifugalMatrix) override;
     void Get_L0();
     void Assemble(const std::vector<double>& damping, MatrixXd& _OUT ce);
 
 private:
     Vector3d def_p1, def_p2;  //当前节点坐标
     Matrix3d Rr;  // 局部随动坐标系
+
+    // 按相同的共回转运动学同时计算一致质量、惯性残量和速度切线。
+    // 三个输出对应论文离散式中的 M、f_in 和 C_k；允许传入空指针跳过输出。
+    void EvaluateDynamicSystem(MatrixXd* massMatrix,
+        VectorXd* inertiaForce, MatrixXd* velocityTangent,
+        MatrixXd* configurationTangent = nullptr);
 
     void Get_kl(const VectorXd& pl, const double& L, MatrixXd& _OUT kl, VectorXd& _OUT fl); // 局部刚度矩阵
     void ComputeDeformedState(Vector3d& def_p1, Vector3d& def_p2,

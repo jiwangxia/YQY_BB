@@ -1,6 +1,9 @@
 #pragma once
 
+#include "Base/Base.h"
+
 #include <memory>
+#include <vector>
 #include <QWidget>
 class QCheckBox;
 class QComboBox;
@@ -9,6 +12,7 @@ class QLabel;
 class QLineEdit;
 class QPushButton;
 class QSpinBox;
+class QTableWidget;
 class StructureData;
 namespace Conductor
 {
@@ -62,8 +66,14 @@ public:
     QPushButton* createButton() const;
 
 private:
+    void initializeStationTable();
+    void updateModelModeUi();
+    void refreshStationTypes();
+    std::vector<Vector3d> stationCenters(QString& error) const;
     void updateSpacerUi();
     void updateSpacerPreview();
+    void updateEndTopologyUi();
 
     Ui::ConductorModuleClass* m_ui = nullptr;
+    bool m_dualSupportSpacingCustomized = false;
 };

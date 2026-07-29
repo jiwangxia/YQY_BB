@@ -24,7 +24,7 @@ QString hdf5OutputDirectory(const StructureData& model)
     if (!configuredFileName.isEmpty())
         return QFileInfo(configuredFileName).absoluteDir().absolutePath();
 
-    return QDir(QDir::current().filePath(QStringLiteral("Export/ExportH5"))).absolutePath();
+    return QDir(QDir::current().filePath(QStringLiteral("YQY/Export/ExportH5"))).absolutePath();
 }
 }
 

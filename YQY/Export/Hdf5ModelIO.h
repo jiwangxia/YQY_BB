@@ -4,74 +4,16 @@
  * @brief H5/HDF5 文件读写接口，用于模型数据和计算结果的结构化导入导出。
  */
 
+#include "Hdf5ResultData.h"
+#include "Utility/EnumKeyword.h"
+
 #include <QString>
 #include <memory>
 #include <vector>
-#include "Utility/EnumKeyword.h"
 
 class StructureData;
 class DataFrame;
-
-struct Hdf5ResultSummary
-{
-    bool hasModel = false;
-    bool hasResult = false;
-    qint64 frameCount = 0;
-    qint64 displacementRecordCount = 0;
-    qint64 stressRecordCount = 0;
-    qint64 strainRecordCount = 0;
-    bool partialResult = false;
-};
-
-struct Hdf5ResultFrameInfo
-{
-    int domainId = 0;
-    int stepId = 0;
-    int increment = 0;
-    int analysis = 0;
-    double time = 0.0;
-    double loadFactor = 1.0;
-};
-
-struct Hdf5NodalResult
-{
-    int id = 0;
-    double displacement[3] = {};
-    double currentCoordinate[3] = {};
-};
-
-struct Hdf5ElementResult
-{
-    int id = 0;
-    double axialForce = 0.0;
-    double currentStress = 0.0;
-    double strain = 0.0;
-};
-
-struct Hdf5ResultFrame
-{
-    Hdf5ResultFrameInfo info;
-    std::vector<Hdf5NodalResult> nodes;
-    std::vector<Hdf5ElementResult> elements;
-};
-
-struct Hdf5ResultRange
-{
-    double minimum = 0.0;
-    double maximum = 0.0;
-    bool valid = false;
-};
-
-struct Hdf5ResultRanges
-{
-    Hdf5ResultRange displacementMagnitude;
-    Hdf5ResultRange displacementX;
-    Hdf5ResultRange displacementY;
-    Hdf5ResultRange displacementZ;
-    Hdf5ResultRange axialForce;
-    Hdf5ResultRange stress;
-    Hdf5ResultRange strain;
-};
+struct SolverIterationRecord;
 
 /**
  * @brief H5/HDF5 文件读写类。
@@ -132,6 +74,7 @@ public:
      * @return 成功返回 true，失败返回 false。
      */
     bool WriteResultFrame(int domainId, int stepId, int increment, int analysis, double time, const DataFrame& frame);
+    bool WriteSolverIterationHistory(const std::vector<SolverIterationRecord>& records);
 
     /**
      * @brief 结束 H5/HDF5 结果流式输出。
@@ -173,6 +116,7 @@ public:
     bool OpenResultFile(const QString& fileName, std::vector<Hdf5ResultFrameInfo>& frames);
     bool ReadResultRanges(Hdf5ResultRanges& ranges) const;
     bool ReadResultFrame(int frameIndex, Hdf5ResultFrame& frame) const;
+    bool ReadSolverIterationHistory(std::vector<SolverIterationRecord>& records) const;
     void CloseResultFile();
 
 private:

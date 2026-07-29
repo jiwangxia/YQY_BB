@@ -3,6 +3,7 @@
 #include <QWidget>
 
 class QLabel;
+class QComboBox;
 class QSpinBox;
 
 namespace Ui { class SettingsPanelClass; }
@@ -14,6 +15,7 @@ public:
     ~SettingsPanel() override;
 
     QSpinBox* concurrencySpin() const;
+    QComboBox* nodeLabelModeCombo() const;
     QLabel* statusLabel() const;
 
 private:

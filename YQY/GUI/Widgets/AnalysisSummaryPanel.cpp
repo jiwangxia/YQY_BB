@@ -7,7 +7,8 @@ AnalysisSummaryPanel::AnalysisSummaryPanel(QWidget* p)
 {
     m_ui->setupUi(this);
     const QList<QPushButton*> bs = {
-        m_ui->stepsButton, m_ui->loadsButton, m_ui->constraintsButton, m_ui->regionsButton};
+        m_ui->stepsButton, m_ui->loadsButton, m_ui->constraintsButton,
+        m_ui->mpcsButton, m_ui->regionsButton};
     for (auto* b : bs)
     {
         b->setIconSize(QSize(22, 22));
@@ -34,6 +35,11 @@ QPushButton* AnalysisSummaryPanel::loadsButton() const
 QPushButton* AnalysisSummaryPanel::constraintsButton() const
 {
     return m_ui->constraintsButton;
+}
+
+QPushButton* AnalysisSummaryPanel::mpcsButton() const
+{
+    return m_ui->mpcsButton;
 }
 
 QPushButton* AnalysisSummaryPanel::regionsButton() const

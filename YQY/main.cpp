@@ -5,7 +5,28 @@
 
 int main(int argc, char* argv[])
 {
+    bool headlessVerification = false;
+    for (int argumentIndex = 1; argumentIndex < argc; ++argumentIndex)
+    {
+        const QString argument = QString::fromLocal8Bit(argv[argumentIndex]);
+        headlessVerification =
+            argument == QStringLiteral("--verify-beam-dynamics")
+            || argument == QStringLiteral("--verify-le2012-example1")
+            || argument == QStringLiteral("--verify-le2012-example4");
+        if (headlessVerification)
+            break;
+    }
+    if (headlessVerification)
+    {
+        QCoreApplication application(argc, argv);
+        if (const auto result =
+                VerificationRunner::runHeadless(application.arguments()))
+            return *result;
+        return 1;
+    }
+
     ApplicationBootstrap::prepareEnvironment();
+    QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
     QApplication application(argc, argv);
     ApplicationBootstrap::configureApplication(application);
 

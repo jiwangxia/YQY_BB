@@ -5,6 +5,7 @@
 #include "SolverNewmark.h"
 
 #include <QDebug>
+#include <QTextStream>
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -50,14 +51,14 @@ namespace SolverNameSpace
         m_Vn.resize(nDofs);
         m_An.resize(nDofs);
         m_cache.reset();
+        // The gyroscopic tangent is generally non-symmetric, therefore the
+        // dynamic effective matrix must use the general sparse LU path.
+        m_cache.useLdlt = false;
         model.GetState(m_Un, m_Vn, m_An);
 
-        // The element mass and damping matrices will be connected next.  Keeping
-        // them zero here isolates and validates the Newmark/SO(3) iteration.
         m_M.resize(nDofs, nDofs);
         m_C.resize(nDofs, nDofs);
-        m_M.setZero();
-        m_C.setZero();
+        m_Kc.resize(nDofs, nDofs);
 
         const int numSteps = static_cast<int>(std::ceil(duration / m_param.dt));
         qDebug().noquote() << QStringLiteral("总时间步数: %1, 标准时间步长: %2 s, 总时间: %3 s")
@@ -80,10 +81,14 @@ namespace SolverNameSpace
 
             bool converged = false;
             double error = std::numeric_limits<double>::infinity();
+            int iterationCount = 0;
             for (int iter = 0; iter < m_param.maxIter; ++iter)
             {
+                iterationCount = iter + 1;
                 model.Assemble_Matrix(m_K, true);
-                m_Keff = m_K + m_c.a0 * m_M + m_c.a1 * m_C;
+                model.AssembleDynamicSystem(m_M, m_C, m_Kc);
+                m_Keff = m_K
+                    + m_c.a0 * m_M + m_c.a1 * m_C + m_Kc;
                 model.ComputeResidual(F2, m_R);
 
                 error = m_R.norm();
@@ -112,6 +117,10 @@ namespace SolverNameSpace
             if (!converged)
             {
                 model.RollbackDynamicStep();
+                QTextStream(stderr)
+                    << "Newmark failed at step=" << step
+                    << " time=" << currentTime
+                    << " residual=" << error << Qt::endl;
                 qDebug().noquote()
                     << QStringLiteral("警告: 时间步 %1 未收敛 (残差=%2)")
                         .arg(step).arg(error);
@@ -120,6 +129,7 @@ namespace SolverNameSpace
 
             model.CommitState();
             model.GetState(m_Un, m_Vn, m_An);
+            model.RecordStepIterations(currentTime, iterationCount);
             if (m_callback)
             {
                 m_callback(step, currentTime, m_Un);

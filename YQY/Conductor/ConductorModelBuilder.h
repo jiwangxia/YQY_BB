@@ -15,6 +15,12 @@ class StructureData;
 
 namespace Conductor
 {
+    enum class BundleEndTopology
+    {
+        SingleSupport = 0,   ///< 两个分组节点汇集至一个公共挂点
+        DualSupportByGroup   ///< 两个分组节点分别连接至两个自动生成的挂点
+    };
+
     /**
      * @brief 单档导线生成参数
      *
@@ -31,9 +37,11 @@ namespace Conductor
         ConductorConfig conductor;                                          ///< 裸导线几何和初始应力参数
         std::shared_ptr<Property> property;                                 ///< 导线材料和截面属性
         bool convergeBundleEnds = true;                                     ///< 多分裂导线两端是否汇集到公共支点
+        BundleEndTopology endTopology = BundleEndTopology::SingleSupport;   ///< 耐张端部挂点形式
+        double dualSupportSpacing = 0.0;                                    ///< 双挂点间距；非正值时取子导线间距
         double bundleEndTransitionLength = 1.0;                             ///< 公共支点到分裂截面的默认过渡弧长，单位 m
-        EnumKeyword::ElementType endFittingElementType = EnumKeyword::ElementType::CR3D; ///< 耐张端部联板/稳定梁单元类型
-        std::shared_ptr<Property> endFittingProperty;                       ///< 耐张端部属性；为空时复用导线属性
+        EnumKeyword::ElementType endFittingElementType = EnumKeyword::ElementType::CR3D; ///< 耐张稳定梁单元类型
+        std::shared_ptr<Property> endFittingProperty;                       ///< 耐张稳定梁属性；为空时复用导线属性
         QString setNamePrefix = QStringLiteral("单档导线");                  ///< 自动生成子导线集合的名称前缀
     };
 
@@ -54,11 +62,19 @@ namespace Conductor
      *
      * 间隔棒有独立的单元类型和属性，不要求与导线单元一致。
      */
+    enum class InnerSpacerStyle
+    {
+        OuterPolygon = 0,
+        CenterBraced,
+        InnerPolygon
+    };
+
     struct InnerSpacerConfig
     {
         double position = 0.0;                                             ///< 间隔棒位置，按距离或比例解释
         bool useRatio = false;                                             ///< true=position 为比例，false=position 为距左端距离
-        bool createCenterNode = true;                                      ///< 多分裂时是否创建截面中心节点
+        InnerSpacerStyle style = InnerSpacerStyle::CenterBraced;           ///< 相内间隔棒形式
+        double innerPolygonScale = 0.5;                                    ///< 内圈相对外框的比例
         EnumKeyword::ElementType elementType = EnumKeyword::ElementType::CR3D; ///< 间隔棒单元类型，默认 CR3D
         std::shared_ptr<Property> property;                                ///< 间隔棒材料和截面属性
     };
@@ -78,6 +94,7 @@ namespace Conductor
     struct TensionEndModel
     {
         int supportNodeId = -1;                                             ///< 无塔模型时的耐张挂点
+        std::vector<int> supportNodeIds;                                    ///< 按分组顺序排列的耐张挂点；单挂点模式中仅含一个 ID
         std::vector<int> groupNodeIds;                                      ///< 子导线分组汇集节点
         std::vector<int> yokeElementIds;                                    ///< 挂点到分组节点的联板单元
         int stabilizerElementId = -1;                                       ///< 两个分组节点之间的稳定梁
@@ -95,6 +112,41 @@ namespace Conductor
     };
 
     /**
+     * @brief 多档中间直线塔的 H 型悬垂拓扑
+     *
+     * center 是用户输入的分裂多边形中心；junctionNodeId 位于其上方，
+     * supportNodeId 再向上一个悬垂串长度，且仅 supportNodeId 施加边界约束。
+     */
+    struct SuspensionPointModel
+    {
+        int stationIndex = -1;
+        Vector3d center = Vector3d::Zero();
+        int junctionNodeId = -1;
+        int supportNodeId = -1;
+        std::vector<int> wireNodeIds;
+        std::vector<int> yokeElementIds;
+        int stringElementId = -1;
+        int spacerCenterNodeId = -1;
+        std::vector<int> spacerInnerNodeIds;
+        std::vector<int> spacerElementIds;
+    };
+
+    /**
+     * @brief 同一耐张段内的多档导线生成参数
+     *
+     * stationCenters 至少包含三个导线束中心坐标。首末站生成耐张端，
+     * 中间站生成 H 型悬垂端；span 中的导线和间隔棒参数逐档复用。
+     */
+    struct MultiSpanConductorBuildConfig
+    {
+        SpanConductorBuildConfig span;
+        std::vector<Vector3d> stationCenters;
+        double suspensionStringLength = 1.0;
+        EnumKeyword::ElementType suspensionElementType = EnumKeyword::ElementType::T3D2;
+        std::shared_ptr<Property> suspensionProperty;
+    };
+
+    /**
      * @brief 相内间隔棒生成结果
      */
     struct InnerSpacerModel
@@ -103,6 +155,7 @@ namespace Conductor
         double position = 0.0;              ///< 实际位置，距左端水平距离，单位 m
         double ratio = 0.0;                 ///< 档距比例
         int centerNodeId = -1;              ///< 多分裂截面中心节点 ID
+        std::vector<int> innerNodeIds;      ///< 内圈小多边形节点 ID
         std::vector<int> nodeIds;           ///< 间隔棒关联节点 ID
         std::vector<int> elementIds;        ///< 间隔棒单元 ID
     };
@@ -115,10 +168,12 @@ namespace Conductor
         Vector3d start = Vector3d::Zero();                         ///< 左挂点坐标
         Vector3d end = Vector3d::Zero();                           ///< 右挂点坐标
         double spanLength = 0.0;                                   ///< 水平档距，单位 m
+        int spanCount = 1;                                         ///< 结果中包含的档数
         int leftSupportNodeId = -1;                                ///< 左端公共支点节点 ID
         int rightSupportNodeId = -1;                               ///< 右端公共支点节点 ID
         TensionEndModel leftTensionEnd;                             ///< 左侧 THOP 式耐张端部
         TensionEndModel rightTensionEnd;                            ///< 右侧 THOP 式耐张端部
+        std::vector<SuspensionPointModel> suspensionPoints;         ///< 中间 H 型悬垂点
         std::map<int, SubConductorModel> subConductors;            ///< 子导线索引
         std::vector<InnerSpacerModel> innerSpacers;                ///< 相内间隔棒索引
         std::shared_ptr<Property> property;                        ///< 导线属性
@@ -163,6 +218,14 @@ namespace Conductor
          * @return 成功返回 true
          */
         bool BuildSpanConductor(const SpanConductorBuildConfig& config, LineBuildResult& result, std::string& error);
+
+        /**
+         * @brief 生成同一耐张段内的多档导线
+         *
+         * 首末站使用当前单档耐张端逻辑，中间站按 THOP 的 H 型悬垂端逻辑生成；
+         * 相邻两档共享中间站的各子导线端节点。
+         */
+        bool BuildMultiSpanConductor(const MultiSpanConductorBuildConfig& config, LineBuildResult& result, std::string& error);
 
         /**
          * @brief 在已有导线上生成一个相内间隔棒
@@ -217,6 +280,7 @@ namespace Conductor
         bool AddNodes(BundleResult& raw, const LineBuildConfig& config, LineBuildResult& result, std::string& error);
         bool AddElements(const BundleResult& raw, const LineBuildConfig& config, std::shared_ptr<Property> property, LineBuildResult& result, std::string& error);
         bool AddTensionEndElements(const LineBuildConfig& config, LineBuildResult& result, std::string& error);
+        bool BuildSuspensionSpacer(SuspensionPointModel& suspension, const InnerSpacerConfig& config, std::string& error);
         bool CreateSubConductorSets(const LineBuildConfig& config, LineBuildResult& result, std::string& error);
         bool RenumberLineModel(LineBuildResult& result, std::string& error);
     };

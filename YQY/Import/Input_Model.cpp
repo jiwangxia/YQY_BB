@@ -8,6 +8,7 @@
 #include <QStringDecoder>
 
 #include <cmath>
+#include <set>
 #include <stdexcept>
 #include <utility>
 
@@ -16,7 +17,7 @@ namespace
 QString GetDefaultHdf5FileName(const QString& inputFileName)
 {
     const QFileInfo inputFileInfo(inputFileName);
-    QDir outputDir(QDir::current().filePath("Export/ExportH5"));//输出H5文件的默认路径
+    QDir outputDir(QDir::current().filePath("YQY/Export/ExportH5"));
     if (!outputDir.exists())
     {
         QDir().mkpath(outputDir.absolutePath());
@@ -126,6 +127,9 @@ bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureDa
         case EnumKeyword::KeyData::CONSTRAINT_TABULAR:
             if (!InputConstraintTabular(flow, list_str)) return false;
             break;
+        case EnumKeyword::KeyData::MPC:
+            if (!InputMPC(flow, list_str)) return false;
+            break;
         case EnumKeyword::KeyData::LOAD:
             if (!InputLoad(flow, list_str)) return false;
             break;
@@ -187,6 +191,7 @@ bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureDa
     summary << QStringLiteral("材料数量: %1").arg(m_Structure->m_Material.size());
     summary << QStringLiteral("截面数量: %1").arg(m_Structure->m_Section.size());
     summary << QStringLiteral("约束数量: %1").arg(m_Structure->m_Constraint.size());
+    summary << QStringLiteral("MPC数量: %1").arg(m_Structure->m_MPCConstraints.size());
     summary << QStringLiteral("荷载总数: %1").arg(m_Structure->m_Load.size());
     for (auto it = loadTypeCount.constBegin(); it != loadTypeCount.constEnd(); ++it)
     {
@@ -322,6 +327,67 @@ bool Input_Model::ValidateStructure(QString& errorMessage) const
 			return false;
 		}
 	}
+
+    std::set<std::pair<int, int>> dependentDofs;
+    for (const auto& [mpcId, mpc] : m_Structure->m_MPCConstraints)
+    {
+        if (!mpc)
+        {
+            errorMessage = QStringLiteral("MPC %1为空。").arg(mpcId);
+            return false;
+        }
+        const std::vector<int> nodeIds = mpc->GetNodeIds();
+        if (nodeIds.size() != 2)
+        {
+            errorMessage =
+                QStringLiteral("MPC %1没有有效的主从节点。").arg(mpcId);
+            return false;
+        }
+        const auto master = m_Structure->m_Nodes.find(nodeIds[0]);
+        const auto slave = m_Structure->m_Nodes.find(nodeIds[1]);
+        if (master == m_Structure->m_Nodes.cend()
+            || slave == m_Structure->m_Nodes.cend()
+            || !master->second || !slave->second)
+        {
+            errorMessage =
+                QStringLiteral("MPC %1引用了无效节点。").arg(mpcId);
+            return false;
+        }
+        for (const int direction : mpc->m_SlaveDirections)
+        {
+            if (direction < 0
+                || direction >= slave->second->m_DOF.size())
+            {
+                errorMessage = QStringLiteral(
+                    "MPC %1的从自由度%2超过节点%3的自由度范围。")
+                    .arg(mpcId).arg(direction).arg(nodeIds[1]);
+                return false;
+            }
+            if (!dependentDofs.emplace(nodeIds[1], direction).second)
+            {
+                errorMessage = QStringLiteral(
+                    "节点%1的自由度%2被多个MPC重复指定为从自由度。")
+                    .arg(nodeIds[1]).arg(direction);
+                return false;
+            }
+            for (const auto& [constraintId, constraint] :
+                 m_Structure->m_Constraint)
+            {
+                const auto constrainedNode =
+                    constraint ? constraint->m_pNode.lock() : nullptr;
+                if (constrainedNode
+                    && constrainedNode->m_Id == nodeIds[1]
+                    && static_cast<int>(constraint->m_Direction)
+                        == direction)
+                {
+                    errorMessage = QStringLiteral(
+                        "MPC %1的从自由度同时被位移约束%2固定。")
+                        .arg(mpcId).arg(constraintId);
+                    return false;
+                }
+            }
+        }
+    }
 
 	errorMessage.clear();
 	return true;
@@ -642,6 +708,47 @@ bool Input_Model::InputSection(QTextStream& flow, const QStringList& list_str)
             pSectI0n->m_Width = strlist_pro[1].toDouble();
             pSectI0n->m_Height = strlist_pro[2].toDouble();
             m_Structure->m_Section.insert(std::make_pair(autoId, pSectI0n));
+        }
+        else if (strlist_pro.size() == 8)
+        {
+            // ID, A, Iy, Iz, J, J_rho_x, J_rho_y, J_rho_z
+            bool valuesAreValid = true;
+            double values[7] = {};
+            for (int valueIndex = 0; valueIndex < 7; ++valueIndex)
+            {
+                bool converted = false;
+                values[valueIndex] = strlist_pro[valueIndex + 1].toDouble(&converted);
+                valuesAreValid = valuesAreValid && converted && std::isfinite(values[valueIndex]) && values[valueIndex] > 0.0;
+            }
+            if (!valuesAreValid)
+            {
+                qDebug().noquote()
+                    << QStringLiteral(
+                           "Error: explicit beam section requires positive "
+                           "A, Iy, Iz, J, J_rho_x, J_rho_y, J_rho_z");
+                return false;
+            }
+
+            const int autoId = static_cast<int>(m_Structure->m_Section.size()) + 1;
+            auto pSection = std::make_shared<SectionCircular>();
+            pSection->m_Id = autoId;
+            pSection->m_Area = values[0];
+            pSection->m_HasExplicitSectionInertia = true;
+            pSection->m_ExplicitIy = values[1];
+            pSection->m_ExplicitIz = values[2];
+            pSection->m_ExplicitJ = values[3];
+            pSection->m_MassInertiaPerLength = Eigen::Vector3d(values[4], values[5], values[6]);
+            pSection->Calculate_Radius();
+            m_Structure->m_Section.insert(std::make_pair(autoId, pSection));
+        }
+        else
+        {
+            qDebug().noquote()
+                << QStringLiteral(
+                       "Error: SECTION supports ID,A; ID,Width,Height; "
+                       "or ID,A,Iy,Iz,J,J_rho_x,J_rho_y,J_rho_z:")
+                << strdata;
+            return false;
         }
     }
 
@@ -1072,6 +1179,144 @@ bool Input_Model::InputConstraint(QTextStream& flow, const QStringList& list_str
             std::make_pair(constraintId, pConstraint));
     }
 
+    return true;
+}
+
+bool Input_Model::InputMPC(QTextStream& flow,const QStringList& list_str)
+{
+    if (!RequireKeywordFieldCount(list_str, 2, "MPC"))
+        return false;
+
+    bool countOk = false;
+    const int count = list_str[1].toInt(&countOk);
+    if (!countOk || count < 1)
+    {
+        qDebug().noquote()
+            << QStringLiteral("Error: MPC数量必须为正整数");
+        return false;
+    }
+
+    for (int index = 0; index < count; ++index)
+    {
+        QString line;
+        if (!ReadLine(flow, line) || line.startsWith("*"))
+        {
+            qDebug().noquote()
+                << QStringLiteral("Error: MPC数据不足");
+            return false;
+        }
+        const QStringList fields = line.split(QRegularExpression("[\\t, ]"), Qt::SkipEmptyParts);
+        if (fields.size() != 4)
+        {
+            qDebug().noquote()
+                << QStringLiteral(
+                    "Error: MPC数据需要4个字段: "
+                    "MPC_ID, MasterNode, SlaveNode, SlaveDirection: ")
+                << line;
+            return false;
+        }
+
+        bool idOk = false;
+        bool masterOk = false;
+        bool slaveOk = false;
+        const int id = fields[0].toInt(&idOk);
+        const int masterId = fields[1].toInt(&masterOk);
+        const int slaveId = fields[2].toInt(&slaveOk);
+        const QString directionText = fields[3].trimmed();
+        if (!idOk || !masterOk || !slaveOk || id <= 0
+            || masterId <= 0 || slaveId <= 0 || masterId == slaveId
+            || directionText.isEmpty())
+        {
+            qDebug().noquote()
+                << QStringLiteral("Error: MPC包含无效字段: ") << line;
+            return false;
+        }
+        if (m_Structure->m_MPCConstraints.find(id)
+            != m_Structure->m_MPCConstraints.cend())
+        {
+            qDebug().noquote()
+                << QStringLiteral("Error: MPC编号重复: ") << id;
+            return false;
+        }
+
+        const auto master = m_Structure->FindNode(masterId);
+        const auto slave = m_Structure->FindNode(slaveId);
+        if (!master || !slave)
+        {
+            qDebug().noquote()
+                << QStringLiteral("Error: MPC引用了不存在的节点: ")
+                << masterId << slaveId;
+            return false;
+        }
+
+        std::vector<int> directions;
+        std::set<int> uniqueDirections;
+        for (const QChar character : directionText)
+        {
+            if (!character.isDigit())
+            {
+                qDebug().noquote()
+                    << QStringLiteral("Error: MPC从自由度只能由0到5组成: ")
+                    << directionText;
+                return false;
+            }
+            const int direction = character.digitValue();
+            if (direction < 0 || direction > 5 || !uniqueDirections.insert(direction).second)
+            {
+                qDebug().noquote()
+                    << QStringLiteral("Error: MPC从自由度无效或重复: ")
+                    << directionText;
+                return false;
+            }
+            directions.push_back(direction);
+        }
+
+        std::shared_ptr<NonlinearMPCConstraint> mpc;
+        if (directions.size() == 1 && directions.front() < 3)
+        {
+            auto distance = std::make_shared<DistanceMPCConstraint>();
+            distance->m_pNodeA = slave;
+            distance->m_pNodeB = master;
+            distance->m_pSlaveNode = slave;
+            distance->m_SlaveDirection = directions.front();
+            distance->m_Length = Eigen::Vector3d(
+                    slave->m_X - master->m_X,
+                    slave->m_Y - master->m_Y,
+                    slave->m_Z - master->m_Z).norm();
+            mpc = std::move(distance);
+        }
+        else if (directions == std::vector<int>({0, 5}))
+        {
+            auto release = std::make_shared<PlanarShearReleaseMPCConstraint>();
+            release->m_pMasterNode = master;
+            release->m_pSlaveNode = slave;
+            mpc = std::move(release);
+        }
+        else if (directions == std::vector<int>({0, 1, 2}))
+        {
+            auto rigid = std::make_shared<RigidOffsetMPCConstraint>();
+            rigid->m_pMasterNode = master;
+            rigid->m_pSlaveNode = slave;
+            rigid->m_Offset = Eigen::Vector3d(
+                slave->m_X - master->m_X,
+                slave->m_Y - master->m_Y,
+                slave->m_Z - master->m_Z);
+            mpc = std::move(rigid);
+        }
+        else
+        {
+            qDebug().noquote()
+                << QStringLiteral(
+                    "Error: 当前MPC求解阶段支持单个平移从自由度"
+                    "或完整平移自由度012: ")
+                << directionText;
+            return false;
+        }
+
+        mpc->m_Id = id;
+        mpc->m_SlaveDirections = directions;
+        m_Structure->m_MPCConstraints.emplace(id, std::move(mpc));
+    }
     return true;
 }
 

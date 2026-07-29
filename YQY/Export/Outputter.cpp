@@ -18,6 +18,8 @@ Outputter::~Outputter()
 
 void Outputter::MergeFramesFrom(const Outputter& source)
 {
+    m_solverIterationRecords.insert(m_solverIterationRecords.end(),
+        source.m_solverIterationRecords.cbegin(), source.m_solverIterationRecords.cend());
     for (const DataFrame& sourceFrame : source.m_DataSet)
     {
         auto targetIt = std::find_if(m_DataSet.begin(), m_DataSet.end(),
@@ -44,6 +46,51 @@ void Outputter::MergeFramesFrom(const Outputter& source)
             return lhs.m_currentTime < rhs.m_currentTime;
         return lhs.m_increment < rhs.m_increment;
     });
+}
+
+void Outputter::RecordSolverIteration(double time, int iterations)
+{
+    if (iterations > 0)
+        m_solverIterationRecords.push_back(
+            {m_currentStepId, m_currentAnalysisType, time, iterations});
+}
+
+bool Outputter::ExportSolverIterationHistory(const QString& fileName) const
+{
+    QFile file(fileName);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+        return false;
+
+    std::vector<SolverIterationRecord> records = m_solverIterationRecords;
+    std::sort(records.begin(), records.end(), [](const SolverIterationRecord& lhs,
+        const SolverIterationRecord& rhs)
+    {
+        if (lhs.analysisType != rhs.analysisType)
+            return lhs.analysisType < rhs.analysisType;
+        if (lhs.stepId != rhs.stepId)
+            return lhs.stepId < rhs.stepId;
+        return lhs.time < rhs.time;
+    });
+
+    QTextStream stream(&file);
+    stream.setRealNumberNotation(QTextStream::SmartNotation);
+    stream.setRealNumberPrecision(15);
+    int previousAnalysisType = -1;
+    int previousStepId = -1;
+    for (const SolverIterationRecord& record : records)
+    {
+        if (record.analysisType != previousAnalysisType || record.stepId != previousStepId)
+        {
+            if (previousAnalysisType != -1)
+                stream << Qt::endl;
+            stream << (record.analysisType == static_cast<int>(EnumKeyword::StepType::STATIC)
+                ? "*Static Step" : "*Dynamic Step") << Qt::endl;
+            previousAnalysisType = record.analysisType;
+            previousStepId = record.stepId;
+        }
+        stream << record.time << ',' << record.iterations << Qt::endl;
+    }
+    return stream.status() == QTextStream::Ok;
 }
 
 void NodeData::ExtractFromNode(const Node* pNode)
@@ -489,6 +536,7 @@ void Outputter::EndHdf5ResultStream(bool resultComplete)
 {
     if (m_hdf5Stream)
     {
+        m_hdf5Stream->WriteSolverIterationHistory(m_solverIterationRecords);
         m_hdf5Stream->EndResultStream(resultComplete);
         m_hdf5Stream.reset();
     }
@@ -499,6 +547,7 @@ void Outputter::Clear()
     EndBdfResultStream();
     EndHdf5ResultStream(false);
     m_DataSet.clear();
+    m_solverIterationRecords.clear();
 }
 
 void Outputter::WriteResultTableHeader(QTextStream& stream,

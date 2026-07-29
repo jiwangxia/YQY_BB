@@ -1,7 +1,14 @@
 ﻿#include "AeroManager.h"
 
 #include <windows.h>
+
+#include <cmath>
 #include <cstdio>
+#include <fstream>
+#include <iomanip>
+#include <iostream>
+#include <sstream>
+#include <utility>
 
 namespace
 {

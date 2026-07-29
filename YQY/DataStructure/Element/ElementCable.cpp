@@ -35,10 +35,18 @@ void ElementCable::Get_ke(MatrixXd& ke)
 
     const Eigen::Vector3d axis = chord / currentLength;
     const double area = pSection->m_Area;
+    if (area <= 0.0)
+        throw std::runtime_error("ElementCable section area must be positive");
+
     double Iy = 0.0, Iz = 0.0, polarMoment = 0.0;
     pSection->Calculate_I(Iy, Iz, polarMoment);
     if (polarMoment <= 0.0 && pSection->m_Radius > 0.0)
         polarMoment = 0.5 * area * pSection->m_Radius * pSection->m_Radius;
+    if (polarMoment < 0.0)
+        throw std::runtime_error("ElementCable polar moment must not be negative");
+
+    if (1.0 + pMaterial->m_Poisson <= 1.0e-12)
+        throw std::runtime_error("ElementCable Poisson ratio must be greater than -1");
 
     const double shearModulus = pMaterial->m_Young
         / (2.0 * (1.0 + pMaterial->m_Poisson));
@@ -48,7 +56,11 @@ void ElementCable::Get_ke(MatrixXd& ke)
     const double twist = pNode1->m_Displacement[3] - pNode0->m_Displacement[3];
 
     Eigen::Vector2d generalizedForce;
-    generalizedForce(0) = m_InitStress * area + axialStiffness * extension;
+    // 索不能传递压力。轴向力被截断到零后，轴向材料刚度和几何刚度
+    // 也必须同时移除，否则松弛索会在压缩状态下产生非物理反力。
+    const double trialAxialForce = m_InitStress * area + axialStiffness * extension;
+    const bool isTaut = trialAxialForce > 0.0;
+    generalizedForce(0) = isTaut ? trialAxialForce : 0.0;
     generalizedForce(1) = torsionalStiffness * twist;
     m_Stress = area > 0.0 ? generalizedForce(0) / area : 0.0;
 
@@ -59,7 +71,7 @@ void ElementCable::Get_ke(MatrixXd& ke)
     B(1, 7) = 1.0;
 
     Eigen::Matrix2d material = Eigen::Matrix2d::Zero();
-    material(0, 0) = axialStiffness;
+    material(0, 0) = isTaut ? axialStiffness : 0.0;
     material(1, 1) = torsionalStiffness;
     ke = B.transpose() * material * B;
 
