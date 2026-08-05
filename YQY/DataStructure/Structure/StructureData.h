@@ -154,6 +154,8 @@ public:
     std::shared_ptr<StructureData> CloneForAnalysis(QString* errorMessage = nullptr) const;
     std::shared_ptr<StructureData> CloneRegionForAnalysis(int regionId, int analysisStepId,
         QString* errorMessage = nullptr) const;
+    std::shared_ptr<StructureData> CloneRegionForAnalysis(int regionId,
+        const std::set<int>& analysisStepIds, QString* errorMessage = nullptr) const;
 
 private:
     /**

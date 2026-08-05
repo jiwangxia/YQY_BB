@@ -4,6 +4,7 @@
 #include "DataStructure/Material/Material.h"
 #include "DataStructure/Property/Property.h"
 #include "DataStructure/Section/SectionBase.h"
+#include "Solver/Dynamic/SolverAdaptiveTSSBN.h"
 #include "Solver/Dynamic/SolverNewmark.h"
 
 #include <QDir>
@@ -11,9 +12,18 @@
 #include <QTextStream>
 #include <array>
 #include <limits>
+#include <memory>
 
 namespace
 {
+double PositiveEnvironmentValue(const char* name, double fallback)
+{
+    bool valid = false;
+    const double value =
+        QString::fromLocal8Bit(qgetenv(name)).toDouble(&valid);
+    return valid && value > 0.0 ? value : fallback;
+}
+
 class Le2012Section final : public SectionBase
 {
 public:
@@ -38,7 +48,7 @@ private:
 enum class Le2012Example
 {
     RightAngleCantilever,
-    RotatingBeam
+    FreeFreeBeamWithDisks
 };
 
 class Le2012BeamModel final : public SolverNameSpace::IAnalysisModel
@@ -81,18 +91,20 @@ public:
                 }
             }
             else
-                node->m_X = nodeIndex * elementLength;
+            {
+                // Fig. 3.2: the 10 m beam initially spans the 6-8-10
+                // triangle in the global x-y plane.
+                const double fraction = static_cast<double>(nodeIndex)
+                    / static_cast<double>(elementCount);
+                node->m_X = 6.0 * fraction;
+                node->m_Y = 8.0 * (1.0 - fraction);
+            }
             m_nodes.push_back(node);
 
             m_freeDofs[nodeIndex].fill(-1);
             if (nodeIndex == 0 && rightAngle)
             {
                 // Fig. 2: the first end of the right-angle frame is clamped.
-            }
-            else if (nodeIndex == 0)
-            {
-                // Fig. 8: the left end may rotate only about the z-axis.
-                m_freeDofs[nodeIndex][5] = freeDof++;
             }
             else
             {
@@ -111,7 +123,7 @@ public:
             element->m_pProperty = m_property;
             element->q0 = rightAngle
                 ? Eigen::Vector3d::UnitZ()
-                : Eigen::Vector3d::UnitY();
+                : Eigen::Vector3d::UnitZ();
             element->Get_L0();
             m_elements.push_back(element);
         }
@@ -121,7 +133,7 @@ public:
     int GetFreeDofs() const override { return m_freeDofCount; }
     int GetFixedDofs() const override
     {
-        return m_example == Le2012Example::RightAngleCantilever ? 6 : 5;
+        return m_example == Le2012Example::RightAngleCantilever ? 6 : 0;
     }
 
     void ApplyIncrement(const SolverNameSpace::Vec& dx) override
@@ -197,6 +209,104 @@ public:
                     m_nodes[nodeIndex]->m_Acceleration[component] =
                         acceleration[dof];
                 }
+            }
+            auto& node = *m_nodes[nodeIndex];
+            const Eigen::Vector3d spatialVelocity(
+                node.m_Velocity[3],
+                node.m_Velocity[4],
+                node.m_Velocity[5]);
+            const Eigen::Vector3d spatialAcceleration(
+                node.m_Acceleration[3],
+                node.m_Acceleration[4],
+                node.m_Acceleration[5]);
+            node.m_OmegaMaterial =
+                node.m_Rg.transpose() * spatialVelocity;
+            node.m_AlphaMaterial =
+                node.m_Rg.transpose() * spatialAcceleration;
+        }
+    }
+
+    void SetTssbnStageKinematics(
+        int stageIndex,
+        double timeStep,
+        double firstStageTime,
+        double secondStageTime,
+        double secondStageDiagonalFraction,
+        SolverNameSpace::Vec& velocity,
+        SolverNameSpace::Vec& acceleration) override
+    {
+        SetTrialKinematics(velocity, acceleration);
+        for (int nodeIndex = 0;
+             nodeIndex < static_cast<int>(m_nodes.size());
+             ++nodeIndex)
+        {
+            Eigen::Vector3d angularVelocity;
+            Eigen::Vector3d angularAcceleration;
+            m_nodes[nodeIndex]->SetTssbnStageKinematics(
+                stageIndex, timeStep,
+                firstStageTime, secondStageTime,
+                secondStageDiagonalFraction,
+                angularVelocity, angularAcceleration);
+            for (int component = 0; component < 3; ++component)
+            {
+                const int dof =
+                    m_freeDofs[nodeIndex][component + 3];
+                if (dof < 0)
+                    continue;
+                velocity[dof] = angularVelocity[component];
+                acceleration[dof] = angularAcceleration[component];
+            }
+        }
+    }
+
+    void CorrectTssbnStepStates(
+        double timeStep,
+        double firstStageTime,
+        double secondStageTime,
+        double lastStageTime,
+        double baseFirstWeight,
+        double embeddedFirstWeight,
+        double embeddedSecondWeight,
+        double embeddedLastWeight,
+        double lastStageFirstCoefficient,
+        double lastStageSecondCoefficient,
+        SolverNameSpace::Vec& baseIncrement,
+        SolverNameSpace::Vec& baseVelocity,
+        SolverNameSpace::Vec& embeddedIncrement,
+        SolverNameSpace::Vec& embeddedVelocity,
+        SolverNameSpace::Vec& acceptedAcceleration) override
+    {
+        const double extrapolation =
+            (lastStageTime - secondStageTime)
+            / (secondStageTime - firstStageTime);
+        for (int nodeIndex = 0;
+             nodeIndex < static_cast<int>(m_nodes.size());
+             ++nodeIndex)
+        {
+            const auto& node = m_nodes[nodeIndex];
+            const Node::TssbnRotationState rotation =
+                node->IntegrateTssbnRotation(
+                    timeStep, extrapolation, baseFirstWeight,
+                    embeddedFirstWeight, embeddedSecondWeight,
+                    embeddedLastWeight, lastStageFirstCoefficient,
+                    lastStageSecondCoefficient);
+
+            for (int component = 0; component < 3; ++component)
+            {
+                const int dof =
+                    m_freeDofs[nodeIndex][component + 3];
+                if (dof < 0)
+                    continue;
+                baseIncrement[dof] =
+                    rotation.baseSpatialIncrement[component];
+                embeddedIncrement[dof] =
+                    rotation.embeddedSpatialIncrement[component];
+                baseVelocity[dof] =
+                    rotation.baseSpatialVelocity[component];
+                embeddedVelocity[dof] =
+                    rotation.embeddedSpatialVelocity[component];
+                acceptedAcceleration[dof] =
+                    rotation.acceptedSpatialAcceleration[component];
             }
         }
     }
@@ -280,6 +390,34 @@ public:
             AssembleElementVector(
                 elementIndex, elementInertia, m_inertiaForce);
         }
+        if (m_example == Le2012Example::FreeFreeBeamWithDisks)
+        {
+            // Fig. 3.2 / Section 3.4: identical rigid disks are attached to
+            // both beam ends.  Their point mass and principal inertias are
+            // represented as nodal inertia terms.
+            constexpr double diskMass = 10.0;
+            constexpr double diskInertia[3] = { 200.0, 100.0, 100.0 };
+            for (const int nodeIndex : { 0,
+                    static_cast<int>(m_nodes.size()) - 1 })
+            {
+                for (int component = 0; component < 3; ++component)
+                {
+                    massTriplets.emplace_back(
+                        m_freeDofs[nodeIndex][component],
+                        m_freeDofs[nodeIndex][component], diskMass);
+                    massTriplets.emplace_back(
+                        m_freeDofs[nodeIndex][component + 3],
+                        m_freeDofs[nodeIndex][component + 3],
+                        diskInertia[component]);
+                    m_inertiaForce[m_freeDofs[nodeIndex][component]] +=
+                        diskMass * m_nodes[nodeIndex]->m_Acceleration[component];
+                    m_inertiaForce[
+                        m_freeDofs[nodeIndex][component + 3]] +=
+                        diskInertia[component]
+                        * m_nodes[nodeIndex]->m_Acceleration[component + 3];
+                }
+            }
+        }
         mass.resize(m_freeDofCount, m_freeDofCount);
         gyroscopic.resize(m_freeDofCount, m_freeDofCount);
         centrifugal.resize(m_freeDofCount, m_freeDofCount);
@@ -310,16 +448,17 @@ public:
         }
 
         const int endNode = static_cast<int>(m_nodes.size()) - 1;
-        const double forceY = time <= 1.0 ? 15.0 * time : 15.0;
         double forceZ = 0.0;
-        if (time <= 1.0)
-            forceZ = 15.0 * time;
-        else if (time <= 2.0)
-            forceZ = 15.0 * (2.0 - time);
+        if (time <= 2.5)
+            forceZ = 8.0 * time;
+        else if (time <= 5.0)
+            forceZ = 8.0 * (5.0 - time);
 
-        // Signs follow the positive y and z arrows in Fig. 8.
-        freeForce[m_freeDofs[endNode][1]] = forceY;
+        // Fig. 3.2: an in-plane force Fx=2Fz at the lower-right disk and
+        // an opposite pair of out-of-plane forces at the two disks.
+        freeForce[m_freeDofs[endNode][0]] = -2.0 * forceZ;
         freeForce[m_freeDofs[endNode][2]] = forceZ;
+        freeForce[m_freeDofs[0][2]] = -forceZ;
     }
 
     void Assemble_Constraint(
@@ -350,11 +489,45 @@ public:
 
     void OnStepCompleted(double) override {}
     void CommitState() override {}
-    void BackupStepState() override {}
+    void BackupStepState() override
+    {
+        for (const auto& node : m_nodes)
+        {
+            node->m_Displacement_n = node->m_Displacement;
+            node->m_Velocity_n = node->m_Velocity;
+            node->m_Acceleration_n = node->m_Acceleration;
+            node->m_Rg_n = node->m_Rg;
+            node->m_OmegaMaterial_n = node->m_OmegaMaterial;
+            node->m_AlphaMaterial_n = node->m_AlphaMaterial;
+            node->m_StepRotation.setZero();
+        }
+    }
 
     void GetStepIncrement(SolverNameSpace::Vec& increment) const override
     {
         increment = Eigen::VectorXd::Zero(m_freeDofCount);
+        for (int nodeIndex = 0;
+             nodeIndex < static_cast<int>(m_nodes.size());
+             ++nodeIndex)
+        {
+            const auto& node = *m_nodes[nodeIndex];
+            for (int component = 0; component < 3; ++component)
+            {
+                const int dof = m_freeDofs[nodeIndex][component];
+                if (dof >= 0)
+                {
+                    increment[dof] =
+                        node.m_Displacement[component]
+                        - node.m_Displacement_n[component];
+                }
+            }
+            for (int component = 0; component < 3; ++component)
+            {
+                const int dof = m_freeDofs[nodeIndex][component + 3];
+                if (dof >= 0)
+                    increment[dof] = node.m_StepRotation[component];
+            }
+        }
     }
 
     Eigen::Vector3d EndDisplacement() const
@@ -425,14 +598,52 @@ private:
 int PaperBeamDynamicsVerification::RunExample1(
     const QString& outputDirectory)
 {
+    return RunExample1(outputDirectory, false);
+}
+
+int PaperBeamDynamicsVerification::RunExample1Adaptive(
+    const QString& outputDirectory)
+{
+    return RunExample1(outputDirectory, true);
+}
+
+int PaperBeamDynamicsVerification::RunExample1(
+    const QString& outputDirectory,
+    bool useAdaptiveTssbn)
+{
     Le2012BeamModel model(Le2012Example::RightAngleCantilever);
-    SolverNameSpace::SolverNewmark::Params parameters;
-    parameters.dt = 0.25;
-    parameters.beta = 0.25;
-    parameters.gamma = 0.5;
-    parameters.maxIter = 48;
-    parameters.tol = 1.0e-5;
-    SolverNameSpace::SolverNewmark solver(parameters);
+    const double initialTimeStep =
+        PositiveEnvironmentValue("YQY_LE2012_EXAMPLE1_DT", 0.25);
+    const double duration =
+        PositiveEnvironmentValue("YQY_LE2012_DURATION", 30.0);
+    std::unique_ptr<SolverNameSpace::ISolver> solver;
+    if (useAdaptiveTssbn)
+    {
+        SolverNameSpace::SolverAdaptiveTSSBN::Params parameters;
+        parameters.initialTimeStep = std::min(0.10, initialTimeStep);
+        parameters.minimumTimeStep = 1.0e-4;
+        parameters.maximumTimeStep = initialTimeStep;
+        parameters.relativeTolerance =
+            PositiveEnvironmentValue(
+                "YQY_TSSBN_REL_TOL", parameters.relativeTolerance);
+        parameters.absoluteTolerance =
+            PositiveEnvironmentValue("YQY_TSSBN_ABS_TOL", 1.0e-6);
+        parameters.nonlinearTolerance = 1.0e-5;
+        parameters.maximumNewtonIterations = 48;
+        solver = std::make_unique<SolverNameSpace::SolverAdaptiveTSSBN>(
+            parameters);
+    }
+    else
+    {
+        SolverNameSpace::SolverNewmark::Params parameters;
+        parameters.dt = initialTimeStep;
+        parameters.beta = 0.25;
+        parameters.gamma = 0.5;
+        parameters.maxIter = 48;
+        parameters.tol = 1.0e-5;
+        solver =
+            std::make_unique<SolverNameSpace::SolverNewmark>(parameters);
+    }
 
     QDir directory;
     if (!directory.mkpath(outputDirectory))
@@ -449,7 +660,7 @@ int PaperBeamDynamicsVerification::RunExample1(
     double minimumElbowZ = std::numeric_limits<double>::infinity();
     double maximumElbowZ = -std::numeric_limits<double>::infinity();
     double lastCompletedTime = 0.0;
-    solver.SetStepCallback(
+    solver->SetStepCallback(
         [&model, &stream, &minimumTipZ, &maximumTipZ,
          &minimumElbowZ, &maximumElbowZ, &lastCompletedTime](
             int, double time, const Eigen::VectorXd&)
@@ -466,7 +677,7 @@ int PaperBeamDynamicsVerification::RunExample1(
             lastCompletedTime = time;
         });
 
-    if (!solver.Solve(model, 30.0))
+    if (!solver->Solve(model, duration))
     {
         resultFile.close();
         QFile failureSummary(
@@ -543,20 +754,53 @@ int PaperBeamDynamicsVerification::RunExample1(
 
 int PaperBeamDynamicsVerification::Run(const QString& outputDirectory)
 {
-    Le2012BeamModel model(Le2012Example::RotatingBeam);
-    SolverNameSpace::SolverNewmark::Params parameters;
-    parameters.dt = 0.20;
-    bool hasTimeStepOverride = false;
-    const double timeStepOverride = QString::fromLocal8Bit(
-        qgetenv("YQY_LE2012_EXAMPLE4_DT"))
-        .toDouble(&hasTimeStepOverride);
-    if (hasTimeStepOverride && timeStepOverride > 0.0)
-        parameters.dt = timeStepOverride;
-    parameters.beta = 0.25;
-    parameters.gamma = 0.5;
-    parameters.maxIter = 32;
-    parameters.tol = 1.0e-5;
-    SolverNameSpace::SolverNewmark solver(parameters);
+    return Run(outputDirectory, false);
+}
+
+int PaperBeamDynamicsVerification::RunAdaptive(
+    const QString& outputDirectory)
+{
+    return Run(outputDirectory, true);
+}
+
+int PaperBeamDynamicsVerification::Run(
+    const QString& outputDirectory,
+    bool useAdaptiveTssbn)
+{
+    Le2012BeamModel model(Le2012Example::FreeFreeBeamWithDisks);
+    const double initialTimeStep =
+        PositiveEnvironmentValue("YQY_LE2012_EXAMPLE4_DT", 0.10);
+    const double duration =
+        PositiveEnvironmentValue("YQY_LE2012_DURATION", 30.0);
+
+    std::unique_ptr<SolverNameSpace::ISolver> solver;
+    if (useAdaptiveTssbn)
+    {
+        SolverNameSpace::SolverAdaptiveTSSBN::Params parameters;
+        parameters.initialTimeStep = initialTimeStep;
+        parameters.minimumTimeStep = 1.0e-4;
+        parameters.maximumTimeStep = initialTimeStep;
+        parameters.relativeTolerance =
+            PositiveEnvironmentValue(
+                "YQY_TSSBN_REL_TOL", parameters.relativeTolerance);
+        parameters.absoluteTolerance =
+            PositiveEnvironmentValue("YQY_TSSBN_ABS_TOL", 1.0e-6);
+        parameters.nonlinearTolerance = 1.0e-5;
+        parameters.maximumNewtonIterations = 32;
+        solver = std::make_unique<SolverNameSpace::SolverAdaptiveTSSBN>(
+            parameters);
+    }
+    else
+    {
+        SolverNameSpace::SolverNewmark::Params parameters;
+        parameters.dt = initialTimeStep;
+        parameters.beta = 0.25;
+        parameters.gamma = 0.5;
+        parameters.maxIter = 32;
+        parameters.tol = 1.0e-5;
+        solver =
+            std::make_unique<SolverNameSpace::SolverNewmark>(parameters);
+    }
 
     QDir directory;
     if (!directory.mkpath(outputDirectory))
@@ -571,7 +815,7 @@ int PaperBeamDynamicsVerification::Run(const QString& outputDirectory)
     double minimumX = std::numeric_limits<double>::infinity();
     double maximumAbsY = 0.0;
     double maximumAbsZ = 0.0;
-    solver.SetStepCallback(
+    solver->SetStepCallback(
         [&model, &stream, &minimumX, &maximumAbsY, &maximumAbsZ](
             int, double time, const Eigen::VectorXd&)
         {
@@ -585,7 +829,7 @@ int PaperBeamDynamicsVerification::Run(const QString& outputDirectory)
             maximumAbsZ = std::max(maximumAbsZ, std::abs(displacement.z()));
         });
 
-    if (!solver.Solve(model, 30.0))
+    if (!solver->Solve(model, duration))
         return 4;
     resultFile.close();
 

@@ -1,544 +1,855 @@
-﻿/**
+/**
  * @file SolverAdaptiveTSSBN.cpp
- * @brief 自适应TSSBN动力求解器实现
+ * @brief 用于非线性动力学的自适应 rho∞-TSSBN 积分器。
  */
 #include "SolverAdaptiveTSSBN.h"
+
+#include <Eigen/Dense>
 #include <QDebug>
-#include <stdexcept>
-#include <cmath>
+#include <QString>
+#include <QTextStream>
 #include <algorithm>
-#include <Eigen/Dense>  // 添加 Eigen Dense 模块，包含 QR 分解
+#include <cmath>
+#include <stdexcept>
 
 namespace SolverNameSpace
 {
-    SolverAdaptiveTSSBN::SolverAdaptiveTSSBN(Params p) : m_param(p)
+    namespace
     {
-        ComputeCoeffs();
-        ComputeEmbeddedCoeffs();
+        constexpr double coefficientTolerance = 1.0e-12;
+        constexpr double timeTolerance = 1.0e-12;
+        constexpr double minimumControllerError = 1.0e-14;
+
+        bool IsFinitePositive(double value)
+        {
+            return std::isfinite(value) && value > 0.0;
+        }
+
+        double ScaledVectorNorm(
+            const Vec& difference,
+            const Vec& referenceA,
+            const Vec& referenceB,
+            double absoluteTolerance,
+            double relativeTolerance)
+        {
+            if (difference.size() == 0)
+                return 0.0;
+            const double scale =
+                absoluteTolerance
+                + relativeTolerance
+                    * std::max(referenceA.norm(), referenceB.norm());
+            return difference.norm() / scale;
+        }
     }
 
-    void SolverAdaptiveTSSBN::ComputeCoeffs()
+    SolverAdaptiveTSSBN::SolverAdaptiveTSSBN(Params parameters)
+        : parameters_(std::move(parameters))
     {
-        double rho = m_param.rho_inf;
-        const double EPSILON = 1e-9;
+        ValidateParameters();
+        ComputeMethodCoefficients();
+    }
 
-        if (rho >= 0.0 && rho < 1.0 - EPSILON)
+    void SolverAdaptiveTSSBN::SparseLinearSolver::Reset()
+    {
+        patternAnalyzed_ = false;
+        rows_ = 0;
+        cols_ = 0;
+        nonZeros_ = 0;
+    }
+
+    bool SolverAdaptiveTSSBN::SparseLinearSolver::Solve(
+        const SpMat& matrix,
+        const Vec& rhs,
+        Vec& solution)
+    {
+        if (matrix.rows() != matrix.cols() || matrix.rows() != rhs.size())
+            return false;
+
+        const bool patternMayHaveChanged =
+            !patternAnalyzed_
+            || rows_ != matrix.rows()
+            || cols_ != matrix.cols()
+            || nonZeros_ != matrix.nonZeros();
+        if (patternMayHaveChanged)
         {
-            m_param.c1 = (std::sqrt(2.0) * std::sqrt(rho + 1.0) - 2.0) / (2.0 * (rho - 1.0));
-            m_param.c2 = (2.0 * rho * m_param.c1 + 1.0) / (2.0 * rho * m_param.c1 - 2.0 * m_param.c1 + 2.0);
-            m_param.alpha = -(2.0 * m_param.c1 - 1.0) / (2.0 * m_param.c2 - 2.0 * m_param.c1 * m_param.c2 + 2.0 * rho * m_param.c1 * m_param.c2);
-            m_param.b1 = -(2.0 * m_param.c2 - 1.0) / (2.0 * m_param.c1 - 2.0 * m_param.c2);
+            solver_.analyzePattern(matrix);
+            patternAnalyzed_ = true;
+            rows_ = matrix.rows();
+            cols_ = matrix.cols();
+            nonZeros_ = matrix.nonZeros();
         }
-        else if (std::abs(rho - 1.0) < EPSILON)
+
+        solver_.factorize(matrix);
+        if (solver_.info() != Eigen::Success)
         {
-            m_param.c1 = 0.25;
-            m_param.c2 = 0.75;
-            m_param.alpha = 1.0 / 3.0;
-            m_param.b1 = 0.5;
+            Reset();
+            return false;
+        }
+        solution = solver_.solve(rhs);
+        if (solver_.info() != Eigen::Success || !solution.allFinite())
+        {
+            Reset();
+            return false;
+        }
+        return true;
+    }
+
+    void SolverAdaptiveTSSBN::ValidateParameters() const
+    {
+        if (!IsFinitePositive(parameters_.initialTimeStep)
+            || !IsFinitePositive(parameters_.minimumTimeStep)
+            || !IsFinitePositive(parameters_.maximumTimeStep)
+            || parameters_.minimumTimeStep > parameters_.maximumTimeStep)
+        {
+            throw std::invalid_argument("自适应 TSSBN 时间步上下限无效");
+        }
+        if (parameters_.spectralRadiusInfinity < 0.0
+            || parameters_.spectralRadiusInfinity > 1.0
+            || !std::isfinite(parameters_.spectralRadiusInfinity))
+        {
+            throw std::invalid_argument(
+                "自适应 TSSBN 谱半径必须位于 [0, 1]");
+        }
+        if (!IsFinitePositive(parameters_.relativeTolerance)
+            || !IsFinitePositive(parameters_.absoluteTolerance)
+            || !IsFinitePositive(parameters_.nonlinearTolerance)
+            || parameters_.maximumNewtonIterations < 1
+            || parameters_.targetNewtonIterations < 1
+            || parameters_.maximumRejectedAttempts < 1)
+        {
+            throw std::invalid_argument("自适应 TSSBN 容限参数无效");
+        }
+        if (!(parameters_.safetyFactor > 0.0
+                && parameters_.safetyFactor <= 1.0)
+            || !(parameters_.shrinkFactor > 0.0
+                && parameters_.shrinkFactor < 1.0)
+            || parameters_.maximumGrowthFactor < 1.0
+            || !std::isfinite(parameters_.maximumGrowthFactor)
+            || parameters_.derivativeGain < 0.0
+            || !std::isfinite(parameters_.derivativeGain)
+            || !(parameters_.minimumDerivativeFactor > 0.0)
+            || parameters_.minimumDerivativeFactor
+                > parameters_.maximumDerivativeFactor
+            || !std::isfinite(parameters_.maximumDerivativeFactor))
+        {
+            throw std::invalid_argument(
+                "自适应 TSSBN 步长控制系数无效");
+        }
+    }
+
+    void SolverAdaptiveTSSBN::ComputeMethodCoefficients()
+    {
+        const double spectralRadius = parameters_.spectralRadiusInfinity;
+        if (std::abs(spectralRadius - 1.0) <= coefficientTolerance)
+        {
+            baseCoefficients_.firstStageTime = 0.25;
+            baseCoefficients_.secondStageTime = 0.75;
+            baseCoefficients_.secondStageDiagonalFraction = 1.0 / 3.0;
+            baseCoefficients_.firstStageWeight = 0.5;
         }
         else
         {
-            throw std::invalid_argument("AdaptiveTSSBN: rho_inf must be in [0, 1)");
+            const double firstStageTime =
+                (std::sqrt(2.0 * (spectralRadius + 1.0)) - 2.0)
+                / (2.0 * (spectralRadius - 1.0));
+            const double secondStageTime =
+                (2.0 * spectralRadius * firstStageTime + 1.0)
+                / (2.0 * spectralRadius * firstStageTime
+                    - 2.0 * firstStageTime + 2.0);
+            const double diagonalFraction =
+                -(2.0 * firstStageTime - 1.0)
+                / (2.0 * secondStageTime
+                    - 2.0 * firstStageTime * secondStageTime
+                    + 2.0 * spectralRadius * firstStageTime * secondStageTime);
+            const double firstWeight =
+                -(2.0 * secondStageTime - 1.0)
+                / (2.0 * firstStageTime - 2.0 * secondStageTime);
+
+            baseCoefficients_.firstStageTime = firstStageTime;
+            baseCoefficients_.secondStageTime = secondStageTime;
+            baseCoefficients_.secondStageDiagonalFraction = diagonalFraction;
+            baseCoefficients_.firstStageWeight = firstWeight;
         }
 
-        qDebug().noquote() << QStringLiteral("自适应TSSBN基本参数: c1=%1, c2=%2, alpha=%3, b1=%4")
-            .arg(m_param.c1, 0, 'f', 6)
-            .arg(m_param.c2, 0, 'f', 6)
-            .arg(m_param.alpha, 0, 'f', 6)
-            .arg(m_param.b1, 0, 'f', 6);
-    }
-
-    void SolverAdaptiveTSSBN::ComputeEmbeddedCoeffs()
-    {
-        // 求解嵌入式公式的 b_hat 系数（3阶）
-        // 使用 Eigen 求解线性方程组
-        Eigen::Matrix3d M_b;
-        M_b << 1.0, 1.0, 1.0,
-               m_param.c1, m_param.c2, m_param.c3_hat,
-               m_param.c1 * m_param.c1, m_param.c2 * m_param.c2, m_param.c3_hat * m_param.c3_hat;
-
-        Eigen::Vector3d r_b;
-        r_b << 1.0, 0.5, 1.0 / 3.0;
-
-        Eigen::Vector3d b_hat_sol = M_b.colPivHouseholderQr().solve(r_b);
-
-        m_param.b1_hat = b_hat_sol(0);
-        m_param.b2_hat = b_hat_sol(1);
-        m_param.b3_hat = b_hat_sol(2);
-
-        // 求解 a_hat 系数
-        Eigen::Matrix2d M_a;
-        M_a << 1.0, 1.0,
-               m_param.b3_hat * m_param.c1, m_param.b3_hat * m_param.c2;
-
-        Eigen::Vector2d r_a;
-        r_a << m_param.c3_hat,
-               (1.0 / 6.0) - m_param.b1_hat * m_param.c1 * m_param.c1 -
-               m_param.b2_hat * (m_param.c1 * m_param.c2 * (1.0 - m_param.alpha) +
-                                m_param.c2 * m_param.c2 * m_param.alpha);
-
-        Eigen::Vector2d a_hat_sol = M_a.colPivHouseholderQr().solve(r_a);
-
-        m_param.a31_hat = a_hat_sol(0);
-        m_param.a32_hat = a_hat_sol(1);
-
-        qDebug().noquote() << QStringLiteral("嵌入式公式参数: b1_hat=%1, b2_hat=%2, b3_hat=%3")
-            .arg(m_param.b1_hat, 0, 'f', 6)
-            .arg(m_param.b2_hat, 0, 'f', 6)
-            .arg(m_param.b3_hat, 0, 'f', 6);
-        qDebug().noquote() << QStringLiteral("                a31_hat=%1, a32_hat=%2")
-            .arg(m_param.a31_hat, 0, 'f', 6)
-            .arg(m_param.a32_hat, 0, 'f', 6);
-    }
-
-    bool SolverAdaptiveTSSBN::Solve(IAnalysisModel& model, double duration)
-    {
-        qDebug().noquote() << QStringLiteral("开始自适应TSSBN动力非线性求解...");
-        qDebug().noquote() << QStringLiteral("rho_inf=%1, dt_init=%2, eps_LTE=%3")
-            .arg(m_param.rho_inf).arg(m_param.dt).arg(m_param.eps_LTE);
-
-        const int nDofs = model.GetFreeDofs();
-        if (nDofs <= 0)
+        Eigen::Matrix3d weightConditions;
+        weightConditions <<
+            1.0, 1.0, 1.0,
+            baseCoefficients_.firstStageTime,
+            baseCoefficients_.secondStageTime,
+            embeddedCoefficients_.lastStageTime,
+            baseCoefficients_.firstStageTime * baseCoefficients_.firstStageTime,
+            baseCoefficients_.secondStageTime * baseCoefficients_.secondStageTime,
+            embeddedCoefficients_.lastStageTime * embeddedCoefficients_.lastStageTime;
+        const Eigen::Vector3d requiredMoments(1.0, 0.5, 1.0 / 3.0);
+        const Eigen::Vector3d embeddedWeights =
+            weightConditions.colPivHouseholderQr().solve(requiredMoments);
+        if (!(weightConditions * embeddedWeights - requiredMoments).allFinite()
+            || (weightConditions * embeddedWeights - requiredMoments).norm() > 1.0e-10)
         {
-            qDebug().noquote() << QStringLiteral("错误: 自由度数量无效");
+            throw std::runtime_error(
+                "自适应 TSSBN 无法计算嵌入格式权重");
+        }
+
+        embeddedCoefficients_.firstWeight = embeddedWeights[0];
+        embeddedCoefficients_.secondWeight = embeddedWeights[1];
+        embeddedCoefficients_.lastWeight = embeddedWeights[2];
+
+        Eigen::Matrix2d lastStageConditions;
+        lastStageConditions <<
+            1.0, 1.0,
+            embeddedCoefficients_.lastWeight * baseCoefficients_.firstStageTime,
+            embeddedCoefficients_.lastWeight * baseCoefficients_.secondStageTime;
+        const double mixedSecondStageMoment =
+            baseCoefficients_.firstStageTime
+                * baseCoefficients_.secondStageTime
+                * (1.0 - baseCoefficients_.secondStageDiagonalFraction)
+            + baseCoefficients_.secondStageTime
+                * baseCoefficients_.secondStageTime
+                * baseCoefficients_.secondStageDiagonalFraction;
+        const Eigen::Vector2d lastStageMoments(
+            embeddedCoefficients_.lastStageTime,
+            1.0 / 6.0
+                - embeddedCoefficients_.firstWeight
+                    * baseCoefficients_.firstStageTime
+                    * baseCoefficients_.firstStageTime
+                - embeddedCoefficients_.secondWeight * mixedSecondStageMoment);
+        const Eigen::Vector2d lastStageCoefficients =
+            lastStageConditions.colPivHouseholderQr().solve(lastStageMoments);
+        if ((lastStageConditions * lastStageCoefficients - lastStageMoments).norm()
+            > 1.0e-10)
+        {
+            throw std::runtime_error(
+                "自适应 TSSBN 显式末阶段系数奇异");
+        }
+
+        embeddedCoefficients_.lastStageFirstCoefficient =
+            lastStageCoefficients[0];
+        embeddedCoefficients_.lastStageSecondCoefficient =
+            lastStageCoefficients[1];
+
+        qDebug().noquote()
+            << QStringLiteral(
+                "自适应 TSSBN 系数：c1=%1，c2=%2，alpha=%3，b1=%4")
+                   .arg(baseCoefficients_.firstStageTime, 0, 'g', 10)
+                   .arg(baseCoefficients_.secondStageTime, 0, 'g', 10)
+                   .arg(baseCoefficients_.secondStageDiagonalFraction, 0, 'g', 10)
+                   .arg(baseCoefficients_.firstStageWeight, 0, 'g', 10);
+    }
+
+    bool SolverAdaptiveTSSBN::SolveImplicitStage(
+        IAnalysisModel& model,
+        double stepStartTime,
+        double timeStep,
+        const Vec& previousVelocity,
+        const ImplicitStageDefinition& definition,
+        StageState& stage)
+    {
+        const double diagonalTime =
+            definition.diagonalCoefficient * timeStep;
+        if (!IsFinitePositive(diagonalTime))
+        {
+            lastStageFailureReason_ =
+                QStringLiteral("阶段对角时间系数无效");
             return false;
         }
 
-        if (m_param.dt <= 0.0)
+        model.RollbackDynamicStep();
+        lastStageFailureReason_.clear();
+        lastResidualNorm_ = std::numeric_limits<double>::quiet_NaN();
+        lastResidualLimit_ = std::numeric_limits<double>::quiet_NaN();
+
+        stage.stepIncrement =
+            timeStep * (definition.knownDisplacementRate
+                + definition.diagonalCoefficient * definition.initialVelocity);
+        model.ApplyIncrement(stage.stepIncrement);
+        model.GetStepIncrement(stage.stepIncrement);
+
+        const double velocityDerivative = 1.0 / diagonalTime;
+        const double accelerationDerivative =
+            velocityDerivative * velocityDerivative;
+        Vec constrainedForce;
+        Vec externalForce;
+
+        for (int iteration = 1;
+            iteration <= parameters_.maximumNewtonIterations;
+            ++iteration)
         {
-            qDebug().noquote() << QStringLiteral("错误: 时间步长必须为正");
-            return false;
+            stage.newtonIterations = iteration;
+            stage.velocity =
+                (stage.stepIncrement / timeStep
+                    - definition.knownDisplacementRate)
+                / definition.diagonalCoefficient;
+            stage.acceleration =
+                (stage.velocity - previousVelocity
+                    - timeStep * definition.knownVelocityRate)
+                / diagonalTime;
+            model.SetTssbnStageKinematics(
+                definition.stageIndex,
+                timeStep,
+                baseCoefficients_.firstStageTime,
+                baseCoefficients_.secondStageTime,
+                baseCoefficients_.secondStageDiagonalFraction,
+                stage.velocity,
+                stage.acceleration);
+
+            // 气动力及其他状态相关荷载必须在当前试算速度、构型确定后更新。
+            model.ComputeExternalForce(
+                stepStartTime + definition.timeFraction * timeStep,
+                1.0,
+                constrainedForce,
+                externalForce);
+            model.Assemble_Matrix(tangentStiffness_, true);
+            model.AssembleEffectiveDynamicSystem(
+                accelerationDerivative,
+                velocityDerivative,
+                dynamicTangent_);
+            effectiveTangent_ =
+                tangentStiffness_ + dynamicTangent_;
+            model.ComputeResidual(externalForce, residual_);
+
+            const double residualScale = std::max(1.0, externalForce.norm());
+            lastResidualNorm_ = residual_.norm();
+            lastResidualLimit_ =
+                parameters_.nonlinearTolerance * residualScale;
+            if (residual_.allFinite()
+                && lastResidualNorm_ <= lastResidualLimit_)
+            {
+                return true;
+            }
+            if (!residual_.allFinite())
+            {
+                lastStageFailureReason_ =
+                    QStringLiteral("非线性残差包含非有限数值");
+                return false;
+            }
+            const bool linearSolveSucceeded = effectiveSystemSolver_.Solve(
+                effectiveTangent_, residual_, correction_);
+            if (!linearSolveSucceeded)
+            {
+                lastStageFailureReason_ =
+                    QStringLiteral("有效切线矩阵分解或求解失败");
+                return false;
+            }
+
+            model.ApplyIncrement(correction_);
+            model.GetStepIncrement(stage.stepIncrement);
         }
+        lastStageFailureReason_ =
+            QStringLiteral("达到 Newton 最大迭代次数");
+        return false;
+    }
 
-        // 初始化工作区
-        m_dx.resize(nDofs);
-        m_R.resize(nDofs);
-        m_totalDx_c1.resize(nDofs);
-        m_totalDx_c2.resize(nDofs);
-        m_totalDx_eld.resize(nDofs);
-        m_Uc1.resize(nDofs);
-        m_Vc1.resize(nDofs);
-        m_Ac1.resize(nDofs);
-        m_Uc2.resize(nDofs);
-        m_Vc2.resize(nDofs);
-        m_Ac2.resize(nDofs);
-        m_Ueld.resize(nDofs);
-        m_Veld.resize(nDofs);
-        m_Aeld.resize(nDofs);
-        m_Un.resize(nDofs);
-        m_Vn.resize(nDofs);
-        m_An.resize(nDofs);
+    bool SolverAdaptiveTSSBN::EvaluateExplicitLastStage(
+        double timeStep,
+        const Vec& previousVelocity,
+        const StageState& firstStage,
+        const StageState& secondStage,
+        StageState& lastStage)
+    {
+        lastStage.stepIncrement =
+            timeStep
+            * (embeddedCoefficients_.lastStageFirstCoefficient
+                    * firstStage.velocity
+                + embeddedCoefficients_.lastStageSecondCoefficient
+                    * secondStage.velocity);
+        lastStage.velocity =
+            previousVelocity
+            + timeStep
+                * (embeddedCoefficients_.lastStageFirstCoefficient
+                        * firstStage.acceleration
+                    + embeddedCoefficients_.lastStageSecondCoefficient
+                        * secondStage.acceleration);
 
-        m_cache.reset();
+        const double stageSeparation =
+            baseCoefficients_.secondStageTime
+            - baseCoefficients_.firstStageTime;
+        if (std::abs(stageSeparation) <= coefficientTolerance)
+            return false;
+        const double extrapolation =
+            (embeddedCoefficients_.lastStageTime
+                - baseCoefficients_.secondStageTime)
+            / stageSeparation;
+        lastStage.acceleration =
+            secondStage.acceleration
+            + extrapolation
+                * (secondStage.acceleration - firstStage.acceleration);
+        lastStage.newtonIterations = 0;
+        return lastStage.stepIncrement.allFinite()
+            && lastStage.velocity.allFinite()
+            && lastStage.acceleration.allFinite();
+    }
 
-        // 获取初始状态
-        model.GetState(m_Un, m_Vn, m_An);
+    void SolverAdaptiveTSSBN::EstablishAcceptedState(
+        IAnalysisModel& model,
+        Vec& stepIncrement,
+        const Vec& velocity,
+        const Vec& acceleration)
+    {
+        model.RollbackDynamicStep();
+        model.ApplyIncrement(stepIncrement);
+        model.GetStepIncrement(stepIncrement);
+        model.SetTrialKinematics(velocity, acceleration);
+    }
 
-        double dt_try = m_param.dt;
-        m_totalSteps = 0;
-        m_rejectedSteps = 0;
-        double dt_sum = 0.0;
+    double SolverAdaptiveTSSBN::EstimateNormalizedError(
+        const Vec& baseIncrement,
+        const Vec& embeddedIncrement,
+        const Vec& baseVelocity,
+        const Vec& embeddedVelocity,
+        const Vec& previousDisplacement,
+        const Vec& previousVelocity) const
+    {
+        // LTE 取两个更新量的差值；相对尺度必须基于物理状态。
+        // 若按本步增量缩放，dt 变小时容限会被错误地逐步收紧。
+        const double displacementError = ScaledVectorNorm(
+            baseIncrement - embeddedIncrement,
+            previousDisplacement,
+            previousDisplacement + baseIncrement,
+            parameters_.absoluteTolerance,
+            parameters_.relativeTolerance);
+        const double velocityError = ScaledVectorNorm(
+            baseVelocity - embeddedVelocity,
+            previousVelocity,
+            baseVelocity,
+            parameters_.absoluteTolerance,
+            parameters_.relativeTolerance);
+        return std::sqrt(
+            0.5 * (displacementError * displacementError
+                + velocityError * velocityError));
+    }
+
+    double SolverAdaptiveTSSBN::ProposeAcceptedTimeStep(
+        double currentTimeStep,
+        double normalizedError,
+        int totalStageIterations)
+    {
+        // 接受解为二阶，局部截断误差 LTE 为三阶。
+        const double error = std::max(normalizedError, minimumControllerError);
+        const double previousError =
+            std::max(previousAcceptedError_, minimumControllerError);
+        const double proportionalFactor =
+            parameters_.safetyFactor
+            * std::pow(error, -1.0 / 3.0);
+        const double derivativeFactor = std::clamp(
+            std::pow(
+                error / previousError,
+                -parameters_.derivativeGain),
+            parameters_.minimumDerivativeFactor,
+            parameters_.maximumDerivativeFactor);
+        const double errorControlledFactor = std::clamp(
+            proportionalFactor * derivativeFactor,
+            parameters_.shrinkFactor,
+            parameters_.maximumGrowthFactor);
+        const double performanceFactor = std::sqrt(
+            static_cast<double>(parameters_.targetNewtonIterations)
+            / static_cast<double>(std::max(1, totalStageIterations)));
+        const double factor =
+            std::min(errorControlledFactor, performanceFactor);
+        previousAcceptedError_ = error;
+        return std::clamp(
+            currentTimeStep * factor,
+            parameters_.minimumTimeStep,
+            parameters_.maximumTimeStep);
+    }
+
+    double SolverAdaptiveTSSBN::ProposeRejectedTimeStep(
+        double currentTimeStep,
+        double normalizedError) const
+    {
+        const double error = std::max(normalizedError, 1.0);
+        double factor =
+            parameters_.safetyFactor * std::pow(error, -1.0 / 3.0);
+        factor = std::min(factor, parameters_.shrinkFactor);
+        return std::max(
+            parameters_.minimumTimeStep, currentTimeStep * factor);
+    }
+
+    SolverAdaptiveTSSBN::ImplicitStageDefinition
+        SolverAdaptiveTSSBN::CreateFirstStageDefinition(int dofCount) const
+    {
+        const Vec zero = Vec::Zero(dofCount);
+        return {
+            1,
+            baseCoefficients_.firstStageTime,
+            baseCoefficients_.firstStageTime,
+            zero,
+            zero,
+            zero
+        };
+    }
+
+    SolverAdaptiveTSSBN::ImplicitStageDefinition
+        SolverAdaptiveTSSBN::CreateSecondStageDefinition(
+            double timeStep,
+            const StageState& firstStage) const
+    {
+        const double previousStageCoefficient =
+            baseCoefficients_.secondStageTime
+            * (1.0 - baseCoefficients_.secondStageDiagonalFraction);
+        const double diagonalCoefficient =
+            baseCoefficients_.secondStageTime
+            * baseCoefficients_.secondStageDiagonalFraction;
+        const Vec knownDisplacementRate =
+            previousStageCoefficient * firstStage.velocity;
+        const Vec knownVelocityRate =
+            previousStageCoefficient * firstStage.acceleration;
+        const Vec initialVelocity =
+            (firstStage.stepIncrement / timeStep - knownDisplacementRate)
+            / diagonalCoefficient;
+        return {
+            2,
+            baseCoefficients_.secondStageTime,
+            diagonalCoefficient,
+            knownDisplacementRate,
+            knownVelocityRate,
+            initialVelocity
+        };
+    }
+
+    bool SolverAdaptiveTSSBN::Solve(
+        IAnalysisModel& model,
+        double duration)
+    {
+        const int dofCount = model.GetFreeDofs();
+        if (dofCount <= 0 || !IsFinitePositive(duration))
+            return false;
+
+        tangentStiffness_.resize(dofCount, dofCount);
+        dynamicTangent_.resize(dofCount, dofCount);
+        effectiveTangent_.resize(dofCount, dofCount);
+        residual_.resize(dofCount);
+        correction_.resize(dofCount);
+        effectiveSystemSolver_.Reset();
+
+        acceptedStepCount_ = 0;
+        rejectedStepCount_ = 0;
+        totalStageNewtonIterations_ = 0;
+        maximumStageNewtonIterations_ = 0;
+        averageTimeStep_ = 0.0;
+        previousAcceptedError_ = 1.0;
+
+        Vec previousDisplacement;
+        Vec previousVelocity;
+        Vec previousAcceleration;
+        model.GetState(
+            previousDisplacement, previousVelocity, previousAcceleration);
+
         double currentTime = 0.0;
+        double nextTimeStep = std::clamp(
+            parameters_.initialTimeStep,
+            parameters_.minimumTimeStep,
+            parameters_.maximumTimeStep);
+        double acceptedTimeStepSum = 0.0;
 
-        const double time_tolerance = 1e-10;
+        qDebug().noquote()
+            << QStringLiteral(
+                "开始自适应 TSSBN：dt=%1，相对 LTE 容限=%2，ρ∞=%3")
+                   .arg(nextTimeStep, 0, 'g', 8)
+                   .arg(parameters_.relativeTolerance, 0, 'g', 8)
+                   .arg(parameters_.spectralRadiusInfinity, 0, 'g', 8);
 
-        // 自适应时间步循环
-        while (currentTime < duration - time_tolerance)
+        while (currentTime < duration - timeTolerance)
         {
             if (model.IsCancellationRequested())
                 return false;
-            // 限制步长范围
-            dt_try = std::max(m_param.dt_min, std::min(m_param.dt_max, dt_try));
 
-            // 确保不超过终止时间
-            if (currentTime + dt_try > duration)
+            const double remainingTime = duration - currentTime;
+            double attemptedTimeStep = std::min(nextTimeStep, remainingTime);
+            model.BackupStepState();
+            bool stepAccepted = false;
+            bool rejectedDuringCurrentStep = false;
+            QString lastFailedOperation;
+            double lastNormalizedError =
+                std::numeric_limits<double>::quiet_NaN();
+
+            for (int attempt = 1;
+                attempt <= parameters_.maximumRejectedAttempts;
+                ++attempt)
             {
-                dt_try = duration - currentTime;
-            }
-
-            // 备份当前状态（用于步长拒绝时恢复）
-            Vec Un_backup = m_Un;
-            Vec Vn_backup = m_Vn;
-            Vec An_backup = m_An;
-
-            bool accepted = false;
-            int n_iter = 0;
-
-            while (!accepted)
-            {
-                // ========== C1 子步 ==========
-                if (!SolveSubstepC1(model, currentTime, dt_try))
+                QString failedOperation;
+                // 与参考 TSSBN 的阶段初始化一致：q_c1 从 q_n 开始，
+                // 因此 v_c1 的初始值为零。
+                const ImplicitStageDefinition firstDefinition =
+                    CreateFirstStageDefinition(dofCount);
+                StageState firstStage;
+                bool stagesConverged = SolveImplicitStage(
+                    model,
+                    currentTime,
+                    attemptedTimeStep,
+                    previousVelocity,
+                    firstDefinition,
+                    firstStage);
+                if (!stagesConverged)
                 {
-                    qDebug().noquote() << QStringLiteral("错误: C1 子步求解失败");
-                    return false;
+                    failedOperation = QStringLiteral("C1");
+                    lastFailedOperation = failedOperation;
                 }
 
-                // ========== C2 子步 ==========
-                if (!SolveSubstepC2(model, currentTime, dt_try))
+                StageState secondStage;
+                if (stagesConverged)
                 {
-                    qDebug().noquote() << QStringLiteral("错误: C2 子步求解失败");
-                    return false;
-                }
-
-                // ========== ELD 子步（用于误差估计）==========
-                if (!SolveSubstepELD(model, currentTime, dt_try))
-                {
-                    qDebug().noquote() << QStringLiteral("错误: ELD 子步求解失败");
-                    return false;
-                }
-
-                // ========== 计算两种阶数的解 ==========
-                // 2阶解（TSSBN原始公式）
-                Vec u_order2 = m_Un + dt_try * (m_param.b1 * m_Vc1 + (1.0 - m_param.b1) * m_Vc2);
-                Vec v_order2 = m_Vn + dt_try * (m_param.b1 * m_Ac1 + (1.0 - m_param.b1) * m_Ac2);
-
-                // 3阶解（嵌入式公式）
-                Vec u_order3 = m_Un + dt_try * (m_param.b1_hat * m_Vc1 + m_param.b2_hat * m_Vc2 + m_param.b3_hat * m_Veld);
-                Vec v_order3 = m_Vn + dt_try * (m_param.b1_hat * m_Ac1 + m_param.b2_hat * m_Ac2 + m_param.b3_hat * m_Aeld);
-
-                // ========== 误差估计 ==========
-                double LTE = EstimateError(u_order2, v_order2, u_order3, v_order3, m_Un, m_Vn);
-
-                // ========== 步长控制 ==========
-                if (LTE > 1.0)
-                {
-                    // 误差过大，拒绝当前步
-                    if (dt_try <= m_param.dt_min * 1.001)
+                    const ImplicitStageDefinition secondDefinition =
+                        CreateSecondStageDefinition(
+                            attemptedTimeStep, firstStage);
+                    stagesConverged = SolveImplicitStage(
+                        model,
+                        currentTime,
+                        attemptedTimeStep,
+                        previousVelocity,
+                        secondDefinition,
+                        secondStage);
+                    if (!stagesConverged)
                     {
-                        qDebug().noquote() << QStringLiteral("警告: LTE=%1 > 1.0 但已达最小步长，强制接受").arg(LTE);
-                        accepted = true;
-                    }
-                    else
-                    {
-                        // 缩小步长重试
-                        dt_try = ComputeNewStepSize(dt_try, LTE, n_iter);
-                        m_rejectedSteps++;
-
-                        // 恢复状态
-                        m_Un = Un_backup;
-                        m_Vn = Vn_backup;
-                        m_An = An_backup;
-
-                        continue;
+                        failedOperation = QStringLiteral("C2");
+                        lastFailedOperation = failedOperation;
                     }
                 }
-                else
+
+                StageState explicitLastStage;
+                if (stagesConverged)
                 {
-                    // 误差可接受
-                    accepted = true;
+                    stagesConverged = EvaluateExplicitLastStage(
+                        attemptedTimeStep,
+                        previousVelocity,
+                        firstStage,
+                        secondStage,
+                        explicitLastStage);
+                    if (!stagesConverged)
+                    {
+                        failedOperation = QStringLiteral("显式末阶段");
+                        lastFailedOperation = failedOperation;
+                    }
                 }
 
-                if (accepted)
+                if (!stagesConverged)
                 {
-                    // 使用2阶解更新状态
-                    Vec totalDx = u_order2 - m_Un;
-
-                    // 更新模型状态
-                    model.ApplyIncrement(totalDx);
-                    model.SetTrialKinematics(v_order2, m_An);
-
-                    // 计算最终加速度
-                    //model.AssembleMatrices(m_K, &m_M, &m_C);
-                    //model.ComputeResidual(currentTime + dt_try, 1.0, m_R);
-
-                    Vec An_new;
-                    if (!SolveLinear(m_M, m_R, An_new))
+                    model.RollbackDynamicStep();
+                    ++rejectedStepCount_;
+                    rejectedDuringCurrentStep = true;
+                    if (attemptedTimeStep
+                        <= parameters_.minimumTimeStep * (1.0 + 1.0e-9))
                     {
-                        qDebug().noquote() << QStringLiteral("错误: 最终加速度求解失败");
+                        const QString failureMessage =
+                            QStringLiteral(
+                                "自适应 TSSBN 的 %1 在 t=%2 失败，"
+                                "最小 dt=%3：%4（残差=%5，限值=%6）")
+                                .arg(failedOperation)
+                                .arg(currentTime, 0, 'g', 10)
+                                .arg(attemptedTimeStep, 0, 'g', 10)
+                                .arg(lastStageFailureReason_)
+                                .arg(lastResidualNorm_, 0, 'g', 8)
+                                .arg(lastResidualLimit_, 0, 'g', 8);
+                        model.ReportProgress(
+                            currentTime / duration, failureMessage);
+                        QTextStream(stderr)
+                            << failureMessage << Qt::endl;
+                        qDebug().noquote()
+                            << QStringLiteral(
+                                "自适应 TSSBN 在最小时间步未收敛");
                         return false;
                     }
-
-                    model.SetTrialKinematics(v_order2, An_new);
-
-                    // 提交状态
-                    Vec zero = Vec::Zero(nDofs);
-                    model.ApplyIncrement(zero);
-
-                    // 更新状态
-                    m_Un = u_order2;
-                    m_Vn = v_order2;
-                    m_An = An_new;
-                    currentTime += dt_try;
-
-                    // 计算下一步的步长
-                    dt_try = ComputeNewStepSize(dt_try, LTE, n_iter);
-
-                    m_totalSteps++;
-                    dt_sum += dt_try;
-
-                    // 步回调
-                    if (m_callback)
-                    {
-                        Vec u, v, a;
-                        model.GetState(u, v, a);
-                        m_callback(m_totalSteps, currentTime, u);
-                    }
-
-                    // 步结束回调
-                    // 只提交已经通过误差判据的时间步。
-                    model.CommitState();
-                    model.OnStepCompleted(currentTime);
-                    model.ReportProgress(std::min(1.0, currentTime / duration),
-                        QStringLiteral("自适应时间步 %1").arg(m_totalSteps));
+                    attemptedTimeStep = std::max(
+                        parameters_.minimumTimeStep,
+                        attemptedTimeStep * parameters_.shrinkFactor);
+                    continue;
                 }
-            }
-        }
 
-        m_avgDt = (m_totalSteps > 0) ? (dt_sum / m_totalSteps) : m_param.dt;
+                const double firstWeight =
+                    baseCoefficients_.firstStageWeight;
+                Vec baseIncrement =
+                    attemptedTimeStep
+                    * (firstWeight * firstStage.velocity
+                        + (1.0 - firstWeight) * secondStage.velocity);
+                Vec baseVelocity =
+                    previousVelocity
+                    + attemptedTimeStep
+                        * (firstWeight * firstStage.acceleration
+                            + (1.0 - firstWeight)
+                                * secondStage.acceleration);
+                Vec embeddedIncrement =
+                    attemptedTimeStep
+                    * (embeddedCoefficients_.firstWeight
+                            * firstStage.velocity
+                        + embeddedCoefficients_.secondWeight
+                            * secondStage.velocity
+                        + embeddedCoefficients_.lastWeight
+                            * explicitLastStage.velocity);
+                Vec embeddedVelocity =
+                    previousVelocity
+                    + attemptedTimeStep
+                        * (embeddedCoefficients_.firstWeight
+                                * firstStage.acceleration
+                            + embeddedCoefficients_.secondWeight
+                                * secondStage.acceleration
+                            + embeddedCoefficients_.lastWeight
+                                * explicitLastStage.acceleration);
 
-        qDebug().noquote() << QStringLiteral("自适应TSSBN求解完成:");
-        qDebug().noquote() << QStringLiteral("  总步数=%1, 拒绝步数=%2, 平均步长=%3")
-            .arg(m_totalSteps).arg(m_rejectedSteps).arg(m_avgDt, 0, 'e', 3);
+                Vec acceptedAcceleration =
+                    explicitLastStage.acceleration;
+                model.CorrectTssbnStepStates(
+                    attemptedTimeStep,
+                    baseCoefficients_.firstStageTime,
+                    baseCoefficients_.secondStageTime,
+                    embeddedCoefficients_.lastStageTime,
+                    firstWeight,
+                    embeddedCoefficients_.firstWeight,
+                    embeddedCoefficients_.secondWeight,
+                    embeddedCoefficients_.lastWeight,
+                    embeddedCoefficients_.lastStageFirstCoefficient,
+                    embeddedCoefficients_.lastStageSecondCoefficient,
+                    baseIncrement,
+                    baseVelocity,
+                    embeddedIncrement,
+                    embeddedVelocity,
+                    acceptedAcceleration);
 
-        return true;
-    }
-
-    bool SolverAdaptiveTSSBN::SolveSubstepC1(IAnalysisModel& model, double currentTime, double dt)
-    {
-        const int nDofs = model.GetFreeDofs();
-        double c1_dt = m_param.c1 * dt;
-        double c1_dt2 = c1_dt * c1_dt;
-
-        m_Uc1 = m_Un;
-        m_totalDx_c1.setZero();
-
-        for (int iter = 0; iter < m_param.maxIter; ++iter)
-        {
-            m_Vc1 = (m_Uc1 - m_Un) / c1_dt;
-            m_Ac1 = (m_Vc1 - m_Vn) / c1_dt;
-
-            model.SetTrialKinematics(m_Vc1, m_Ac1);
-            //model.AssembleMatrices(m_K, &m_M, &m_C);
-
-            m_Keff = m_K + (1.0 / c1_dt2) * m_M + (1.0 / c1_dt) * m_C;
-            //model.ComputeResidual(currentTime + c1_dt, 1.0, m_R);
-
-            double error = m_R.norm();
-            if (error < m_param.tol && iter > 0)
-            {
-                return true;
-            }
-
-            if (iter == m_param.maxIter - 1)
-            {
-                qDebug().noquote() << QStringLiteral("警告: C1 子步未收敛 (残差=%1)").arg(error);
-                return false;
-            }
-
-            if (!SolveLinear(m_Keff, m_R, m_dx))
-            {
-                return false;
-            }
-
-            m_totalDx_c1 += m_dx;
-            m_Uc1 += m_dx;
-            model.ApplyIncrement(m_dx);
-        }
-
-        return true;
-    }
-
-    bool SolverAdaptiveTSSBN::SolveSubstepC2(IAnalysisModel& model, double currentTime, double dt)
-    {
-        const int nDofs = model.GetFreeDofs();
-        double c2_dt = m_param.c2 * dt;
-        double alpha_c2_dt = m_param.alpha * c2_dt;
-        double alpha_c2_dt2 = alpha_c2_dt * alpha_c2_dt;
-
-        m_Uc2 = m_Uc1;
-        m_totalDx_c2.setZero();
-
-        Vec u_pred = m_Un + c2_dt * (1.0 - m_param.alpha) * m_Vc1;
-        Vec v_pred = m_Vn + c2_dt * (1.0 - m_param.alpha) * m_Ac1;
-
-        for (int iter = 0; iter < m_param.maxIter; ++iter)
-        {
-            m_Vc2 = (m_Uc2 - u_pred) / alpha_c2_dt;
-            m_Ac2 = (m_Vc2 - v_pred) / alpha_c2_dt;
-
-            model.SetTrialKinematics(m_Vc2, m_Ac2);
-            //model.AssembleMatrices(m_K, &m_M, &m_C);
-
-            m_Keff = m_K + (1.0 / alpha_c2_dt2) * m_M + (1.0 / alpha_c2_dt) * m_C;
-            //model.ComputeResidual(currentTime + c2_dt, 1.0, m_R);
-
-            double error = m_R.norm();
-            if (error < m_param.tol && iter > 0)
-            {
-                return true;
-            }
-
-            if (iter == m_param.maxIter - 1)
-            {
-                qDebug().noquote() << QStringLiteral("警告: C2 子步未收敛 (残差=%1)").arg(error);
-                return false;
-            }
-
-            if (!SolveLinear(m_Keff, m_R, m_dx))
-            {
-                return false;
-            }
-
-            m_totalDx_c2 += m_dx;
-            m_Uc2 += m_dx;
-            model.ApplyIncrement(m_dx);
-        }
-
-        return true;
-    }
-
-    bool SolverAdaptiveTSSBN::SolveSubstepELD(IAnalysisModel& model, double currentTime, double dt)
-    {
-        const int nDofs = model.GetFreeDofs();
-        double c3_dt = m_param.c3_hat * dt;
-        double c3_dt2 = c3_dt * c3_dt;
-
-        // ELD 子步的预测（基于 C1 和 C2 的结果）
-        Vec u_pred = m_Un + c3_dt * (m_param.a31_hat * m_Vc1 + m_param.a32_hat * m_Vc2);
-        Vec v_pred = m_Vn + c3_dt * (m_param.a31_hat * m_Ac1 + m_param.a32_hat * m_Ac2);
-
-        m_Ueld = u_pred;
-        m_totalDx_eld.setZero();
-
-        // 使用隐式参数（这里简化为与C2相同的alpha）
-        double alpha_c3_dt = m_param.alpha * c3_dt;
-        double alpha_c3_dt2 = alpha_c3_dt * alpha_c3_dt;
-
-        for (int iter = 0; iter < m_param.maxIter; ++iter)
-        {
-            m_Veld = (m_Ueld - u_pred) / alpha_c3_dt;
-            m_Aeld = (m_Veld - v_pred) / alpha_c3_dt;
-
-            model.SetTrialKinematics(m_Veld, m_Aeld);
-            //model.AssembleMatrices(m_K, &m_M, &m_C);
-
-            m_Keff = m_K + (1.0 / alpha_c3_dt2) * m_M + (1.0 / alpha_c3_dt) * m_C;
-            //model.ComputeResidual(currentTime + c3_dt, 1.0, m_R);
-
-            double error = m_R.norm();
-            if (error < m_param.tol && iter > 0)
-            {
-                return true;
-            }
-
-            if (iter == m_param.maxIter - 1)
-            {
-                qDebug().noquote() << QStringLiteral("警告: ELD 子步未收敛 (残差=%1)").arg(error);
-                return false;
-            }
-
-            if (!SolveLinear(m_Keff, m_R, m_dx))
-            {
-                return false;
-            }
-
-            m_totalDx_eld += m_dx;
-            m_Ueld += m_dx;
-            model.ApplyIncrement(m_dx);
-        }
-
-        return true;
-    }
-
-    double SolverAdaptiveTSSBN::EstimateError(const Vec& u2, const Vec& v2,
-                                               const Vec& u3, const Vec& v3,
-                                               const Vec& u_base, const Vec& v_base)
-    {
-        const double tolerance_abs = 1e-6;
-        const double epsilon_safe = 1e-30;
-
-        Vec err_u = u2 - u3;
-        Vec err_v = v2 - v3;
-
-        double ref_u_norm = std::max(u_base.norm(), u2.norm());
-        double ref_v_norm = std::max(v_base.norm(), v2.norm());
-
-        double err_u_scaled = err_u.norm() / (tolerance_abs + m_param.eps_LTE * ref_u_norm + epsilon_safe);
-        double err_v_scaled = err_v.norm() / (tolerance_abs + m_param.eps_LTE * ref_v_norm + epsilon_safe);
-
-        double LTE = std::sqrt(0.5 * (err_u_scaled * err_u_scaled + err_v_scaled * err_v_scaled));
-
-        return LTE;
-    }
-
-    double SolverAdaptiveTSSBN::ComputeNewStepSize(double dt_current, double LTE, int n_iter)
-    {
-        const double epsilon_safe = 1e-30;
-        const double inv_p_plus_1 = 1.0 / (m_param.p_order + 1.0);
-
-        // PI控制器
-        double factor_P = m_param.S * std::pow(1.0 / (LTE + epsilon_safe), inv_p_plus_1);
-
-        double err_ratio = LTE / (m_LTE_prev + epsilon_safe);
-        double factor_D = std::pow(err_ratio, -m_param.k_d);
-        factor_D = std::max(m_param.FacD_min, std::min(m_param.FacD_max, factor_D));
-
-        // 性能因子
-        double factor_perf = std::sqrt(double(m_param.N_target) / std::max(1, n_iter));
-
-        // 组合因子
-        double raw_factor = std::max(m_param.gamma_shrink, std::min(m_param.gamma_grow, factor_P * factor_D));
-        double final_factor = std::min(raw_factor, factor_perf);
-
-        double dt_new = dt_current * final_factor;
-        dt_new = std::max(m_param.dt_min, std::min(m_param.dt_max, dt_new));
-
-        m_LTE_prev = LTE;
-
-        return dt_new;
-    }
-
-    bool SolverAdaptiveTSSBN::SolveLinear(const SpMat& K, const Vec& b, Vec& x)
-    {
-        bool solved = false;
-
-        if (m_cache.useLdlt)
-        {
-            if (!m_cache.patternAnalyzed)
-            {
-                m_cache.ldlt.analyzePattern(K);
-            }
-            m_cache.ldlt.factorize(K);
-
-            if (m_cache.ldlt.info() == Eigen::Success)
-            {
-                x = m_cache.ldlt.solve(b);
-                if (m_cache.ldlt.info() == Eigen::Success)
+                const double normalizedError = EstimateNormalizedError(
+                    baseIncrement,
+                    embeddedIncrement,
+                    baseVelocity,
+                    embeddedVelocity,
+                    previousDisplacement,
+                    previousVelocity);
+                lastNormalizedError = normalizedError;
+                if (!std::isfinite(normalizedError))
                 {
-                    solved = true;
-                    m_cache.patternAnalyzed = true;
+                    model.RollbackDynamicStep();
+                    return false;
                 }
+
+                if (normalizedError > 1.0)
+                {
+                    lastFailedOperation = QStringLiteral("LTE");
+                    lastStageFailureReason_ =
+                        QStringLiteral("局部误差 LTE 未满足容限");
+                    if (attemptedTimeStep
+                        <= parameters_.minimumTimeStep * (1.0 + 1.0e-9))
+                    {
+                        model.RollbackDynamicStep();
+                        qDebug().noquote()
+                            << QStringLiteral(
+                                "自适应 TSSBN 在最小 dt=%1 无法满足局部误差 "
+                                "LTE 容限（误差=%2）")
+                                   .arg(attemptedTimeStep, 0, 'g', 8)
+                                   .arg(normalizedError, 0, 'g', 8);
+                        const QString failureMessage =
+                            QStringLiteral(
+                                "自适应 TSSBN 在 t=%1 出现 LTE 失败，"
+                                "最小 dt=%2，归一化误差=%3")
+                                .arg(currentTime, 0, 'g', 10)
+                                .arg(attemptedTimeStep, 0, 'g', 10)
+                                .arg(normalizedError, 0, 'g', 8);
+                        model.ReportProgress(
+                            currentTime / duration, failureMessage);
+                        QTextStream(stderr)
+                            << failureMessage << Qt::endl;
+                        return false;
+                    }
+                    model.RollbackDynamicStep();
+                    ++rejectedStepCount_;
+                    rejectedDuringCurrentStep = true;
+                    attemptedTimeStep = ProposeRejectedTimeStep(
+                        attemptedTimeStep, normalizedError);
+                    continue;
+                }
+
+                EstablishAcceptedState(
+                    model,
+                    baseIncrement,
+                    baseVelocity,
+                    acceptedAcceleration);
+
+                model.CommitState();
+                currentTime += attemptedTimeStep;
+                ++acceptedStepCount_;
+                acceptedTimeStepSum += attemptedTimeStep;
+                model.GetState(
+                    previousDisplacement,
+                    previousVelocity,
+                    previousAcceleration);
+
+                const int totalStageIterations =
+                    firstStage.newtonIterations
+                    + secondStage.newtonIterations;
+                totalStageNewtonIterations_ += totalStageIterations;
+                maximumStageNewtonIterations_ = std::max(
+                    maximumStageNewtonIterations_,
+                    totalStageIterations);
+                model.RecordStepIterations(
+                    currentTime, totalStageIterations);
+                if (stepCallback_)
+                {
+                    stepCallback_(
+                        acceptedStepCount_,
+                        currentTime,
+                        previousDisplacement);
+                }
+                model.OnStepCompleted(currentTime);
+                model.ReportProgress(
+                    std::min(1.0, currentTime / duration),
+                    QStringLiteral(
+                        "自适应 TSSBN 第 %1 步，dt=%2，误差=%3")
+                        .arg(acceptedStepCount_)
+                        .arg(attemptedTimeStep, 0, 'g', 6)
+                        .arg(normalizedError, 0, 'g', 4));
+
+                nextTimeStep = ProposeAcceptedTimeStep(
+                    attemptedTimeStep,
+                    normalizedError,
+                    // 参考实现只统计修正次数；本循环还统计每阶段首次残差计算。
+                    // 因此减去两次记账用计算，使步长控制器保持一致。
+                    std::max(1, totalStageIterations - 2));
+                if (rejectedDuringCurrentStep)
+                {
+                    nextTimeStep = std::min(
+                        nextTimeStep, 1.25 * attemptedTimeStep);
+                }
+                stepAccepted = true;
+                break;
             }
 
-            if (!solved)
+            if (!stepAccepted)
             {
-                qDebug() << "LDLT failed, switching to LU...";
-                m_cache.useLdlt = false;
-                m_cache.patternAnalyzed = false;
+                model.RollbackDynamicStep();
+                const QString failureMessage =
+                    QStringLiteral(
+                        "自适应 TSSBN 在 t=%1 达到拒绝重试上限，"
+                        "最后 dt=%2，阶段=%3，原因=%4，"
+                        "残差=%5（限值=%6），归一化误差=%7")
+                        .arg(currentTime, 0, 'g', 10)
+                        .arg(attemptedTimeStep, 0, 'g', 10)
+                        .arg(lastFailedOperation)
+                        .arg(lastStageFailureReason_)
+                        .arg(lastResidualNorm_, 0, 'g', 8)
+                        .arg(lastResidualLimit_, 0, 'g', 8)
+                        .arg(lastNormalizedError, 0, 'g', 8);
+                model.ReportProgress(
+                    currentTime / duration, failureMessage);
+                QTextStream(stderr)
+                    << failureMessage << Qt::endl;
+                return false;
             }
         }
 
-        if (!solved)
-        {
-            if (!m_cache.patternAnalyzed)
-            {
-                m_cache.lu.analyzePattern(K);
-                m_cache.patternAnalyzed = true;
-            }
-            m_cache.lu.factorize(K);
-
-            if (m_cache.lu.info() == Eigen::Success)
-            {
-                x = m_cache.lu.solve(b);
-                solved = true;
-            }
-            else
-            {
-                qDebug() << "LU factorization failed!";
-                m_cache.patternAnalyzed = false;
-            }
-        }
-
-        return solved;
+        averageTimeStep_ = acceptedStepCount_ > 0
+            ? acceptedTimeStepSum / static_cast<double>(acceptedStepCount_)
+            : 0.0;
+        QTextStream(stdout)
+            << "自适应 TSSBN 完成：接受="
+            << acceptedStepCount_ << "，拒绝=" << rejectedStepCount_
+            << "，平均 dt=" << averageTimeStep_
+            << "，平均 Newton=" << GetAverageStageNewtonIterations()
+            << "，最大 Newton=" << maximumStageNewtonIterations_
+            << Qt::endl;
+        qDebug().noquote()
+            << QStringLiteral(
+                "自适应 TSSBN 完成：接受=%1，拒绝=%2，"
+                "平均 dt=%3，平均 Newton=%4，最大 Newton=%5")
+                   .arg(acceptedStepCount_)
+                   .arg(rejectedStepCount_)
+                   .arg(averageTimeStep_, 0, 'g', 8)
+                   .arg(GetAverageStageNewtonIterations(), 0, 'g', 6)
+                   .arg(maximumStageNewtonIterations_);
+        return true;
     }
 }

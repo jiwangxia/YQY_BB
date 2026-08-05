@@ -37,10 +37,11 @@ ModelImportFileDialog::ModelImportFileDialog(const QString& directory, const QSt
     setStyleSheet(QStringLiteral(R"QSS(
 QFileDialog QToolButton {
     padding: 0;
-    min-width: 42px;
-    max-width: 42px;
-    min-height: 38px;
-    max-height: 38px;
+    min-width: 34px;
+    max-width: 34px;
+    min-height: 30px;
+    max-height: 30px;
+    icon-size: 20px;
 }
 QFileDialog QListView#sidebar {
     min-width: 210px;
@@ -56,11 +57,11 @@ QFileDialog QListView#sidebar {
 
 void ModelImportFileDialog::configureInternalWidgets()
 {
-    const QSize toolbarIconSize(22, 22);
+    const QSize toolbarIconSize(20, 20);
     for (QToolButton* button : findChildren<QToolButton*>())
     {
         button->setIconSize(toolbarIconSize);
-        button->setMinimumSize(42, 38);
+        button->setFixedSize(34, 30);
         button->setCursor(Qt::PointingHandCursor);
     }
 

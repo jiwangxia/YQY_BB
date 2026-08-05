@@ -3,9 +3,14 @@
 
 #include "Conductor/ConductorModelBuilder.h"
 #include "Conductor/PropertyLibrary.h"
+#include "DataStructure/Aerodynamics/BundleAeroMapper.h"
+#include "DataStructure/Aerodynamics/GallopingStabilityAnalyzer.h"
 #include "DataStructure/Element/ElementBeam_CR.h"
 #include "DataStructure/Element/ElementCable.h"
 #include "DataStructure/Element/ElementTruss.h"
+#include "DataStructure/Load/Force_Wind.h"
+#include "DataStructure/Load/LoadAssembler.h"
+#include "DataStructure/Load/AerodynamicLoadCalculator.h"
 #include "DataStructure/Material/Material.h"
 #include "DataStructure/Property/Property.h"
 #include "DataStructure/Section/SectionCircular.h"
@@ -16,14 +21,336 @@
 #include "GUI/Widgets/ConductorModule.h"
 #include "Import/Input_Model.h"
 #include "Solver/AnalysisSolve.h"
+#include "Solver/Dynamic/SolverAdaptiveTSSBN.h"
+#include "Solver/SolverFactory.h"
 
 #include <QComboBox>
 #include <QTemporaryDir>
+#include <cmath>
 
 namespace
 {
+std::optional<int> verifyGallopingStability(const QStringList& arguments)
+{
+    const int index = arguments.indexOf(QStringLiteral("--verify-galloping-stability"));
+    if (index < 0)
+        return std::nullopt;
+    if (index + 1 >= arguments.size())
+        return 1;
+
+    StructureData structure;
+    Hdf5ModelIO hdf5;
+    const QString modelPath = arguments.at(index + 1);
+    if (!hdf5.ImportHdf5(modelPath, &structure))
+    {
+        QTextStream(stderr) << "cannot import galloping stability model="
+                            << modelPath << Qt::endl;
+        return 2;
+    }
+
+    const auto& cases = structure.m_AeroManager.getCaseModels();
+    if (cases.empty())
+    {
+        QTextStream(stderr) << "model has no loaded aerodynamic cases" << Qt::endl;
+        return 3;
+    }
+
+    int intervalCount = 0;
+    QTextStream stream(stdout);
+    stream << "galloping stability model=" << modelPath << Qt::endl;
+    for (const auto& [key, models] : cases)
+    {
+        const auto intervals =
+            GallopingStabilityAnalyzer::FindNegativeDampingIntervals(models);
+        stream << "case bundle=" << key.bundleCount
+               << " wind=" << key.windSpeed
+               << " ice=" << key.iceThickness
+               << " profiles=" << models.size()
+               << " negative_intervals=" << intervals.size() << Qt::endl;
+        for (const GallopingInstabilityInterval& interval : intervals)
+        {
+            stream << "  profile=" << interval.profileId
+                   << " alpha_start=" << interval.startAngleDegrees
+                   << " alpha_end=" << interval.endAngleDegrees
+                   << " min_H=" << interval.minimumDenHartog << Qt::endl;
+        }
+        intervalCount += static_cast<int>(intervals.size());
+    }
+    return intervalCount > 0 ? 0 : 4;
+}
+
+class LinearOscillatorModel final : public SolverNameSpace::IAnalysisModel
+{
+public:
+    LinearOscillatorModel(double mass, double stiffness)
+        : mass_(mass)
+        , stiffness_(stiffness)
+    {
+        displacement_[0] = 1.0;
+        velocity_[0] = 0.0;
+        acceleration_[0] = -stiffness_ / mass_;
+        BackupStepState();
+    }
+
+    int GetFreeDofs() const override { return 1; }
+    int GetFixedDofs() const override { return 0; }
+
+    void ApplyIncrement(const SolverNameSpace::Vec& increment) override
+    {
+        displacement_ += increment;
+    }
+
+    void BeginDynamicStep(double, double, double) override {}
+
+    void ApplyDynamicCorrection(
+        const SolverNameSpace::Vec& increment, double a0, double a1) override
+    {
+        displacement_ += increment;
+        velocity_ += a1 * increment;
+        acceleration_ += a0 * increment;
+    }
+
+    void RollbackDynamicStep() override
+    {
+        displacement_ = savedDisplacement_;
+        velocity_ = savedVelocity_;
+        acceleration_ = savedAcceleration_;
+    }
+
+    void SetTrialKinematics(
+        const SolverNameSpace::Vec& velocity,
+        const SolverNameSpace::Vec& acceleration) override
+    {
+        velocity_ = velocity;
+        acceleration_ = acceleration;
+    }
+
+    void GetState(
+        SolverNameSpace::Vec& displacement,
+        SolverNameSpace::Vec& velocity,
+        SolverNameSpace::Vec& acceleration) const override
+    {
+        displacement = displacement_;
+        velocity = velocity_;
+        acceleration = acceleration_;
+    }
+
+    void Assemble_Matrix(SolverNameSpace::SpMat& stiffness, bool) override
+    {
+        stiffness.resize(1, 1);
+        stiffness.setZero();
+        stiffness.insert(0, 0) = stiffness_;
+        stiffness.makeCompressed();
+    }
+
+    void AssembleDynamicSystem(
+        SolverNameSpace::SpMat& mass,
+        SolverNameSpace::SpMat& gyroscopic,
+        SolverNameSpace::SpMat& centrifugal) override
+    {
+        mass.resize(1, 1);
+        mass.setZero();
+        mass.insert(0, 0) = mass_;
+        mass.makeCompressed();
+        gyroscopic.resize(1, 1);
+        gyroscopic.setZero();
+        centrifugal.resize(1, 1);
+        centrifugal.setZero();
+    }
+
+    void ComputeExternalForce(
+        double,
+        double,
+        SolverNameSpace::Vec& constrained,
+        SolverNameSpace::Vec& free) override
+    {
+        constrained.resize(0);
+        free = SolverNameSpace::Vec::Zero(1);
+    }
+
+    void Assemble_Constraint(
+        SolverNameSpace::Vec& constrained,
+        double,
+        double) override
+    {
+        constrained.resize(0);
+    }
+
+    void ComputeResidual(
+        const SolverNameSpace::Vec& external,
+        SolverNameSpace::Vec& residual) override
+    {
+        residual = external
+            - stiffness_ * displacement_
+            - mass_ * acceleration_;
+    }
+
+    void CalculateReactions(SolverNameSpace::Vec& reactions) override
+    {
+        reactions.resize(0);
+    }
+
+    void OnStepCompleted(double) override { ++completedSteps_; }
+    void CommitState() override {}
+
+    void BackupStepState() override
+    {
+        savedDisplacement_ = displacement_;
+        savedVelocity_ = velocity_;
+        savedAcceleration_ = acceleration_;
+    }
+
+    void GetStepIncrement(SolverNameSpace::Vec& increment) const override
+    {
+        increment = displacement_ - savedDisplacement_;
+    }
+
+    int CompletedSteps() const { return completedSteps_; }
+
+private:
+    double mass_ = 1.0;
+    double stiffness_ = 1.0;
+    SolverNameSpace::Vec displacement_ =
+        SolverNameSpace::Vec::Zero(1);
+    SolverNameSpace::Vec velocity_ =
+        SolverNameSpace::Vec::Zero(1);
+    SolverNameSpace::Vec acceleration_ =
+        SolverNameSpace::Vec::Zero(1);
+    SolverNameSpace::Vec savedDisplacement_ =
+        SolverNameSpace::Vec::Zero(1);
+    SolverNameSpace::Vec savedVelocity_ =
+        SolverNameSpace::Vec::Zero(1);
+    SolverNameSpace::Vec savedAcceleration_ =
+        SolverNameSpace::Vec::Zero(1);
+    int completedSteps_ = 0;
+};
+
+std::optional<int> verifyAdaptiveTssbn(const QStringList& arguments)
+{
+    if (!arguments.contains(QStringLiteral("--verify-adaptive-tssbn")))
+        return std::nullopt;
+
+    AnalysisStep factoryStep;
+    factoryStep.m_Type = EnumKeyword::StepType::DYNAMIC;
+    factoryStep.m_DynamicSolverType =
+        SolverNameSpace::SolverType::AdaptiveTSSBN;
+    factoryStep.m_StepSize = 0.1;
+    factoryStep.m_Tolerance = 1.0e-5;
+    factoryStep.m_MaxIterations = 20;
+    factoryStep.m_AdaptiveTssbn.spectralRadiusInfinity = 0.77;
+    factoryStep.m_AdaptiveTssbn.minimumTimeStep = 2.0e-6;
+    factoryStep.m_AdaptiveTssbn.maximumTimeStep = 0.42;
+    factoryStep.m_AdaptiveTssbn.relativeTolerance = 8.0e-4;
+    factoryStep.m_AdaptiveTssbn.absoluteTolerance = 4.0e-7;
+    factoryStep.m_AdaptiveTssbn.shrinkFactor = 0.74;
+    factoryStep.m_AdaptiveTssbn.targetNewtonIterations = 9;
+    factoryStep.m_AdaptiveTssbn.derivativeGain = 0.12;
+    factoryStep.m_AdaptiveTssbn.minimumDerivativeFactor = 0.43;
+    factoryStep.m_AdaptiveTssbn.maximumDerivativeFactor = 1.61;
+    factoryStep.m_AdaptiveTssbn.maximumRejectedAttempts = 17;
+    const auto factorySolver =
+        SolverNameSpace::SolverFactory::Create_StepForSlover(factoryStep);
+    const auto* adaptiveFactorySolver =
+        dynamic_cast<const SolverNameSpace::SolverAdaptiveTSSBN*>(
+            factorySolver.get());
+    const bool factoryConnected = adaptiveFactorySolver
+        && adaptiveFactorySolver->GetType()
+            == SolverNameSpace::SolverType::AdaptiveTSSBN
+        && std::abs(
+            adaptiveFactorySolver->GetParams().spectralRadiusInfinity
+                - 0.77) < 1.0e-12
+        && std::abs(
+            adaptiveFactorySolver->GetParams().minimumTimeStep
+                - 2.0e-6) < 1.0e-15
+        && std::abs(
+            adaptiveFactorySolver->GetParams().maximumTimeStep
+                - 0.42) < 1.0e-12
+        && std::abs(
+            adaptiveFactorySolver->GetParams().relativeTolerance
+                - 8.0e-4) < 1.0e-15
+        && std::abs(
+            adaptiveFactorySolver->GetParams().absoluteTolerance
+                - 4.0e-7) < 1.0e-15
+        && std::abs(
+            adaptiveFactorySolver->GetParams().shrinkFactor
+                - 0.74) < 1.0e-12
+        && adaptiveFactorySolver->GetParams().targetNewtonIterations
+            == 9
+        && std::abs(
+            adaptiveFactorySolver->GetParams().derivativeGain
+                - 0.12) < 1.0e-12
+        && std::abs(
+            adaptiveFactorySolver->GetParams().minimumDerivativeFactor
+                - 0.43) < 1.0e-12
+        && std::abs(
+            adaptiveFactorySolver->GetParams().maximumDerivativeFactor
+                - 1.61) < 1.0e-12
+        && adaptiveFactorySolver->GetParams().maximumRejectedAttempts
+            == 17;
+
+    constexpr double mass = 2.0;
+    constexpr double stiffness = 8.0;
+    constexpr double angularFrequency = 2.0;
+    const double duration = 2.0 * std::acos(-1.0);
+    LinearOscillatorModel model(mass, stiffness);
+
+    SolverNameSpace::SolverAdaptiveTSSBN::Params parameters;
+    parameters.initialTimeStep = 0.15;
+    parameters.minimumTimeStep = 1.0e-5;
+    parameters.maximumTimeStep = 0.3;
+    parameters.relativeTolerance = 2.0e-6;
+    parameters.absoluteTolerance = 1.0e-9;
+    parameters.nonlinearTolerance = 1.0e-9;
+    parameters.maximumNewtonIterations = 8;
+    SolverNameSpace::SolverAdaptiveTSSBN solver(parameters);
+    const bool solved = solver.Solve(model, duration);
+
+    SolverNameSpace::Vec displacement;
+    SolverNameSpace::Vec velocity;
+    SolverNameSpace::Vec acceleration;
+    model.GetState(displacement, velocity, acceleration);
+    const double exactDisplacement =
+        std::cos(angularFrequency * duration);
+    const double exactVelocity =
+        -angularFrequency * std::sin(angularFrequency * duration);
+    const double exactAcceleration =
+        -angularFrequency * angularFrequency * exactDisplacement;
+    const double displacementError =
+        std::abs(displacement[0] - exactDisplacement);
+    const double velocityError =
+        std::abs(velocity[0] - exactVelocity);
+    const double accelerationError =
+        std::abs(acceleration[0] - exactAcceleration);
+    const bool passed =
+        factoryConnected
+        && solved
+        && solver.GetAcceptedStepCount() == model.CompletedSteps()
+        && solver.GetAcceptedStepCount() > 0
+        && displacementError < 2.0e-3
+        && velocityError < 2.0e-3
+        && accelerationError < 2.0e-3;
+
+    QTextStream(stdout)
+        << "adaptive_tssbn factory=" << factoryConnected
+        << " solved=" << solved
+        << " accepted=" << solver.GetAcceptedStepCount()
+        << " rejected=" << solver.GetRejectedStepCount()
+        << " displacement_error=" << displacementError
+        << " velocity_error=" << velocityError
+        << " acceleration_error=" << accelerationError
+        << Qt::endl;
+    return passed ? 0 : 1;
+}
+
 std::optional<int> verifyLe2012Example1(const QStringList& arguments)
 {
+    if (arguments.contains(
+            QStringLiteral("--verify-le2012-example1-tssbn")))
+    {
+        return PaperBeamDynamicsVerification::RunExample1Adaptive(
+            QStringLiteral(
+                "output/verification/le2012_example1_tssbn"));
+    }
     if (!arguments.contains(QStringLiteral("--verify-le2012-example1")))
         return std::nullopt;
     return PaperBeamDynamicsVerification::RunExample1(
@@ -32,6 +359,13 @@ std::optional<int> verifyLe2012Example1(const QStringList& arguments)
 
 std::optional<int> verifyLe2012Example4(const QStringList& arguments)
 {
+    if (arguments.contains(
+            QStringLiteral("--verify-le2012-example4-tssbn")))
+    {
+        return PaperBeamDynamicsVerification::RunAdaptive(
+            QStringLiteral(
+                "output/verification/le2012_example4_tssbn"));
+    }
     if (!arguments.contains(QStringLiteral("--verify-le2012-example4")))
         return std::nullopt;
     return PaperBeamDynamicsVerification::Run(
@@ -140,6 +474,224 @@ std::optional<int> verifyBeamDynamics(const QStringList& arguments)
         && symmetryError <= 1.0e-12
         && gyroscopicError <= 1.0e-12
         && responseError <= 2.0e-3 ? 0 : 1;
+}
+
+std::optional<int> verifyExactAerodynamicAngle(const QStringList& arguments)
+{
+    if (!arguments.contains(QStringLiteral("--verify-exact-aero-angle")))
+        return std::nullopt;
+
+    AerodynamicSectionState state;
+    state.firstPosition = Eigen::Vector3d(0.0, 0.0, 0.0);
+    state.secondPosition = Eigen::Vector3d(5.0, 0.0, 0.0);
+    state.firstVelocity = state.secondVelocity = Eigen::Vector3d(0.0, 3.0, 1.0);
+    state.windVelocity = Eigen::Vector3d(0.0, 0.0, 10.0);
+    state.firstTwist = state.secondTwist = 0.2;
+    state.firstTwistRate = state.secondTwistRate = 2.0;
+    state.radius = 0.5;
+    state.initialAttack = 0.4;
+
+    auto result = AerodynamicLoadCalculator::ComputeKinematics(state);
+    const double expectedSpeed = std::hypot(4.0, 9.0);
+    const double expectedFlowAngle = std::atan2(4.0, 9.0);
+    const double expectedAttack = 0.4 + 0.2 - expectedFlowAngle;
+    const double speedError = std::abs(result.relativeSpeed - expectedSpeed);
+    const double flowError = std::abs(result.flowAngle - expectedFlowAngle);
+    const double attackError = std::abs(result.attackAngle - expectedAttack);
+
+    AerodynamicLoadCalculator::ComputeLineLoad(result, 1.225, 1.0, 1.0, 2.0, 0.1);
+    const bool finiteLoads = result.lineForce.allFinite() && result.lineMoment.allFinite();
+    QTextStream(stdout)
+        << "exact aero relative_speed=" << result.relativeSpeed
+        << " flow_angle=" << result.flowAngle
+        << " attack_angle=" << result.attackAngle
+        << " speed_error=" << speedError
+        << " flow_error=" << flowError
+        << " attack_error=" << attackError << Qt::endl;
+    return speedError <= 1.0e-12 && flowError <= 1.0e-12
+        && attackError <= 1.0e-12 && finiteLoads ? 0 : 1;
+}
+
+std::optional<int> verifyGallopingCaseSelection(const QStringList& arguments)
+{
+    if (!arguments.contains(QStringLiteral("--verify-galloping-case")))
+        return std::nullopt;
+
+    StructureData structure;
+    AnalysisStepConfig config;
+    config.id = 1;
+    config.type = EnumKeyword::StepType::DYNAMIC;
+    config.enableGalloping = true;
+    config.gallopingIceThickness = 25;
+    structure.AddAnalysisStep(config);
+    const auto step = structure.m_AnalysisStep.at(1);
+    Force_Wind wind;
+    wind.m_velocity = 14;
+    const AeroCaseKey key = step->GetGallopingAeroCase(4, wind);
+    const bool supported = step->ShouldAssembleGalloping(4, wind);
+    const bool unsupportedBundleRejected = !step->ShouldAssembleGalloping(2, wind);
+
+    config.id = 2;
+    config.type = EnumKeyword::StepType::STATIC;
+    structure.AddAnalysisStep(config);
+    const bool staticRejected = !structure.m_AnalysisStep.at(2)->ShouldAssembleGalloping(4, wind);
+    AeroManager manager;
+    const bool loaded = manager.loadCase(
+        std::filesystem::path("YQY/Import/Aero_Data/Input_Data"), key);
+    AeroManager completeCatalog;
+    const bool allCasesLoaded = completeCatalog.loadAllCases(
+        std::filesystem::path("YQY/Import/Aero_Data/Input_Data"));
+    bool catalogShapeValid =
+        completeCatalog.getLoadedCaseCount() == 40;
+    double maximumEndpointGap = 0.0;
+    double maximumSymmetryError = 0.0;
+    for (const auto& [caseKey, models] : completeCatalog.getCaseModels())
+    {
+        catalogShapeValid = catalogShapeValid
+            && static_cast<int>(models.size()) == caseKey.bundleCount;
+        for (const BladeModel& model : models)
+        {
+            catalogShapeValid = catalogShapeValid
+                && model.lift.size() == 73
+                && model.drag.size() == 73
+                && model.moment.size() == 73;
+            if (model.lift.size() == 73)
+            {
+                maximumEndpointGap = std::max(maximumEndpointGap,
+                    std::abs(model.lift.front() - model.lift.back()));
+                maximumEndpointGap = std::max(maximumEndpointGap,
+                    std::abs(model.drag.front() - model.drag.back()));
+                maximumEndpointGap = std::max(maximumEndpointGap,
+                    std::abs(model.moment.front() - model.moment.back()));
+            }
+        }
+        if (models.size() == 1 || models.size() == 4)
+        {
+            const std::vector<int> reflectedProfile =
+                models.size() == 1 ? std::vector<int>{ 0 }
+                                   : std::vector<int>{ 0, 3, 2, 1 };
+            for (int sourceProfile = 0;
+                sourceProfile < static_cast<int>(models.size());
+                ++sourceProfile)
+            {
+                const int targetProfile =
+                    reflectedProfile[static_cast<size_t>(sourceProfile)];
+                for (int sourceIndex = 1; sourceIndex < 36; ++sourceIndex)
+                {
+                    const int targetIndex = 72 - sourceIndex;
+                    maximumSymmetryError = std::max(
+                        maximumSymmetryError,
+                        std::abs(models[sourceProfile].lift[sourceIndex]
+                            + models[targetProfile].lift[targetIndex]));
+                    maximumSymmetryError = std::max(
+                        maximumSymmetryError,
+                        std::abs(models[sourceProfile].drag[sourceIndex]
+                            - models[targetProfile].drag[targetIndex]));
+                    maximumSymmetryError = std::max(
+                        maximumSymmetryError,
+                        std::abs(models[sourceProfile].moment[sourceIndex]
+                            + models[targetProfile].moment[targetIndex]));
+                }
+            }
+        }
+    }
+    const auto* boundCase = manager.findCaseModels(key);
+    const AeroCoefficients coefficients = boundCase
+        ? manager.getCoefficients(*boundCase, 0, 17.5) : AeroCoefficients{};
+    const bool combinedLookupMatches = boundCase
+        && std::abs(coefficients.lift - manager.getData(key, 0, LIFT, 17.5)) <= 1.0e-12
+        && std::abs(coefficients.drag - manager.getData(key, 0, DRAG, 17.5)) <= 1.0e-12
+        && std::abs(coefficients.moment - manager.getData(key, 0, MOMENT, 17.5)) <= 1.0e-12;
+    const double expected357 = boundCase && !boundCase->empty()
+        ? boundCase->front().lift[71]
+            + 0.4 * (boundCase->front().lift[72] - boundCase->front().lift[71])
+        : 0.0;
+    const bool periodicAngles =
+        std::abs(AeroManager::normalizeAngleDegrees(357.0) - 357.0) <= 1.0e-12
+        && std::abs(AeroManager::normalizeAngleDegrees(1000.0) - 280.0) <= 1.0e-12
+        && std::abs(manager.getData(key, 0, LIFT, 357.0) - expected357) <= 1.0e-12
+        && std::abs(manager.getData(key, 0, LIFT, 1000.0)
+            - manager.getData(key, 0, LIFT, 280.0)) <= 1.0e-12;
+    const Eigen::Vector3d axis = Eigen::Vector3d::UnitX();
+    const Eigen::Vector3d up = Eigen::Vector3d::UnitZ();
+    const int referenceProfile = BundleAeroMapper::ResolveProfile(
+        4, 0, axis, up, -Eigen::Vector3d::UnitY());
+    const int reversedProfile = BundleAeroMapper::ResolveProfile(
+        4, 0, axis, up, Eigen::Vector3d::UnitY());
+    const bool profileMapping = referenceProfile == 0 && reversedProfile == 2;
+
+    auto firstNode = std::make_shared<Node>();
+    auto secondNode = std::make_shared<Node>();
+    firstNode->SetNumDOFs(4);
+    secondNode->SetNumDOFs(4);
+    secondNode->m_X = 2.0;
+    for (int dof = 0; dof < 4; ++dof)
+    {
+        firstNode->m_DOF[dof] = dof;
+        secondNode->m_DOF[dof] = dof + 4;
+    }
+    auto section = std::make_shared<SectionCircular>();
+    section->m_Radius = 0.015;
+    section->m_Area = std::acos(-1.0) * section->m_Radius * section->m_Radius;
+    auto property = std::make_shared<Property>();
+    property->m_pSection = section;
+    auto element = std::make_shared<ElementCable>();
+    element->m_pNode[0] = firstNode;
+    element->m_pNode[1] = secondNode;
+    element->m_pProperty = property;
+    element->m_WireId = 0;
+    element->m_AeroBundleCount = 4;
+    element->m_AeroProfileId = 0;
+    structure.m_Elements[1] = element;
+    structure.m_AeroManager = manager;
+    wind.m_direction = -Eigen::Vector3d::UnitY();
+    Eigen::VectorXd fixed = Eigen::VectorXd::Zero(4);
+    Eigen::VectorXd free = Eigen::VectorXd::Zero(4);
+    LoadAssembler::AssembleGalloping(
+        wind, structure, 25, 45.0, up, 4, 1.0, fixed, free);
+    const bool aerodynamicAssembly =
+        fixed.allFinite() && free.allFinite()
+        && fixed.norm() > 0.0 && free.norm() > 0.0;
+    Eigen::VectorXd angle1000Fixed = Eigen::VectorXd::Zero(4);
+    Eigen::VectorXd angle1000Free = Eigen::VectorXd::Zero(4);
+    LoadAssembler::AssembleGalloping(
+        wind, structure, 25, 1000.0, up, 4, 1.0,
+        angle1000Fixed, angle1000Free);
+    Eigen::VectorXd angle280Fixed = Eigen::VectorXd::Zero(4);
+    Eigen::VectorXd angle280Free = Eigen::VectorXd::Zero(4);
+    LoadAssembler::AssembleGalloping(
+        wind, structure, 25, 280.0, up, 4, 1.0,
+        angle280Fixed, angle280Free);
+    const double periodicAssemblyError = std::max(
+        (angle1000Fixed - angle280Fixed).norm(),
+        (angle1000Free - angle280Free).norm());
+
+    QTextStream(stdout)
+        << "galloping case bundle=" << key.bundleCount
+        << " wind=" << key.windSpeed
+        << " ice=" << key.iceThickness
+        << " supported=" << supported
+        << " unsupported_bundle_rejected=" << unsupportedBundleRejected
+        << " static_rejected=" << staticRejected
+        << " case_loaded=" << loaded
+        << " all_cases_loaded=" << allCasesLoaded
+        << " catalog_cases=" << completeCatalog.getLoadedCaseCount()
+        << " max_0_360_gap=" << maximumEndpointGap
+        << " max_symmetry_error=" << maximumSymmetryError
+        << " combined_lookup_matches=" << combinedLookupMatches
+        << " angle_357_cl=" << manager.getData(key, 0, LIFT, 357.0)
+        << " angle_1000=" << AeroManager::normalizeAngleDegrees(1000.0)
+        << " reference_profile=" << referenceProfile
+        << " reversed_profile=" << reversedProfile
+        << " aero_force_norm=" << free.norm()
+        << " periodic_force_error=" << periodicAssemblyError << Qt::endl;
+    return supported && unsupportedBundleRejected && staticRejected
+        && loaded && allCasesLoaded && catalogShapeValid
+        && maximumEndpointGap <= 1.0e-12
+        && maximumSymmetryError <= 1.0e-12
+        && combinedLookupMatches && periodicAngles && profileMapping
+        && aerodynamicAssembly && periodicAssemblyError <= 1.0e-12
+        && key == AeroCaseKey{ 4, 14, 25 } ? 0 : 1;
 }
 
 std::optional<int> verifyCableTorsion(const QStringList& arguments)
@@ -276,6 +828,93 @@ std::optional<int> verifyCableTorsion(const QStringList& arguments)
         && slackTorsionalStiffness > 0.0
         && frequencyError <= 2.0e-3
         && transientError <= 2.0e-3 ? 0 : 3;
+}
+
+std::optional<int> verifySpatialWindLoad(const QStringList& arguments)
+{
+    if (!arguments.contains(QStringLiteral("--verify-spatial-wind-load")))
+        return std::nullopt;
+
+    constexpr double radius = 0.015;
+    constexpr double initialLength = 5.0;
+    constexpr double density = 1.225;
+    constexpr double speed = 10.0;
+    const double q = 0.5 * density * speed * speed * (2.0 * radius);
+
+    StructureData structure;
+    auto node0 = std::make_shared<Node>();
+    auto node1 = std::make_shared<Node>();
+    node0->SetNumDOFs(4);
+    node1->SetNumDOFs(4);
+    node1->m_X = initialLength;
+    for (int i = 0; i < 4; ++i)
+    {
+        node0->m_DOF[i] = i;
+        node1->m_DOF[i] = i + 4;
+    }
+
+    auto material = std::make_shared<Material>();
+    material->m_Density = 7850.0;
+    auto section = std::make_shared<SectionCircular>();
+    section->m_Radius = radius;
+    section->m_Area = std::acos(-1.0) * radius * radius;
+    auto property = std::make_shared<Property>();
+    property->m_pMaterial = material;
+    property->m_pSection = section;
+    auto cable = std::make_shared<ElementCable>();
+    cable->m_pNode[0] = node0;
+    cable->m_pNode[1] = node1;
+    cable->m_pProperty = property;
+    structure.m_Elements.emplace(1, cable);
+
+    Force_Wind wind;
+    wind.m_Direction = EnumKeyword::Direction::Y;
+    wind.m_velocity = speed;
+    wind.m_windDensity = density;
+
+    Eigen::VectorXd fixed = Eigen::VectorXd::Zero(4);
+    Eigen::VectorXd free = Eigen::VectorXd::Zero(4);
+    LoadAssembler::Assemble(wind, structure, 4, 1.0, fixed, free);
+    const double forceError = std::max(
+        std::abs(fixed[1] - q * initialLength / 2.0),
+        std::abs(free[1] - q * initialLength / 2.0));
+
+    // Rotate the current cable chord to prove that the spatial wind direction
+    // stays global while equivalent nodal loads use the current configuration.
+    node1->m_Displacement[0] = -2.0;
+    node1->m_Displacement[1] = 4.0;
+    fixed.setZero();
+    free.setZero();
+    LoadAssembler::Assemble(wind, structure, 4, 1.0, fixed, free);
+    const double rotatedForceError = std::max(
+        std::abs(fixed[1] - q * 5.0 / 2.0),
+        std::abs(free[1] - q * 5.0 / 2.0));
+
+    // An arbitrary global direction must be assembled component-by-component
+    // without reducing it to one of the coordinate axes.
+    std::fill(
+        node1->m_Displacement.begin(),
+        node1->m_Displacement.end(),
+        0.0);
+    wind.m_direction = Eigen::Vector3d(1.0, 2.0, -2.0);
+    fixed.setZero();
+    free.setZero();
+    LoadAssembler::Assemble(wind, structure, 4, 1.0, fixed, free);
+    const Eigen::Vector3d expectedVector =
+        q * initialLength / 2.0 * wind.m_direction.normalized();
+    const double vectorDirectionError = std::max(
+        (fixed.head<3>() - expectedVector).norm(),
+        (free.head<3>() - expectedVector).norm());
+
+    QTextStream(stdout)
+        << "spatial wind q=" << q
+        << " initial_node_force=" << q * initialLength / 2.0
+        << " rotated_node_force=" << q * 5.0 / 2.0
+        << " error=" << forceError
+        << " rotated_error=" << rotatedForceError
+        << " vector_error=" << vectorDirectionError << Qt::endl;
+    return forceError <= 1.0e-12 && rotatedForceError <= 1.0e-12
+        && vectorDirectionError <= 1.0e-12 ? 0 : 1;
 }
 
 std::optional<int> verifyNodeExport(const QStringList& arguments)
@@ -604,10 +1243,56 @@ std::optional<int> verifyHdf5ModelContract(const QStringList& arguments)
     source->EnsureDefaultAnalysisConfiguration();
     if (source->m_AnalysisStep.empty() || !source->m_AnalysisStep.begin()->second)
         return 4;
-    auto sourceStep = source->m_AnalysisStep.begin()->second;
-    sourceStep->m_Name = QStringLiteral("导线区域分析");
+    const int equilibriumStepId = source->m_AnalysisStep.begin()->first;
+    auto equilibriumStep = source->m_AnalysisStep.begin()->second;
+    equilibriumStep->m_Name = QStringLiteral("静力平衡");
+    equilibriumStep->m_Type = EnumKeyword::StepType::STATIC;
+    equilibriumStep->isDynamic = false;
+    equilibriumStep->m_InitialStaticStepId = 0;
+    AnalysisStepConfig dynamicConfig;
+    dynamicConfig.id = source->m_AnalysisStep.crbegin()->first + 1;
+    dynamicConfig.name = QStringLiteral("导线区域分析");
+    dynamicConfig.type = EnumKeyword::StepType::DYNAMIC;
+    dynamicConfig.totalTime = 1.0;
+    dynamicConfig.stepSize = 0.1;
+    dynamicConfig.tolerance = 1.0e-5;
+    dynamicConfig.maxIterations = 20;
+    dynamicConfig.initialStaticStepId = equilibriumStepId;
+    source->AddAnalysisStep(dynamicConfig);
+    auto sourceStep = source->m_AnalysisStep.at(dynamicConfig.id);
+    sourceStep->m_DynamicSolverType =
+        SolverNameSpace::SolverType::AdaptiveTSSBN;
+    sourceStep->m_AdaptiveTssbn.spectralRadiusInfinity = 0.73;
+    sourceStep->m_AdaptiveTssbn.minimumTimeStep = 2.5e-6;
+    sourceStep->m_AdaptiveTssbn.maximumTimeStep = 0.37;
+    sourceStep->m_AdaptiveTssbn.relativeTolerance = 7.5e-4;
+    sourceStep->m_AdaptiveTssbn.absoluteTolerance = 3.5e-7;
+    sourceStep->m_AdaptiveTssbn.safetyFactor = 0.82;
+    sourceStep->m_AdaptiveTssbn.shrinkFactor = 0.76;
+    sourceStep->m_AdaptiveTssbn.maximumGrowthFactor = 2.4;
+    sourceStep->m_AdaptiveTssbn.targetNewtonIterations = 11;
+    sourceStep->m_AdaptiveTssbn.derivativeGain = 0.13;
+    sourceStep->m_AdaptiveTssbn.minimumDerivativeFactor = 0.44;
+    sourceStep->m_AdaptiveTssbn.maximumDerivativeFactor = 1.72;
+    sourceStep->m_AdaptiveTssbn.maximumRejectedAttempts = 19;
+    sourceStep->m_EnableGalloping = true;
+    sourceStep->m_GallopingIceThickness = 28;
+    sourceStep->m_GallopingInitialAttackDegrees = 357.0;
     sourceStep->m_RegionScope = AnalysisRegionScope::SelectedRegions;
     sourceStep->m_ComputeRegionIds = {firstRegionId, secondRegionId};
+    const AeroCaseKey sourceAeroKey{ 1, 18, 28 };
+    if (!source->m_AeroManager.loadCase(
+        std::filesystem::path("YQY/Import/Aero_Data/Input_Data"), sourceAeroKey))
+        return 5;
+    const int windLoadId = source->m_Load.empty()
+        ? 1 : source->m_Load.crbegin()->first + 1;
+    auto sourceWind = std::make_shared<Force_Wind>();
+    sourceWind->m_Id = windLoadId;
+    sourceWind->m_Name = QStringLiteral("任意方向风");
+    sourceWind->m_StepId = sourceStep->m_Id;
+    sourceWind->m_velocity = 18.0;
+    sourceWind->m_direction = Eigen::Vector3d(1.0, 2.0, 0.5).normalized();
+    source->m_Load[windLoadId] = sourceWind;
 
     Hdf5ModelIO writer;
     if (!writer.ExportModelHdf5(arguments.at(index + 2), source.get(), arguments.at(index + 1)))
@@ -620,12 +1305,69 @@ std::optional<int> verifyHdf5ModelContract(const QStringList& arguments)
     if (!writer.ImportHdf5(arguments.at(index + 2), restored.get()))
         return 7;
     const auto restoredStep = restored->m_AnalysisStep.find(sourceStep->m_Id);
+    const auto restoredWindEntry = restored->m_Load.find(windLoadId);
+    const auto restoredWind = restoredWindEntry != restored->m_Load.cend()
+        ? std::dynamic_pointer_cast<Force_Wind>(restoredWindEntry->second) : nullptr;
+    const double windDirectionError = restoredWind
+        ? (restoredWind->m_direction - sourceWind->m_direction).norm()
+        : std::numeric_limits<double>::infinity();
     if (restored->m_ModelSets.size() != 2 || restored->m_ComputeRegions.size() != 2
         || restored->m_MPCConstraints.size() != source->m_MPCConstraints.size()
         || restoredStep == restored->m_AnalysisStep.cend() || !restoredStep->second
         || restoredStep->second->m_Name != sourceStep->m_Name
+        || restoredStep->second->m_InitialStaticStepId != equilibriumStepId
+        || !restoredStep->second->m_EnableGalloping
+        || restoredStep->second->m_GallopingIceThickness != 28
+        || restoredStep->second->m_DynamicSolverType
+            != SolverNameSpace::SolverType::AdaptiveTSSBN
+        || std::abs(
+            restoredStep->second->m_AdaptiveTssbn.spectralRadiusInfinity
+                - 0.73) > 1.0e-12
+        || std::abs(
+            restoredStep->second->m_AdaptiveTssbn.minimumTimeStep
+                - 2.5e-6) > 1.0e-15
+        || std::abs(
+            restoredStep->second->m_AdaptiveTssbn.maximumTimeStep
+                - 0.37) > 1.0e-12
+        || std::abs(
+            restoredStep->second->m_AdaptiveTssbn.relativeTolerance
+                - 7.5e-4) > 1.0e-15
+        || std::abs(
+            restoredStep->second->m_AdaptiveTssbn.absoluteTolerance
+                - 3.5e-7) > 1.0e-15
+        || std::abs(
+            restoredStep->second->m_AdaptiveTssbn.safetyFactor
+                - 0.82) > 1.0e-12
+        || std::abs(
+            restoredStep->second->m_AdaptiveTssbn.shrinkFactor
+                - 0.76) > 1.0e-12
+        || std::abs(
+            restoredStep->second->m_AdaptiveTssbn.maximumGrowthFactor
+                - 2.4) > 1.0e-12
+        || restoredStep->second->m_AdaptiveTssbn.targetNewtonIterations
+            != 11
+        || std::abs(
+            restoredStep->second->m_AdaptiveTssbn.derivativeGain
+                - 0.13) > 1.0e-12
+        || std::abs(
+            restoredStep->second->m_AdaptiveTssbn.minimumDerivativeFactor
+                - 0.44) > 1.0e-12
+        || std::abs(
+            restoredStep->second->m_AdaptiveTssbn.maximumDerivativeFactor
+                - 1.72) > 1.0e-12
+        || restoredStep->second->m_AdaptiveTssbn.maximumRejectedAttempts
+            != 19
+        || std::abs(
+            restoredStep->second->m_GallopingInitialAttackDegrees - 357.0)
+            > 1.0e-12
+        || !restored->m_AeroManager.hasCase(sourceAeroKey)
+        || std::abs(restored->m_AeroManager.getData(sourceAeroKey, 0, LIFT, 17.5)
+            - source->m_AeroManager.getData(sourceAeroKey, 0, LIFT, 17.5)) > 1.0e-12
         || restoredStep->second->m_RegionScope != AnalysisRegionScope::SelectedRegions
-        || restoredStep->second->m_ComputeRegionIds.size() != 2)
+        || restoredStep->second->m_ComputeRegionIds.size() != 2
+        || !restoredWind
+        || std::abs(restoredWind->m_velocity - 18.0) > 1.0e-12
+        || windDirectionError > 1.0e-12)
     {
         return 8;
     }
@@ -633,6 +1375,16 @@ std::optional<int> verifyHdf5ModelContract(const QStringList& arguments)
         << " regions=" << restored->m_ComputeRegions.size()
         << " mpcs=" << restored->m_MPCConstraints.size()
         << " steps=" << restored->m_AnalysisStep.size()
+        << " galloping=" << (restoredStep->second->m_EnableGalloping ? 1 : 0)
+        << " ice=" << restoredStep->second->m_GallopingIceThickness
+        << " initial_attack="
+        << restoredStep->second->m_GallopingInitialAttackDegrees
+        << " tssbn_rel_tol="
+        << restoredStep->second->m_AdaptiveTssbn.relativeTolerance
+        << " tssbn_max_reject="
+        << restoredStep->second->m_AdaptiveTssbn.maximumRejectedAttempts
+        << " aero_cases=" << restored->m_AeroManager.getLoadedCaseCount()
+        << " wind_direction_error=" << windDirectionError
         << " result=" << (summary.hasResult ? 1 : 0) << Qt::endl;
     return 0;
 }
@@ -894,6 +1646,7 @@ std::optional<int> verifyConductorBundle(const QStringList& arguments)
                 || !element
                 || element->m_Role != ElementRole::Conductor
                 || element->m_WireId != wireId
+                || element->m_AeroBundleCount != 4
                 || element->m_AeroProfileId != wireId
                 || !element->HasAerodynamicLoad())
                 return 17;
@@ -909,6 +1662,7 @@ std::optional<int> verifyConductorBundle(const QStringList& arguments)
             const auto element = structure->FindElement(elementId);
             if (!element
                 || element->m_Role != ElementRole::TensionHardware
+                || std::abs(element->m_InitStress - config.conductor.stress0) > 1.0e-6
                 || element->HasAerodynamicLoad())
                 return 18;
         }
@@ -920,6 +1674,7 @@ std::optional<int> verifyConductorBundle(const QStringList& arguments)
             const auto element = structure->FindElement(elementId);
             if (!element
                 || element->m_Role != ElementRole::IntraPhaseSpacer
+                || std::abs(element->m_InitStress) > 1.0e-12
                 || element->HasAerodynamicLoad())
                 return 19;
         }
@@ -936,6 +1691,42 @@ std::optional<int> verifyConductorBundle(const QStringList& arguments)
     if (std::hypot(transitionDx, transitionDy) < 0.5)
         return 11;
 
+    // 文本导线模型的简化端部：四根子导线均直接锚固在端部截面，
+    // 不应生成汇集节点、耐张联板或稳定梁。
+    auto directStructure = std::make_shared<StructureData>();
+    auto directProperty = library.instantiateProperty(0, 0, *directStructure, propertyError);
+    if (!directProperty)
+        return 22;
+    auto directConfig = config;
+    directConfig.property = directProperty;
+    directConfig.endTopology = Conductor::BundleEndTopology::DirectWireSupports;
+    Conductor::ConductorModelBuilder directBuilder(directStructure);
+    Conductor::LineBuildResult directResult;
+    if (!directBuilder.BuildLine(directConfig, directResult, buildError))
+        return 23;
+    if (directResult.leftTensionEnd.supportNodeIds.size() != 4
+        || directResult.rightTensionEnd.supportNodeIds.size() != 4
+        || !directResult.leftTensionEnd.groupNodeIds.empty()
+        || !directResult.rightTensionEnd.groupNodeIds.empty()
+        || !directResult.leftTensionEnd.yokeElementIds.empty()
+        || !directResult.rightTensionEnd.yokeElementIds.empty()
+        || directResult.leftTensionEnd.stabilizerElementId > 0
+        || directResult.rightTensionEnd.stabilizerElementId > 0)
+        return 24;
+    for (const auto& [wireId, sub] : directResult.subConductors)
+    {
+        if (sub.nodeIds.empty()
+            || sub.nodeIds.front() != directResult.leftTensionEnd.supportNodeIds[wireId]
+            || sub.nodeIds.back() != directResult.rightTensionEnd.supportNodeIds[wireId])
+            return 25;
+        for (int elementId : sub.elementIds)
+        {
+            const auto element = directStructure->FindElement(elementId);
+            if (!element || element->m_Role != ElementRole::Conductor || !element->HasAerodynamicLoad())
+                return 26;
+        }
+    }
+
     QTemporaryDir temporaryDirectory;
     const QString h5Path = temporaryDirectory.filePath(QStringLiteral("conductor_tags.h5"));
     Hdf5ModelIO hdf5;
@@ -951,6 +1742,7 @@ std::optional<int> verifyConductorBundle(const QStringList& arguments)
         if (!source || !target
             || target->m_Role != source->m_Role
             || target->m_WireId != source->m_WireId
+            || target->m_AeroBundleCount != source->m_AeroBundleCount
             || target->m_AeroProfileId != source->m_AeroProfileId)
             return 21;
     }
@@ -1069,6 +1861,38 @@ std::optional<int> verifyConductorMultiSpan(const QStringList& arguments)
         stringIt->second->HasAerodynamicLoad())
         return 9;
 
+    // 多档也必须支持简化直接端部：只有首末站端部不同，中间 H 型悬垂串、
+    // 线身与相内间隔棒均保持同一套逻辑。
+    auto directStructure = std::make_shared<StructureData>();
+    auto directProperty = library.instantiateProperty(0, 0, *directStructure, propertyError);
+    if (!directProperty)
+        return 14;
+    auto directConfig = config;
+    directConfig.span.line.property = directProperty;
+    directConfig.span.line.endTopology = Conductor::BundleEndTopology::DirectWireSupports;
+    directConfig.suspensionProperty = directProperty;
+    directConfig.span.innerSpacerLayout.spacer.property = directProperty;
+    Conductor::ConductorModelBuilder directBuilder(directStructure);
+    Conductor::LineBuildResult directResult;
+    if (!directBuilder.BuildMultiSpanConductor(directConfig, directResult, buildError))
+        return 15;
+    if (directResult.suspensionPoints.size() != 1 ||
+        directResult.leftTensionEnd.supportNodeIds.size() != 4 ||
+        directResult.rightTensionEnd.supportNodeIds.size() != 4 ||
+        !directResult.leftTensionEnd.groupNodeIds.empty() ||
+        !directResult.rightTensionEnd.groupNodeIds.empty() ||
+        !directResult.leftTensionEnd.yokeElementIds.empty() ||
+        !directResult.rightTensionEnd.yokeElementIds.empty())
+        return 16;
+    for (int wireId = 0; wireId < 4; ++wireId)
+    {
+        const auto& nodes = directResult.subConductors.at(wireId).nodeIds;
+        if (nodes.empty() ||
+            nodes.front() != directResult.leftTensionEnd.supportNodeIds[wireId] ||
+            nodes.back() != directResult.rightTensionEnd.supportNodeIds[wireId])
+            return 17;
+    }
+
     QTemporaryDir temporaryDirectory;
     const QString h5Path = temporaryDirectory.filePath(QStringLiteral("conductor_multispan.h5"));
     Hdf5ModelIO hdf5;
@@ -1092,7 +1916,7 @@ std::optional<int> verifyConductorMultiSpan(const QStringList& arguments)
     modeCombo->setCurrentIndex(1);
     const auto uiBuild = module.buildModel(library, uiOutputDirectory.path());
     if (!uiBuild.succeeded() ||
-        uiBuild.structure->m_Constraint.size() != 9)
+        uiBuild.structure->m_Constraint.size() != 36)
     {
         QTextStream(stderr) << "multispan conductor UI build failed: "
                             << uiBuild.error
@@ -1111,6 +1935,359 @@ std::optional<int> verifyConductorMultiSpan(const QStringList& arguments)
         << " support_z=" << supportIt->second->m_Z
         << Qt::endl;
     return 0;
+}
+
+std::optional<int> verifyConductorStatic(const QStringList& arguments)
+{
+    if (!arguments.contains(QStringLiteral("--verify-conductor-static")))
+        return std::nullopt;
+
+    Conductor::PropertyLibrary library;
+    QString libraryError;
+    if (!library.load(libraryError) || !library.isReady())
+    {
+        QTextStream(stderr) << "conductor property library failed: "
+                            << libraryError << Qt::endl;
+        return 1;
+    }
+
+    const EnumKeyword::ElementType elementTypes[] = {
+        EnumKeyword::ElementType::T3D2,
+        EnumKeyword::ElementType::CABLE,
+        EnumKeyword::ElementType::CR3D
+    };
+    for (EnumKeyword::ElementType elementType : elementTypes)
+    {
+        QTemporaryDir outputDirectory;
+        ConductorModule module;
+        module.setPropertyLibrary(&library);
+        const int elementIndex = module.elementCombo()->findData(
+            static_cast<int>(elementType));
+        const int bundleIndex = module.bundleCombo()->findData(4);
+        const int beamSpacerIndex = module.spacerElementCombo()->findData(
+            static_cast<int>(EnumKeyword::ElementType::CR3D));
+        if (!outputDirectory.isValid() || elementIndex < 0 ||
+            bundleIndex < 0 || beamSpacerIndex < 0)
+        {
+            return 2;
+        }
+
+        module.elementCombo()->setCurrentIndex(elementIndex);
+        module.bundleCombo()->setCurrentIndex(bundleIndex);
+        // Regression case for the default UI combination that previously
+        // exposed a singular static tangent: truss conductors with four
+        // beam-type spacers and the full 50 subdivisions.
+        module.segmentsSpin()->setValue(
+            elementType == EnumKeyword::ElementType::T3D2 ? 50 : 10);
+        module.innerSpacerCheck()->setChecked(true);
+        module.spacerCountSpin()->setValue(
+            elementType == EnumKeyword::ElementType::T3D2 ? 4 : 2);
+        module.spacerElementCombo()->setCurrentIndex(beamSpacerIndex);
+        module.analysisCheck()->setChecked(true);
+
+        const auto build = module.buildModel(library, outputDirectory.path());
+        if (!build.succeeded() || build.structure->m_AnalysisStep.empty())
+        {
+            QTextStream(stderr)
+                << "conductor static build failed type="
+                << static_cast<int>(elementType)
+                << " error=" << build.error << Qt::endl;
+            return 3;
+        }
+
+        int spacerElementCount = 0;
+        int beamSpacerElementCount = 0;
+        for (const auto& [elementId, element] :
+             build.structure->m_Elements)
+        {
+            Q_UNUSED(elementId);
+            if (!element
+                || element->m_Role != ElementRole::IntraPhaseSpacer)
+                continue;
+            ++spacerElementCount;
+            if (std::dynamic_pointer_cast<ElementBeam_CR>(element))
+                ++beamSpacerElementCount;
+        }
+        if (spacerElementCount == 0
+            || beamSpacerElementCount != spacerElementCount
+            || !build.structure->m_MPCConstraints.empty())
+        {
+            QTextStream(stderr)
+                << "conductor mixed topology invalid type="
+                << static_cast<int>(elementType)
+                << " spacers=" << spacerElementCount
+                << " beam_spacers=" << beamSpacerElementCount
+                << " mpcs=" << build.structure->m_MPCConstraints.size()
+                << Qt::endl;
+            return 5;
+        }
+
+        std::shared_ptr<StructureData> solveStructure = build.structure;
+        const auto step =
+            solveStructure->m_AnalysisStep.begin()->second;
+        step->SetStructure(solveStructure);
+        if (!step->Solve(false))
+        {
+            QTextStream(stderr)
+                << "conductor static solve failed type="
+                << static_cast<int>(elementType)
+                << " nodes=" << solveStructure->m_Nodes.size()
+                << " elements=" << solveStructure->m_Elements.size()
+                << " constraints=" << solveStructure->m_Constraint.size()
+                << Qt::endl;
+            return 4;
+        }
+        QTextStream(stdout)
+            << "conductor static solved type="
+            << static_cast<int>(elementType)
+            << " nodes=" << solveStructure->m_Nodes.size()
+            << " elements=" << solveStructure->m_Elements.size()
+            << " constraints=" << solveStructure->m_Constraint.size()
+            << " mpcs=" << solveStructure->m_MPCConstraints.size()
+            << Qt::endl;
+    }
+    return 0;
+}
+
+std::optional<int> verifyConductorGallopingDynamics(
+    const QStringList& arguments)
+{
+    const int exportIndex = arguments.indexOf(QStringLiteral("--export-conductor-galloping"));
+    const bool verifyRequested = arguments.contains(QStringLiteral("--verify-conductor-galloping"));
+    if (!verifyRequested && exportIndex < 0)
+        return std::nullopt;
+    if (exportIndex >= 0 && exportIndex + 1 >= arguments.size())
+        return 1;
+
+    const QString exportPath = exportIndex >= 0 ? arguments.at(exportIndex + 1) : QString();
+
+    // A dependent dynamic branch inherits its static source and its own
+    // definitions, but never an earlier sibling dynamic merely because that
+    // sibling has a smaller ID.
+    AnalysisStep branchScopeProbe;
+    branchScopeProbe.m_Id = 3;
+    branchScopeProbe.m_Type = EnumKeyword::StepType::DYNAMIC;
+    branchScopeProbe.m_InitialStaticStepId = 1;
+    if (!branchScopeProbe.IsStepScopedDataActive(0)
+        || !branchScopeProbe.IsStepScopedDataActive(1)
+        || branchScopeProbe.IsStepScopedDataActive(2)
+        || !branchScopeProbe.IsStepScopedDataActive(3)
+        || branchScopeProbe.IsStepScopedDataActive(4))
+    {
+        QTextStream(stderr) << "dynamic branch step scope isolation failed" << Qt::endl;
+        return 2;
+    }
+
+    Conductor::PropertyLibrary library;
+    QString libraryError;
+    if (!library.load(libraryError) || !library.isReady())
+    {
+        QTextStream(stderr) << "conductor property library failed: "
+                            << libraryError << Qt::endl;
+        return 1;
+    }
+
+    const auto solve = [&library, &exportPath](SolverNameSpace::SolverType solverType,
+                                                double& maximumDisplacement,
+                                                double& inheritanceGap)
+    {
+        QTemporaryDir outputDirectory;
+        ConductorModule module;
+        module.setPropertyLibrary(&library);
+        const int cableIndex = module.elementCombo()->findData(
+            static_cast<int>(EnumKeyword::ElementType::CABLE));
+        const int bundleIndex = module.bundleCombo()->findData(4);
+        if (!outputDirectory.isValid() || cableIndex < 0 || bundleIndex < 0)
+            return false;
+
+        module.elementCombo()->setCurrentIndex(cableIndex);
+        module.bundleCombo()->setCurrentIndex(bundleIndex);
+        module.segmentsSpin()->setValue(10);
+        module.analysisCheck()->setChecked(true);
+        const auto build = module.buildModel(library, outputDirectory.path());
+        if (!build.succeeded() || build.structure->m_AnalysisStep.empty())
+            return false;
+
+        const auto structure = build.structure;
+        const int staticStepId = structure->m_AnalysisStep.begin()->first;
+        structure->m_AnalysisStep.at(staticStepId)->m_StepSize = 0.05;
+        AnalysisStepConfig dynamicConfig;
+        dynamicConfig.id = structure->m_AnalysisStep.rbegin()->first + 1;
+        dynamicConfig.name = QStringLiteral("verification dynamics");
+        dynamicConfig.type = EnumKeyword::StepType::DYNAMIC;
+        dynamicConfig.totalTime = 0.02;
+        dynamicConfig.stepSize = 0.005;
+        dynamicConfig.tolerance = 1.0e-5;
+        dynamicConfig.maxIterations = 48;
+        dynamicConfig.dynamicSolverType = solverType;
+        dynamicConfig.initialStaticStepId = staticStepId;
+        dynamicConfig.enableGalloping = true;
+        dynamicConfig.gallopingIceThickness = 25;
+        dynamicConfig.gallopingInitialAttackDegrees = 45.0;
+        dynamicConfig.adaptiveTssbn.minimumTimeStep = 1.0e-5;
+        dynamicConfig.adaptiveTssbn.maximumTimeStep = 0.005;
+        dynamicConfig.adaptiveTssbn.relativeTolerance = 1.0e-4;
+        dynamicConfig.adaptiveTssbn.absoluteTolerance = 1.0e-6;
+        dynamicConfig.adaptiveTssbn.targetNewtonIterations = 16;
+        structure->AddAnalysisStep(dynamicConfig);
+
+        auto wind = std::make_shared<Force_Wind>();
+        wind->m_Id = structure->m_Load.empty()
+            ? 1 : structure->m_Load.rbegin()->first + 1;
+        wind->m_Name = QStringLiteral("verification galloping wind");
+        wind->m_StepId = dynamicConfig.id;
+        wind->m_velocity = 14.0;
+        wind->m_direction = Eigen::Vector3d::UnitY();
+        wind->m_windDensity = 1.225;
+        structure->m_Load.emplace(wind->m_Id, wind);
+
+        // BDF does not have fields for conductor aerodynamic tags or adaptive
+        // TSSBN settings.  Export the configured model in HDF5 before solving
+        // so it can be re-opened without losing the galloping definition.
+        if (!exportPath.isEmpty() && solverType == SolverNameSpace::SolverType::AdaptiveTSSBN)
+        {
+            Hdf5ModelIO hdf5;
+            if (!hdf5.ExportModelHdf5(exportPath, structure.get(),
+                                      QStringLiteral("ice galloping conductor - adaptive TSSBN")))
+                return false;
+        }
+
+        QString dynamicResultPath = outputDirectory.filePath(
+            QStringLiteral("verification_chain.h5"));
+        if (!exportPath.isEmpty()
+            && solverType == SolverNameSpace::SolverType::AdaptiveTSSBN)
+        {
+            const QFileInfo modelFile(exportPath);
+            dynamicResultPath = modelFile.dir().filePath(
+                modelFile.completeBaseName() + QStringLiteral("_result.h5"));
+        }
+        structure->m_OutputControl.m_Hdf5FileName = dynamicResultPath;
+        structure->m_OutputControl.m_StreamResult = false;
+
+        // Solve an independent reference copy of the equilibrium step.  The
+        // actual dynamic task below must reproduce this accepted state in its
+        // t=0 frame without publishing the static frames into the dynamic H5.
+        QString referenceCloneError;
+        auto equilibriumReference = structure->CloneForAnalysis(&referenceCloneError);
+        if (!equilibriumReference)
+            return false;
+        equilibriumReference->m_OutputControl.m_Hdf5FileName = outputDirectory.filePath(
+            QStringLiteral("verification_static_reference.h5"));
+        AnalysisRunner equilibriumRunner;
+        equilibriumRunner.SetStructure(equilibriumReference);
+        equilibriumRunner.SetRuntimeCallbacks({}, []() { return false; });
+        if (!equilibriumRunner.RunStep(staticStepId))
+            return false;
+        const DataFrame* finalStaticFrame = nullptr;
+        for (const DataFrame& frame : equilibriumReference->GetOutputter().GetFrames())
+        {
+            if (frame.GetStepId() == staticStepId
+                && (!finalStaticFrame || frame.GetTime() > finalStaticFrame->GetTime()))
+            {
+                finalStaticFrame = &frame;
+            }
+        }
+        if (!finalStaticFrame)
+            return false;
+
+        AnalysisRunner runner;
+        runner.SetStructure(structure);
+        runner.SetRuntimeCallbacks({}, []() { return false; });
+        if (!runner.RunStep(staticStepId))
+        {
+            QTextStream(stderr) << "conductor standalone equilibrium task failed"
+                << " solver=" << static_cast<int>(solverType) << Qt::endl;
+            return false;
+        }
+        QString inheritedCloneError;
+        auto dynamicStructure = structure->CloneForAnalysis(&inheritedCloneError);
+        if (!dynamicStructure)
+            return false;
+        dynamicStructure->GetOutputter().Clear();
+        dynamicStructure->m_OutputControl.m_Hdf5FileName = dynamicResultPath;
+        AnalysisRunner dynamicRunner;
+        dynamicRunner.SetStructure(dynamicStructure);
+        dynamicRunner.SetRuntimeCallbacks({}, []() { return false; });
+        if (!dynamicRunner.RunStepFromCurrentState(dynamicConfig.id))
+        {
+            QTextStream(stderr) << "conductor dynamic task failed after equilibrium inheritance"
+                << " solver=" << static_cast<int>(solverType)
+                << " regions=" << dynamicStructure->m_ComputeRegions.size()
+                << " nodes=" << dynamicStructure->m_Nodes.size()
+                << " elements=" << dynamicStructure->m_Elements.size() << Qt::endl;
+            return false;
+        }
+        maximumDisplacement = 0.0;
+        inheritanceGap = std::numeric_limits<double>::infinity();
+        const DataFrame* initialDynamicFrame = nullptr;
+        bool publishedStaticFrame = false;
+        for (const DataFrame& frame : dynamicStructure->GetOutputter().GetFrames())
+        {
+            publishedStaticFrame = publishedStaticFrame
+                || frame.GetStepId() == staticStepId;
+            if (frame.GetStepId() != dynamicConfig.id)
+                continue;
+            if (!initialDynamicFrame || frame.GetTime() < initialDynamicFrame->GetTime())
+                initialDynamicFrame = &frame;
+            for (const auto& [nodeId, nodeData] : frame.GetNodeDatas())
+            {
+                Q_UNUSED(nodeData);
+                const double u1 = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::U1);
+                const double u2 = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::U2);
+                const double u3 = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::U3);
+                maximumDisplacement = std::max(
+                    maximumDisplacement, std::sqrt(u1 * u1 + u2 * u2 + u3 * u3));
+            }
+        }
+        if (!publishedStaticFrame && initialDynamicFrame)
+        {
+            inheritanceGap = 0.0;
+            for (const auto& [nodeId, nodeData] : finalStaticFrame->GetNodeDatas())
+            {
+                Q_UNUSED(nodeData);
+                if (initialDynamicFrame->GetNodeDatas().find(nodeId)
+                    == initialDynamicFrame->GetNodeDatas().cend())
+                    continue;
+                for (const auto component : {EnumKeyword::NodeResultType::U1,
+                                             EnumKeyword::NodeResultType::U2,
+                                             EnumKeyword::NodeResultType::U3})
+                {
+                    inheritanceGap = std::max(inheritanceGap, std::abs(
+                        finalStaticFrame->GetNodeData(nodeId, component)
+                        - initialDynamicFrame->GetNodeData(nodeId, component)));
+                }
+            }
+        }
+        return std::isfinite(maximumDisplacement)
+            && std::isfinite(inheritanceGap) && inheritanceGap <= 1.0e-10;
+    };
+
+    double newmarkMaximumDisplacement = 0.0;
+    double tssbnMaximumDisplacement = 0.0;
+    double newmarkInheritanceGap = 0.0;
+    double tssbnInheritanceGap = 0.0;
+    const bool newmarkSolved = solve(
+        SolverNameSpace::SolverType::Newmark, newmarkMaximumDisplacement,
+        newmarkInheritanceGap);
+    const bool tssbnSolved = solve(
+        SolverNameSpace::SolverType::AdaptiveTSSBN,
+        tssbnMaximumDisplacement, tssbnInheritanceGap);
+    const double relativeDifference =
+        std::abs(tssbnMaximumDisplacement - newmarkMaximumDisplacement)
+        / std::max(1.0e-12, newmarkMaximumDisplacement);
+    QTextStream(stdout)
+        << "conductor galloping newmark_solved=" << newmarkSolved
+        << " tssbn_solved=" << tssbnSolved
+        << " newmark_max_displacement=" << newmarkMaximumDisplacement
+        << " tssbn_max_displacement=" << tssbnMaximumDisplacement
+        << " newmark_inheritance_gap=" << newmarkInheritanceGap
+        << " tssbn_inheritance_gap=" << tssbnInheritanceGap
+        << " relative_difference=" << relativeDifference << Qt::endl;
+
+    return newmarkSolved && tssbnSolved
+        && newmarkMaximumDisplacement > 0.0
+        && tssbnMaximumDisplacement > 0.0
+        && relativeDifference <= 0.05 ? 0 : 2;
 }
 
 std::optional<int> verifySolveTask(QApplication& application, const QStringList& arguments)
@@ -1155,6 +2332,78 @@ std::optional<int> verifySolveTask(QApplication& application, const QStringList&
     QTimer::singleShot(120000, &application, [&application]() { application.exit(5); });
     if (!modelController.loadModel(filePath))
         return 1;
+    return application.exec();
+}
+
+std::optional<int> verifyStaticDynamicTaskChain(QApplication& application, const QStringList& arguments)
+{
+    const int index = arguments.indexOf(QStringLiteral("--verify-static-dynamic-task-chain"));
+    if (index < 0)
+        return std::nullopt;
+    if (index + 1 >= arguments.size())
+        return 1;
+
+    const QString filePath = arguments.at(index + 1);
+    auto model = std::make_shared<StructureData>();
+    Hdf5ModelIO hdf5;
+    if (!hdf5.ImportHdf5(filePath, model.get()))
+        return 2;
+
+    int staticStepId = 0;
+    int dynamicStepId = 0;
+    for (const auto& [stepId, step] : model->m_AnalysisStep)
+    {
+        if (!step)
+            continue;
+        if (step->m_Type == EnumKeyword::StepType::STATIC)
+            staticStepId = stepId;
+        if (step->m_Type == EnumKeyword::StepType::DYNAMIC && step->m_InitialStaticStepId > 0)
+        {
+            dynamicStepId = stepId;
+            staticStepId = step->m_InitialStaticStepId;
+            break;
+        }
+    }
+    if (staticStepId <= 0 || dynamicStepId <= 0)
+        return 3;
+
+    SolveTaskController taskController;
+    const int staticTaskId = taskController.prepare(model, filePath, staticStepId);
+    const int dynamicTaskId = taskController.prepare(model, filePath, dynamicStepId);
+    if (staticTaskId < 0 || dynamicTaskId < 0)
+        return 4;
+
+    bool staticCompleted = false;
+    bool dynamicStartedBeforeStatic = false;
+    QObject::connect(&taskController, &SolveTaskController::taskUpdated,
+        [&taskController, staticTaskId, dynamicTaskId, &staticCompleted,
+            &dynamicStartedBeforeStatic, &application](int taskId)
+        {
+            const auto info = taskController.taskInfo(taskId);
+            if (taskId == staticTaskId && info.status == SolveTaskController::Status::Completed)
+                staticCompleted = true;
+            if (taskId == dynamicTaskId && info.status == SolveTaskController::Status::Running
+                && !staticCompleted)
+                dynamicStartedBeforeStatic = true;
+            if (taskId != dynamicTaskId || (info.status != SolveTaskController::Status::Completed
+                && info.status != SolveTaskController::Status::Failed
+                && info.status != SolveTaskController::Status::Cancelled))
+                return;
+
+            const auto staticInfo = taskController.taskInfo(staticTaskId);
+            const bool passed = info.status == SolveTaskController::Status::Completed
+                && staticInfo.status == SolveTaskController::Status::Completed
+                && !dynamicStartedBeforeStatic;
+            QTextStream(stdout) << "task chain static="
+                                << SolveTaskController::statusText(staticInfo.status)
+                                << " dynamic=" << SolveTaskController::statusText(info.status)
+                                << " dynamic_started_before_static="
+                                << (dynamicStartedBeforeStatic ? "true" : "false") << Qt::endl;
+            application.exit(passed ? 0 : 5);
+        });
+    QTimer::singleShot(120000, &application, [&application]() { application.exit(6); });
+    if (!taskController.start(dynamicTaskId))
+        return 7;
     return application.exec();
 }
 
@@ -1280,11 +2529,21 @@ std::optional<int> verifyModelImport(QApplication& application, const QStringLis
 std::optional<int> VerificationRunner::runHeadless(
     const QStringList& arguments)
 {
+    if (const auto result = verifyAdaptiveTssbn(arguments))
+        return result;
     if (const auto result = verifyLe2012Example1(arguments))
         return result;
     if (const auto result = verifyLe2012Example4(arguments))
         return result;
     if (const auto result = verifyCableTorsion(arguments))
+        return result;
+    if (const auto result = verifySpatialWindLoad(arguments))
+        return result;
+    if (const auto result = verifyExactAerodynamicAngle(arguments))
+        return result;
+    if (const auto result = verifyGallopingCaseSelection(arguments))
+        return result;
+    if (const auto result = verifyGallopingStability(arguments))
         return result;
     return verifyBeamDynamics(arguments);
 }
@@ -1312,6 +2571,12 @@ std::optional<int> VerificationRunner::run(QApplication& application, const QStr
     if (const auto result = verifyConductorBundle(arguments))
         return result;
     if (const auto result = verifyConductorMultiSpan(arguments))
+        return result;
+    if (const auto result = verifyConductorStatic(arguments))
+        return result;
+    if (const auto result = verifyConductorGallopingDynamics(arguments))
+        return result;
+    if (const auto result = verifyStaticDynamicTaskChain(application, arguments))
         return result;
     if (const auto result = verifySolveTask(application, arguments))
         return result;

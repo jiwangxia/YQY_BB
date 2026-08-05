@@ -1,0 +1,1 @@
+Le2012 Example4 min_ux=-18.2022 max_abs_uy=9.85473 max_abs_uz=3.96984 error_ux=0.0898881 error_uy=0.0145271 error_uz=0.134239 result=output/verification/le2012_example4/response.csv

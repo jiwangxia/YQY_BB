@@ -2,6 +2,8 @@
 #include "Widgets/TableAppearance.h"
 
 #include "DataStructure/Structure/StructureData.h"
+#include "DataStructure/Aerodynamics/AeroManager.h"
+#include "DataStructure/Load/Force_Gravity.h"
 #include "Widgets/CompactDoubleSpinBox.h"
 #include "Widgets/DialogSizing.h"
 #include "ui_AnalysisManagerDialog.h"
@@ -10,11 +12,13 @@
 #include "ui_ConstraintEditorDialog.h"
 
 #include <QDialogButtonBox>
+#include <QAbstractSpinBox>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
 #include <QGroupBox>
+#include <QGridLayout>
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -26,11 +30,16 @@
 #include <QPixmap>
 #include <QPushButton>
 #include <QSpinBox>
+#include <QStackedWidget>
 #include <QTableWidget>
+#include <QTimer>
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <array>
 #include <limits>
+#include <variant>
+#include <vector>
 
 namespace
 {
@@ -111,10 +120,23 @@ int nextId(const Map& values)
 }
 
 template <typename Resource>
-bool isEffectiveAtStep(const std::shared_ptr<Resource>& resource, int stepId)
+bool isEffectiveAtStep(const std::shared_ptr<Resource>& resource,
+    int stepId, const std::shared_ptr<AnalysisStep>& targetStep)
 {
     // StepId=0 表示初始/全局资源；更早分析步的资源也会被后续分析步继承。
-    return resource && resource->m_StepId <= stepId;
+    if (!resource)
+        return false;
+    const int sourceStepId = resource->m_StepId;
+    if (sourceStepId <= 0 || sourceStepId == stepId)
+        return true;
+    // A dynamic step is a branch from its selected static equilibrium:
+    // inherit its static history, but never a sibling dynamic branch.
+    if (targetStep && targetStep->m_Type == EnumKeyword::StepType::DYNAMIC
+        && targetStep->m_InitialStaticStepId > 0)
+    {
+        return sourceStepId <= targetStep->m_InitialStaticStepId;
+    }
+    return sourceStepId < stepId;
 }
 
 QString stepDisplayName(int id, const std::shared_ptr<AnalysisStep>& step)
@@ -122,6 +144,125 @@ QString stepDisplayName(int id, const std::shared_ptr<AnalysisStep>& step)
     return step && !step->m_Name.trimmed().isEmpty()
         ? step->m_Name.trimmed() : QStringLiteral("Step-%1").arg(id);
 }
+
+class AdaptiveTssbnSettingsEditor final : public QGroupBox
+{
+public:
+    using Settings = SolverNameSpace::AdaptiveTssbnSettings;
+
+    explicit AdaptiveTssbnSettingsEditor(QWidget* parent)
+        : QGroupBox(QStringLiteral("自适应 TSSBN 参数"), parent)
+    {
+        // Keep this editor compact: it occupies the lower half of the right
+        // column in the step dialog, so two parameter pairs per row are much
+        // easier to scan than a 13-row single-column form.
+        auto* form = new QGridLayout(this);
+        form->setHorizontalSpacing(10);
+        form->setVerticalSpacing(6);
+        form->setColumnStretch(1, 1);
+        form->setColumnStretch(3, 1);
+        const std::array<FieldSpec, 13> fields{{
+            { QStringLiteral("高频半径"), QStringLiteral("高频谱半径 ρ∞"), &Settings::spectralRadiusInfinity, 0.0, 1.0, 6 },
+            { QStringLiteral("最小步长"), QStringLiteral("最小时间步"), &Settings::minimumTimeStep, 1.0e-12, 1.0e12, 12 },
+            { QStringLiteral("最大步长"), QStringLiteral("最大时间步"), &Settings::maximumTimeStep, 1.0e-12, 1.0e12, 12 },
+            { QStringLiteral("相对 LTE"), QStringLiteral("相对 LTE 容限"), &Settings::relativeTolerance, 1.0e-12, 1.0, 12 },
+            { QStringLiteral("绝对 LTE"), QStringLiteral("绝对 LTE 容限"), &Settings::absoluteTolerance, 1.0e-14, 1.0, 14 },
+            { QStringLiteral("安全系数"), QStringLiteral("步长安全系数"), &Settings::safetyFactor, 0.01, 1.0, 6 },
+            { QStringLiteral("缩步系数"), QStringLiteral("最小缩步系数"), &Settings::shrinkFactor, 0.01, 0.99, 6 },
+            { QStringLiteral("增长系数"), QStringLiteral("最大增长系数"), &Settings::maximumGrowthFactor, 1.0, 100.0, 6 },
+            { QStringLiteral("牛顿目标"), QStringLiteral("目标牛顿迭代数"), &Settings::targetNewtonIterations, 1.0, 1000.0, 0 },
+            { QStringLiteral("误差增益"), QStringLiteral("误差变化增益"), &Settings::derivativeGain, 0.0, 10.0, 6 },
+            { QStringLiteral("因子下限"), QStringLiteral("误差变化因子下限"), &Settings::minimumDerivativeFactor, 0.01, 100.0, 6 },
+            { QStringLiteral("因子上限"), QStringLiteral("误差变化因子上限"), &Settings::maximumDerivativeFactor, 0.01, 100.0, 6 },
+            { QStringLiteral("拒绝上限"), QStringLiteral("最大连续拒绝次数"), &Settings::maximumRejectedAttempts, 1.0, 1000.0, 0 }
+        }};
+
+        for (std::size_t index = 0; index < fields.size(); ++index)
+        {
+            const FieldSpec& field = fields[index];
+            QAbstractSpinBox* editor = nullptr;
+            if (std::holds_alternative<DoubleMember>(field.member))
+            {
+                auto* spin = new CompactDoubleSpinBox(this);
+                spin->setRange(field.minimum, field.maximum);
+                spin->setDecimals(field.decimals);
+                spin->setKeyboardTracking(false);
+                editor = spin;
+            }
+            else
+            {
+                auto* spin = new QSpinBox(this);
+                spin->setRange(
+                    static_cast<int>(field.minimum),
+                    static_cast<int>(field.maximum));
+                editor = spin;
+            }
+            editor->setToolTip(field.toolTip);
+            editor->setFixedWidth(112);
+            bindings_.push_back({ field.member, editor });
+            auto* label = new QLabel(field.label, this);
+            label->setToolTip(field.toolTip);
+            label->setFixedWidth(68);
+            label->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+            const int row = static_cast<int>(index / 2);
+            const int column = static_cast<int>(index % 2) * 2;
+            form->addWidget(label, row, column);
+            form->addWidget(editor, row, column + 1);
+        }
+        setSettings(Settings{});
+    }
+
+    void setSettings(const Settings& settings)
+    {
+        for (const Binding& binding : bindings_)
+        {
+            if (const auto member = std::get_if<DoubleMember>(&binding.member))
+                static_cast<QDoubleSpinBox*>(binding.editor)->setValue(
+                    settings.*(*member));
+            else
+                static_cast<QSpinBox*>(binding.editor)->setValue(
+                    settings.*std::get<IntMember>(binding.member));
+        }
+    }
+
+    Settings settings() const
+    {
+        Settings value;
+        for (const Binding& binding : bindings_)
+        {
+            if (const auto member = std::get_if<DoubleMember>(&binding.member))
+                value.*(*member) =
+                    static_cast<QDoubleSpinBox*>(binding.editor)->value();
+            else
+                value.*std::get<IntMember>(binding.member) =
+                    static_cast<QSpinBox*>(binding.editor)->value();
+        }
+        return value;
+    }
+
+private:
+    using DoubleMember = double Settings::*;
+    using IntMember = int Settings::*;
+    using Member = std::variant<DoubleMember, IntMember>;
+
+    struct FieldSpec
+    {
+        QString label;
+        QString toolTip;
+        Member member;
+        double minimum;
+        double maximum;
+        int decimals;
+    };
+
+    struct Binding
+    {
+        Member member;
+        QAbstractSpinBox* editor;
+    };
+
+    std::vector<Binding> bindings_;
+};
 
 class StepEditorDialog final : public QDialog
 {
@@ -145,13 +286,131 @@ public:
         m_increment = form.incrementSpin;
         m_tolerance = form.toleranceSpin;
         m_iterations = form.iterationsSpin;
+        // Rebuild the Designer form in a new container.  Moving its layout
+        // directly leaves its label items owned by the old parent layout.
+        auto* sharedParametersGroup = new QGroupBox(
+            QString::fromUtf8("\xE9\x80\x9A\xE7\x94\xA8\xE5\x8F\x82\xE6\x95\xB0"), this);
+        QLayoutItem* sharedFormItem = form.rootLayout->takeAt(0);
+        auto* previousSharedLayout = sharedFormItem
+            ? sharedFormItem->layout() : nullptr;
+        if (previousSharedLayout)
+        {
+            previousSharedLayout->removeWidget(form.nameLabel);
+            previousSharedLayout->removeWidget(m_name);
+            previousSharedLayout->removeWidget(form.typeLabel);
+            previousSharedLayout->removeWidget(m_type);
+            previousSharedLayout->removeWidget(form.timeLabel);
+            previousSharedLayout->removeWidget(m_time);
+            previousSharedLayout->removeWidget(form.incrementLabel);
+            previousSharedLayout->removeWidget(m_increment);
+            previousSharedLayout->removeWidget(form.toleranceLabel);
+            previousSharedLayout->removeWidget(m_tolerance);
+            previousSharedLayout->removeWidget(form.iterationsLabel);
+            previousSharedLayout->removeWidget(m_iterations);
+        }
+        auto* sharedParametersLayout = new QFormLayout(sharedParametersGroup);
+        sharedParametersLayout->setFieldGrowthPolicy(
+            QFormLayout::AllNonFixedFieldsGrow);
+        sharedParametersLayout->addRow(form.nameLabel, m_name);
+        sharedParametersLayout->addRow(form.typeLabel, m_type);
+        sharedParametersLayout->addRow(form.timeLabel, m_time);
+        sharedParametersLayout->addRow(form.incrementLabel, m_increment);
+        sharedParametersLayout->addRow(form.toleranceLabel, m_tolerance);
+        sharedParametersLayout->addRow(form.iterationsLabel, m_iterations);
+        delete sharedFormItem;
+        auto* columns = new QWidget(this);
+        auto* columnsLayout = new QHBoxLayout(columns);
+        columnsLayout->setContentsMargins(0, 0, 0, 0);
+        columnsLayout->setSpacing(14);
+        auto* commonColumn = new QWidget(columns);
+        auto* commonColumnLayout = new QVBoxLayout(commonColumn);
+        commonColumnLayout->setContentsMargins(0, 0, 0, 0);
+        commonColumnLayout->setSpacing(14);
+        commonColumnLayout->addWidget(sharedParametersGroup);
+        commonColumn->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
+        auto* solverColumn = new QWidget(columns);
+        auto* solverColumnLayout = new QVBoxLayout(solverColumn);
+        solverColumnLayout->setContentsMargins(0, 0, 0, 0);
+        solverColumnLayout->setSpacing(14);
+        solverColumn->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
+        auto* tssbnColumn = new QWidget(columns);
+        auto* tssbnColumnLayout = new QVBoxLayout(tssbnColumn);
+        tssbnColumnLayout->setContentsMargins(0, 0, 0, 0);
+        tssbnColumnLayout->setSpacing(14);
+        tssbnColumn->setFixedWidth(430);
+        tssbnColumn->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
+        columnsLayout->addWidget(commonColumn, 1);
+        columnsLayout->addWidget(solverColumn, 1);
+        columnsLayout->addWidget(tssbnColumn, 0);
+        columns->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Maximum);
+        form.rootLayout->insertWidget(0, columns);
+        setMinimumWidth(760);
+        auto* solverGroup = new QGroupBox(QStringLiteral("动力求解器"), this);
+        auto* solverLayout = new QFormLayout(solverGroup);
+        m_dynamicSolver = new QComboBox(solverGroup);
+        m_dynamicSolver->addItem(
+            QStringLiteral("Newmark-β"),
+            static_cast<int>(SolverNameSpace::SolverType::Newmark));
+        m_dynamicSolver->addItem(
+            QStringLiteral("自适应 TSSBN"),
+            static_cast<int>(SolverNameSpace::SolverType::AdaptiveTSSBN));
+        solverLayout->addRow(QStringLiteral("积分方法"), m_dynamicSolver);
+        auto* initialStateGroup = new QGroupBox(QStringLiteral("初始平衡状态"), this);
+        auto* initialStateLayout = new QFormLayout(initialStateGroup);
+        m_inheritStaticState = new QCheckBox(QStringLiteral("使用静力步作为初始状态"), initialStateGroup);
+        m_initialStaticStep = new QComboBox(initialStateGroup);
+        if (structure)
+        {
+            for (const auto& [candidateId, candidate] : structure->m_AnalysisStep)
+            {
+                if (candidateId >= id || !candidate ||
+                    candidate->m_Type != EnumKeyword::StepType::STATIC)
+                    continue;
+                m_initialStaticStep->addItem(stepDisplayName(candidateId, candidate), candidateId);
+            }
+        }
+        m_inheritStaticState->setEnabled(m_initialStaticStep->count() > 0);
+        m_inheritStaticState->setToolTip(m_initialStaticStep->count() > 0
+            ? QStringLiteral("先独立计算所选静力步，再复制其平衡构型和内力启动当前动力分支。"
+                             "前置静力步中有效的重力及其他基础荷载会持续作用；不会包含其他动力步的荷载。")
+            : QStringLiteral("当前模型没有可用的静力初态，请先创建静力分析步。"));
+        initialStateLayout->addRow(m_inheritStaticState);
+        initialStateLayout->addRow(QStringLiteral("初态来源"), m_initialStaticStep);
+        m_inheritedBaseLoads = new QLabel(initialStateGroup);
+        m_inheritedBaseLoads->setWordWrap(true);
+        initialStateLayout->addRow(QStringLiteral("基础荷载"), m_inheritedBaseLoads);
+        auto* gallopingGroup = new QGroupBox(QStringLiteral("舞动工况"), this);
+        auto* gallopingLayout = new QFormLayout(gallopingGroup);
+        m_enableGalloping = new QCheckBox(QStringLiteral("启用舞动气动力"), gallopingGroup);
+        m_gallopingIceThickness = new QComboBox(gallopingGroup);
+        for (int thickness : AeroManager::supportedIceThicknesses())
+            m_gallopingIceThickness->addItem(QStringLiteral("%1 mm").arg(thickness), thickness);
+        m_gallopingInitialAttack = new QDoubleSpinBox(gallopingGroup);
+        m_gallopingInitialAttack->setRange(-1000000.0, 1000000.0);
+        m_gallopingInitialAttack->setDecimals(6);
+        m_gallopingInitialAttack->setValue(45.0);
+        m_gallopingInitialAttack->setSuffix(QStringLiteral("°"));
+        gallopingLayout->addRow(m_enableGalloping);
+        gallopingLayout->addRow(QStringLiteral("覆冰厚度"), m_gallopingIceThickness);
+        gallopingLayout->addRow(QStringLiteral("初始风攻角"), m_gallopingInitialAttack);
         auto* regionGroup = new QGroupBox(QStringLiteral("计算区域"), this);
         auto* regionLayout = new QVBoxLayout(regionGroup);
         m_allRegions = new QCheckBox(QStringLiteral("全部启用计算区域"), regionGroup);
         m_regionList = new QListWidget(regionGroup);
         regionLayout->addWidget(m_allRegions);
         regionLayout->addWidget(m_regionList);
-        form.rootLayout->insertWidget(form.rootLayout->count() - 1, regionGroup);
+        commonColumnLayout->addWidget(regionGroup);
+
+        // The first two columns are always present.  Adaptive TSSBN opens a
+        // dedicated third column to their right instead of increasing height.
+        solverColumnLayout->addWidget(solverGroup);
+        solverColumnLayout->addWidget(initialStateGroup);
+        solverColumnLayout->addWidget(gallopingGroup);
+        solverColumnLayout->addStretch(1);
+        m_tssbnEditor = new AdaptiveTssbnSettingsEditor(tssbnColumn);
+        auto* tssbnGroup = m_tssbnEditor;
+        tssbnColumnLayout->addWidget(tssbnGroup);
+        tssbnColumnLayout->addStretch(1);
         if (structure)
         {
             for (const auto& [regionId, region] : structure->m_ComputeRegions)
@@ -167,7 +426,105 @@ public:
                 item->setCheckState(Qt::Unchecked);
             }
         }
+        // Region selection is normally a short list.  Keep it sized to its
+        // rows (up to four) instead of letting it stretch to the dialog bottom.
+        const int regionRows = std::clamp(m_regionList->count(), 1, 4);
+        const int regionRowHeight = std::max(26, m_regionList->sizeHintForRow(0));
+        m_regionList->setFixedHeight(regionRows * regionRowHeight
+            + 2 * m_regionList->frameWidth() + 4);
         connect(m_allRegions, &QCheckBox::toggled, m_regionList, &QListWidget::setDisabled);
+
+        const auto resizeToVisibleContent = [this, columns]()
+        {
+            // Visibility changes are fully processed on the next event-loop
+            // turn.  Measuring then makes both expansion and collapse reliable.
+            QTimer::singleShot(0, this, [this, columns]()
+            {
+                columns->updateGeometry();
+                if (auto* rootLayout = layout())
+                {
+                    rootLayout->invalidate();
+                    rootLayout->activate();
+                }
+                setMinimumHeight(0);
+                setMaximumHeight(QWIDGETSIZE_MAX);
+                const QSize target = sizeHint();
+                resize(std::max(minimumWidth(), target.width()), target.height());
+            });
+        };
+        const auto updateInheritedBaseLoads = [this, structure]()
+        {
+            if (!m_inheritStaticState->isChecked() || m_initialStaticStep->currentIndex() < 0)
+            {
+                m_inheritedBaseLoads->setText(QStringLiteral("未继承前置静力荷载"));
+                return;
+            }
+            const int sourceStepId = m_initialStaticStep->currentData().toInt();
+            int gravityCount = 0;
+            int otherLoadCount = 0;
+            if (structure)
+            {
+                for (const auto& [loadId, load] : structure->m_Load)
+                {
+                    Q_UNUSED(loadId);
+                    if (!load || (load->m_StepId > 0 && load->m_StepId > sourceStepId))
+                        continue;
+                    if (std::dynamic_pointer_cast<Force_Gravity>(load))
+                        ++gravityCount;
+                    else
+                        ++otherLoadCount;
+                }
+            }
+            QStringList parts;
+            if (gravityCount > 0)
+                parts.push_back(QStringLiteral("重力 ×%1（持续作用）").arg(gravityCount));
+            if (otherLoadCount > 0)
+                parts.push_back(QStringLiteral("其他前置荷载 ×%1").arg(otherLoadCount));
+            m_inheritedBaseLoads->setText(parts.isEmpty()
+                ? QStringLiteral("未发现前置基础荷载")
+                : parts.join(QStringLiteral("；")));
+        };
+        const auto updateDynamicState =
+            [this, commonColumn, solverColumn, solverGroup, tssbnGroup,
+                tssbnColumn, gallopingGroup, initialStateGroup,
+                resizeToVisibleContent, updateInheritedBaseLoads]()
+        {
+            const bool dynamic = static_cast<EnumKeyword::StepType>(
+                m_type->currentData().toInt()) == EnumKeyword::StepType::DYNAMIC;
+            solverGroup->setEnabled(dynamic);
+            initialStateGroup->setEnabled(dynamic);
+            m_initialStaticStep->setEnabled(dynamic
+                && m_inheritStaticState->isChecked()
+                && m_initialStaticStep->count() > 0);
+            const bool adaptiveTssbn =
+                dynamic
+                && static_cast<SolverNameSpace::SolverType>(
+                    m_dynamicSolver->currentData().toInt())
+                    == SolverNameSpace::SolverType::AdaptiveTSSBN;
+            // On TSSBN, preserve the dynamic-control column's normal reading
+            // width and make room by compacting only the common left column.
+            commonColumn->setMaximumWidth(
+                adaptiveTssbn ? 320 : QWIDGETSIZE_MAX);
+            solverColumn->setMinimumWidth(adaptiveTssbn ? 440 : 0);
+            tssbnColumn->setVisible(adaptiveTssbn);
+            tssbnGroup->setEnabled(adaptiveTssbn);
+            gallopingGroup->setEnabled(dynamic);
+            m_gallopingIceThickness->setEnabled(m_enableGalloping->isChecked());
+            m_gallopingInitialAttack->setEnabled(m_enableGalloping->isChecked());
+            updateInheritedBaseLoads();
+            resizeToVisibleContent();
+        };
+        connect(m_type, qOverload<int>(&QComboBox::currentIndexChanged),
+            this, [updateDynamicState](int) { updateDynamicState(); });
+        connect(m_dynamicSolver,
+            qOverload<int>(&QComboBox::currentIndexChanged),
+            this, [updateDynamicState](int) { updateDynamicState(); });
+        connect(m_enableGalloping, &QCheckBox::toggled,
+            this, [updateDynamicState](bool) { updateDynamicState(); });
+        connect(m_inheritStaticState, &QCheckBox::toggled,
+            this, [updateDynamicState](bool) { updateDynamicState(); });
+        connect(m_initialStaticStep, qOverload<int>(&QComboBox::currentIndexChanged),
+            this, [updateDynamicState](int) { updateDynamicState(); });
         m_time->setRange(1.0e-12, 1.0e12);
         m_increment->setRange(1.0e-12, 1.0e12);
         m_tolerance->setRange(1.0e-14, 1.0);
@@ -176,6 +533,45 @@ public:
         buttons->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
         connect(buttons, &QDialogButtonBox::accepted, this, [this]()
         {
+            const bool adaptiveTssbn =
+                static_cast<EnumKeyword::StepType>(
+                    m_type->currentData().toInt())
+                    == EnumKeyword::StepType::DYNAMIC
+                && static_cast<SolverNameSpace::SolverType>(
+                    m_dynamicSolver->currentData().toInt())
+                    == SolverNameSpace::SolverType::AdaptiveTSSBN;
+            const auto tssbn = m_tssbnEditor->settings();
+            if (adaptiveTssbn
+                && (tssbn.minimumTimeStep > tssbn.maximumTimeStep
+                    || m_increment->value() < tssbn.minimumTimeStep
+                    || m_increment->value() > tssbn.maximumTimeStep))
+            {
+                QMessageBox::warning(
+                    this,
+                    QStringLiteral("TSSBN 参数无效"),
+                    QStringLiteral(
+                        "必须满足：最小时间步 ≤ 初始时间步 ≤ 最大时间步。"));
+                return;
+            }
+            const bool dynamic = static_cast<EnumKeyword::StepType>(
+                m_type->currentData().toInt()) == EnumKeyword::StepType::DYNAMIC;
+            if (dynamic && m_inheritStaticState->isChecked()
+                && m_initialStaticStep->currentIndex() < 0)
+            {
+                QMessageBox::information(this, QStringLiteral("缺少前置静力步"),
+                    QStringLiteral("请先创建静力分析步，或取消“使用静力步作为初始状态”。"));
+                return;
+            }
+            if (adaptiveTssbn
+                && tssbn.minimumDerivativeFactor
+                    > tssbn.maximumDerivativeFactor)
+            {
+                QMessageBox::warning(
+                    this,
+                    QStringLiteral("TSSBN 参数无效"),
+                    QStringLiteral("误差变化因子下限不能大于上限。"));
+                return;
+            }
             if (!m_allRegions->isChecked())
             {
                 bool hasCheckedRegion = false;
@@ -205,6 +601,20 @@ public:
             m_increment->setValue(step->m_StepSize);
             m_tolerance->setValue(step->m_Tolerance);
             m_iterations->setValue(step->m_MaxIterations);
+            m_dynamicSolver->setCurrentIndex(qMax(0,
+                m_dynamicSolver->findData(
+                    static_cast<int>(step->m_DynamicSolverType))));
+            const int inheritedIndex = m_initialStaticStep->findData(step->m_InitialStaticStepId);
+            m_inheritStaticState->setChecked(step->m_Type == EnumKeyword::StepType::DYNAMIC
+                && inheritedIndex >= 0);
+            if (inheritedIndex >= 0)
+                m_initialStaticStep->setCurrentIndex(inheritedIndex);
+            m_tssbnEditor->setSettings(step->m_AdaptiveTssbn);
+            m_enableGalloping->setChecked(step->m_EnableGalloping);
+            m_gallopingIceThickness->setCurrentIndex(qMax(0,
+                m_gallopingIceThickness->findData(step->m_GallopingIceThickness)));
+            m_gallopingInitialAttack->setValue(
+                step->m_GallopingInitialAttackDegrees);
             m_allRegions->setChecked(step->m_RegionScope == AnalysisRegionScope::AllEnabledRegions);
             for (int row = 0; row < m_regionList->count(); ++row)
             {
@@ -220,8 +630,18 @@ public:
             m_increment->setValue(0.01);
             m_tolerance->setValue(1.0e-5);
             m_iterations->setValue(50);
+            m_dynamicSolver->setCurrentIndex(
+                m_dynamicSolver->findData(
+                    static_cast<int>(
+                        SolverNameSpace::SolverType::Newmark)));
+            if (m_initialStaticStep->count() > 0)
+            {
+                m_initialStaticStep->setCurrentIndex(m_initialStaticStep->count() - 1);
+                m_inheritStaticState->setChecked(true);
+            }
             m_allRegions->setChecked(true);
         }
+        updateDynamicState();
     }
 
     AnalysisStepConfig config() const
@@ -234,6 +654,20 @@ public:
         value.stepSize = m_increment->value();
         value.tolerance = m_tolerance->value();
         value.maxIterations = m_iterations->value();
+        value.dynamicSolverType =
+            value.type == EnumKeyword::StepType::DYNAMIC
+            ? static_cast<SolverNameSpace::SolverType>(
+                m_dynamicSolver->currentData().toInt())
+            : SolverNameSpace::SolverType::Newmark;
+        value.initialStaticStepId = value.type == EnumKeyword::StepType::DYNAMIC
+            && m_inheritStaticState->isChecked()
+            ? m_initialStaticStep->currentData().toInt() : 0;
+        value.adaptiveTssbn = m_tssbnEditor->settings();
+        value.enableGalloping = value.type == EnumKeyword::StepType::DYNAMIC
+            && m_enableGalloping->isChecked();
+        value.gallopingIceThickness = m_gallopingIceThickness->currentData().toInt();
+        value.gallopingInitialAttackDegrees =
+            m_gallopingInitialAttack->value();
         value.regionScope = m_allRegions->isChecked()
             ? AnalysisRegionScope::AllEnabledRegions : AnalysisRegionScope::SelectedRegions;
         for (int row = 0; row < m_regionList->count(); ++row)
@@ -253,6 +687,14 @@ private:
     QDoubleSpinBox* m_increment = nullptr;
     QDoubleSpinBox* m_tolerance = nullptr;
     QSpinBox* m_iterations = nullptr;
+    QComboBox* m_dynamicSolver = nullptr;
+    QCheckBox* m_inheritStaticState = nullptr;
+    QComboBox* m_initialStaticStep = nullptr;
+    QLabel* m_inheritedBaseLoads = nullptr;
+    AdaptiveTssbnSettingsEditor* m_tssbnEditor = nullptr;
+    QCheckBox* m_enableGalloping = nullptr;
+    QComboBox* m_gallopingIceThickness = nullptr;
+    QDoubleSpinBox* m_gallopingInitialAttack = nullptr;
     QCheckBox* m_allRegions = nullptr;
     QListWidget* m_regionList = nullptr;
 };
@@ -344,7 +786,35 @@ public:
             const auto direction = static_cast<EnumKeyword::Direction>(value);
             m_direction->addItem(directionName(direction), value);
         }
+        m_directionLabel = form.directionLabel;
+        m_directionStack = new QStackedWidget(this);
+        form.formLayout->removeWidget(m_direction);
+        m_directionStack->addWidget(m_direction);
+        auto* windDirectionWidget = new QWidget(m_directionStack);
+        auto* windDirectionLayout = new QHBoxLayout(windDirectionWidget);
+        windDirectionLayout->setContentsMargins(0, 0, 0, 0);
+        for (int component = 0; component < 3; ++component)
+        {
+            m_windDirection[component] = new QDoubleSpinBox(windDirectionWidget);
+            m_windDirection[component]->setRange(-1.0e6, 1.0e6);
+            m_windDirection[component]->setDecimals(6);
+            m_windDirection[component]->setPrefix(
+                QString(component == 0 ? "X " : component == 1 ? "Y " : "Z "));
+            windDirectionLayout->addWidget(m_windDirection[component]);
+        }
+        m_windDirection[1]->setValue(1.0);
+        m_directionStack->addWidget(windDirectionWidget);
+        form.formLayout->setWidget(4, QFormLayout::FieldRole, m_directionStack);
         m_value = form.valueSpin;
+        m_valueLabel = form.valueLabel;
+        m_valueStack = new QStackedWidget(this);
+        form.formLayout->removeWidget(m_value);
+        m_valueStack->addWidget(m_value);
+        m_windSpeed = new QComboBox(m_valueStack);
+        for (int speed : AeroManager::supportedWindSpeeds())
+            m_windSpeed->addItem(QStringLiteral("%1 m/s").arg(speed), speed);
+        m_valueStack->addWidget(m_windSpeed);
+        form.formLayout->setWidget(5, QFormLayout::FieldRole, m_valueStack);
         auto* buttons = form.buttonBox;
         buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("确定"));
         buttons->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
@@ -369,6 +839,20 @@ public:
             if (targetId > 0)
                 m_target->setValue(targetId);
             m_value->setValue(loadValue(load));
+            if (const auto wind = std::dynamic_pointer_cast<Force_Wind>(load))
+            {
+                for (int component = 0; component < 3; ++component)
+                    m_windDirection[component]->setValue(wind->m_direction[component]);
+                int windIndex = m_windSpeed->findData(wind->m_velocity);
+                if (windIndex < 0)
+                {
+                    m_windSpeed->addItem(
+                        QStringLiteral("%1 m/s（旧模型，不支持舞动）").arg(wind->m_velocity),
+                        wind->m_velocity);
+                    windIndex = m_windSpeed->count() - 1;
+                }
+                m_windSpeed->setCurrentIndex(windIndex);
+            }
         }
         else
         {
@@ -426,8 +910,19 @@ protected:
         }
         else if (type == EnumKeyword::LoadType::FORCE_WIND)
         {
+            const Eigen::Vector3d direction(
+                m_windDirection[0]->value(),
+                m_windDirection[1]->value(),
+                m_windDirection[2]->value());
+            if (!direction.allFinite() || direction.norm() <= 1.0e-12)
+            {
+                QMessageBox::warning(this, QStringLiteral("无效风向"),
+                    QStringLiteral("全局风向向量不能为零。"));
+                return;
+            }
             auto item = std::make_shared<Force_Wind>();
-            item->m_velocity = m_value->value();
+            item->m_velocity = m_windSpeed->currentData().toDouble();
+            item->m_direction = direction.normalized();
             result = item;
         }
         if (!result)
@@ -435,7 +930,9 @@ protected:
         result->m_Id = m_id;
         result->m_Name = m_name->text().trimmed();
         result->m_StepId = m_step->currentData().toInt();
-        result->m_Direction = static_cast<EnumKeyword::Direction>(m_direction->currentData().toInt());
+        result->m_Direction = type == EnumKeyword::LoadType::FORCE_WIND
+            ? EnumKeyword::Direction::UNKNOWN
+            : static_cast<EnumKeyword::Direction>(m_direction->currentData().toInt());
         if (m_original)
         {
             result->m_StartTime = m_original->m_StartTime;
@@ -469,6 +966,11 @@ private:
         m_target->setToolTip(type == EnumKeyword::LoadType::FORCE_NODE
             ? QStringLiteral("节点编号") : type == EnumKeyword::LoadType::FORCE_ELEMENT
             ? QStringLiteral("单元编号") : QStringLiteral("该荷载作用于整个模型"));
+        const bool wind = type == EnumKeyword::LoadType::FORCE_WIND;
+        m_directionStack->setCurrentIndex(wind ? 1 : 0);
+        m_directionLabel->setText(wind ? QStringLiteral("全局风向") : QStringLiteral("方向"));
+        m_valueStack->setCurrentIndex(wind ? 1 : 0);
+        m_valueLabel->setText(wind ? QStringLiteral("风速") : QStringLiteral("数值"));
     }
 
     int m_id = 0;
@@ -480,7 +982,13 @@ private:
     QComboBox* m_type = nullptr;
     QSpinBox* m_target = nullptr;
     QComboBox* m_direction = nullptr;
+    QLabel* m_directionLabel = nullptr;
+    QStackedWidget* m_directionStack = nullptr;
+    QDoubleSpinBox* m_windDirection[3] = {};
     QDoubleSpinBox* m_value = nullptr;
+    QLabel* m_valueLabel = nullptr;
+    QStackedWidget* m_valueStack = nullptr;
+    QComboBox* m_windSpeed = nullptr;
 };
 
 QString constraintDisplayName(int id, const std::shared_ptr<Constraint>& constraint)
@@ -1083,27 +1591,36 @@ void AnalysisManagerDialog::refreshStepTable(int preferredId)
         for (const auto& [loadId, load] : m_structure->m_Load)
         {
             Q_UNUSED(loadId);
-            if (isEffectiveAtStep(load, stepId))
+            if (isEffectiveAtStep(load, stepId, step))
                 ++loadCount;
         }
         for (const auto& [constraintId, constraint] : m_structure->m_Constraint)
         {
             Q_UNUSED(constraintId);
-            if (isEffectiveAtStep(constraint, stepId))
+            if (isEffectiveAtStep(constraint, stepId, step))
                 ++constraintCount;
         }
         for (const auto& [mpcId, mpc] : m_structure->m_MPCConstraints)
         {
             Q_UNUSED(mpcId);
-            if (isEffectiveAtStep(mpc, stepId))
+            if (isEffectiveAtStep(mpc, stepId, step))
                 ++mpcCount;
         }
         const int row = m_stepTable->rowCount();
         m_stepTable->insertRow(row);
         m_stepTable->setItem(row, 0, tableItem(stepDisplayName(stepId, step), stepId));
-        m_stepTable->setItem(row, 1, tableItem(step->m_Type == EnumKeyword::StepType::STATIC
+        QString typeText = step->m_Type == EnumKeyword::StepType::STATIC
             ? QStringLiteral("静力") : step->m_Type == EnumKeyword::StepType::DYNAMIC
-            ? QStringLiteral("动力") : QStringLiteral("未知")));
+            ? QStringLiteral("动力") : QStringLiteral("未知");
+        if (step->m_Type == EnumKeyword::StepType::DYNAMIC && step->m_InitialStaticStepId > 0)
+        {
+            const auto initialIt = m_structure->m_AnalysisStep.find(step->m_InitialStaticStepId);
+            typeText += QStringLiteral("（初态：%1）").arg(
+                initialIt != m_structure->m_AnalysisStep.cend()
+                ? stepDisplayName(initialIt->first, initialIt->second)
+                : QStringLiteral("Step-%1 缺失").arg(step->m_InitialStaticStepId));
+        }
+        m_stepTable->setItem(row, 1, tableItem(typeText));
         m_stepTable->setItem(row, 2, tableItem(QString::number(step->m_Time, 'g', 10)));
         m_stepTable->setItem(row, 3, tableItem(QString::number(step->m_StepSize, 'g', 10)));
         QString regionText = QStringLiteral("全部启用区域");
@@ -1146,6 +1663,23 @@ void AnalysisManagerDialog::refreshLoadTable(int preferredId)
                 ? stepDisplayName(step->first, step->second)
                 : QStringLiteral("Step-%1（缺失）").arg(load->m_StepId);
         }
+        // A load has exactly one owner. Do not duplicate a gravity load for
+        // each dynamic branch; list the branches that inherit it instead.
+        QStringList inheritedBy;
+        for (const auto& [stepId, step] : m_structure->m_AnalysisStep)
+        {
+            if (!step || step->m_Type != EnumKeyword::StepType::DYNAMIC
+                || step->m_InitialStaticStepId <= 0 || stepId == load->m_StepId)
+            {
+                continue;
+            }
+            if (load->m_StepId <= step->m_InitialStaticStepId)
+                inheritedBy << stepDisplayName(stepId, step);
+        }
+        const QString stepScope = inheritedBy.isEmpty()
+            ? stepName
+            : QStringLiteral("%1  \u2192  %2\uFF08\u7EE7\u627F\uFF09")
+                .arg(stepName, inheritedBy.join(QStringLiteral("\u3001")));
         const int targetId = loadTargetId(load);
         const QString target = targetId > 0
             ? (load->m_LoadType == EnumKeyword::LoadType::FORCE_NODE
@@ -1154,7 +1688,14 @@ void AnalysisManagerDialog::refreshLoadTable(int preferredId)
         const int row = m_loadTable->rowCount();
         m_loadTable->insertRow(row);
         m_loadTable->setItem(row, 0, tableItem(loadDisplayName(loadId, load), loadId));
-        m_loadTable->setItem(row, 1, tableItem(stepName));
+        auto* stepItem = tableItem(stepScope);
+        if (!inheritedBy.isEmpty())
+        {
+            stepItem->setToolTip(QStringLiteral("\u6B64\u8377\u8F7D\u5B9A\u4E49\u5C5E\u4E8E %1\u3002\u5728\u6C42\u89E3 %2 \u65F6\uFF0C"
+                "\u5B83\u4F1A\u4EE5\u5168\u503C\u6301\u7EED\u4F5C\u7528\uFF0C\u4E0D\u9700\u8981\u91CD\u590D\u521B\u5EFA\u3002")
+                .arg(stepName, inheritedBy.join(QStringLiteral("\u3001"))));
+        }
+        m_loadTable->setItem(row, 1, stepItem);
         m_loadTable->setItem(row, 2, tableItem(loadTypeName(load->m_LoadType)));
         m_loadTable->setItem(row, 3, tableItem(target));
         m_loadTable->setItem(row, 4, tableItem(directionName(load->m_Direction)));
@@ -1265,6 +1806,14 @@ void AnalysisManagerDialog::editStep(int stepId)
         existing->m_StepSize = value.stepSize;
         existing->m_Tolerance = value.tolerance;
         existing->m_MaxIterations = value.maxIterations;
+        existing->m_DynamicSolverType = value.dynamicSolverType;
+        existing->m_InitialStaticStepId = existing->isDynamic
+            ? value.initialStaticStepId : 0;
+        existing->m_AdaptiveTssbn = value.adaptiveTssbn;
+        existing->m_EnableGalloping = existing->isDynamic && value.enableGalloping;
+        existing->m_GallopingIceThickness = value.gallopingIceThickness;
+        existing->m_GallopingInitialAttackDegrees =
+            value.gallopingInitialAttackDegrees;
         existing->m_RegionScope = value.regionScope;
         existing->m_ComputeRegionIds = value.computeRegionIds;
     }
@@ -1395,6 +1944,7 @@ void AnalysisManagerDialog::deleteSelectedStep()
     int loadCount = 0;
     int constraintCount = 0;
     int mpcCount = 0;
+    int dependentStepCount = 0;
     for (const auto& [id, load] : m_structure->m_Load)
     {
         Q_UNUSED(id);
@@ -1413,11 +1963,17 @@ void AnalysisManagerDialog::deleteSelectedStep()
         if (mpc && mpc->m_StepId == stepId)
             ++mpcCount;
     }
+    for (const auto& [candidateId, candidate] : m_structure->m_AnalysisStep)
+    {
+        Q_UNUSED(candidateId);
+        if (candidate && candidate->m_InitialStaticStepId == stepId)
+            ++dependentStepCount;
+    }
     const QString prompt = QStringLiteral(
         "确定删除“%1”吗？\n同时会删除归属于该步的 %2 个荷载、"
-        "%3 个约束和 %4 个 MPC。")
+        "%3 个约束和 %4 个 MPC。\n另有 %5 个动力步继承该静力步，删除后将改为不继承。")
         .arg(stepDisplayName(stepId, found->second))
-        .arg(loadCount).arg(constraintCount).arg(mpcCount);
+        .arg(loadCount).arg(constraintCount).arg(mpcCount).arg(dependentStepCount);
     if (QMessageBox::question(this, QStringLiteral("删除分析步"), prompt,
         QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes)
         return;
@@ -1427,6 +1983,12 @@ void AnalysisManagerDialog::deleteSelectedStep()
     // the genuinely affected later cases are invalidated.
     const QSet<int> affectedStepIds = affectedStepsFrom(stepId);
     m_structure->m_AnalysisStep.erase(found);
+    for (auto& [candidateId, candidate] : m_structure->m_AnalysisStep)
+    {
+        Q_UNUSED(candidateId);
+        if (candidate && candidate->m_InitialStaticStepId == stepId)
+            candidate->m_InitialStaticStepId = 0;
+    }
     for (auto it = m_structure->m_Load.begin(); it != m_structure->m_Load.end(); )
         it = it->second && it->second->m_StepId == stepId ? m_structure->m_Load.erase(it) : std::next(it);
     for (auto it = m_structure->m_Constraint.begin(); it != m_structure->m_Constraint.end(); )

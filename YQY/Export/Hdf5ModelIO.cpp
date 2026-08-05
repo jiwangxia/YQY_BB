@@ -1,6 +1,7 @@
 #include "Hdf5ModelIO.h"
 
 #include "DataStructure/Structure/StructureData.h"
+#include "DataStructure/Aerodynamics/AeroManager.h"
 #include "Export/Outputter.h"
 
 #ifndef H5_BUILT_AS_DYNAMIC_LIB
@@ -286,6 +287,7 @@ struct ElementRecord
     double initStress = 0.0;
     int role = static_cast<int>(ElementRole::Generic);
     int wireId = -1;
+    int aeroBundleCount = 0;
     int aeroProfileId = -1;
     int domainId = kModelDomainId;
 };
@@ -323,6 +325,13 @@ struct LoadRecord
     double startTime = 0.0;
     double endTime = 0.0;
     double params[8] = {};
+    int domainId = kModelDomainId;
+};
+
+struct WindDirectionRecord
+{
+    int loadId = 0;
+    double direction[3] = { 0.0, 1.0, 0.0 };
     int domainId = kModelDomainId;
 };
 
@@ -374,7 +383,36 @@ struct StepMetadataRecord
 {
     int stepId = 0;
     int regionScope = 0;
+    int initialStaticStepId = 0;
     char name[kEntityNameSize] = {};
+    int domainId = kModelDomainId;
+};
+
+struct StepGallopingRecord
+{
+    int stepId = 0;
+    int enabled = 0;
+    int iceThickness = 12;
+    double initialAttackDegrees = 45.0;
+    int domainId = kModelDomainId;
+};
+
+struct StepTssbnRecord
+{
+    int stepId = 0;
+    double spectralRadiusInfinity = 0.0;
+    double minimumTimeStep = 1.0e-6;
+    double maximumTimeStep = 0.5;
+    double relativeTolerance = 2.0e-4;
+    double absoluteTolerance = 1.0e-6;
+    double safetyFactor = 0.9;
+    double shrinkFactor = 0.8;
+    double maximumGrowthFactor = 3.0;
+    int targetNewtonIterations = 16;
+    double derivativeGain = 0.1;
+    double minimumDerivativeFactor = 0.5;
+    double maximumDerivativeFactor = 1.5;
+    int maximumRejectedAttempts = 24;
     int domainId = kModelDomainId;
 };
 
@@ -889,6 +927,7 @@ H5Handle CreateElementType()
     H5Tinsert(type, "INIT_STRESS", HOFFSET(ElementRecord, initStress), H5T_NATIVE_DOUBLE);
     H5Tinsert(type, "ROLE", HOFFSET(ElementRecord, role), H5T_NATIVE_INT);
     H5Tinsert(type, "WIRE_ID", HOFFSET(ElementRecord, wireId), H5T_NATIVE_INT);
+    H5Tinsert(type, "AERO_BUNDLE_COUNT", HOFFSET(ElementRecord, aeroBundleCount), H5T_NATIVE_INT);
     H5Tinsert(type, "AERO_PROFILE_ID", HOFFSET(ElementRecord, aeroProfileId), H5T_NATIVE_INT);
     H5Tinsert(type, "DOMAIN_ID", HOFFSET(ElementRecord, domainId), H5T_NATIVE_INT);
     return type;
@@ -936,6 +975,17 @@ H5Handle CreateLoadType()
     H5Tinsert(type, "END_TIME", HOFFSET(LoadRecord, endTime), H5T_NATIVE_DOUBLE);
     InsertArray(type, "PARAMS", HOFFSET(LoadRecord, params), H5T_NATIVE_DOUBLE, 8);
     H5Tinsert(type, "DOMAIN_ID", HOFFSET(LoadRecord, domainId), H5T_NATIVE_INT);
+    return type;
+}
+
+H5Handle CreateWindDirectionType()
+{
+    H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(WindDirectionRecord)), H5Tclose);
+    if (!type.valid()) return {};
+    H5Tinsert(type, "LOAD_ID", HOFFSET(WindDirectionRecord, loadId), H5T_NATIVE_INT);
+    InsertArray(type, "DIRECTION", HOFFSET(WindDirectionRecord, direction),
+        H5T_NATIVE_DOUBLE, 3);
+    H5Tinsert(type, "DOMAIN_ID", HOFFSET(WindDirectionRecord, domainId), H5T_NATIVE_INT);
     return type;
 }
 
@@ -1004,8 +1054,61 @@ H5Handle CreateStepMetadataType()
     if (!type.valid()) return {};
     H5Tinsert(type, "STEP_ID", HOFFSET(StepMetadataRecord, stepId), H5T_NATIVE_INT);
     H5Tinsert(type, "REGION_SCOPE", HOFFSET(StepMetadataRecord, regionScope), H5T_NATIVE_INT);
+    H5Tinsert(type, "INITIAL_STATIC_STEP_ID",
+        HOFFSET(StepMetadataRecord, initialStaticStepId), H5T_NATIVE_INT);
     InsertFixedString(type, "NAME", HOFFSET(StepMetadataRecord, name), sizeof(StepMetadataRecord::name));
     H5Tinsert(type, "DOMAIN_ID", HOFFSET(StepMetadataRecord, domainId), H5T_NATIVE_INT);
+    return type;
+}
+
+H5Handle CreateStepGallopingType()
+{
+    H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(StepGallopingRecord)), H5Tclose);
+    if (!type.valid()) return {};
+    H5Tinsert(type, "STEP_ID", HOFFSET(StepGallopingRecord, stepId), H5T_NATIVE_INT);
+    H5Tinsert(type, "ENABLED", HOFFSET(StepGallopingRecord, enabled), H5T_NATIVE_INT);
+    H5Tinsert(type, "ICE_THICKNESS", HOFFSET(StepGallopingRecord, iceThickness), H5T_NATIVE_INT);
+    H5Tinsert(type, "INITIAL_ATTACK_DEGREES",
+        HOFFSET(StepGallopingRecord, initialAttackDegrees), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "DOMAIN_ID", HOFFSET(StepGallopingRecord, domainId), H5T_NATIVE_INT);
+    return type;
+}
+
+H5Handle CreateStepTssbnType()
+{
+    H5Handle type(
+        H5Tcreate(H5T_COMPOUND, sizeof(StepTssbnRecord)), H5Tclose);
+    if (!type.valid()) return {};
+    H5Tinsert(type, "STEP_ID",
+        HOFFSET(StepTssbnRecord, stepId), H5T_NATIVE_INT);
+    H5Tinsert(type, "SPECTRAL_RADIUS_INFINITY",
+        HOFFSET(StepTssbnRecord, spectralRadiusInfinity), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "MINIMUM_TIME_STEP",
+        HOFFSET(StepTssbnRecord, minimumTimeStep), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "MAXIMUM_TIME_STEP",
+        HOFFSET(StepTssbnRecord, maximumTimeStep), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "RELATIVE_TOLERANCE",
+        HOFFSET(StepTssbnRecord, relativeTolerance), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "ABSOLUTE_TOLERANCE",
+        HOFFSET(StepTssbnRecord, absoluteTolerance), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "SAFETY_FACTOR",
+        HOFFSET(StepTssbnRecord, safetyFactor), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "SHRINK_FACTOR",
+        HOFFSET(StepTssbnRecord, shrinkFactor), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "MAXIMUM_GROWTH_FACTOR",
+        HOFFSET(StepTssbnRecord, maximumGrowthFactor), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "TARGET_NEWTON_ITERATIONS",
+        HOFFSET(StepTssbnRecord, targetNewtonIterations), H5T_NATIVE_INT);
+    H5Tinsert(type, "DERIVATIVE_GAIN",
+        HOFFSET(StepTssbnRecord, derivativeGain), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "MINIMUM_DERIVATIVE_FACTOR",
+        HOFFSET(StepTssbnRecord, minimumDerivativeFactor), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "MAXIMUM_DERIVATIVE_FACTOR",
+        HOFFSET(StepTssbnRecord, maximumDerivativeFactor), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "MAXIMUM_REJECTED_ATTEMPTS",
+        HOFFSET(StepTssbnRecord, maximumRejectedAttempts), H5T_NATIVE_INT);
+    H5Tinsert(type, "DOMAIN_ID",
+        HOFFSET(StepTssbnRecord, domainId), H5T_NATIVE_INT);
     return type;
 }
 
@@ -1288,6 +1391,7 @@ std::vector<ElementRecord> BuildElementRecords(const StructureData* pData)
         record.initStress = pElement->m_InitStress;
         record.role = static_cast<int>(pElement->m_Role);
         record.wireId = pElement->m_WireId;
+        record.aeroBundleCount = pElement->m_AeroBundleCount;
         record.aeroProfileId = pElement->m_AeroProfileId;
         if (auto pProperty = pElement->m_pProperty.lock()) record.propertyId = pProperty->m_Id;
         if (pElement->m_pNode.size() > 0)
@@ -1366,6 +1470,11 @@ std::vector<MPCRecord> BuildMPCRecords(const StructureData* pData)
         {
             record.relationType = 2;
         }
+        else if (std::dynamic_pointer_cast<
+            TranslationalTieMPCConstraint>(mpc))
+        {
+            record.relationType = 3;
+        }
         else
         {
             continue;
@@ -1420,6 +1529,23 @@ std::vector<LoadRecord> BuildLoadRecords(const StructureData* pData)
             record.value = pWind->m_velocity;
         }
 
+        records.push_back(record);
+    }
+    return records;
+}
+
+std::vector<WindDirectionRecord> BuildWindDirectionRecords(const StructureData* pData)
+{
+    std::vector<WindDirectionRecord> records;
+    for (const auto& [loadId, load] : pData->m_Load)
+    {
+        const auto wind = std::dynamic_pointer_cast<Force_Wind>(load);
+        if (!wind)
+            continue;
+        WindDirectionRecord record;
+        record.loadId = loadId;
+        for (int component = 0; component < 3; ++component)
+            record.direction[component] = wind->m_direction[component];
         records.push_back(record);
     }
     return records;
@@ -1517,6 +1643,7 @@ void BuildStepMetadataRecords(const StructureData* pData, std::vector<StepMetada
         StepMetadataRecord record;
         record.stepId = stepId;
         record.regionScope = static_cast<int>(step->m_RegionScope);
+        record.initialStaticStepId = step->m_InitialStaticStepId;
         CopyUtf8String(record.name, sizeof(record.name), step->m_Name);
         metadata.push_back(record);
 
@@ -1525,6 +1652,59 @@ void BuildStepMetadataRecords(const StructureData* pData, std::vector<StepMetada
             regionLinks.push_back({stepId, regionId});
         }
     }
+}
+
+std::vector<StepGallopingRecord> BuildStepGallopingRecords(const StructureData* pData)
+{
+    std::vector<StepGallopingRecord> records;
+    records.reserve(pData->m_AnalysisStep.size());
+    for (const auto& [stepId, step] : pData->m_AnalysisStep)
+    {
+        if (!step)
+            continue;
+        StepGallopingRecord record;
+        record.stepId = stepId;
+        record.enabled = step->m_EnableGalloping ? 1 : 0;
+        record.iceThickness = step->m_GallopingIceThickness;
+        record.initialAttackDegrees =
+            step->m_GallopingInitialAttackDegrees;
+        records.push_back(record);
+    }
+    return records;
+}
+
+std::vector<StepTssbnRecord> BuildStepTssbnRecords(
+    const StructureData* pData)
+{
+    std::vector<StepTssbnRecord> records;
+    records.reserve(pData->m_AnalysisStep.size());
+    for (const auto& [stepId, step] : pData->m_AnalysisStep)
+    {
+        if (!step) continue;
+        const auto& settings = step->m_AdaptiveTssbn;
+        StepTssbnRecord record;
+        record.stepId = stepId;
+        record.spectralRadiusInfinity =
+            settings.spectralRadiusInfinity;
+        record.minimumTimeStep = settings.minimumTimeStep;
+        record.maximumTimeStep = settings.maximumTimeStep;
+        record.relativeTolerance = settings.relativeTolerance;
+        record.absoluteTolerance = settings.absoluteTolerance;
+        record.safetyFactor = settings.safetyFactor;
+        record.shrinkFactor = settings.shrinkFactor;
+        record.maximumGrowthFactor = settings.maximumGrowthFactor;
+        record.targetNewtonIterations =
+            settings.targetNewtonIterations;
+        record.derivativeGain = settings.derivativeGain;
+        record.minimumDerivativeFactor =
+            settings.minimumDerivativeFactor;
+        record.maximumDerivativeFactor =
+            settings.maximumDerivativeFactor;
+        record.maximumRejectedAttempts =
+            settings.maximumRejectedAttempts;
+        records.push_back(record);
+    }
+    return records;
 }
 
 int GetAeroDataSize(const std::vector<BladeModel>& models)
@@ -1629,12 +1809,15 @@ bool WriteInputData(hid_t file, const StructureData* pData)
     H5Handle constraintType = CreateConstraintType();
     H5Handle mpcType = CreateMPCType();
     H5Handle loadType = CreateLoadType();
+    H5Handle windDirectionType = CreateWindDirectionType();
     H5Handle stepType = CreateStepType();
     H5Handle modelSetType = CreateModelSetType();
     H5Handle modelSetMemberType = CreateModelSetMemberType();
     H5Handle computeRegionType = CreateComputeRegionType();
     H5Handle regionLinkType = CreateRegionLinkType();
     H5Handle stepMetadataType = CreateStepMetadataType();
+    H5Handle stepGallopingType = CreateStepGallopingType();
+    H5Handle stepTssbnType = CreateStepTssbnType();
     H5Handle stepRegionLinkType = CreateStepRegionLinkType();
     H5Handle aeroCaseType = CreateAeroCaseType();
     H5Handle aeroCoefficientType = CreateAeroCoefficientType();
@@ -1662,12 +1845,15 @@ bool WriteInputData(hid_t file, const StructureData* pData)
         && constraintType.valid()
         && mpcType.valid()
         && loadType.valid()
+        && windDirectionType.valid()
         && stepType.valid()
         && modelSetType.valid()
         && modelSetMemberType.valid()
         && computeRegionType.valid()
         && regionLinkType.valid()
         && stepMetadataType.valid()
+        && stepGallopingType.valid()
+        && stepTssbnType.valid()
         && stepRegionLinkType.valid()
         && aeroCaseType.valid()
         && aeroCoefficientType.valid()
@@ -1679,8 +1865,14 @@ bool WriteInputData(hid_t file, const StructureData* pData)
         && WriteDataset(file, "/YQY/INPUT/CONSTRAINT/SPC", constraintType, BuildConstraintRecords(pData))
         && WriteDataset(file, "/YQY/INPUT/CONSTRAINT/MPC", mpcType, BuildMPCRecords(pData))
         && WriteDataset(file, "/YQY/INPUT/LOAD/LOAD", loadType, BuildLoadRecords(pData))
+        && WriteDataset(file, "/YQY/INPUT/LOAD/WIND_DIRECTION", windDirectionType,
+            BuildWindDirectionRecords(pData))
         && WriteDataset(file, "/YQY/INPUT/ANALYSIS_STEP/STEP", stepType, BuildStepRecords(pData))
         && WriteDataset(file, "/YQY/INPUT/ANALYSIS_STEP/METADATA", stepMetadataType, stepMetadata)
+        && WriteDataset(file, "/YQY/INPUT/ANALYSIS_STEP/GALLOPING", stepGallopingType,
+            BuildStepGallopingRecords(pData))
+        && WriteDataset(file, "/YQY/INPUT/ANALYSIS_STEP/TSSBN",
+            stepTssbnType, BuildStepTssbnRecords(pData))
         && WriteDataset(file, "/YQY/INPUT/ANALYSIS_STEP/REGION_LINK", stepRegionLinkType, stepRegionLinks)
         && WriteDataset(file, "/YQY/INPUT/MODEL_SET/SET", modelSetType, modelSets)
         && WriteDataset(file, "/YQY/INPUT/MODEL_SET/MEMBER", modelSetMemberType, modelSetMembers)
@@ -2458,18 +2650,25 @@ bool ReadInputData(hid_t file, StructureData* data)
     H5Handle constraintType = CreateConstraintType();
     H5Handle mpcType = CreateMPCType();
     H5Handle loadType = CreateLoadType();
+    H5Handle windDirectionType = CreateWindDirectionType();
     H5Handle stepType = CreateStepType();
     H5Handle modelSetType = CreateModelSetType();
     H5Handle modelSetMemberType = CreateModelSetMemberType();
     H5Handle computeRegionType = CreateComputeRegionType();
     H5Handle regionLinkType = CreateRegionLinkType();
     H5Handle stepMetadataType = CreateStepMetadataType();
+    H5Handle stepGallopingType = CreateStepGallopingType();
+    H5Handle stepTssbnType = CreateStepTssbnType();
     H5Handle stepRegionLinkType = CreateStepRegionLinkType();
+    H5Handle aeroCaseType = CreateAeroCaseType();
+    H5Handle aeroCoefficientType = CreateAeroCoefficientType();
     if (!gridType.valid() || !materialType.valid() || !sectionType.valid() || !propertyType.valid()
         || !elementType.valid() || !constraintType.valid() || !mpcType.valid()
-        || !loadType.valid() || !stepType.valid()
+        || !loadType.valid() || !windDirectionType.valid() || !stepType.valid()
         || !modelSetType.valid() || !modelSetMemberType.valid() || !computeRegionType.valid()
-        || !regionLinkType.valid() || !stepMetadataType.valid() || !stepRegionLinkType.valid())
+        || !regionLinkType.valid() || !stepMetadataType.valid() || !stepGallopingType.valid()
+        || !stepTssbnType.valid()
+        || !stepRegionLinkType.valid() || !aeroCaseType.valid() || !aeroCoefficientType.valid())
     {
         return false;
     }
@@ -2482,6 +2681,7 @@ bool ReadInputData(hid_t file, StructureData* data)
     std::vector<ConstraintRecord> constraints;
     std::vector<MPCRecord> mpcs;
     std::vector<LoadRecord> loads;
+    std::vector<WindDirectionRecord> windDirections;
     std::vector<StepRecord> steps;
     std::vector<ModelSetRecord> modelSets;
     std::vector<ModelSetMemberRecord> modelSetMembers;
@@ -2490,7 +2690,11 @@ bool ReadInputData(hid_t file, StructureData* data)
     std::vector<RegionLinkRecord> regionDirectNodes;
     std::vector<RegionLinkRecord> regionDirectElements;
     std::vector<StepMetadataRecord> stepMetadata;
+    std::vector<StepGallopingRecord> stepGalloping;
+    std::vector<StepTssbnRecord> stepTssbn;
     std::vector<StepRegionLinkRecord> stepRegionLinks;
+    std::vector<AeroCaseRecord> aeroCases;
+    std::vector<AeroCoefficientRecord> aeroCoefficients;
     if (!ReadDatasetAll(file, "/YQY/INPUT/NODE/GRID", gridType, grids)
         || !ReadDatasetAll(file, "/YQY/INPUT/MATERIAL/MAT", materialType, materials)
         || !ReadDatasetAll(file, "/YQY/INPUT/SECTION/SECTION", sectionType, sections)
@@ -2499,9 +2703,18 @@ bool ReadInputData(hid_t file, StructureData* data)
         || !ReadDatasetAll(file, "/YQY/INPUT/CONSTRAINT/SPC", constraintType, constraints)
         || !ReadOptionalDatasetAll(file, "/YQY/INPUT/CONSTRAINT/MPC", mpcType, mpcs)
         || !ReadDatasetAll(file, "/YQY/INPUT/LOAD/LOAD", loadType, loads)
+        || !ReadOptionalDatasetAll(file, "/YQY/INPUT/LOAD/WIND_DIRECTION",
+            windDirectionType, windDirections)
         || !ReadDatasetAll(file, "/YQY/INPUT/ANALYSIS_STEP/STEP", stepType, steps)
         || !ReadOptionalDatasetAll(file, "/YQY/INPUT/ANALYSIS_STEP/METADATA", stepMetadataType, stepMetadata)
+        || !ReadOptionalDatasetAll(file, "/YQY/INPUT/ANALYSIS_STEP/GALLOPING",
+            stepGallopingType, stepGalloping)
+        || !ReadOptionalDatasetAll(file, "/YQY/INPUT/ANALYSIS_STEP/TSSBN",
+            stepTssbnType, stepTssbn)
         || !ReadOptionalDatasetAll(file, "/YQY/INPUT/ANALYSIS_STEP/REGION_LINK", stepRegionLinkType, stepRegionLinks)
+        || !ReadOptionalDatasetAll(file, "/YQY/INPUT/AERO/CASE", aeroCaseType, aeroCases)
+        || !ReadOptionalDatasetAll(file, "/YQY/INPUT/AERO/COEFFICIENT",
+            aeroCoefficientType, aeroCoefficients)
         || !ReadOptionalDatasetAll(file, "/YQY/INPUT/MODEL_SET/SET", modelSetType, modelSets)
         || !ReadOptionalDatasetAll(file, "/YQY/INPUT/MODEL_SET/MEMBER", modelSetMemberType, modelSetMembers)
         || !ReadOptionalDatasetAll(file, "/YQY/INPUT/COMPUTE_REGION/REGION", computeRegionType, computeRegions)
@@ -2611,6 +2824,7 @@ bool ReadInputData(hid_t file, StructureData* data)
         element->m_InitStress = record.initStress;
         element->m_Role = static_cast<ElementRole>(record.role);
         element->m_WireId = record.wireId;
+        element->m_AeroBundleCount = record.aeroBundleCount;
         element->m_AeroProfileId = record.aeroProfileId;
         if (element->m_pNode.size() < 2)
         {
@@ -2788,6 +3002,14 @@ bool ReadInputData(hid_t file, StructureData* data)
             release->m_pSlaveNode = slave->second;
             mpc = std::move(release);
         }
+        else if (record.relationType == 3)
+        {
+            auto tie =
+                std::make_shared<TranslationalTieMPCConstraint>();
+            tie->m_pMasterNode = master->second;
+            tie->m_pSlaveNode = slave->second;
+            mpc = std::move(tie);
+        }
         else
         {
             return false;
@@ -2850,6 +3072,15 @@ bool ReadInputData(hid_t file, StructureData* data)
 
         load->m_Id = record.id;
         load->m_Direction = static_cast<EnumKeyword::Direction>(record.direction);
+        if (const auto wind = std::dynamic_pointer_cast<Force_Wind>(load))
+        {
+            const int component = record.direction;
+            if (component >= 0 && component < 3)
+            {
+                wind->m_direction.setZero();
+                wind->m_direction[component] = 1.0;
+            }
+        }
         load->m_StepId = record.stepId;
         load->m_FunctionType = static_cast<TimeFunctionType>(record.functionType);
         load->m_StartTime = record.startTime;
@@ -2863,6 +3094,18 @@ bool ReadInputData(hid_t file, StructureData* data)
         load->m_Decay = record.params[6];
         load->m_Period = record.params[7];
         restored->m_Load[record.id] = std::move(load);
+    }
+    for (const WindDirectionRecord& record : windDirections)
+    {
+        const auto found = restored->m_Load.find(record.loadId);
+        const auto wind = found == restored->m_Load.cend()
+            ? nullptr : std::dynamic_pointer_cast<Force_Wind>(found->second);
+        const Eigen::Vector3d direction(
+            record.direction[0], record.direction[1], record.direction[2]);
+        if (!wind || !direction.allFinite() || direction.norm() <= 1.0e-12)
+            return false;
+        wind->m_direction = direction.normalized();
+        wind->m_Direction = EnumKeyword::Direction::UNKNOWN;
     }
 
     for (const StepRecord& record : steps)
@@ -2890,6 +3133,79 @@ bool ReadInputData(hid_t file, StructureData* data)
         }
         stepIt->second->m_Name = ReadUtf8String(record.name, sizeof(record.name));
         stepIt->second->m_RegionScope = static_cast<AnalysisRegionScope>(record.regionScope);
+        stepIt->second->m_InitialStaticStepId = stepIt->second->isDynamic
+            ? record.initialStaticStepId : 0;
+    }
+    for (const auto& [stepId, step] : restored->m_AnalysisStep)
+    {
+        if (!step || step->m_InitialStaticStepId <= 0)
+            continue;
+        const auto staticIt = restored->m_AnalysisStep.find(step->m_InitialStaticStepId);
+        if (!step->isDynamic || staticIt == restored->m_AnalysisStep.cend()
+            || !staticIt->second
+            || staticIt->second->m_Type != EnumKeyword::StepType::STATIC
+            || staticIt->first >= stepId)
+            return false;
+    }
+    for (const StepGallopingRecord& record : stepGalloping)
+    {
+        const auto stepIt = restored->m_AnalysisStep.find(record.stepId);
+        if (stepIt == restored->m_AnalysisStep.cend() || !stepIt->second
+            || !AeroManager::isSupportedIceThickness(record.iceThickness))
+        {
+            return false;
+        }
+        stepIt->second->m_GallopingIceThickness = record.iceThickness;
+        stepIt->second->m_GallopingInitialAttackDegrees =
+            std::isfinite(record.initialAttackDegrees)
+            ? record.initialAttackDegrees : 45.0;
+        stepIt->second->m_EnableGalloping = stepIt->second->isDynamic && record.enabled != 0;
+    }
+    for (const StepTssbnRecord& record : stepTssbn)
+    {
+        const auto stepIt = restored->m_AnalysisStep.find(record.stepId);
+        if (stepIt == restored->m_AnalysisStep.cend()
+            || !stepIt->second
+            || !std::isfinite(record.spectralRadiusInfinity)
+            || record.spectralRadiusInfinity < 0.0
+            || record.spectralRadiusInfinity > 1.0
+            || !(record.minimumTimeStep > 0.0)
+            || !(record.maximumTimeStep >= record.minimumTimeStep)
+            || !(record.relativeTolerance > 0.0)
+            || !(record.absoluteTolerance > 0.0)
+            || !(record.safetyFactor > 0.0)
+            || record.safetyFactor > 1.0
+            || !(record.shrinkFactor > 0.0)
+            || record.shrinkFactor >= 1.0
+            || record.maximumGrowthFactor < 1.0
+            || record.targetNewtonIterations < 1
+            || record.derivativeGain < 0.0
+            || !(record.minimumDerivativeFactor > 0.0)
+            || record.minimumDerivativeFactor
+                > record.maximumDerivativeFactor
+            || record.maximumRejectedAttempts < 1)
+        {
+            return false;
+        }
+        auto& settings = stepIt->second->m_AdaptiveTssbn;
+        settings.spectralRadiusInfinity =
+            record.spectralRadiusInfinity;
+        settings.minimumTimeStep = record.minimumTimeStep;
+        settings.maximumTimeStep = record.maximumTimeStep;
+        settings.relativeTolerance = record.relativeTolerance;
+        settings.absoluteTolerance = record.absoluteTolerance;
+        settings.safetyFactor = record.safetyFactor;
+        settings.shrinkFactor = record.shrinkFactor;
+        settings.maximumGrowthFactor = record.maximumGrowthFactor;
+        settings.targetNewtonIterations =
+            record.targetNewtonIterations;
+        settings.derivativeGain = record.derivativeGain;
+        settings.minimumDerivativeFactor =
+            record.minimumDerivativeFactor;
+        settings.maximumDerivativeFactor =
+            record.maximumDerivativeFactor;
+        settings.maximumRejectedAttempts =
+            record.maximumRejectedAttempts;
     }
     for (const StepRegionLinkRecord& record : stepRegionLinks)
     {
@@ -2911,6 +3227,65 @@ bool ReadInputData(hid_t file, StructureData* data)
         }
     }
 
+    std::map<int, std::pair<AeroCaseRecord, std::vector<BladeModel>>> restoredAeroCases;
+    for (const AeroCaseRecord& record : aeroCases)
+    {
+        const AeroCaseKey key{ record.bundleCount, record.windSpeed, record.iceThickness };
+        if (record.id <= 0 || record.modelCount <= 0 || record.dataSize <= 0
+            || !AeroManager::isSupportedCase(key)
+            || std::abs(record.startAngle) > 1.0e-12
+            || std::abs(record.angleStep - 5.0) > 1.0e-12)
+        {
+            return false;
+        }
+        std::vector<BladeModel> models(static_cast<std::size_t>(record.modelCount));
+        for (BladeModel& model : models)
+        {
+            model.lift.resize(static_cast<std::size_t>(record.dataSize));
+            model.drag.resize(static_cast<std::size_t>(record.dataSize));
+            model.moment.resize(static_cast<std::size_t>(record.dataSize));
+        }
+        if (!restoredAeroCases.emplace(record.id,
+            std::make_pair(record, std::move(models))).second)
+        {
+            return false;
+        }
+    }
+    std::size_t expectedAeroCoefficientCount = 0;
+    for (const auto& [caseId, stored] : restoredAeroCases)
+    {
+        expectedAeroCoefficientCount += static_cast<std::size_t>(stored.first.modelCount)
+            * static_cast<std::size_t>(stored.first.dataSize);
+    }
+    if (expectedAeroCoefficientCount != aeroCoefficients.size())
+        return false;
+    for (const AeroCoefficientRecord& coefficient : aeroCoefficients)
+    {
+        const auto found = restoredAeroCases.find(coefficient.caseId);
+        if (found == restoredAeroCases.end()
+            || coefficient.modelIndex < 0
+            || coefficient.modelIndex >= found->second.first.modelCount
+            || coefficient.angleIndex < 0
+            || coefficient.angleIndex >= found->second.first.dataSize)
+        {
+            return false;
+        }
+        BladeModel& model = found->second.second[static_cast<std::size_t>(coefficient.modelIndex)];
+        const auto angleIndex = static_cast<std::size_t>(coefficient.angleIndex);
+        model.lift[angleIndex] = coefficient.lift;
+        model.drag[angleIndex] = coefficient.drag;
+        model.moment[angleIndex] = coefficient.moment;
+    }
+    for (auto& [caseId, stored] : restoredAeroCases)
+    {
+        const AeroCaseRecord& record = stored.first;
+        const QString sourcePath = ReadUtf8String(record.sourcePath, sizeof(record.sourcePath));
+        restored->m_AeroManager.setCaseData(
+            AeroCaseKey{ record.bundleCount, record.windSpeed, record.iceThickness },
+            std::move(stored.second),
+            std::filesystem::path(sourcePath.toStdWString()));
+    }
+
     data->Clear();
     data->m_Nodes = std::move(restored->m_Nodes);
     data->m_Elements = std::move(restored->m_Elements);
@@ -2923,6 +3298,7 @@ bool ReadInputData(hid_t file, StructureData* data)
     data->m_AnalysisStep = std::move(restored->m_AnalysisStep);
     data->m_ModelSets = std::move(restored->m_ModelSets);
     data->m_ComputeRegions = std::move(restored->m_ComputeRegions);
+    data->m_AeroManager = std::move(restored->m_AeroManager);
     return true;
 }
 

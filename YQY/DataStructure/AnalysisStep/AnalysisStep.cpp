@@ -1,10 +1,54 @@
 #include "AnalysisStep.h"
+#include "Application/ApplicationPaths.h"
 #include <algorithm>
 #include "DataStructure/Structure/StructureData.h"
 #include "DataStructure/Element/ElementBase.h"
+#include "DataStructure/Aerodynamics/AeroManager.h"
+#include "DataStructure/Load/LoadAssembler.h"
+#include "DataStructure/Load/Force_Gravity.h"
+#include "DataStructure/Load/Force_Wind.h"
 #include "Solver/Interface/ISolver.h"
 #include "Solver/SolverFactory.h"
 #include <Eigen/SparseCholesky>
+
+AeroCaseKey AnalysisStep::GetGallopingAeroCase(
+    int bundleCount, const Force_Wind& wind) const
+{
+    return AeroCaseKey{ bundleCount, static_cast<int>(std::llround(wind.m_velocity)),
+        m_GallopingIceThickness };
+}
+
+bool AnalysisStep::ShouldAssembleGalloping(
+    int bundleCount, const Force_Wind& wind) const
+{
+    return isDynamic && m_EnableGalloping
+        && std::abs(wind.m_velocity - std::llround(wind.m_velocity)) <= 1.0e-9
+        && AeroManager::isSupportedCase(GetGallopingAeroCase(bundleCount, wind));
+}
+
+bool AnalysisStep::IsStepScopedDataActive(int sourceStepId) const
+{
+    // Step 0 is the legacy/global scope and is active in every branch.
+    if (sourceStepId <= 0)
+        return true;
+    if (sourceStepId == m_Id)
+        return true;
+
+    if (m_Type == EnumKeyword::StepType::DYNAMIC
+        && m_InitialStaticStepId > 0)
+    {
+        // A dependent dynamic analysis starts from the selected static
+        // equilibrium.  Only definitions that were already active in that
+        // equilibrium are inherited.  Definitions from earlier sibling
+        // dynamics must not leak into this branch merely because their IDs
+        // are smaller.
+        return sourceStepId <= m_InitialStaticStepId;
+    }
+
+    // Preserve the existing sequential semantics for static analyses and
+    // standalone dynamics that do not reference an equilibrium step.
+    return sourceStepId < m_Id;
+}
 
 void AnalysisStep::SetStructure(std::shared_ptr<StructureData> pStructure)
 {
@@ -68,7 +112,7 @@ void AnalysisStep::Init_DOF()
     for (auto& constraints : m_pData->m_Constraint)
     {
         auto pConstrain = constraints.second;
-        if (!pConstrain || (pConstrain->m_StepId > 0 && pConstrain->m_StepId > m_Id)) continue;
+        if (!pConstrain || !IsStepScopedDataActive(pConstrain->m_StepId)) continue;
         auto pNode = pConstrain->m_pNode.lock();
         if (!pNode) continue;
 
@@ -102,26 +146,187 @@ void AnalysisStep::Init_Nodevector()
     {
         auto pNode = nodePair.second;
         int numDOF = pNode->m_DOF.size();
-        // A solve always starts from the model geometry.  Nodes are also used
-        // as the live solution state, so a repeated solve (or an analysis
-        // clone made after a solve) may otherwise inherit the previous result.
-        // That stale displacement would be written as the new t = 0 frame.
-        pNode->m_Displacement.assign(numDOF, 0.0);
-        pNode->m_Displacement_n.assign(numDOF, 0.0);
+        if (m_initializeFromCurrentState)
+        {
+            // 静力找形后的位移和有限转动就是动力步的 t=0 构型。
+            // 速度与加速度不从静力伪时间继承，默认从静止平衡状态启动。
+            pNode->m_Displacement.resize(numDOF, 0.0);
+            pNode->m_Displacement_n = pNode->m_Displacement;
+            pNode->m_Rg_n = pNode->m_Rg;
+        }
+        else
+        {
+            // 独立求解从原始模型几何开始，避免重复计算继承上一次结果。
+            pNode->m_Displacement.assign(numDOF, 0.0);
+            pNode->m_Displacement_n.assign(numDOF, 0.0);
+            pNode->m_Rg.setIdentity();
+            pNode->m_Rg_n.setIdentity();
+        }
         pNode->m_Velocity.assign(numDOF, 0.0);
         pNode->m_Velocity_n.assign(numDOF, 0.0);
         pNode->m_Acceleration.assign(numDOF, 0.0);
         pNode->m_Acceleration_n.assign(numDOF, 0.0);
         pNode->m_Force.assign(numDOF, 0.0);
         pNode->m_ReactionForce.assign(numDOF, 0.0);
-        pNode->m_Rg.setIdentity();
-        pNode->m_Rg_n.setIdentity();
         pNode->m_OmegaMaterial.setZero();
         pNode->m_AlphaMaterial.setZero();
         pNode->m_OmegaMaterial_n.setZero();
         pNode->m_AlphaMaterial_n.setZero();
         pNode->m_StepRotation.setZero();
     }
+    m_initializeFromCurrentState = false;
+}
+
+bool AnalysisStep::ValidateGallopingConfiguration(QString* errorMessage) const
+{
+    if (!m_EnableGalloping)
+        return true;
+    if (!isDynamic)
+    {
+        if (errorMessage) *errorMessage = QStringLiteral("舞动气动力只能用于动力分析步。");
+        return false;
+    }
+
+    const Force_Wind* selectedWind = nullptr;
+    for (const auto& [loadId, load] : m_pData->m_Load)
+    {
+        const auto wind = std::dynamic_pointer_cast<Force_Wind>(load);
+        if (!wind || !IsStepScopedDataActive(wind->m_StepId))
+            continue;
+        if (selectedWind)
+        {
+            if (errorMessage)
+                *errorMessage = QStringLiteral("舞动分析步只能继承一个风荷载，请合并或删除重复风荷载。");
+            return false;
+        }
+        selectedWind = wind.get();
+    }
+    if (!selectedWind)
+    {
+        if (errorMessage) *errorMessage = QStringLiteral("启用舞动前必须给分析步配置风荷载。");
+        return false;
+    }
+    if (!selectedWind->m_direction.allFinite()
+        || selectedWind->m_direction.norm() <= 1.0e-12)
+    {
+        if (errorMessage) *errorMessage = QStringLiteral("舞动风荷载必须提供非零的全局风向向量。");
+        return false;
+    }
+    if (!std::isfinite(m_GallopingInitialAttackDegrees))
+    {
+        if (errorMessage)
+            *errorMessage = QStringLiteral("初始风攻角必须是有限数值。");
+        return false;
+    }
+    if (selectedWind->m_FunctionType != TimeFunctionType::CONSTANT)
+    {
+        if (errorMessage)
+            *errorMessage = QStringLiteral("当前离散气动参数只支持恒定风速，不能使用时变风速函数。");
+        return false;
+    }
+    const double roundedSpeed = std::llround(selectedWind->m_velocity);
+    if (std::abs(selectedWind->m_velocity - roundedSpeed) > 1.0e-9
+        || !AeroManager::isSupportedWindSpeed(static_cast<int>(roundedSpeed)))
+    {
+        if (errorMessage)
+            *errorMessage = QStringLiteral("风速必须为 10、12、14 或 18 m/s。");
+        return false;
+    }
+    return true;
+}
+
+bool AnalysisStep::PrepareGallopingData(QString* errorMessage)
+{
+    if (!m_EnableGalloping)
+        return true;
+
+    std::shared_ptr<Force_Wind> wind;
+    for (const auto& [loadId, load] : m_pData->m_Load)
+    {
+        const auto candidate = std::dynamic_pointer_cast<Force_Wind>(load);
+        if (candidate && IsStepScopedDataActive(candidate->m_StepId))
+        {
+            wind = candidate;
+            break;
+        }
+    }
+    if (!wind)
+        return false;
+
+    int legacyBundleCount = 1;
+    std::set<int> bundleCounts;
+    for (const auto& [elementId, element] : m_pData->m_Elements)
+    {
+        if (!element || !element->HasAerodynamicLoad())
+            continue;
+        if (element->m_AeroBundleCount > 0)
+            bundleCounts.insert(element->m_AeroBundleCount);
+        legacyBundleCount = std::max(
+            legacyBundleCount, element->m_AeroProfileId + 1);
+    }
+    if (bundleCounts.empty())
+        bundleCounts.insert(legacyBundleCount > 1 ? 4 : 1);
+
+    const std::filesystem::path dataDirectories[] = {
+        std::filesystem::path(ApplicationPaths::aerodynamicDataDirectory().toStdWString()),
+        std::filesystem::path("YQY/Import/Aero_Data/Input_Data"),
+        std::filesystem::path("Import/Aero_Data/Input_Data")
+    };
+    for (int bundleCount : bundleCounts)
+    {
+        const AeroCaseKey key = GetGallopingAeroCase(bundleCount, *wind);
+        if (!AeroManager::isSupportedCase(key))
+        {
+            if (errorMessage)
+                *errorMessage = QStringLiteral(
+                    "当前模型包含 %1 分裂导线，但没有对应的气动参数工况。")
+                    .arg(bundleCount);
+            return false;
+        }
+        if (m_pData->m_AeroManager.hasCase(key))
+            continue;
+
+        bool loaded = false;
+        for (const auto& directory : dataDirectories)
+        {
+            if (m_pData->m_AeroManager.loadCase(directory, key))
+            {
+                loaded = true;
+                break;
+            }
+        }
+        if (!loaded)
+        {
+            if (errorMessage)
+                *errorMessage = QStringLiteral(
+                    "无法加载气动参数：%1 分裂，%2 m/s，覆冰 %3 mm。")
+                    .arg(key.bundleCount).arg(key.windSpeed)
+                    .arg(key.iceThickness);
+            return false;
+        }
+    }
+    return true;
+}
+
+Eigen::Vector3d AnalysisStep::GetModelUpDirection() const
+{
+    if (!m_pData)
+        return Eigen::Vector3d::UnitZ();
+    for (const auto& [loadId, load] : m_pData->m_Load)
+    {
+        const auto gravity = std::dynamic_pointer_cast<Force_Gravity>(load);
+        if (!gravity || !IsStepScopedDataActive(gravity->m_StepId))
+            continue;
+        const int component = static_cast<int>(gravity->m_Direction);
+        if (component >= 0 && component < 3
+            && std::abs(gravity->m_g) > 1.0e-12)
+        {
+            Eigen::Vector3d gravityVector = Eigen::Vector3d::Zero();
+            gravityVector[component] = gravity->m_g;
+            return -gravityVector.normalized();
+        }
+    }
+    return Eigen::Vector3d::UnitZ();
 }
 
 void AnalysisStep::Get_ElementLength()
@@ -182,29 +387,31 @@ void AnalysisStep::Get_ElementLength()
 //    m_C22.setFromTriplets(c22.begin(), c22.end());
 //}
 
-void AnalysisStep::Assemble(std::vector<int>& DOFs, Eigen::MatrixXd& T, std::list<Tri>& L11, std::list<Tri>& L21, std::list<Tri>& L22)
+void AnalysisStep::AssembleFreeFree(
+    const std::vector<int>& dofs,
+    const Eigen::MatrixXd& elementMatrix,
+    std::vector<Tri>& freeFree)
 {
-    auto nDOF = DOFs.size();
+    const int elementDofCount = static_cast<int>(dofs.size());
 
-    for (int i = 0; i < nDOF; ++i)
+    for (int i = 0; i < elementDofCount; ++i)
     {
-        int ii = DOFs[i];
-        for (int j = 0; j < nDOF; ++j)
+        const int globalRow = dofs[i];
+        if (globalRow < m_nFixed
+            || globalRow >= m_nFixed + m_nFree)
         {
-            int jj = DOFs[j];
-            auto kij = T(i, j);
-
-            if (ii < m_nFixed && jj < m_nFixed)
+            continue;
+        }
+        for (int j = 0; j < elementDofCount; ++j)
+        {
+            const int globalColumn = dofs[j];
+            if (globalColumn >= m_nFixed
+                && globalColumn < m_nFixed + m_nFree)
             {
-                L11.push_back(Tri(ii, jj, kij));
-            }
-            else if (ii >= m_nFixed && jj < m_nFixed)
-            {
-                L21.push_back(Tri(ii - m_nFixed, jj, kij));
-            }
-            else if (ii >= m_nFixed && jj >= m_nFixed)
-            {
-                L22.push_back(Tri(ii - m_nFixed, jj - m_nFixed, kij));
+                freeFree.emplace_back(
+                    globalRow - m_nFixed,
+                    globalColumn - m_nFixed,
+                    elementMatrix(i, j));
             }
         }
     }
@@ -217,13 +424,21 @@ void AnalysisStep::Assemble_AllLoads(VectorXd& F1, VectorXd& F2, double& Factor,
     F2.resize(m_nFree);
     F2.setZero();
 
+    const Force_Wind* gallopingWind = nullptr;
+    double gallopingScale = 0.0;
     for (auto& Load : m_pData->m_Load)
     {
         auto pLoadBase = Load.second;
+        if (!pLoadBase)
+            continue;
 
         double loadScale = 0.0;  // 每个荷载独立的缩放系数
 
-        if (pLoadBase->m_StepId < this->m_Id)
+        if (!IsStepScopedDataActive(pLoadBase->m_StepId))
+        {
+            continue;
+        }
+        if (pLoadBase->m_StepId != this->m_Id)
         {
             // 历史步的荷载：全额
             loadScale = 1.0;
@@ -235,56 +450,21 @@ void AnalysisStep::Assemble_AllLoads(VectorXd& F1, VectorXd& F2, double& Factor,
             {
                 continue; // 不在当前时间范围内，跳过
             }
-            loadScale = Factor;
+            loadScale = Factor * pLoadBase->GetScaleFactor(currentTime);
         }
-        else
+        LoadAssembler::Assemble(*pLoadBase, *m_pData, m_nFixed, loadScale, F1, F2);
+        if (m_EnableGalloping
+            && pLoadBase->m_LoadType == EnumKeyword::LoadType::FORCE_WIND)
         {
-            // 未来步的荷载：不加载
-            continue;
-        }
-
-        switch (pLoadBase->m_LoadType)
-        {
-        case EnumKeyword::LoadType::FORCE_NODE:
-        {
-            // 向下转型为 Force_Node
-            auto pForceNode = std::dynamic_pointer_cast<Force_Node>(pLoadBase);
-            if (!pForceNode) continue;
-
-            Assemble_ForceNode(pForceNode.get(), F1, F2, currentTime, loadScale);
-            break;
-        }
-        case EnumKeyword::LoadType::FORCE_ELEMENT:
-        {
-            // 向下转型为 Force_Element
-            auto pForceElement = std::dynamic_pointer_cast<Force_Element>(pLoadBase);
-            if (!pForceElement) continue;
-
-            Assemble_ForceElement(pForceElement.get(), F1, F2, currentTime, loadScale);
-            break;
-        }
-        case EnumKeyword::LoadType::FORCE_GRAVITY:
-        {
-            // 向下转型为 Force_Gravity
-            auto pForceGravity = std::dynamic_pointer_cast<Force_Gravity>(pLoadBase);
-            if (!pForceGravity) continue;
-
-            Assemble_ForceGravity(pForceGravity.get(), F1, F2, currentTime, loadScale);
-            break;
-        }
-        case EnumKeyword::LoadType::FORCE_WIND:
-        {
-            // 向下转型为 Force_Gravity
-            auto pForceWind = std::dynamic_pointer_cast<Force_Wind>(pLoadBase);
-            if (!pForceWind) continue;
-
-            Assemble_ForceWind(pForceWind.get(), F1, F2, currentTime, loadScale);
-            break;
-        }
-        default:
-            break;
+            gallopingWind = static_cast<const Force_Wind*>(pLoadBase.get());
+            gallopingScale = loadScale;
         }
     }
+    if (gallopingWind && gallopingScale != 0.0)
+        LoadAssembler::AssembleGalloping(
+            *gallopingWind, *m_pData, m_GallopingIceThickness,
+            m_GallopingInitialAttackDegrees,
+            GetModelUpDirection(), m_nFixed, gallopingScale, F1, F2);
     //std::cout << "\nF2:" << F2[56] << "\n";
 }
 
@@ -408,125 +588,6 @@ bool AnalysisStep::Check_Rhs(Eigen::VectorXd& Exteralforce, Eigen::VectorXd& Inf
 
 
 
-void AnalysisStep::Assemble_ForceNode(Force_Node* pForceNode, VectorXd& F1, VectorXd& F2, double& current_time, double loadScale)
-{
-    auto pNode = pForceNode->m_pNode.lock();
-    if (!pNode) return;
-
-    int iDirection = static_cast<int>(pForceNode->m_Direction);
-    if (iDirection < 0 || iDirection >= pNode->m_DOF.size()) return;
-
-    int dof = pNode->m_DOF[iDirection];
-
-    // 计算时间函数的缩放因子
-    double timeFactor = pForceNode->GetScaleFactor(current_time);
-    double actualValue = pForceNode->m_Value * loadScale * timeFactor;
-
-    // 根据 DOF，加到对应向量
-    if (dof >= 0 && dof < m_nFixed)
-    {
-        F1[dof] += actualValue;
-    }
-    else if (dof >= m_nFixed)
-    {
-        F2[dof - m_nFixed] += actualValue;
-    }
-}
-
-void AnalysisStep::Assemble_ForceElement(Force_Element* pForceElement, VectorXd& F1, VectorXd& F2, double& current_time, double loadScale)
-{
-    auto pElement = pForceElement->m_pElement.lock();
-    if (!pElement) return;
-
-    int iDirection = static_cast<int>(pForceElement->m_Direction);
-    double actualValue = pForceElement->m_Value * loadScale / 2.;
-
-    for (auto& weakNodePtr : pElement->m_pNode)
-    {
-        auto pNode = weakNodePtr.lock();
-        int dof = pNode->m_DOF[iDirection];
-        if (dof >= 0 && dof < m_nFixed)
-        {
-            F1[dof] += 0.;
-        }
-        else if (dof >= m_nFixed && dof < (m_nFixed + m_nFree))
-        {
-            F2[dof - m_nFixed] += actualValue;
-        }
-    }
-}
-
-
-void AnalysisStep::Assemble_ForceGravity(Force_Gravity* pForceGravity, VectorXd& F1, VectorXd& F2, double& current_time, double loadScale)
-{
-    int iDirection = static_cast<int>(pForceGravity->m_Direction);
-    double m_g = pForceGravity->m_g;
-    for (auto& pElement : m_pData->m_Elements)
-    {
-        auto pele = pElement.second;
-        auto pPorety = pele->m_pProperty.lock();
-        auto m_Density = pPorety->m_pMaterial.lock()->m_Density;
-        auto m_A = pPorety->m_pSection.lock()->m_Area;
-        double m_quality = pele->L0 * m_Density * m_A;
-        double m_G = m_quality * m_g * loadScale / 2.;
-
-        for (auto& NodePtr : pele->m_pNode)
-        {
-            auto pNode = NodePtr.lock();
-            int dof = pNode->m_DOF[iDirection];
-            if (dof >= 0 && dof < m_nFixed)
-            {
-                F1[dof] += 0.;
-            }
-            else if (dof >= m_nFixed && dof < (m_nFixed + m_nFree))
-            {
-                F2[dof - m_nFixed] += m_G;
-            }
-        }
-    }
-}
-
-void AnalysisStep::Assemble_ForceWind(Force_Wind* pForceWind, VectorXd& F1, VectorXd& F2, double& current_time, double loadScale)
-{
-    int iDirection = static_cast<int>(pForceWind->m_Direction);
-    double m_v = pForceWind->m_velocity;
-    double m_vDensity = pForceWind->m_windDensity;
-    const bool hasAerodynamicTags = std::any_of(
-        m_pData->m_Elements.cbegin(),
-        m_pData->m_Elements.cend(),
-        [](const auto& pair)
-        {
-            return pair.second && pair.second->HasAerodynamicLoad();
-        });
-    for (auto& pElement : m_pData->m_Elements)
-    {
-        auto pele = pElement.second;
-        if (!pele || (hasAerodynamicTags && !pele->HasAerodynamicLoad()))
-        {
-            continue;
-        }
-        auto pPorety = pele->m_pProperty.lock();
-
-        auto m_r = pPorety->m_pSection.lock()->m_Radius;
-        double m_A = pele->L0 * m_r;
-        double m_Fwind = 0.5 * m_vDensity * m_v * m_v * m_A * loadScale / 2.0;
-
-        for (auto& NodePtr : pele->m_pNode)
-        {
-            auto pNode = NodePtr.lock();
-            int dof = pNode->m_DOF[iDirection];
-            if (dof >= 0 && dof < m_nFixed)
-            {
-                F1[dof] += 0.;
-            }
-            else if (dof >= m_nFixed && dof < (m_nFixed + m_nFree))
-            {
-                F2[dof - m_nFixed] += m_Fwind;
-            }
-        }
-    }
-}
-
 void AnalysisStep::Assemble_Constraint(
     VectorXd& x1,
     double currentTime,
@@ -536,7 +597,7 @@ void AnalysisStep::Assemble_Constraint(
     for (auto& constraintPair : m_pData->m_Constraint)
     {
         auto pConstraint = constraintPair.second;
-        if (!pConstraint || (pConstraint->m_StepId > 0 && pConstraint->m_StepId > m_Id)) continue;
+        if (!pConstraint || !IsStepScopedDataActive(pConstraint->m_StepId)) continue;
         auto pNode = pConstraint->m_pNode.lock();
         if (!pNode) continue;
 
@@ -579,6 +640,17 @@ void AnalysisStep::Assemble_Constraint(
 bool AnalysisStep::Solve(bool persistHdf5)
 {
     if (!PrepareData()) return false;
+    QString gallopingError;
+    if (!ValidateGallopingConfiguration(&gallopingError))
+    {
+        qDebug().noquote() << QStringLiteral("舞动配置错误:") << gallopingError;
+        return false;
+    }
+    if (!PrepareGallopingData(&gallopingError))
+    {
+        qDebug().noquote() << QStringLiteral("舞动气动参数错误:") << gallopingError;
+        return false;
+    }
     Init();
 
     // 初始化单元长度
@@ -725,7 +797,7 @@ void AnalysisStep::CalculateReactions(VectorXd& F1)
     int multiplierOffset = 0;
     for (const auto& [id, mpc] : m_pData->m_MPCConstraints)
     {
-        if (!mpc || (mpc->m_StepId > 0 && mpc->m_StepId > m_Id))
+        if (!mpc || !IsStepScopedDataActive(mpc->m_StepId))
             continue;
         SolverNameSpace::NonlinearMPCData contribution;
         if (!mpc->Evaluate(m_nFixed, m_nFree, contribution))
@@ -913,8 +985,119 @@ void AnalysisStep::SetTrialKinematics(const SolverNameSpace::Vec& v, const Solve
                 pNode->m_Acceleration[dofIdx] = a[idx];
             }
         }
+
+        if (numDOF >= 6)
+        {
+            Eigen::Vector3d spatialVelocity = Eigen::Vector3d::Zero();
+            Eigen::Vector3d spatialAcceleration = Eigen::Vector3d::Zero();
+            for (int component = 0; component < 3; ++component)
+            {
+                spatialVelocity[component] = pNode->m_Velocity[component + 3];
+                spatialAcceleration[component] =
+                    pNode->m_Acceleration[component + 3];
+            }
+            pNode->m_OmegaMaterial =
+                pNode->m_Rg.transpose() * spatialVelocity;
+            pNode->m_AlphaMaterial =
+                pNode->m_Rg.transpose() * spatialAcceleration;
+            Utility::CR::Extract_RotationVector(
+                pNode->m_Rg * pNode->m_Rg_n.transpose(),
+                pNode->m_StepRotation);
+        }
     }
 
+}
+
+void AnalysisStep::SetTssbnStageKinematics(
+    int stageIndex,
+    double timeStep,
+    double firstStageTime,
+    double secondStageTime,
+    double secondStageDiagonalFraction,
+    SolverNameSpace::Vec& velocity,
+    SolverNameSpace::Vec& acceleration)
+{
+    SetTrialKinematics(velocity, acceleration);
+    for (auto& [nodeId, node] : m_pData->m_Nodes)
+    {
+        if (!node || node->m_DOF.size() < 6)
+            continue;
+        Eigen::Vector3d angularVelocity;
+        Eigen::Vector3d angularAcceleration;
+        node->SetTssbnStageKinematics(
+            stageIndex, timeStep,
+            firstStageTime, secondStageTime,
+            secondStageDiagonalFraction,
+            angularVelocity, angularAcceleration);
+        for (int component = 0; component < 3; ++component)
+        {
+            const int globalDof = node->m_DOF[component + 3];
+            if (globalDof < m_nFixed
+                || globalDof >= m_nFixed + m_nFree)
+            {
+                continue;
+            }
+            const int freeDof = globalDof - m_nFixed;
+            velocity[freeDof] = angularVelocity[component];
+            acceleration[freeDof] = angularAcceleration[component];
+        }
+    }
+}
+
+void AnalysisStep::CorrectTssbnStepStates(
+    double timeStep,
+    double firstStageTime,
+    double secondStageTime,
+    double lastStageTime,
+    double baseFirstWeight,
+    double embeddedFirstWeight,
+    double embeddedSecondWeight,
+    double embeddedLastWeight,
+    double lastStageFirstCoefficient,
+    double lastStageSecondCoefficient,
+    SolverNameSpace::Vec& baseIncrement,
+    SolverNameSpace::Vec& baseVelocity,
+    SolverNameSpace::Vec& embeddedIncrement,
+    SolverNameSpace::Vec& embeddedVelocity,
+    SolverNameSpace::Vec& acceptedAcceleration)
+{
+    const double stageSeparation =
+        secondStageTime - firstStageTime;
+    const double extrapolation =
+        (lastStageTime - secondStageTime) / stageSeparation;
+    for (auto& [nodeId, node] : m_pData->m_Nodes)
+    {
+        if (!node || node->m_DOF.size() < 6)
+            continue;
+
+        const Node::TssbnRotationState rotation =
+            node->IntegrateTssbnRotation(
+                timeStep, extrapolation, baseFirstWeight,
+                embeddedFirstWeight, embeddedSecondWeight,
+                embeddedLastWeight, lastStageFirstCoefficient,
+                lastStageSecondCoefficient);
+
+        for (int component = 0; component < 3; ++component)
+        {
+            const int globalDof = node->m_DOF[component + 3];
+            if (globalDof < m_nFixed
+                || globalDof >= m_nFixed + m_nFree)
+            {
+                continue;
+            }
+            const int freeDof = globalDof - m_nFixed;
+            baseIncrement[freeDof] =
+                rotation.baseSpatialIncrement[component];
+            embeddedIncrement[freeDof] =
+                rotation.embeddedSpatialIncrement[component];
+            baseVelocity[freeDof] =
+                rotation.baseSpatialVelocity[component];
+            embeddedVelocity[freeDof] =
+                rotation.embeddedSpatialVelocity[component];
+            acceptedAcceleration[freeDof] =
+                rotation.acceptedSpatialAcceleration[component];
+        }
+    }
 }
 
 void AnalysisStep::GetState(SolverNameSpace::Vec& u, SolverNameSpace::Vec& v, SolverNameSpace::Vec& a) const
@@ -925,10 +1108,11 @@ void AnalysisStep::GetState(SolverNameSpace::Vec& u, SolverNameSpace::Vec& v, So
 
 void AnalysisStep::Assemble_Matrix(SpMat& Keff, bool isDynamic)
 {
-    std::list<Tri> L11, L21, L22;
+    std::vector<Tri> freeFree;
+    const std::size_t initialTripletCapacity =
+        m_pData->m_Elements.size() * 36;
+    freeFree.reserve(initialTripletCapacity);
 
-    m_Keff11.resize(m_nFixed, m_nFixed);
-    m_Keff21.resize(m_nFree, m_nFixed);
     m_Keff22.resize(m_nFree, m_nFree);
 
     MatrixXd ke;
@@ -942,12 +1126,10 @@ void AnalysisStep::Assemble_Matrix(SpMat& Keff, bool isDynamic)
 
         //std::cout << MatrixXd(ke) << "\n";
         pelement->GetDOFs(DOFs);
-        Assemble(DOFs, ke, L11, L21, L22);
+        AssembleFreeFree(DOFs, ke, freeFree);
     }
 
-    m_Keff11.setFromTriplets(L11.begin(), L11.end());
-    m_Keff21.setFromTriplets(L21.begin(), L21.end());
-    m_Keff22.setFromTriplets(L22.begin(), L22.end());
+    m_Keff22.setFromTriplets(freeFree.begin(), freeFree.end());
 
     Keff = m_Keff22;
     // Fix: 为了防止刚度矩阵奇异（例如竖直杆件受到横向力时初始切线刚度为0），
@@ -965,55 +1147,95 @@ void AnalysisStep::Assemble_Matrix(SpMat& Keff, bool isDynamic)
 void AnalysisStep::AssembleDynamicSystem(
     SpMat& mass, SpMat& gyroscopic, SpMat& centrifugal)
 {
-    std::list<Tri> mass11, mass21, mass22;
-    std::list<Tri> gyroscopic11, gyroscopic21, gyroscopic22;
-    std::list<Tri> centrifugal11, centrifugal21, centrifugal22;
+    std::vector<Tri> massTriplets;
+    std::vector<Tri> gyroscopicTriplets;
+    std::vector<Tri> centrifugalTriplets;
+    const std::size_t initialTripletCapacity =
+        m_pData->m_Elements.size() * 36;
+    massTriplets.reserve(initialTripletCapacity);
+    gyroscopicTriplets.reserve(initialTripletCapacity);
+    centrifugalTriplets.reserve(initialTripletCapacity);
     m_dynamicInertiaForce = VectorXd::Zero(m_nFree);
 
-    MatrixXd elementMass;
-    MatrixXd elementGyroscopic;
-    MatrixXd elementCentrifugal;
-    VectorXd elementInertiaForce;
-    std::vector<int> dofs;
+    DynamicElementData elementData;
     for (const auto& elementPair : m_pData->m_Elements)
     {
         const auto& element = elementPair.second;
-        element->GetDOFs(dofs);
-        const int elementDofs = static_cast<int>(dofs.size());
-        elementMass = MatrixXd::Zero(elementDofs, elementDofs);
-        elementGyroscopic = MatrixXd::Zero(elementDofs, elementDofs);
-        elementCentrifugal = MatrixXd::Zero(elementDofs, elementDofs);
-        elementInertiaForce = VectorXd::Zero(elementDofs);
-        element->GetDynamicContributions(
-            elementMass,
-            elementInertiaForce,
-            elementGyroscopic,
-            elementCentrifugal);
-
-        Assemble(dofs, elementMass, mass11, mass21, mass22);
-        Assemble(
-            dofs, elementGyroscopic,
-            gyroscopic11, gyroscopic21, gyroscopic22);
-        Assemble(
-            dofs, elementCentrifugal,
-            centrifugal11, centrifugal21, centrifugal22);
-        for (int i = 0; i < static_cast<int>(dofs.size()); ++i)
-        {
-            const int dof = dofs[i];
-            if (dof >= m_nFixed && dof < m_nFixed + m_nFree)
-                m_dynamicInertiaForce[dof - m_nFixed] +=
-                    elementInertiaForce[i];
-        }
+        EvaluateDynamicElement(*element, elementData);
+        AssembleFreeFree(elementData.dofs, elementData.mass, massTriplets);
+        AssembleFreeFree(elementData.dofs,
+            elementData.velocityTangent, gyroscopicTriplets);
+        AssembleFreeFree(elementData.dofs,
+            elementData.configurationTangent, centrifugalTriplets);
+        AccumulateDynamicInertiaForce(elementData);
     }
 
     mass.resize(m_nFree, m_nFree);
     gyroscopic.resize(m_nFree, m_nFree);
     centrifugal.resize(m_nFree, m_nFree);
-    mass.setFromTriplets(mass22.begin(), mass22.end());
+    mass.setFromTriplets(massTriplets.begin(), massTriplets.end());
     gyroscopic.setFromTriplets(
-        gyroscopic22.begin(), gyroscopic22.end());
+        gyroscopicTriplets.begin(), gyroscopicTriplets.end());
     centrifugal.setFromTriplets(
-        centrifugal22.begin(), centrifugal22.end());
+        centrifugalTriplets.begin(), centrifugalTriplets.end());
+}
+
+void AnalysisStep::AssembleEffectiveDynamicSystem(
+    double accelerationDerivative,
+    double velocityDerivative,
+    SpMat& effectiveDynamicTangent)
+{
+    std::vector<Tri> triplets;
+    triplets.reserve(m_pData->m_Elements.size() * 36);
+    m_dynamicInertiaForce = VectorXd::Zero(m_nFree);
+
+    MatrixXd elementEffective;
+    DynamicElementData elementData;
+    for (const auto& [elementId, element] : m_pData->m_Elements)
+    {
+        Q_UNUSED(elementId);
+        EvaluateDynamicElement(*element, elementData);
+        elementEffective =
+            accelerationDerivative * elementData.mass
+            + velocityDerivative * elementData.velocityTangent
+            + elementData.configurationTangent;
+        AssembleFreeFree(elementData.dofs, elementEffective, triplets);
+        AccumulateDynamicInertiaForce(elementData);
+    }
+
+    effectiveDynamicTangent.resize(m_nFree, m_nFree);
+    effectiveDynamicTangent.setFromTriplets(
+        triplets.begin(), triplets.end());
+}
+
+void AnalysisStep::EvaluateDynamicElement(
+    ElementBase& element,
+    DynamicElementData& result)
+{
+    element.GetDOFs(result.dofs);
+    const int dofCount = static_cast<int>(result.dofs.size());
+    result.mass.setZero(dofCount, dofCount);
+    result.inertiaForce.setZero(dofCount);
+    result.velocityTangent.setZero(dofCount, dofCount);
+    result.configurationTangent.setZero(dofCount, dofCount);
+    element.GetDynamicContributions(
+        result.mass,
+        result.inertiaForce,
+        result.velocityTangent,
+        result.configurationTangent);
+}
+
+void AnalysisStep::AccumulateDynamicInertiaForce(
+    const DynamicElementData& elementData)
+{
+    for (int localDof = 0;
+        localDof < static_cast<int>(elementData.dofs.size());
+        ++localDof)
+    {
+        const int freeDof = elementData.dofs[localDof] - m_nFixed;
+        if (freeDof >= 0 && freeDof < m_nFree)
+            m_dynamicInertiaForce[freeDof] += elementData.inertiaForce[localDof];
+    }
 }
 
 bool AnalysisStep::AssembleNonlinearMPC(
@@ -1027,7 +1249,7 @@ bool AnalysisStep::AssembleNonlinearMPC(
     int equationCount = 0;
     for (const auto& [id, mpc] : m_pData->m_MPCConstraints)
     {
-        if (!mpc || (mpc->m_StepId > 0 && mpc->m_StepId > m_Id))
+        if (!mpc || !IsStepScopedDataActive(mpc->m_StepId))
             continue;
         SolverNameSpace::NonlinearMPCData contribution;
         if (!mpc->Evaluate(m_nFixed, m_nFree, contribution))
@@ -1199,7 +1421,12 @@ void AnalysisStep::BackupStepState()
     {
         auto pNode = nodePair.second;
         pNode->m_Displacement_n = pNode->m_Displacement;
-        pNode->m_Rg_n = pNode->m_Rg; // 备份上一步的绝对旋转矩阵
+        pNode->m_Velocity_n = pNode->m_Velocity;
+        pNode->m_Acceleration_n = pNode->m_Acceleration;
+        pNode->m_Rg_n = pNode->m_Rg;
+        pNode->m_OmegaMaterial_n = pNode->m_OmegaMaterial;
+        pNode->m_AlphaMaterial_n = pNode->m_AlphaMaterial;
+        pNode->m_StepRotation.setZero();
     }
 }
 

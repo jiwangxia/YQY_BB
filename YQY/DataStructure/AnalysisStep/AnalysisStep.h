@@ -1,7 +1,8 @@
-﻿#pragma once
+#pragma once
 #include "Base/Base.h"
 #include "Solver/Interface/IAnalysisModel.h"
 #include "Solver/Interface/ISolver.h"
+#include "Solver/Dynamic/AdaptiveTssbnSettings.h"
 #include <memory>
 #include <functional>
 #include <set>
@@ -14,6 +15,8 @@ class Force_Node;
 class Force_Element;
 class Force_Gravity;
 class Force_Wind;
+class ElementBase;
+struct AeroCaseKey;
 
 enum class AnalysisRegionScope
 {
@@ -34,6 +37,11 @@ struct AnalysisStepConfig
     double tolerance = 1e-5;
     int maxIterations = 32;
     SolverNameSpace::SolverType dynamicSolverType = SolverNameSpace::SolverType::Newmark;
+    int initialStaticStepId = 0; ///< 动力步继承的静力平衡步；0 表示从原始状态开始
+    SolverNameSpace::AdaptiveTssbnSettings adaptiveTssbn;
+    bool enableGalloping = false;
+    int gallopingIceThickness = 12;
+    double gallopingInitialAttackDegrees = 45.0;
     AnalysisRegionScope regionScope = AnalysisRegionScope::AllEnabledRegions;
     std::set<int> computeRegionIds;
 };
@@ -55,21 +63,33 @@ public:
 
     bool isDynamic = false;        // 是否为动力分析
     /// @brief 动力求解器类型（仅动力分析时有效）
-    /// 可选: Newmark, CentralDifference, HHT
-    /// 目前只实现了 Newmark，其他为预留
+    /// 当前可用: Newmark、AdaptiveTSSBN；其他枚举值为预留。
     SolverNameSpace::SolverType m_DynamicSolverType = SolverNameSpace::SolverType::Newmark;
+    int m_InitialStaticStepId = 0; ///< 动力步的前置静力平衡步
+    SolverNameSpace::AdaptiveTssbnSettings m_AdaptiveTssbn;
+    bool m_EnableGalloping = false;
+    int m_GallopingIceThickness = 12;    // 气动数据离散工况，单位 mm
+    double m_GallopingInitialAttackDegrees = 45.0;
     AnalysisRegionScope m_RegionScope = AnalysisRegionScope::AllEnabledRegions;
     std::set<int> m_ComputeRegionIds;
 
     int m_nFixed = 0;              // 约束自由度个数
     int m_nFree = 0;               // 自由自由度个数
-    SpMat m_Keff11, m_Keff21, m_Keff22;
+    SpMat m_Keff22;
 
     /**
      * @brief 获取分析步类型名称
      * @return 类型名称字符串
      */
     QString GetTypeName() const { return EnumKeyword::MapStepType.key(m_Type, "UNKNOWN"); }
+    AeroCaseKey GetGallopingAeroCase(int bundleCount, const Force_Wind& wind) const;
+    bool ShouldAssembleGalloping(int bundleCount, const Force_Wind& wind) const;
+
+    /// Returns whether a load or constraint introduced in sourceStepId belongs
+    /// to this analysis branch.  A dynamic step with an initial static step
+    /// inherits the static branch and its own definitions only; sibling
+    /// dynamic steps are deliberately excluded.
+    bool IsStepScopedDataActive(int sourceStepId) const;
 
     /**
      * @brief 设置关联的结构数据
@@ -94,6 +114,9 @@ public:
      */
     bool Solve(bool persistHdf5 = true);
 
+    /// 仅供求解调度器设置：下一次求解从模型当前已提交状态开始。
+    void SetInitializeFromCurrentState(bool enabled) { m_initializeFromCurrentState = enabled; }
+
     using ProgressCallback = std::function<void(double, const QString&)>;
     using CancelCallback = std::function<bool()>;
     void SetRuntimeCallbacks(ProgressCallback progressCallback, CancelCallback cancelCallback);
@@ -107,10 +130,38 @@ public:
     void ApplyDynamicCorrection(const SolverNameSpace::Vec& dx, double a0, double a1) override;
     void RollbackDynamicStep() override;
     void SetTrialKinematics(const SolverNameSpace::Vec& v, const SolverNameSpace::Vec& a) override;
+    void SetTssbnStageKinematics(
+        int stageIndex,
+        double timeStep,
+        double firstStageTime,
+        double secondStageTime,
+        double secondStageDiagonalFraction,
+        SolverNameSpace::Vec& velocity,
+        SolverNameSpace::Vec& acceleration) override;
+    void CorrectTssbnStepStates(
+        double timeStep,
+        double firstStageTime,
+        double secondStageTime,
+        double lastStageTime,
+        double baseFirstWeight,
+        double embeddedFirstWeight,
+        double embeddedSecondWeight,
+        double embeddedLastWeight,
+        double lastStageFirstCoefficient,
+        double lastStageSecondCoefficient,
+        SolverNameSpace::Vec& baseIncrement,
+        SolverNameSpace::Vec& baseVelocity,
+        SolverNameSpace::Vec& embeddedIncrement,
+        SolverNameSpace::Vec& embeddedVelocity,
+        SolverNameSpace::Vec& acceptedAcceleration) override;
     void GetState(SolverNameSpace::Vec& u, SolverNameSpace::Vec& v, SolverNameSpace::Vec& a) const override;
     void Assemble_Matrix(SpMat& Keff, bool isDynamic);          //组装整体等效刚度矩阵
     void AssembleDynamicSystem(
         SpMat& mass, SpMat& gyroscopic, SpMat& centrifugal) override;
+    void AssembleEffectiveDynamicSystem(
+        double accelerationDerivative,
+        double velocityDerivative,
+        SpMat& effectiveDynamicTangent) override;
     bool AssembleNonlinearMPC(
         SolverNameSpace::NonlinearMPCData& constraints) override;
     void SetNonlinearMPCMultipliers(
@@ -126,12 +177,22 @@ public:
     void ReportProgress(double progress, const QString& message = QString()) override;
 
 private:
+    bool m_initializeFromCurrentState = false;
     std::weak_ptr<StructureData> m_pStructure;  // 结构数据的弱引用
     StructureData* m_pData = nullptr;           // 结构数据的缓存指针
     ProgressCallback m_progressCallback;
     CancelCallback m_cancelCallback;
     SolverNameSpace::Vec m_mpcMultipliers;
     SolverNameSpace::Vec m_dynamicInertiaForce;
+
+    struct DynamicElementData
+    {
+        std::vector<int> dofs;
+        Eigen::MatrixXd mass;
+        Eigen::VectorXd inertiaForce;
+        Eigen::MatrixXd velocityTangent;
+        Eigen::MatrixXd configurationTangent;
+    };
 
     struct SolverCache 
     {
@@ -154,6 +215,9 @@ private:
      * @return 成功返回 true，失败返回 false
      */
     bool PrepareData();
+    bool ValidateGallopingConfiguration(QString* errorMessage) const;
+    bool PrepareGallopingData(QString* errorMessage);
+    Eigen::Vector3d GetModelUpDirection() const;
 
     /**
      * @brief 初始化自由度编号
@@ -171,11 +235,18 @@ private:
      * @brief 将单元刚度矩阵组装到整体刚度矩阵
      * @param [in] DOFs 单元自由度编号数组
      * @param [in] T 单元刚度矩阵
-     * @param [in,out] L11 K11 矩阵的三元组列表
-     * @param [in,out] L21 K21 矩阵的三元组列表
-     * @param [in,out] L22 K22 矩阵的三元组列表
+     * @param [in,out] freeFree 自由-自由块的三元组列表
      */
-    void Assemble(std::vector<int>& DOFs, Eigen::MatrixXd& T, std::list<Tri>& L11, std::list<Tri>& L21, std::list<Tri>& L22);
+    void AssembleFreeFree(
+        const std::vector<int>& dofs,
+        const Eigen::MatrixXd& elementMatrix,
+        std::vector<Tri>& freeFree);
+
+    void EvaluateDynamicElement(
+        ElementBase& element,
+        DynamicElementData& result);
+    void AccumulateDynamicInertiaForce(
+        const DynamicElementData& elementData);
 
     /**
      * @brief 组装所有荷载到力向量
@@ -205,45 +276,6 @@ private:
     void Get_CurrentInforce(VectorXd& Inforce);
 
     bool Check_Rhs(Eigen::VectorXd& F2, Eigen::VectorXd& f2, Eigen::VectorXd& Rhs);
-    /**
-     * @brief 组装节点力荷载
-     * @param [in] pForceNode 节点力荷载指针
-     * @param [in,out] F1 约束自由度对应的力向量（累加）
-     * @param [in,out] F2 自由自由度对应的力向量（累加）
-     * @param [in] current_time 当前时间
-     * @param [in] loadScale 荷载缩放系数
-     */
-    void Assemble_ForceNode(Force_Node* pForceNode, VectorXd& F1, VectorXd& F2, double& current_time, double loadScale);
-
-    /**
-     * @brief 组装单元荷载
-     * @param [in] pForceElement 单元荷载指针
-     * @param [in,out] F1 约束自由度对应的力向量（累加）
-     * @param [in,out] F2 自由自由度对应的力向量（累加）
-     * @param [in] current_time 当前时间
-     * @param [in] loadScale 荷载缩放系数
-     */
-    void Assemble_ForceElement(Force_Element* pForceElement, VectorXd& F1, VectorXd& F2, double& current_time, double loadScale);
-
-    /**
-     * @brief 组装重力
-     * @param [in] pForceGravity 单元重力指针
-     * @param [in,out] F1 约束自由度对应的力向量（累加）
-     * @param [in,out] F2 自由自由度对应的力向量（累加）
-     * @param [in] current_time 当前时间
-     * @param [in] loadScale 荷载缩放系数
-     */
-    void Assemble_ForceGravity(Force_Gravity* pForceGravity, VectorXd& F1, VectorXd& F2, double& current_time, double loadScale);
-
-    /**
-     * @brief 组装风荷载
-     * @param [in] pForceWind 单元风荷载指针
-     * @param [in,out] F1 约束自由度对应的力向量（累加）
-     * @param [in,out] F2 自由自由度对应的力向量（累加）
-     * @param [in] current_time 当前时间
-     * @param [in] loadScale 荷载缩放系数
-     */
-    void Assemble_ForceWind(Force_Wind* pForceWind, VectorXd& F1, VectorXd& F2, double& current_time, double loadScale);
 
     /**
      * @brief 组装约束位移

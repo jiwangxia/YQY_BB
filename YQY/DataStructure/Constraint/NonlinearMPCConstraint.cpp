@@ -61,6 +61,91 @@ namespace
     }
 }
 
+bool TranslationalTieMPCConstraint::Evaluate(
+    int fixedDofs,
+    int freeDofs,
+    SolverNameSpace::NonlinearMPCData& data) const
+{
+    const auto master = m_pMasterNode.lock();
+    const auto slave = m_pSlaveNode.lock();
+    if (!master || !slave || freeDofs < 3)
+        return false;
+
+    data.Clear();
+    data.value = Eigen::VectorXd::Zero(3);
+    data.jacobian = Eigen::MatrixXd::Zero(3, freeDofs);
+    data.hessians.resize(3);
+    data.slaveDofs.reserve(3);
+
+    for (int direction = 0; direction < 3; ++direction)
+    {
+        const double masterDisplacement =
+            direction < static_cast<int>(master->m_Displacement.size())
+            ? master->m_Displacement[direction] : 0.0;
+        const double slaveDisplacement =
+            direction < static_cast<int>(slave->m_Displacement.size())
+            ? slave->m_Displacement[direction] : 0.0;
+        data.value[direction] = slaveDisplacement - masterDisplacement;
+
+        const int masterDof =
+            FreeIndex(*master, direction, fixedDofs, freeDofs);
+        const int slaveDof =
+            FreeIndex(*slave, direction, fixedDofs, freeDofs);
+        if (masterDof >= 0)
+            data.jacobian(direction, masterDof) = -1.0;
+        if (slaveDof >= 0)
+            data.jacobian(direction, slaveDof) = 1.0;
+        data.hessians[direction].resize(freeDofs, freeDofs);
+        data.slaveDofs.push_back(slaveDof);
+    }
+    return data.IsValid(freeDofs);
+}
+
+std::shared_ptr<NonlinearMPCConstraint>
+TranslationalTieMPCConstraint::Clone(
+    const std::map<int, std::shared_ptr<Node>>& nodes) const
+{
+    const auto master = m_pMasterNode.lock();
+    const auto slave = m_pSlaveNode.lock();
+    if (!master || !slave)
+        return nullptr;
+    const auto foundMaster = nodes.find(master->m_Id);
+    const auto foundSlave = nodes.find(slave->m_Id);
+    if (foundMaster == nodes.end() || foundSlave == nodes.end())
+        return nullptr;
+    auto result = std::make_shared<TranslationalTieMPCConstraint>(*this);
+    result->m_pMasterNode = foundMaster->second;
+    result->m_pSlaveNode = foundSlave->second;
+    return result;
+}
+
+std::vector<int> TranslationalTieMPCConstraint::GetNodeIds() const
+{
+    std::vector<int> result;
+    if (const auto node = m_pMasterNode.lock())
+        result.push_back(node->m_Id);
+    if (const auto node = m_pSlaveNode.lock())
+        result.push_back(node->m_Id);
+    return result;
+}
+
+void TranslationalTieMPCConstraint::AccumulateReactions(
+    int fixedDofs,
+    const Eigen::VectorXd& multipliers) const
+{
+    const auto master = m_pMasterNode.lock();
+    const auto slave = m_pSlaveNode.lock();
+    if (!master || !slave || multipliers.size() != 3)
+        return;
+    for (int direction = 0; direction < 3; ++direction)
+    {
+        AddFixedReaction(
+            *master, direction, fixedDofs, multipliers[direction]);
+        AddFixedReaction(
+            *slave, direction, fixedDofs, -multipliers[direction]);
+    }
+}
+
 bool DistanceMPCConstraint::Evaluate(
     int fixedDofs,
     int freeDofs,

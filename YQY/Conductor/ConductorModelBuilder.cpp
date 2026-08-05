@@ -525,10 +525,41 @@ namespace Conductor
             rawSpans.push_back(std::move(raw));
         }
 
+        // 端站子导线节点需要在首末档建模时复用；中间站节点随后写入同一张表。
+        std::vector<std::map<int, int>> stationWireNodeIds(config.stationCenters.size());
+        const bool directWireSupports = wireCount > 1 &&
+            lineConfig.endTopology == BundleEndTopology::DirectWireSupports;
         auto createTensionEnds = [&]() -> bool
             {
                 if (wireCount == 1)
                     return true;
+
+                if (directWireSupports)
+                {
+                    // 简化端部：端站截面中的每个子导线端点直接作为挂点，
+                    // 不创建汇集节点、分组节点及耐张端部硬件。
+                    for (int wireId = 0; wireId < wireCount; ++wireId)
+                    {
+                        const auto& leftNodes = rawSpans.front().wiresNode.at(wireId);
+                        const auto& rightNodes = rawSpans.back().wiresNode.at(wireId);
+                        if (leftNodes.empty() || rightNodes.empty())
+                            return false;
+                        int leftId = -1;
+                        int rightId = -1;
+                        if (!addNode(Vector3d(leftNodes.front().x, leftNodes.front().y, leftNodes.front().z), leftId) ||
+                            !addNode(Vector3d(rightNodes.back().x, rightNodes.back().y, rightNodes.back().z), rightId))
+                            return false;
+                        stationWireNodeIds.front()[wireId] = leftId;
+                        stationWireNodeIds.back()[wireId] = rightId;
+                        result.leftTensionEnd.supportNodeIds.push_back(leftId);
+                        result.rightTensionEnd.supportNodeIds.push_back(rightId);
+                    }
+                    result.leftSupportNodeId = result.leftTensionEnd.supportNodeIds.front();
+                    result.rightSupportNodeId = result.rightTensionEnd.supportNodeIds.front();
+                    result.leftTensionEnd.supportNodeId = result.leftSupportNodeId;
+                    result.rightTensionEnd.supportNodeId = result.rightSupportNodeId;
+                    return true;
+                }
 
                 const int firstGroupCount = wireCount == 2 ? 2 : wireCount / 2;
                 const int groupCount = wireCount == 2 ? 1 : 2;
@@ -617,7 +648,6 @@ namespace Conductor
             return false;
         }
 
-        std::vector<std::map<int, int>> stationWireNodeIds(config.stationCenters.size());
         if (wireCount == 1)
         {
             if (!addNode(result.start, result.leftSupportNodeId) ||
@@ -750,7 +780,7 @@ namespace Conductor
                         // 上部挂点仅引入平动自由度，避免转角自由度导致奇异。
                         EnumKeyword::ElementType::T3D2,
                         lineConfig.property,
-                        0.0,
+                        lineConfig.conductor.stress0,
                         elementId,
                         error,
                         ElementRole::SuspensionHardware))
@@ -766,7 +796,7 @@ namespace Conductor
                     suspension.supportNodeId,
                     config.suspensionElementType,
                     suspensionProperty,
-                    0.0,
+                    lineConfig.conductor.stress0,
                     suspension.stringElementId,
                     error,
                     ElementRole::SuspensionHardware))
@@ -832,9 +862,9 @@ namespace Conductor
                 int firstNodeId = -1;
                 if (spanIndex == 0)
                 {
-                    firstNodeId = wireCount == 1
-                        ? result.leftSupportNodeId
-                        : result.leftTensionEnd.groupNodeIds[groupForWire(wireId)];
+                    firstNodeId = wireCount == 1 ? result.leftSupportNodeId :
+                        (directWireSupports ? stationWireNodeIds.front().at(wireId) :
+                            result.leftTensionEnd.groupNodeIds[groupForWire(wireId)]);
                 }
                 else
                 {
@@ -843,9 +873,9 @@ namespace Conductor
                 int lastNodeId = -1;
                 if (spanIndex + 1 == spanCount)
                 {
-                    lastNodeId = wireCount == 1
-                        ? result.rightSupportNodeId
-                        : result.rightTensionEnd.groupNodeIds[groupForWire(wireId)];
+                    lastNodeId = wireCount == 1 ? result.rightSupportNodeId :
+                        (directWireSupports ? stationWireNodeIds.back().at(wireId) :
+                            result.rightTensionEnd.groupNodeIds[groupForWire(wireId)]);
                 }
                 else
                 {
@@ -911,7 +941,8 @@ namespace Conductor
                             error,
                             ElementRole::Conductor,
                             wireId,
-                            wireId))
+                            wireId,
+                            wireCount))
                     {
                         error = "添加多档导线单元失败：" + error;
                         rollback();
@@ -1127,7 +1158,8 @@ namespace Conductor
         std::string& error,
         ElementRole role,
         int wireId,
-        int aeroProfileId)
+        int aeroProfileId,
+        int aeroBundleCount)
     {
         auto iNode = m_structure->FindNode(iNodeId);
         auto jNode = m_structure->FindNode(jNodeId);
@@ -1151,6 +1183,7 @@ namespace Conductor
         element->m_InitStress = initStress;
         element->m_Role = role;
         element->m_WireId = wireId;
+        element->m_AeroBundleCount = aeroBundleCount;
         element->m_AeroProfileId = aeroProfileId;
         PrepareElementLocalFrame(element);
         element->Get_L0();
@@ -1241,14 +1274,17 @@ namespace Conductor
         }
         center /= static_cast<double>(wirePositions.size());
 
-        const int wireCount = static_cast<int>(suspension.wireNodeIds.size());
+        const std::vector<int>& spacerWireNodeIds =
+            suspension.wireNodeIds;
+
+        const int wireCount = static_cast<int>(spacerWireNodeIds.size());
         const int outerEdgeCount = wireCount == 2 ? 1 : wireCount;
         for (int wireId = 0; wireId < outerEdgeCount; ++wireId)
         {
             const int nextWireId = wireCount == 2 ? 1 : (wireId + 1) % wireCount;
             if (!addSpacerElement(
-                    suspension.wireNodeIds[wireId],
-                    suspension.wireNodeIds[nextWireId]))
+                    spacerWireNodeIds[wireId],
+                    spacerWireNodeIds[nextWireId]))
             {
                 rollback();
                 return false;
@@ -1268,7 +1304,9 @@ namespace Conductor
             }
             for (int wireId = 0; wireId < wireCount; ++wireId)
             {
-                if (!addSpacerElement(suspension.wireNodeIds[wireId], suspension.spacerCenterNodeId))
+                if (!addSpacerElement(
+                        spacerWireNodeIds[wireId],
+                        suspension.spacerCenterNodeId))
                 {
                     rollback();
                     return false;
@@ -1297,7 +1335,7 @@ namespace Conductor
                     suspension.spacerInnerNodeIds[wireId],
                     suspension.spacerInnerNodeIds[nextWireId]) ||
                 !addSpacerElement(
-                    suspension.wireNodeIds[wireId],
+                    spacerWireNodeIds[wireId],
                     suspension.spacerInnerNodeIds[wireId]))
             {
                 rollback();
@@ -1757,9 +1795,11 @@ namespace Conductor
             };
 
         const bool convergeEnds = config.convergeBundleEnds && config.conductor.nBundle > 1;
+        const bool directWireSupports = convergeEnds &&
+            config.endTopology == BundleEndTopology::DirectWireSupports;
         std::map<int, int> leftGroupByWire;
         std::map<int, int> rightGroupByWire;
-        if (convergeEnds)
+        if (convergeEnds && !directWireSupports)
         {
             const bool dualSupport = config.endTopology == BundleEndTopology::DualSupportByGroup;
             if (!dualSupport &&
@@ -1894,7 +1934,7 @@ namespace Conductor
 
             std::size_t firstCreatedIndex = 0;
             std::size_t endCreatedIndex = rawNodes.size();
-            if (convergeEnds)
+            if (convergeEnds && !directWireSupports)
             {
                 rawNodes.front().id = leftGroupByWire.at(wireId);
                 rawNodes.back().id = rightGroupByWire.at(wireId);
@@ -1926,12 +1966,28 @@ namespace Conductor
                 sub.nodeIds.push_back(nodeId);
             }
 
-            if (convergeEnds)
+            if (convergeEnds && !directWireSupports)
             {
                 sub.nodeIds.push_back(rawNodes.back().id);
             }
 
+            if (directWireSupports)
+            {
+                // 直接端部不引入汇集/分组节点：每根子导线最外侧节点就是约束挂点。
+                result.leftTensionEnd.supportNodeIds.push_back(sub.nodeIds.front());
+                result.rightTensionEnd.supportNodeIds.push_back(sub.nodeIds.back());
+            }
+
             result.subConductors.insert({ wireId, sub });
+        }
+
+        if (directWireSupports)
+        {
+            // 保留这两个字段用于现有结果浏览接口；完整挂点集合以 supportNodeIds 为准。
+            result.leftSupportNodeId = result.leftTensionEnd.supportNodeIds.front();
+            result.rightSupportNodeId = result.rightTensionEnd.supportNodeIds.front();
+            result.leftTensionEnd.supportNodeId = result.leftSupportNodeId;
+            result.rightTensionEnd.supportNodeId = result.rightSupportNodeId;
         }
 
         return true;
@@ -1985,7 +2041,8 @@ namespace Conductor
 
                 int elementId = -1;
                 if (!AddElement(rawNodes[iIndex].id, rawNodes[jIndex].id, config.elementType, property,
-                    rawElement.stress0, elementId, error, ElementRole::Conductor, wireId, wireId))
+                    rawElement.stress0, elementId, error, ElementRole::Conductor, wireId, wireId,
+                    config.conductor.nBundle))
                 {
                     error = "添加导线单元失败：" + error;
                     rollback();
@@ -2005,7 +2062,8 @@ namespace Conductor
         LineBuildResult& result,
         std::string& error)
     {
-        if (!config.convergeBundleEnds || config.conductor.nBundle <= 1)
+        if (!config.convergeBundleEnds || config.conductor.nBundle <= 1 ||
+            config.endTopology == BundleEndTopology::DirectWireSupports)
             return true;
 
         if (config.endFittingElementType == EnumKeyword::ElementType::UNKNOWN)
@@ -2042,7 +2100,7 @@ namespace Conductor
                             groupNodeId,
                             config.elementType,
                             config.property,
-                            0.0,
+                            config.conductor.stress0,
                             elementId,
                             error,
                             ElementRole::TensionHardware))
@@ -2059,7 +2117,7 @@ namespace Conductor
                             endModel.groupNodeIds[1],
                             config.endFittingElementType,
                             stabilizerProperty,
-                            0.0,
+                            config.conductor.stress0,
                             elementId,
                             error,
                             ElementRole::TensionHardware))

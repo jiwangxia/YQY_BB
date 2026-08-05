@@ -149,9 +149,13 @@
     <ClCompile Include="DataStructure\Load\Force_Gravity.cpp" />
     <ClCompile Include="DataStructure\Element\ElementCable.cpp" />
     <ClCompile Include="DataStructure\Load\Force_Wind.cpp" />
+    <ClCompile Include="DataStructure\Load\LoadAssembler.cpp" />
+    <ClCompile Include="DataStructure\Load\AerodynamicLoadCalculator.cpp" />
     <ClCompile Include="DataStructure\Element\ElementBeam_CR2D.cpp" />
     <ClCompile Include="DataStructure\Element\ElementBeam_CR.cpp" />
     <ClCompile Include="DataStructure\Aerodynamics\AeroManager.cpp" />
+    <ClCompile Include="DataStructure\Aerodynamics\GallopingStabilityAnalyzer.cpp" />
+    <ClCompile Include="DataStructure\Aerodynamics\BundleAeroMapper.cpp" />
     <ClCompile Include="Import\Input_Model.cpp" />
     <ClCompile Include="DataStructure\Structure\StructureData.cpp" />
     <ClCompile Include="DataStructure\Section\SectionCircular.cpp" />
@@ -240,6 +244,7 @@
     <ClInclude Include="Conductor\PropertyLibrary.h" />
     <ClInclude Include="DataStructure\Section\SectionRectangle.h" />
     <ClInclude Include="Solver\Dynamic\TimeIntegrationSolver.h" />
+    <ClInclude Include="Solver\Dynamic\AdaptiveTssbnSettings.h" />
     <ClInclude Include="Solver\Dynamic\SolverAdaptiveTSSBN.h" />
     <ClInclude Include="Solver\Dynamic\SolverTSSBN.h" />
     <ClInclude Include="Utility\CR.h" />
@@ -261,9 +266,13 @@
     <ClInclude Include="DataStructure\Load\Force_Gravity.h" />
     <ClInclude Include="DataStructure\Element\ElementCable.h" />
     <ClInclude Include="DataStructure\Load\Force_Wind.h" />
+    <ClInclude Include="DataStructure\Load\LoadAssembler.h" />
+    <ClInclude Include="DataStructure\Load\AerodynamicLoadCalculator.h" />
     <ClInclude Include="DataStructure\Element\ElementBeam_CR2D.h" />
     <ClInclude Include="DataStructure\Element\ElementBeam_CR.h" />
     <ClInclude Include="DataStructure\Aerodynamics\AeroManager.h" />
+    <ClInclude Include="DataStructure\Aerodynamics\GallopingStabilityAnalyzer.h" />
+    <ClInclude Include="DataStructure\Aerodynamics\BundleAeroMapper.h" />
     <ClInclude Include="Import\Input_Model.h" />
     <ClInclude Include="DataStructure\Structure\StructureData.h" />
     <ClInclude Include="DataStructure\Section\SectionCircular.h" />

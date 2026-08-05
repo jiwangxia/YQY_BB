@@ -33,6 +33,13 @@ struct BladeModel
     std::vector<double> moment;
 };
 
+struct AeroCoefficients
+{
+    double lift = 0.0;
+    double drag = 0.0;
+    double moment = 0.0;
+};
+
 struct AeroCaseKey
 {
     int bundleCount = 1;     // 分裂数
@@ -94,6 +101,13 @@ public:
 
     static std::filesystem::path buildChineseFileName(const AeroCaseKey& key);
     static std::filesystem::path buildLegacyFileName(const AeroCaseKey& key);
+    static const std::vector<int>& supportedBundleCounts();
+    static const std::vector<int>& supportedWindSpeeds();
+    static const std::vector<int>& supportedIceThicknesses();
+    static bool isSupportedWindSpeed(int windSpeed);
+    static bool isSupportedIceThickness(int iceThickness);
+    static bool isSupportedCase(const AeroCaseKey& key);
+    static double normalizeAngleDegrees(double angleDegrees);
 
     // 加载CSV数据
     bool loadCSV(const std::filesystem::path& filepath);
@@ -107,6 +121,13 @@ public:
     // 获取插值数据
     double getData(int modelIdx, CoefType type, double inputAngle) const;
     double getData(const AeroCaseKey& key, int modelIdx, CoefType type, double inputAngle) const;
+    const std::vector<BladeModel>* findCaseModels(const AeroCaseKey& key) const;
+    AeroCoefficients getCoefficients(
+        const std::vector<BladeModel>& caseData, int modelIdx, double inputAngle) const;
+    AeroCoefficients getCoefficients(
+        const AeroCaseKey& key, int modelIdx, double inputAngle) const;
+    void setCaseData(const AeroCaseKey& key, std::vector<BladeModel> caseData,
+        const std::filesystem::path& sourceFile = {});
 
     // 获取模型信息
     int getModelCount() const;

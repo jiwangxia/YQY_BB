@@ -236,6 +236,9 @@
     <ClCompile Include="DataStructure\Aerodynamics\AeroManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="DataStructure\Aerodynamics\GallopingStabilityAnalyzer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="DataStructure\Element\ElementBeam_CR2D.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -388,6 +391,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DataStructure\Aerodynamics\AeroManager.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DataStructure\Aerodynamics\GallopingStabilityAnalyzer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DataStructure\Element\ElementBeam_CR2D.h">

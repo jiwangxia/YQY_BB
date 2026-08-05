@@ -46,6 +46,9 @@ namespace SolverNameSpace
                 return CreateNewmarkFromStep(step);
             case SolverType::HHT:
                 return CreateNewmarkFromStep(step);
+            case SolverType::TSSBN:
+            case SolverType::AdaptiveTSSBN:
+                return CreateAdaptiveTssbnFromStep(step);
             default:
                 return CreateNewmarkFromStep(step);
             }
@@ -58,6 +61,17 @@ namespace SolverNameSpace
             p.maxIter = step.m_MaxIterations;
             p.tol = step.m_Tolerance;
             return std::make_unique<SolverNewmark>(p);
+        }
+
+        static std::unique_ptr<SolverAdaptiveTSSBN> CreateAdaptiveTssbnFromStep(
+            const AnalysisStep& step)
+        {
+            SolverAdaptiveTSSBN::Params p(
+                step.m_StepSize,
+                step.m_Tolerance,
+                step.m_MaxIterations,
+                step.m_AdaptiveTssbn);
+            return std::make_unique<SolverAdaptiveTSSBN>(p);
         }
     };
 }

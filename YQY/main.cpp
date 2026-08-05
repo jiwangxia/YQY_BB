@@ -10,9 +10,15 @@ int main(int argc, char* argv[])
     {
         const QString argument = QString::fromLocal8Bit(argv[argumentIndex]);
         headlessVerification =
-            argument == QStringLiteral("--verify-beam-dynamics")
+            argument == QStringLiteral("--verify-adaptive-tssbn")
+            || argument == QStringLiteral("--verify-beam-dynamics")
             || argument == QStringLiteral("--verify-le2012-example1")
-            || argument == QStringLiteral("--verify-le2012-example4");
+            || argument == QStringLiteral("--verify-le2012-example1-tssbn")
+            || argument == QStringLiteral("--verify-le2012-example4")
+            || argument == QStringLiteral("--verify-le2012-example4-tssbn")
+            || argument == QStringLiteral("--verify-spatial-wind-load")
+            || argument == QStringLiteral("--verify-exact-aero-angle")
+            || argument == QStringLiteral("--verify-galloping-case");
         if (headlessVerification)
             break;
     }

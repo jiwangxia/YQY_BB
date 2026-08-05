@@ -1392,6 +1392,14 @@ QToolTip, QLabel#qtooltip_label {
 }
 )QSS");
 
+    // Keep the file-dialog navigation buttons separate from ordinary text buttons:
+    // their icons need an actual square drawing area rather than horizontal text padding.
+    style += QStringLiteral(R"QSS(
+QFileDialog QToolButton { background: $ELEVATED; border: 1px solid $BORDER_STRONG; border-radius: 6px; padding: 0; min-width: 34px; max-width: 34px; min-height: 30px; max-height: 30px; icon-size: 20px; }
+QFileDialog QToolButton:hover { background: $ACCENT_SOFT; border-color: $ACCENT2; }
+QFileDialog QToolButton:pressed { background: $FIELD; border-color: $ACCENT; padding: 0; }
+)QSS");
+
     style.replace(QStringLiteral("$ROOT"), c.rootBackground);
     style.replace(QStringLiteral("$HEADER"), c.header);
     style.replace(QStringLiteral("$NAV"), c.navigation);
@@ -2371,6 +2379,7 @@ void YQY::initializeToolbarAppearance()
         button->setAccessibleName(label);
         button->setMinimumHeight(qMax(38, fontMetrics().height() + 18));
     }
+    setActionGlyph(ui.importButton, ActionGlyph::Import);
     setActionGlyph(ui.modelImportButton, ActionGlyph::Import);
     setActionGlyph(ui.modelFitButton, ActionGlyph::Fit);
     setActionGlyph(ui.openH5Button, ActionGlyph::OpenFile);
@@ -2482,7 +2491,6 @@ void YQY::updateToolbarIcons(int themeIndex)
     const QColor foreground(colors.text);
     const QColor accent(colors.accentSecond);
     const QList<QPair<QAbstractButton*, QString>> toolbarButtons = {
-        {ui.importButton, QStringLiteral(":/YQY/icon_importline.svg")},
         {ui.undoButton, QStringLiteral(":/YQY/icon_replay.svg")},
         {ui.selectModeButton, QStringLiteral(":/YQY/icon_cursor.svg")},
         {ui.rotateModeButton, QStringLiteral(":/YQY/icon_rotate.svg")},
@@ -3817,7 +3825,7 @@ void YQY::exportIterationHistory()
     }
 
     const QString defaultOutputFile = QDir(ApplicationPaths::iterationResultDirectory())
-        .absoluteFilePath(QStringLiteral("iteration_history.bdf"));
+        .absoluteFilePath(QStringLiteral("IterationStep.bdf"));
     QString outputFile = QFileDialog::getSaveFileName(this,
         QStringLiteral("保存迭代步"), defaultOutputFile,
         QStringLiteral("BDF 文件 (*.bdf);;所有文件 (*.*)"), nullptr,

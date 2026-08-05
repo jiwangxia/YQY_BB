@@ -1,0 +1,6 @@
+Le et al. (2012), Example 1 (Fig. 2)
+quantity,calculated,figure_reference,relative_error
+minimum_tip_u_z,-9.74639,-9.7,0.00478249
+maximum_tip_u_z,8.25112,8.2,0.0062339
+minimum_elbow_u_z,-4.0681,-4,0.0170246
+maximum_elbow_u_z,6.10216,6.2,0.0157799

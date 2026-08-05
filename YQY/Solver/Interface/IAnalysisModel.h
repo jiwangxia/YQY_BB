@@ -68,6 +68,68 @@ namespace SolverNameSpace
         virtual void SetTrialKinematics(const Vec& v, const Vec& a) = 0;
 
         /**
+         * @brief Establish one TSSBN trial-stage velocity/acceleration state.
+         *
+         * The default implementation is valid for translational/vector DOFs.
+         * Finite-rotation models override it to integrate material angular
+         * velocity on SO(3), and overwrite the rotational entries in v/a.
+         */
+        virtual void SetTssbnStageKinematics(
+            int stageIndex,
+            double timeStep,
+            double firstStageTime,
+            double secondStageTime,
+            double secondStageDiagonalFraction,
+            Vec& velocity,
+            Vec& acceleration)
+        {
+            Q_UNUSED(stageIndex);
+            Q_UNUSED(timeStep);
+            Q_UNUSED(firstStageTime);
+            Q_UNUSED(secondStageTime);
+            Q_UNUSED(secondStageDiagonalFraction);
+            SetTrialKinematics(velocity, acceleration);
+        }
+
+        /**
+         * @brief Replace finite-rotation entries of the base and embedded
+         * TSSBN states with SO(3)-consistent values.
+         */
+        virtual void CorrectTssbnStepStates(
+            double timeStep,
+            double firstStageTime,
+            double secondStageTime,
+            double lastStageTime,
+            double baseFirstWeight,
+            double embeddedFirstWeight,
+            double embeddedSecondWeight,
+            double embeddedLastWeight,
+            double lastStageFirstCoefficient,
+            double lastStageSecondCoefficient,
+            Vec& baseIncrement,
+            Vec& baseVelocity,
+            Vec& embeddedIncrement,
+            Vec& embeddedVelocity,
+            Vec& acceptedAcceleration)
+        {
+            Q_UNUSED(timeStep);
+            Q_UNUSED(firstStageTime);
+            Q_UNUSED(secondStageTime);
+            Q_UNUSED(lastStageTime);
+            Q_UNUSED(baseFirstWeight);
+            Q_UNUSED(embeddedFirstWeight);
+            Q_UNUSED(embeddedSecondWeight);
+            Q_UNUSED(embeddedLastWeight);
+            Q_UNUSED(lastStageFirstCoefficient);
+            Q_UNUSED(lastStageSecondCoefficient);
+            Q_UNUSED(baseIncrement);
+            Q_UNUSED(baseVelocity);
+            Q_UNUSED(embeddedIncrement);
+            Q_UNUSED(embeddedVelocity);
+            Q_UNUSED(acceptedAcceleration);
+        }
+
+        /**
          * @brief 获取当前状态
          * @param[out] u 位移向量
          * @param[out] v 速度向量
@@ -97,6 +159,22 @@ namespace SolverNameSpace
             mass.setZero();
             gyroscopic.setZero();
             centrifugal.setZero();
+        }
+
+        virtual void AssembleEffectiveDynamicSystem(
+            double accelerationDerivative,
+            double velocityDerivative,
+            SpMat& effectiveDynamicTangent)
+        {
+            SpMat mass;
+            SpMat velocityTangent;
+            SpMat configurationTangent;
+            AssembleDynamicSystem(
+                mass, velocityTangent, configurationTangent);
+            effectiveDynamicTangent =
+                accelerationDerivative * mass
+                + velocityDerivative * velocityTangent
+                + configurationTangent;
         }
 
         /** @brief 组装当前试探状态下的非线性主从约束。 */

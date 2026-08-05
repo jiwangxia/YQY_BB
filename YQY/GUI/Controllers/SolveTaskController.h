@@ -82,10 +82,16 @@ private:
         std::atomic<qint64> startedAtMs{ 0 };
         std::atomic<qint64> lastProgressReportMs{ 0 };
         bool restartRequested = false;
+        bool workerScheduled = false;
+        std::shared_ptr<StructureData> solvedModel;
         qint64 previousOutputModifiedMs = -1;
         qint64 previousOutputSize = -1;
     };
 
+    int initialStaticStepId(const std::shared_ptr<TaskContext>& task) const;
+    std::shared_ptr<TaskContext> dependencyTask(const std::shared_ptr<TaskContext>& task) const;
+    void launchTask(const std::shared_ptr<TaskContext>& task);
+    void releaseDependentTasks(const std::shared_ptr<TaskContext>& dependency, Status status);
     void runTask(const std::shared_ptr<TaskContext>& task);
     void reportProgress(int taskId, double progress, const QString& message);
     void finishTask(int taskId, Status status, const QString& message, qint64 elapsedMs = -1);

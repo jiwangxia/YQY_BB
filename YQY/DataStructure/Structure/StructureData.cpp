@@ -10,6 +10,88 @@
 #include <algorithm>
 #include <iterator>
 
+namespace
+{
+// 梁单元在只与杆/索单元相连时，其截面转角没有刚度来源。为每个没有
+// 转角支承的梁连通分量补一个转角基准，消除刚体转角零模态；平动不受影响。
+// 该处理也覆盖由旧版 BDF/H5 导入的模型。
+void EnsureBeamRotationGaugeConstraints(StructureData& structure)
+{
+    std::map<int, int> parent;
+    std::map<int, int> degree;
+    const auto findRoot = [&parent](const auto& self, int nodeId) -> int {
+        const auto it = parent.find(nodeId);
+        if (it == parent.end() || it->second == nodeId)
+            return nodeId;
+        it->second = self(self, it->second);
+        return it->second;
+    };
+    const auto join = [&parent, &findRoot](int first, int second) {
+        const int firstRoot = findRoot(findRoot, first);
+        const int secondRoot = findRoot(findRoot, second);
+        if (firstRoot != secondRoot)
+            parent[secondRoot] = firstRoot;
+    };
+
+    for (const auto& [elementId, element] : structure.m_Elements)
+    {
+        if (!element || element->Get_NodeDOF() < 6 || element->m_pNode.size() < 2)
+            continue;
+        const auto first = element->m_pNode[0].lock();
+        const auto second = element->m_pNode[1].lock();
+        if (!first || !second)
+            continue;
+        parent.emplace(first->m_Id, first->m_Id);
+        parent.emplace(second->m_Id, second->m_Id);
+        ++degree[first->m_Id];
+        ++degree[second->m_Id];
+        join(first->m_Id, second->m_Id);
+    }
+    if (parent.empty())
+        return;
+
+    std::map<int, std::vector<int>> components;
+    for (const auto& [nodeId, ignored] : parent)
+        components[findRoot(findRoot, nodeId)].push_back(nodeId);
+
+    std::map<int, std::set<int>> constrainedRotations;
+    for (const auto& [constraintId, constraint] : structure.m_Constraint)
+    {
+        if (!constraint)
+            continue;
+        const auto node = constraint->m_pNode.lock();
+        const int direction = static_cast<int>(constraint->m_Direction);
+        if (node && direction >= 3 && direction <= 5)
+            constrainedRotations[node->m_Id].insert(direction);
+    }
+
+    for (const auto& [root, nodes] : components)
+    {
+        bool hasRotationSupport = false;
+        int referenceNodeId = 0;
+        int referenceDegree = -1;
+        for (const int nodeId : nodes)
+        {
+            const auto constrained = constrainedRotations.find(nodeId);
+            if (constrained != constrainedRotations.end()
+                && constrained->second.count(3) && constrained->second.count(4) && constrained->second.count(5))
+            {
+                hasRotationSupport = true;
+                break;
+            }
+            const int nodeDegree = degree[nodeId];
+            if (nodeDegree > referenceDegree || (nodeDegree == referenceDegree && nodeId < referenceNodeId))
+            {
+                referenceNodeId = nodeId;
+                referenceDegree = nodeDegree;
+            }
+        }
+        if (!hasRotationSupport && referenceNodeId > 0)
+            structure.Add_Constraint({ referenceNodeId }, { 3, 4, 5 }, { 0.0, 0.0, 0.0 });
+    }
+}
+}
+
 StructureData::~StructureData() = default;
 
 void StructureData::Clear()
@@ -123,6 +205,7 @@ std::shared_ptr<StructureData> StructureData::CloneForAnalysis(QString* errorMes
         target->m_Stress = source->m_Stress;
         target->m_Role = source->m_Role;
         target->m_WireId = source->m_WireId;
+        target->m_AeroBundleCount = source->m_AeroBundleCount;
         target->m_AeroProfileId = source->m_AeroProfileId;
         target->m_inforce = source->m_inforce;
         target->m_pNode.clear();
@@ -232,6 +315,7 @@ std::shared_ptr<StructureData> StructureData::CloneForAnalysis(QString* errorMes
         {
             auto copied = std::make_shared<Force_Wind>();
             copied->m_velocity = wind->m_velocity;
+            copied->m_direction = wind->m_direction;
             copied->m_windDensity = wind->m_windDensity;
             target = std::move(copied);
         }
@@ -254,6 +338,12 @@ std::shared_ptr<StructureData> StructureData::CloneForAnalysis(QString* errorMes
         config.tolerance = source->m_Tolerance;
         config.maxIterations = source->m_MaxIterations;
         config.dynamicSolverType = source->m_DynamicSolverType;
+        config.initialStaticStepId = source->m_InitialStaticStepId;
+        config.adaptiveTssbn = source->m_AdaptiveTssbn;
+        config.enableGalloping = source->m_EnableGalloping;
+        config.gallopingIceThickness = source->m_GallopingIceThickness;
+        config.gallopingInitialAttackDegrees =
+            source->m_GallopingInitialAttackDegrees;
         config.regionScope = source->m_RegionScope;
         config.computeRegionIds = source->m_ComputeRegionIds;
         clone->AddAnalysisStep(config);
@@ -694,6 +784,8 @@ void StructureData::EnsureDefaultAnalysisConfiguration()
         config.regionScope = AnalysisRegionScope::AllEnabledRegions;
         AddAnalysisStep(config);
     }
+
+    EnsureBeamRotationGaugeConstraints(*this);
 }
 
 std::vector<int> StructureData::ResolveAnalysisStepRegionIds(const AnalysisStep& step) const
@@ -715,6 +807,12 @@ std::vector<int> StructureData::ResolveAnalysisStepRegionIds(const AnalysisStep&
 std::shared_ptr<StructureData> StructureData::CloneRegionForAnalysis(int regionId,
     int analysisStepId, QString* errorMessage) const
 {
+    return CloneRegionForAnalysis(regionId, std::set<int>{analysisStepId}, errorMessage);
+}
+
+std::shared_ptr<StructureData> StructureData::CloneRegionForAnalysis(int regionId,
+    const std::set<int>& analysisStepIds, QString* errorMessage) const
+{
     const auto regionIt = m_ComputeRegions.find(regionId);
     if (regionIt == m_ComputeRegions.cend() || !regionIt->second || !regionIt->second->m_Enabled)
     {
@@ -722,11 +820,20 @@ std::shared_ptr<StructureData> StructureData::CloneRegionForAnalysis(int regionI
             *errorMessage = QStringLiteral("计算区域 %1 不存在或未启用。").arg(regionId);
         return nullptr;
     }
-    if (m_AnalysisStep.find(analysisStepId) == m_AnalysisStep.cend())
+    if (analysisStepIds.empty())
     {
         if (errorMessage)
-            *errorMessage = QStringLiteral("分析步 %1 不存在。").arg(analysisStepId);
+            *errorMessage = QStringLiteral("区域计算没有指定分析步。");
         return nullptr;
+    }
+    for (int analysisStepId : analysisStepIds)
+    {
+        if (m_AnalysisStep.find(analysisStepId) == m_AnalysisStep.cend())
+        {
+            if (errorMessage)
+                *errorMessage = QStringLiteral("分析步 %1 不存在。").arg(analysisStepId);
+            return nullptr;
+        }
     }
 
     auto clone = CloneForAnalysis(errorMessage);
@@ -813,7 +920,7 @@ std::shared_ptr<StructureData> StructureData::CloneRegionForAnalysis(int regionI
     }
     for (auto it = clone->m_AnalysisStep.begin(); it != clone->m_AnalysisStep.end(); )
     {
-        if (it->first != analysisStepId)
+        if (analysisStepIds.find(it->first) == analysisStepIds.cend())
             it = clone->m_AnalysisStep.erase(it);
         else
         {
@@ -1028,9 +1135,18 @@ void StructureData::AddAnalysisStep(const AnalysisStepConfig& config)
     pStep->m_Tolerance = config.tolerance;
     pStep->m_MaxIterations = config.maxIterations;
     pStep->m_DynamicSolverType = config.dynamicSolverType;
+    pStep->m_InitialStaticStepId = pStep->m_Type == EnumKeyword::StepType::DYNAMIC
+        ? config.initialStaticStepId : 0;
+    pStep->m_AdaptiveTssbn = config.adaptiveTssbn;
+    pStep->m_GallopingIceThickness = AeroManager::isSupportedIceThickness(config.gallopingIceThickness)
+        ? config.gallopingIceThickness : AeroManager::supportedIceThicknesses().front();
+    pStep->m_GallopingInitialAttackDegrees =
+        std::isfinite(config.gallopingInitialAttackDegrees)
+        ? config.gallopingInitialAttackDegrees : 45.0;
     pStep->m_RegionScope = config.regionScope;
     pStep->m_ComputeRegionIds = config.computeRegionIds;
     pStep->isDynamic = (config.type == EnumKeyword::StepType::DYNAMIC);
+    pStep->m_EnableGalloping = pStep->isDynamic && config.enableGalloping;
 
     m_AnalysisStep.insert(std::make_pair(pStep->m_Id, pStep));
 }

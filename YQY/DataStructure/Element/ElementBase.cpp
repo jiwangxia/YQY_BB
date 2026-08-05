@@ -55,14 +55,14 @@ void ElementBase::GetDynamicContributions(
     Get_CentrifugalMatrix(centrifugalMatrix);
 }
 
-void ElementBase::GetDOFs(std::vector<int>& DOFs)
+void ElementBase::GetDOFs(std::vector<int>& DOFs) const
 {
     int NodeDOF = Get_NodeDOF();
     int numDOFs = m_pNode.size() * NodeDOF;
     DOFs.resize(numDOFs);
 
     int index = 0;
-    for (auto& node : m_pNode)
+    for (const auto& node : m_pNode)
     {
         auto pNode = node.lock();
         for(int i = 0; i < NodeDOF; i++)

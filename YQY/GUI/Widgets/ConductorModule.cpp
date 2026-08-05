@@ -9,7 +9,9 @@
 #include <QTableWidgetItem>
 
 #include <algorithm>
+#include <map>
 #include <set>
+#include <vector>
 
 ConductorModule::ConductorModule(QWidget* p) : QWidget(p), m_ui(new Ui::ConductorModuleClass)
 {
@@ -49,6 +51,7 @@ ConductorModule::ConductorModule(QWidget* p) : QWidget(p), m_ui(new Ui::Conducto
     m_ui->spacerElementCombo->setItemData(1, static_cast<int>(EnumKeyword::ElementType::T3D2));
     m_ui->endTopologyCombo->setItemData(0, static_cast<int>(Conductor::BundleEndTopology::SingleSupport));
     m_ui->endTopologyCombo->setItemData(1, static_cast<int>(Conductor::BundleEndTopology::DualSupportByGroup));
+    m_ui->endTopologyCombo->setItemData(2, static_cast<int>(Conductor::BundleEndTopology::DirectWireSupports));
     initializeStationTable();
 
     connect(m_ui->modelModeCombo, qOverload<int>(&QComboBox::currentIndexChanged), this,
@@ -252,9 +255,15 @@ void ConductorModule::updateEndTopologyUi()
 {
     // 属性库尚未注入时 bundleCombo 的 itemData 为空；界面默认值仍应
     // 根据显示的分裂数正确启用双挂点选项。
-    const bool supportsDual = m_ui->bundleCombo->currentText().toInt() > 2;
-    m_ui->endTopologyCombo->setEnabled(supportsDual);
-    if (!supportsDual)
+    const int bundleCount = m_ui->bundleCombo->currentText().toInt();
+    const bool supportsAnyEndTopology = bundleCount > 1;
+    const bool supportsDual = bundleCount > 2;
+    m_ui->endTopologyCombo->setEnabled(supportsAnyEndTopology);
+    if (!supportsAnyEndTopology)
+        m_ui->endTopologyCombo->setCurrentIndex(0);
+    else if (!supportsDual &&
+        m_ui->endTopologyCombo->currentData().toInt() ==
+            static_cast<int>(Conductor::BundleEndTopology::DualSupportByGroup))
         m_ui->endTopologyCombo->setCurrentIndex(0);
     const bool dual = supportsDual &&
         m_ui->endTopologyCombo->currentData().toInt() ==
@@ -454,6 +463,12 @@ ConductorModule::BuildResult ConductorModule::buildModel(Conductor::PropertyLibr
     config.endTopology = static_cast<Conductor::BundleEndTopology>(m_ui->endTopologyCombo->currentData().toInt());
     config.dualSupportSpacing = m_ui->dualSupportSpacingSpin->value();
     config.setNamePrefix = m_ui->nameEdit->text().trimmed();
+    // A CR3D end fitting attached to a translation-only conductor forms an
+    // independent rotational component with a zero-energy roll mode.
+    config.endFittingElementType =
+        config.elementType == EnumKeyword::ElementType::CR3D
+        ? EnumKeyword::ElementType::CR3D
+        : EnumKeyword::ElementType::T3D2;
 
     Conductor::ConductorModelBuilder builder(build.structure);
     Conductor::LineBuildResult lineResult;
@@ -523,13 +538,28 @@ ConductorModule::BuildResult ConductorModule::buildModel(Conductor::PropertyLibr
                 }
             }
         }
-        // 自动约束按用户选择的导线单元类型决定，而不是按耐张联板类型
-        // 决定。联板 CR3D 在索/桁架模型中保留未约束转角，等效为端部铰接。
-        int dofCount = 3;
-        if (config.elementType == EnumKeyword::ElementType::CABLE)
-            dofCount = 4;
-        else if (config.elementType == EnumKeyword::ElementType::CR3D)
-            dofCount = 6;
+        // Determine support constraints from every element actually attached
+        // to the node; the node has not yet gone through AnalysisStep::Init_DOF.
+        auto requiredNodeDofs = [&](int nodeId)
+        {
+            int required = 3;
+            for (const auto& [elementId, element] : build.structure->m_Elements)
+            {
+                Q_UNUSED(elementId);
+                if (!element)
+                    continue;
+                for (const auto& nodeReference : element->m_pNode)
+                {
+                    const auto node = nodeReference.lock();
+                    if (node && node->m_Id == nodeId)
+                    {
+                        required = std::max(required, element->Get_NodeDOF());
+                        break;
+                    }
+                }
+            }
+            return required;
+        };
         auto addZeroConstraint = [&](int nodeId, int constrainedDofCount)
         {
             std::vector<int> directions;
@@ -540,8 +570,82 @@ ConductorModule::BuildResult ConductorModule::buildModel(Conductor::PropertyLibr
                 directions.push_back(direction);
             build.structure->Add_Constraint({ nodeId }, directions, values);
         };
+        // A CR3D beam has three sectional rotation DOFs at each node. When a
+        // beam-type spacer is connected only to truss/cable conductors, its
+        // translations are carried by the conductors but its whole sectional
+        // rotation field has no reference. This gauge mode makes the static
+        // tangent matrix singular. Build connected beam groups and pin the
+        // rotation at one deterministic node only when the group does not
+        // already reach a rotationally constrained end support.
+        std::map<int, int> beamParent;
+        std::map<int, int> beamNodeDegree;
+        const auto findBeamRoot = [&beamParent](int nodeId, const auto& self) -> int
+        {
+            const auto found = beamParent.find(nodeId);
+            if (found == beamParent.cend() || found->second == nodeId)
+                return nodeId;
+            found->second = self(found->second, self);
+            return found->second;
+        };
+        const auto joinBeamNodes = [&beamParent, &findBeamRoot](int firstId, int secondId)
+        {
+            beamParent.try_emplace(firstId, firstId);
+            beamParent.try_emplace(secondId, secondId);
+            const int firstRoot = findBeamRoot(firstId, findBeamRoot);
+            const int secondRoot = findBeamRoot(secondId, findBeamRoot);
+            if (firstRoot != secondRoot)
+                beamParent[firstRoot] = secondRoot;
+        };
+        for (const auto& [elementId, element] : build.structure->m_Elements)
+        {
+            Q_UNUSED(elementId);
+            if (!element || element->Get_NodeDOF() < 6 || element->m_pNode.size() != 2)
+                continue;
+            const auto first = element->m_pNode[0].lock();
+            const auto second = element->m_pNode[1].lock();
+            if (!first || !second)
+                continue;
+            joinBeamNodes(first->m_Id, second->m_Id);
+            ++beamNodeDegree[first->m_Id];
+            ++beamNodeDegree[second->m_Id];
+        }
+        std::map<int, std::vector<int>> beamComponents;
+        for (const auto& [nodeId, parent] : beamParent)
+        {
+            Q_UNUSED(parent);
+            beamComponents[findBeamRoot(nodeId, findBeamRoot)].push_back(nodeId);
+        }
+        std::set<int> rotationallySupportedEndpoints;
         for (int endpointId : endpointIds)
-            addZeroConstraint(endpointId, dofCount);
+        {
+            if (requiredNodeDofs(endpointId) >= 6)
+                rotationallySupportedEndpoints.insert(endpointId);
+        }
+        for (auto& [root, nodeIds] : beamComponents)
+        {
+            Q_UNUSED(root);
+            const bool hasRotationalSupport = std::any_of(
+                nodeIds.cbegin(), nodeIds.cend(),
+                [&rotationallySupportedEndpoints](int nodeId)
+                {
+                    return rotationallySupportedEndpoints.find(nodeId)
+                        != rotationallySupportedEndpoints.cend();
+                });
+            if (hasRotationalSupport)
+                continue;
+            const int referenceNodeId = *std::max_element(
+                nodeIds.cbegin(), nodeIds.cend(),
+                [&beamNodeDegree](int lhs, int rhs)
+                {
+                    const int lhsDegree = beamNodeDegree[lhs];
+                    const int rhsDegree = beamNodeDegree[rhs];
+                    return lhsDegree != rhsDegree ? lhsDegree < rhsDegree : lhs > rhs;
+                });
+            build.structure->Add_Constraint(
+                { referenceNodeId }, { 3, 4, 5 }, { 0.0, 0.0, 0.0 });
+        }
+        for (int endpointId : endpointIds)
+            addZeroConstraint(endpointId, requiredNodeDofs(endpointId));
         // 中间 P 节点只连接 H 型悬垂串。当前悬垂串固定采用 T3D2，
         // 因此该节点只存在三个平动自由度，与线身采用索或梁无关。
         for (const auto& suspension : lineResult.suspensionPoints)

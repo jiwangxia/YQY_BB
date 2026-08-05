@@ -170,3 +170,122 @@ void Node::RollbackNewmarkStep()
     m_AlphaMaterial = m_AlphaMaterial_n;
     m_StepRotation.setZero();
 }
+
+void Node::SetTssbnStageKinematics(
+    int stageIndex,
+    double timeStep,
+    double firstStageTime,
+    double secondStageTime,
+    double secondStageDiagonalFraction,
+    Eigen::Vector3d& spatialAngularVelocity,
+    Eigen::Vector3d& spatialAngularAcceleration)
+{
+    Utility::CR::Extract_RotationVector(
+        m_Rg * m_Rg_n.transpose(), m_StepRotation);
+    const Eigen::Vector3d materialRotationIncrement =
+        m_Rg_n.transpose() * m_StepRotation;
+
+    if (stageIndex == 1)
+    {
+        const double diagonalTime = firstStageTime * timeStep;
+        m_TssbnOmegaMaterial1 =
+            materialRotationIncrement / diagonalTime;
+        m_TssbnAlphaMaterial1 =
+            (m_TssbnOmegaMaterial1 - m_OmegaMaterial_n)
+            / diagonalTime;
+        m_OmegaMaterial = m_TssbnOmegaMaterial1;
+        m_AlphaMaterial = m_TssbnAlphaMaterial1;
+    }
+    else
+    {
+        const double previousCoefficient =
+            secondStageTime
+            * (1.0 - secondStageDiagonalFraction);
+        const double diagonalCoefficient =
+            secondStageTime * secondStageDiagonalFraction;
+        const double diagonalTime = diagonalCoefficient * timeStep;
+        m_TssbnOmegaMaterial2 =
+            (materialRotationIncrement
+                - timeStep * previousCoefficient
+                    * m_TssbnOmegaMaterial1)
+            / diagonalTime;
+        m_TssbnAlphaMaterial2 =
+            (m_TssbnOmegaMaterial2 - m_OmegaMaterial_n
+                - timeStep * previousCoefficient
+                    * m_TssbnAlphaMaterial1)
+            / diagonalTime;
+        m_OmegaMaterial = m_TssbnOmegaMaterial2;
+        m_AlphaMaterial = m_TssbnAlphaMaterial2;
+    }
+
+    spatialAngularVelocity = m_Rg * m_OmegaMaterial;
+    spatialAngularAcceleration = m_Rg * m_AlphaMaterial;
+    for (int component = 0; component < 3; ++component)
+    {
+        m_Velocity[component + 3] =
+            spatialAngularVelocity[component];
+        m_Acceleration[component + 3] =
+            spatialAngularAcceleration[component];
+    }
+}
+
+Node::TssbnRotationState Node::IntegrateTssbnRotation(
+    double timeStep,
+    double stageAccelerationExtrapolation,
+    double baseFirstWeight,
+    double embeddedFirstWeight,
+    double embeddedSecondWeight,
+    double embeddedLastWeight,
+    double lastStageFirstCoefficient,
+    double lastStageSecondCoefficient) const
+{
+    const Eigen::Vector3d lastOmegaMaterial =
+        m_OmegaMaterial_n
+        + timeStep
+            * (lastStageFirstCoefficient * m_TssbnAlphaMaterial1
+                + lastStageSecondCoefficient * m_TssbnAlphaMaterial2);
+    const Eigen::Vector3d lastAlphaMaterial =
+        m_TssbnAlphaMaterial2
+        + stageAccelerationExtrapolation
+            * (m_TssbnAlphaMaterial2 - m_TssbnAlphaMaterial1);
+
+    const Eigen::Vector3d baseMaterialIncrement =
+        timeStep
+        * (baseFirstWeight * m_TssbnOmegaMaterial1
+            + (1.0 - baseFirstWeight) * m_TssbnOmegaMaterial2);
+    const Eigen::Vector3d embeddedMaterialIncrement =
+        timeStep
+        * (embeddedFirstWeight * m_TssbnOmegaMaterial1
+            + embeddedSecondWeight * m_TssbnOmegaMaterial2
+            + embeddedLastWeight * lastOmegaMaterial);
+
+    TssbnRotationState result;
+    result.baseSpatialIncrement = m_Rg_n * baseMaterialIncrement;
+    result.embeddedSpatialIncrement =
+        m_Rg_n * embeddedMaterialIncrement;
+
+    Eigen::Matrix3d baseRotation;
+    Eigen::Matrix3d embeddedRotation;
+    Utility::CR::Update_NodalRotation(
+        result.baseSpatialIncrement, m_Rg_n, baseRotation);
+    Utility::CR::Update_NodalRotation(
+        result.embeddedSpatialIncrement, m_Rg_n, embeddedRotation);
+
+    const Eigen::Vector3d baseOmegaMaterial =
+        m_OmegaMaterial_n
+        + timeStep
+            * (baseFirstWeight * m_TssbnAlphaMaterial1
+                + (1.0 - baseFirstWeight) * m_TssbnAlphaMaterial2);
+    const Eigen::Vector3d embeddedOmegaMaterial =
+        m_OmegaMaterial_n
+        + timeStep
+            * (embeddedFirstWeight * m_TssbnAlphaMaterial1
+                + embeddedSecondWeight * m_TssbnAlphaMaterial2
+                + embeddedLastWeight * lastAlphaMaterial);
+    result.baseSpatialVelocity = baseRotation * baseOmegaMaterial;
+    result.embeddedSpatialVelocity =
+        embeddedRotation * embeddedOmegaMaterial;
+    result.acceptedSpatialAcceleration =
+        baseRotation * lastAlphaMaterial;
+    return result;
+}

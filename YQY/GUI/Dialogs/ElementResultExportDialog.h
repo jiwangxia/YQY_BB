@@ -64,9 +64,9 @@ public:
         addFieldGroup(fields, QStringLiteral("单元内力"), {
             {QStringLiteral("轴力"), EnumKeyword::ElementResultType::AxialForce, true}});
         addFieldGroup(fields, QStringLiteral("应力应变"), {
-            {QStringLiteral("应变"), EnumKeyword::ElementResultType::Strain, true},
+            {QStringLiteral("应变"), EnumKeyword::ElementResultType::Strain, false},
             {QStringLiteral("初始应力"), EnumKeyword::ElementResultType::InitStress, false},
-            {QStringLiteral("当前应力"), EnumKeyword::ElementResultType::CurrentStress, true},
+            {QStringLiteral("当前应力"), EnumKeyword::ElementResultType::CurrentStress, false},
             {QStringLiteral("应力增量"), EnumKeyword::ElementResultType::DeltaStress, false}});
         layout->addWidget(fieldCard);
 
@@ -77,7 +77,7 @@ public:
         m_fileEdit = new QLineEdit(fileCard);
         const QFileInfo resultInfo(resultFile);
         m_fileEdit->setText(QDir(exportDirectory()).absoluteFilePath(resultInfo.completeBaseName() + QStringLiteral("_单元时程.bdf")));
-        auto* browseButton = new QPushButton(QStringLiteral("浏览…"), fileCard);
+        auto* browseButton = new QPushButton(QStringLiteral("浏览"), fileCard);
         browseButton->setObjectName(QStringLiteral("exportQuietButton"));
         auto* fileRow = new QHBoxLayout;
         fileRow->addWidget(m_fileEdit);

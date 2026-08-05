@@ -37,6 +37,13 @@ QString importFileDirectory()
         QDir::currentPath());
 }
 
+QString aerodynamicDataDirectory()
+{
+    return existingDirectory(
+        applicationDirectoryCandidates(QStringLiteral("Import/Aero_Data/Input_Data")),
+        QDir::currentPath());
+}
+
 QString hdf5ResultDirectory()
 {
     return existingDirectory(

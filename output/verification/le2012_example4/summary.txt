@@ -1,0 +1,5 @@
+Le et al. (2012), Example 4
+quantity,calculated,figure_reference,relative_error
+minimum_u_x,-92.0025,-20,3.60013
+maximum_abs_u_y,8.23277,10,0.176723
+maximum_abs_u_z,3.85549,3.5,0.101569

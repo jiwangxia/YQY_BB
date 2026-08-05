@@ -1,0 +1,3 @@
+Adaptive TSSBN coefficients: c1=0.2532056552, c2=0.7467943448, alpha=0.3390567389, b1=0.5
+Starting Adaptive TSSBN: dt=0.1, relTol=0.02, rhoInf=0.9
+Adaptive TSSBN completed: accepted=458, rejected=4, avg dt=0.010917031

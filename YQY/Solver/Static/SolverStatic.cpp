@@ -15,7 +15,11 @@ namespace SolverNameSpace
 
         const int nDofs = model.GetFreeDofs();
         if (nDofs < 0)
+        {
+            model.ReportProgress(
+                0.0, QStringLiteral("Static solve failed: invalid free DOF count"));
             return false;
+        }
 
         m_dx = Vec::Zero(nDofs);
         m_R = Vec::Zero(nDofs);
@@ -55,7 +59,14 @@ namespace SolverNameSpace
 
                 NonlinearMPCData constraints;
                 if (!model.AssembleNonlinearMPC(constraints))
+                {
+                    model.ReportProgress(
+                        factor,
+                        QStringLiteral(
+                            "Static increment %1 iteration %2: MPC assembly failed")
+                            .arg(increment).arg(iteration + 1));
                     return false;
+                }
 
                 SpMat solveTangent;
                 Vec solveRhs;
@@ -147,7 +158,14 @@ namespace SolverNameSpace
                     : reduction.RecoverFullIncrement(
                         independentIncrement);
                 if (m_dx.size() != nDofs || !m_dx.allFinite())
+                {
+                    model.ReportProgress(
+                        factor,
+                        QStringLiteral(
+                            "Static increment %1 iteration %2: non-finite displacement correction")
+                            .arg(increment).arg(iteration + 1));
                     return false;
+                }
 
                 accumulatedIncrement += m_dx;
                 model.ApplyIncrement(m_dx);

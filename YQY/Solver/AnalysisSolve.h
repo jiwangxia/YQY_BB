@@ -25,6 +25,14 @@ public:
      */
     bool RunStep(int stepId);
 
+    /**
+     * @brief 从模型当前已收敛状态直接运行指定分析步
+     *
+     * 用于任务调度器已经单独完成前置静力步的情形。该接口不会再次执行
+     * m_InitialStaticStepId，只把当前节点/单元状态作为动力步初态。
+     */
+    bool RunStepFromCurrentState(int stepId);
+
     using ProgressCallback = std::function<void(double, const QString&)>;
     using CancelCallback = std::function<bool()>;
     void SetRuntimeCallbacks(ProgressCallback progressCallback, CancelCallback cancelCallback);
@@ -33,6 +41,7 @@ public:
 
 private:
     bool RunSelectedByRegions(const std::vector<int>& stepIds);
+    bool RunWithStaticDependencies(const std::vector<int>& stepIds);
     bool RunStepDirect(int stepId, bool persistHdf5 = true);
 
     std::weak_ptr<StructureData> m_pStructure;

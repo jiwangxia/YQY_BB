@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <chrono>
 #include <exception>
+#include <set>
 
 namespace
 {
@@ -84,9 +85,28 @@ int SolveTaskController::prepare(const std::shared_ptr<StructureData>& model, co
         return -1;
     if (analysisStepId > 0)
     {
+        std::set<int> retainedStepIds{analysisStepId};
+        const auto selectedCloneStep = modelTemplate->m_AnalysisStep.find(analysisStepId);
+        if (selectedCloneStep != modelTemplate->m_AnalysisStep.cend()
+            && selectedCloneStep->second
+            && selectedCloneStep->second->m_InitialStaticStepId > 0)
+        {
+            retainedStepIds.insert(selectedCloneStep->second->m_InitialStaticStepId);
+        }
+        if (selectedCloneStep != modelTemplate->m_AnalysisStep.cend()
+            && selectedCloneStep->second
+            && selectedCloneStep->second->m_Type == EnumKeyword::StepType::STATIC)
+        {
+            for (const auto& [candidateId, candidate] : modelTemplate->m_AnalysisStep)
+            {
+                if (candidate && candidate->m_Type == EnumKeyword::StepType::DYNAMIC
+                    && candidate->m_InitialStaticStepId == analysisStepId)
+                    retainedStepIds.insert(candidateId);
+            }
+        }
         for (auto it = modelTemplate->m_AnalysisStep.begin(); it != modelTemplate->m_AnalysisStep.end(); )
         {
-            if (it->first != analysisStepId)
+            if (retainedStepIds.find(it->first) == retainedStepIds.cend())
                 it = modelTemplate->m_AnalysisStep.erase(it);
             else
                 ++it;
@@ -96,10 +116,14 @@ int SolveTaskController::prepare(const std::shared_ptr<StructureData>& model, co
     task->cancelRequested.store(false, std::memory_order_relaxed);
     task->startedAtMs.store(0, std::memory_order_relaxed);
     task->lastProgressReportMs.store(0, std::memory_order_relaxed);
+    task->workerScheduled = false;
+    task->solvedModel.reset();
     task->info.sourceFile = absoluteSource;
     task->info.analysisStepId = analysisStepId;
     const auto selectedStep = analysisStepId > 0 ? model->m_AnalysisStep.find(analysisStepId)
         : model->m_AnalysisStep.end();
+    const int requiredStaticStepId = selectedStep != model->m_AnalysisStep.end() && selectedStep->second
+        ? selectedStep->second->m_InitialStaticStepId : 0;
     const QString selectedStepName = selectedStep != model->m_AnalysisStep.end() && selectedStep->second
         && !selectedStep->second->m_Name.trimmed().isEmpty()
         ? selectedStep->second->m_Name.trimmed() : QStringLiteral("Step-%1").arg(analysisStepId);
@@ -129,6 +153,13 @@ int SolveTaskController::prepare(const std::shared_ptr<StructureData>& model, co
         emit taskAdded(task->info.id);
     else
         emit taskUpdated(task->info.id);
+
+    // A static task is prepared when the conductor model is created, while a
+    // dynamic step is often added later from the analysis editor. Refresh the
+    // source static template at that point so its cached equilibrium model
+    // contains the new dynamic-step definition before state inheritance.
+    if (requiredStaticStepId > 0 && requiredStaticStepId != analysisStepId)
+        prepare(model, sourceFile, requiredStaticStepId);
     return task->info.id;
 }
 
@@ -169,14 +200,90 @@ bool SolveTaskController::start(int taskId)
     task->info.partialResult = false;
     task->info.resultFrameCount = 0;
     task->info.resultEndTime = 0.0;
+    task->workerScheduled = false;
+    task->solvedModel.reset();
     task->info.message = QStringLiteral("等待计算线程");
     const QFileInfo previousOutput(task->info.outputFile);
     task->previousOutputModifiedMs = previousOutput.exists()
         ? previousOutput.lastModified().toMSecsSinceEpoch() : -1;
     task->previousOutputSize = previousOutput.exists() ? previousOutput.size() : -1;
     emit taskUpdated(taskId);
-    m_threadPool.start([this, task]() { runTask(task); });
+
+    const auto dependency = dependencyTask(task);
+    if (dependency)
+    {
+        if (dependency->info.status == Status::Completed && dependency->solvedModel)
+            launchTask(task);
+        else
+        {
+            task->info.message = QStringLiteral("等待前置静力步 %1 完成").arg(dependency->info.analysisStepId);
+            emit taskUpdated(taskId);
+            if (dependency->info.status == Status::Ready || dependency->info.status == Status::Failed
+                || dependency->info.status == Status::Cancelled)
+                start(dependency->info.id);
+        }
+    }
+    else
+        launchTask(task);
     return true;
+}
+
+int SolveTaskController::initialStaticStepId(const std::shared_ptr<TaskContext>& task) const
+{
+    if (!task || !task->modelTemplate || task->info.analysisStepId <= 0)
+        return 0;
+    const auto stepIt = task->modelTemplate->m_AnalysisStep.find(task->info.analysisStepId);
+    return stepIt != task->modelTemplate->m_AnalysisStep.end() && stepIt->second
+        ? stepIt->second->m_InitialStaticStepId : 0;
+}
+
+std::shared_ptr<SolveTaskController::TaskContext> SolveTaskController::dependencyTask(
+    const std::shared_ptr<TaskContext>& task) const
+{
+    const int staticStepId = initialStaticStepId(task);
+    if (staticStepId <= 0 || !task)
+        return nullptr;
+    for (const auto& candidate : m_tasks)
+    {
+        if (candidate && candidate->info.sourceFile == task->info.sourceFile
+            && candidate->info.analysisStepId == staticStepId)
+            return candidate;
+    }
+    return nullptr;
+}
+
+void SolveTaskController::launchTask(const std::shared_ptr<TaskContext>& task)
+{
+    if (!task || task->workerScheduled || task->info.status != Status::Queued)
+        return;
+    task->workerScheduled = true;
+    m_threadPool.start([this, task]() { runTask(task); });
+}
+
+void SolveTaskController::releaseDependentTasks(
+    const std::shared_ptr<TaskContext>& dependency, Status status)
+{
+    if (!dependency)
+        return;
+    const QList<int> ids = taskIds();
+    for (const int id : ids)
+    {
+        const auto candidate = m_tasks.value(id);
+        if (!candidate || candidate->info.status != Status::Queued
+            || candidate->workerScheduled || dependencyTask(candidate) != dependency)
+            continue;
+        if (status == Status::Completed && dependency->solvedModel)
+        {
+            candidate->info.message = QStringLiteral("前置静力步已完成，开始动力分析");
+            emit taskUpdated(candidate->info.id);
+            launchTask(candidate);
+        }
+        else
+        {
+            finishTask(candidate->info.id, Status::Failed,
+                QStringLiteral("前置静力步求解失败，动力步未启动"));
+        }
+    }
 }
 
 int SolveTaskController::startAllReady()
@@ -225,6 +332,13 @@ bool SolveTaskController::cancel(int taskId)
     const auto task = m_tasks.value(taskId);
     if (!task || (task->info.status != Status::Queued && task->info.status != Status::Running))
         return false;
+
+    if (task->info.status == Status::Queued && !task->workerScheduled)
+    {
+        task->cancelRequested.store(true, std::memory_order_relaxed);
+        finishTask(taskId, Status::Cancelled, QStringLiteral("已取消等待前置静力步的动力任务"));
+        return true;
+    }
 
     task->cancelRequested.store(true, std::memory_order_relaxed);
     task->info.status = Status::Cancelling;
@@ -345,10 +459,16 @@ void SolveTaskController::runTask(const std::shared_ptr<TaskContext>& task)
     try
     {
         QString cloneError;
-        auto structure = task->modelTemplate ? task->modelTemplate->CloneForAnalysis(&cloneError) : nullptr;
+        const auto dependency = dependencyTask(task);
+        const bool startsFromStaticState = dependency && dependency->solvedModel;
+        auto structure = startsFromStaticState
+            ? dependency->solvedModel->CloneForAnalysis(&cloneError)
+            : (task->modelTemplate ? task->modelTemplate->CloneForAnalysis(&cloneError) : nullptr);
         if (!structure)
             throw std::runtime_error(cloneError.isEmpty()
                 ? "无法创建独立计算模型" : cloneError.toUtf8().constData());
+
+        structure->m_OutputControl.m_Hdf5FileName = task->info.outputFile;
 
         AnalysisRunner runner;
         runner.SetStructure(structure);
@@ -369,7 +489,15 @@ void SolveTaskController::runTask(const std::shared_ptr<TaskContext>& task)
 
         task->startedAtMs.store(QDateTime::currentMSecsSinceEpoch(), std::memory_order_relaxed);
         solverTimer.start();
-        const bool succeeded = runner.RunAll();
+        // A prepared single-step task may retain its referenced static step as
+        // an internal dependency.  Run the selected step explicitly so the
+        // dependency is solved first without turning it into a user-visible
+        // result step in the dynamic task's H5 file.
+        const bool succeeded = task->info.analysisStepId > 0
+            ? (startsFromStaticState
+                ? runner.RunStepFromCurrentState(task->info.analysisStepId)
+                : runner.RunStep(task->info.analysisStepId))
+            : runner.RunAll();
         solverElapsedMs = solverTimer.elapsed();
         if (runner.WasCancelled() || task->cancelRequested.load(std::memory_order_relaxed))
         {
@@ -378,6 +506,8 @@ void SolveTaskController::runTask(const std::shared_ptr<TaskContext>& task)
         }
         else if (succeeded)
         {
+            if (initialStaticStepId(task) <= 0)
+                task->solvedModel = structure;
             finalStatus = Status::Completed;
             finalMessage = QStringLiteral("计算完成，结果：%1").arg(task->info.outputFile);
         }
@@ -425,6 +555,7 @@ void SolveTaskController::finishTask(int taskId, Status status, const QString& m
     if (!task)
         return;
     task->info.status = status;
+    task->workerScheduled = false;
     task->info.message = message;
     if (status == Status::Completed)
         task->info.progress = 1.0;
@@ -464,5 +595,9 @@ void SolveTaskController::finishTask(int taskId, Status status, const QString& m
     task->restartRequested = false;
     emit taskUpdated(taskId);
     if (shouldRestart)
+    {
         start(taskId);
+        return;
+    }
+    releaseDependentTasks(task, status);
 }

@@ -137,13 +137,6 @@ void ElementTruss::Get_me_Consistent(MatrixXd& me) //一致质量矩阵
 
 void ElementTruss::Get_L0()
 {
-    auto pProperty = m_pProperty.lock();
-    auto pSection = pProperty->m_pSection.lock();
-    auto pMaterial = pProperty->m_pMaterial.lock();
-
-    double E = pMaterial->m_Young;
-    double A = pSection->m_Area;
-
     auto pNode0 = m_pNode[0].lock();
     auto pNode1 = m_pNode[1].lock();
 
@@ -157,16 +150,8 @@ void ElementTruss::Get_L0()
     double dy0 = pNode1->m_Y - pNode0->m_Y;
     double dz0 = pNode1->m_Z - pNode0->m_Z;
 
-    double L = sqrt(dx0 * dx0 + dy0 * dy0 + dz0 * dz0);
+    L0 = sqrt(dx0 * dx0 + dy0 * dy0 + dz0 * dz0);
     // 计算初始长度 L0
-    if (m_InitStress == 0)
-    {
-        L0 = L;
-    }
-    else
-    {
-        L0 = E * L / (m_InitStress + E);
-    }
 }
 
 void ElementTruss::Assemble(const std::vector<double>& damping, MatrixXd& _OUT ce)

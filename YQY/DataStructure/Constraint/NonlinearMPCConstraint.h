@@ -32,6 +32,32 @@ public:
         const Eigen::VectorXd& multipliers) const = 0;
 };
 
+/**
+ * Coincident-node translational tie:
+ * c = u_slave - u_master = 0.
+ *
+ * Only UX/UY/UZ are coupled.  Rotational or cable-twist degrees of freedom
+ * remain independent, so elements with different nodal DOF meanings can be
+ * connected without aliasing those meanings at one node.
+ */
+class TranslationalTieMPCConstraint final : public NonlinearMPCConstraint
+{
+public:
+    std::weak_ptr<Node> m_pMasterNode;
+    std::weak_ptr<Node> m_pSlaveNode;
+
+    bool Evaluate(
+        int fixedDofs,
+        int freeDofs,
+        SolverNameSpace::NonlinearMPCData& data) const override;
+    std::shared_ptr<NonlinearMPCConstraint> Clone(
+        const std::map<int, std::shared_ptr<Node>>& nodes) const override;
+    std::vector<int> GetNodeIds() const override;
+    void AccumulateReactions(
+        int fixedDofs,
+        const Eigen::VectorXd& multipliers) const override;
+};
+
 /** c = ||x_a-x_b||-L0 = 0. */
 class DistanceMPCConstraint final : public NonlinearMPCConstraint
 {

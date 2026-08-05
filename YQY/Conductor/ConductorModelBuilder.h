@@ -18,7 +18,8 @@ namespace Conductor
     enum class BundleEndTopology
     {
         SingleSupport = 0,   ///< 两个分组节点汇集至一个公共挂点
-        DualSupportByGroup   ///< 两个分组节点分别连接至两个自动生成的挂点
+        DualSupportByGroup,  ///< 两个分组节点分别连接至两个自动生成的挂点
+        DirectWireSupports   ///< 每根子导线端点直接作为独立挂点，不生成端部金具
     };
 
     /**
@@ -276,7 +277,7 @@ namespace Conductor
         int FindNearestNodeOnSubConductor(const SubConductorModel& sub, const Vector3d& leftBase, const Vector2d& direction, double targetDistance, bool excludeEndpoints) const;
         bool AddElement(int iNodeId, int jNodeId, EnumKeyword::ElementType elementType, std::shared_ptr<Property> property,
             double initStress, int& elementId, std::string& error, ElementRole role = ElementRole::Generic,
-            int wireId = -1, int aeroProfileId = -1);
+            int wireId = -1, int aeroProfileId = -1, int aeroBundleCount = 0);
         bool AddNodes(BundleResult& raw, const LineBuildConfig& config, LineBuildResult& result, std::string& error);
         bool AddElements(const BundleResult& raw, const LineBuildConfig& config, std::shared_ptr<Property> property, LineBuildResult& result, std::string& error);
         bool AddTensionEndElements(const LineBuildConfig& config, LineBuildResult& result, std::string& error);

@@ -35,7 +35,7 @@
           <item>
            <widget class="QComboBox" name="modelModeCombo">
             <item><property name="text"><string>单档导线</string></property></item>
-            <item><property name="text"><string>多档导线（首末耐张、中间悬垂）</string></property></item>
+            <item><property name="text"><string>多档导线</string></property></item>
            </widget>
           </item>
           <item>
@@ -45,7 +45,7 @@
              <property name="topMargin"><number>0</number></property>
              <property name="rightMargin"><number>0</number></property>
              <property name="bottomMargin"><number>0</number></property>
-             <item><widget class="QLabel" name="stationHelpLabel"><property name="text"><string>坐标为各塔位处的导线束/分裂多边形中心；首末行为耐张端，中间行为 H 型悬垂点。</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+             <item><widget class="QLabel" name="stationHelpLabel"><property name="text"><string>坐标为各塔位处的导线束/分裂多边形中心</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
              <item>
               <widget class="QTableWidget" name="stationTable">
                <property name="minimumSize"><size><width>0</width><height>170</height></size></property>
@@ -119,7 +119,7 @@
              <property name="topMargin"><number>0</number></property>
              <property name="rightMargin"><number>0</number></property>
              <property name="bottomMargin"><number>0</number></property>
-             <property name="spacing"><number>4</number></property>
+             <property name="spacing"><number>1</number></property>
              <item><widget class="QDoubleSpinBox" name="endX"><property name="minimum"><double>-1000000</double></property><property name="maximum"><double>1000000</double></property><property name="decimals"><number>3</number></property><property name="prefix"><string>X </string></property><property name="value"><double>300</double></property></widget></item>
              <item><widget class="QDoubleSpinBox" name="endY"><property name="minimum"><double>-1000000</double></property><property name="maximum"><double>1000000</double></property><property name="decimals"><number>3</number></property><property name="prefix"><string>Y </string></property></widget></item>
              <item><widget class="QDoubleSpinBox" name="endZ"><property name="minimum"><double>-1000000</double></property><property name="maximum"><double>1000000</double></property><property name="decimals"><number>3</number></property><property name="prefix"><string>Z </string></property></widget></item>
@@ -138,15 +138,16 @@
            </widget>
           </item>
           <item row="7" column="0"><widget class="QLabel" name="spacingLabel"><property name="text"><string>子导线间距</string></property></widget></item>
-          <item row="7" column="1"><widget class="QDoubleSpinBox" name="spacingSpin"><property name="maximum"><double>20</double></property><property name="decimals"><number>3</number></property><property name="value"><double>0.45</double></property><property name="suffix"><string> m</string></property></widget></item>
-          <item row="8" column="0"><widget class="QLabel" name="segmentsLabel"><property name="text"><string>每根离散段数</string></property></widget></item>
-          <item row="8" column="1"><widget class="QSpinBox" name="segmentsSpin"><property name="minimum"><number>2</number></property><property name="maximum"><number>10000</number></property><property name="value"><number>60</number></property></widget></item>
+          <item row="7" column="1"><widget class="QDoubleSpinBox" name="spacingSpin"><property name="maximum"><double>20</double></property><property name="decimals"><number>3</number></property><property name="value"><double>0.4</double></property><property name="suffix"><string> m</string></property></widget></item>
+          <item row="8" column="0"><widget class="QLabel" name="segmentsLabel"><property name="text"><string>每根导线段数</string></property></widget></item>
+          <item row="8" column="1"><widget class="QSpinBox" name="segmentsSpin"><property name="minimum"><number>2</number></property><property name="maximum"><number>10000</number></property><property name="value"><number>50</number></property></widget></item>
           <item row="9" column="0"><widget class="QLabel" name="stressLabel"><property name="text"><string>初始应力</string></property></widget></item>
           <item row="9" column="1"><widget class="QDoubleSpinBox" name="stressSpin"><property name="minimum"><double>0.001</double></property><property name="maximum"><double>10000</double></property><property name="decimals"><number>3</number></property><property name="value"><double>50</double></property><property name="suffix"><string> MPa</string></property></widget></item>
           <item row="10" column="0"><widget class="QLabel" name="endTopologyLabel"><property name="text"><string>端部形式</string></property></widget></item>
           <item row="10" column="1"><widget class="QComboBox" name="endTopologyCombo">
-           <item><property name="text"><string>汇集单挂点</string></property></item>
-           <item><property name="text"><string>分组双挂点</string></property></item>
+             <item><property name="text"><string>汇集单挂点</string></property></item>
+             <item><property name="text"><string>分组双挂点</string></property></item>
+             <item><property name="text"><string>子导线独立挂点</string></property></item>
           </widget></item>
           <item row="11" column="0"><widget class="QLabel" name="dualSupportSpacingLabel"><property name="text"><string>双挂点间距</string></property></widget></item>
           <item row="11" column="1"><widget class="QDoubleSpinBox" name="dualSupportSpacingSpin"><property name="minimum"><double>0.001</double></property><property name="maximum"><double>100</double></property><property name="decimals"><number>3</number></property><property name="value"><double>0.45</double></property><property name="suffix"><string> m</string></property></widget></item>
@@ -163,8 +164,8 @@
           <item row="2" column="0"><widget class="QLabel" name="spacerLayoutLabel"><property name="text"><string>布置方式</string></property></widget></item>
           <item row="2" column="1">
            <widget class="QComboBox" name="spacerLayoutCombo">
-            <item><property name="text"><string>内置 THOP 次档距规则</string></property></item>
-            <item><property name="text"><string>指定数量等距布置</string></property></item>
+            <item><property name="text"><string>规范档距</string></property></item>
+            <item><property name="text"><string>指定数量(等距)</string></property></item>
            </widget>
           </item>
           <item row="3" column="0"><widget class="QLabel" name="spacerCountLabel"><property name="text"><string>间隔棒数量</string></property></widget></item>
@@ -174,7 +175,7 @@
           <item row="5" column="0"><widget class="QLabel" name="spacerElementLabel"><property name="text"><string>单元类型</string></property></widget></item>
           <item row="5" column="1">
            <widget class="QComboBox" name="spacerElementCombo">
-            <item><property name="text"><string>CR3D 共旋梁</string></property></item>
+            <item><property name="text"><string>CR3D 梁</string></property></item>
             <item><property name="text"><string>T3D2 桁架</string></property></item>
            </widget>
           </item>
@@ -186,7 +187,7 @@
           <item row="1" column="1"><widget class="QComboBox" name="spacerStyleCombo">
            <item><property name="text"><string>外框多边形</string></property></item>
            <item><property name="text"><string>中心对角撑</string></property></item>
-           <item><property name="text"><string>内圈小多边形</string></property></item>
+           <item><property name="text"><string>内圈多边形</string></property></item>
           </widget></item>
          </layout>
         </widget>

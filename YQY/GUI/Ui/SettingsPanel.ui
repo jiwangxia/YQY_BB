@@ -21,7 +21,7 @@
       <property name="rightMargin"><number>18</number></property>
       <property name="bottomMargin"><number>16</number></property>
       <property name="spacing"><number>10</number></property>
-      <item><widget class="QLabel" name="titleLabel"><property name="text"><string>求解并发</string></property></widget></item>
+      <item><widget class="QLabel" name="titleLabel"><property name="text"><string>求解多线程</string></property></widget></item>
       <item><widget class="QLabel" name="descriptionLabel"><property name="text"><string>控制可以同时计算的分析步数量。超出上限的任务自动排队，建议保留 CPU 和内存资源给模型显示及其他模块。</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
       <item>
        <layout class="QFormLayout" name="concurrencyForm">

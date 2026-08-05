@@ -2,6 +2,7 @@
 
 #include <windows.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <fstream>
@@ -39,6 +40,23 @@ void WriteConsoleText(DWORD handleId, FILE* fallbackStream, const std::wstring& 
     const std::string utf8 = WideToUtf8(text);
     std::fwrite(utf8.data(), 1, utf8.size(), fallbackStream);
     std::fflush(fallbackStream);
+}
+
+void EnforcePeriodicEndpoint(std::vector<BladeModel>& models)
+{
+    for (const BladeModel& model : models)
+        if (model.lift.size() != 73 || model.drag.size() != 73
+            || model.moment.size() != 73)
+            return;
+
+    // 0 and 360 degrees are one periodic point. Raw files are preserved as
+    // source data; only the duplicate endpoint is unified after reading.
+    for (BladeModel& model : models)
+    {
+        model.lift[72] = model.lift[0];
+        model.drag[72] = model.drag[0];
+        model.moment[72] = model.moment[0];
+    }
 }
 }
 
@@ -149,11 +167,51 @@ bool AeroManager::loadModelsFromCSV(const std::filesystem::path& filepath, std::
             + L" file=" + filepath.wstring() + L"\n");
         return false;
     }
+    for (size_t model = 0; model < numModels; ++model)
+    {
+        const size_t base = static_cast<size_t>(startColIndex) + 3 * model;
+        const std::string suffix = std::to_string(model + 1);
+        if (headers[base] != "CL" + suffix
+            || headers[base + 1] != "CD" + suffix
+            || headers[base + 2] != "CM" + suffix)
+        {
+            ConsoleError(L"Error: Aerodynamic columns must be ordered CL/CD/CM at model "
+                + std::to_wstring(model + 1) + L" file="
+                + filepath.wstring() + L"\n");
+            return false;
+        }
+    }
 
     std::vector<BladeModel> parsedModels(numModels);
 
     int rowCount = 0;
     int lineNumber = 1;
+    const auto trim = [](const std::string& value)
+    {
+        const size_t first = value.find_first_not_of(" \t\r\n");
+        if (first == std::string::npos)
+            return std::string{};
+        const size_t last = value.find_last_not_of(" \t\r\n");
+        return value.substr(first, last - first + 1);
+    };
+    const auto tryParseFinite = [&trim](
+        const std::string& value, double& parsed)
+    {
+        const std::string cleaned = trim(value);
+        if (cleaned.empty() || cleaned == "--"
+            || cleaned == "N/A" || cleaned == "NA")
+            return false;
+        try
+        {
+            size_t consumed = 0;
+            parsed = std::stod(cleaned, &consumed);
+            return consumed == cleaned.size() && std::isfinite(parsed);
+        }
+        catch (...)
+        {
+            return false;
+        }
+    };
     while (std::getline(file, line))
     {
         lineNumber++;
@@ -172,23 +230,66 @@ bool AeroManager::loadModelsFromCSV(const std::filesystem::path& filepath, std::
             continue;
         }
 
+        bool allCoefficientCellsEmpty = true;
+        for (size_t column = static_cast<size_t>(startColIndex);
+            column < vals.size(); ++column)
+        {
+            if (!trim(vals[column]).empty())
+            {
+                allCoefficientCellsEmpty = false;
+                break;
+            }
+        }
+        // Several source spreadsheets contain trailing ",," rows. They are
+        // not aerodynamic samples and must not become artificial zero data.
+        if (allCoefficientCellsEmpty)
+            continue;
+
+        if (startColIndex == 1)
+        {
+            double angle = 0.0;
+            if (!tryParseFinite(vals[0], angle)
+                || std::abs(angle - rowCount * STEP) > 1.0e-9)
+            {
+                ConsoleError(L"Error: Invalid aerodynamic angle at line "
+                    + std::to_wstring(lineNumber) + L" file="
+                    + filepath.wstring() + L"\n");
+                return false;
+            }
+        }
+
         for (size_t i = 0; i < numModels; i++)
         {
             size_t base = startColIndex + (i * 3);
-
-            parsedModels[i].lift.push_back(parseDouble(vals[base + 0]));
-            parsedModels[i].drag.push_back(parseDouble(vals[base + 1]));
-            parsedModels[i].moment.push_back(parseDouble(vals[base + 2]));
+            double lift = 0.0;
+            double drag = 0.0;
+            double moment = 0.0;
+            if (!tryParseFinite(vals[base + 0], lift)
+                || !tryParseFinite(vals[base + 1], drag)
+                || !tryParseFinite(vals[base + 2], moment))
+            {
+                ConsoleError(L"Error: Missing or invalid aerodynamic coefficient at line "
+                    + std::to_wstring(lineNumber) + L" file="
+                    + filepath.wstring() + L"\n");
+                return false;
+            }
+            parsedModels[i].lift.push_back(lift);
+            parsedModels[i].drag.push_back(drag);
+            parsedModels[i].moment.push_back(moment);
         }
         rowCount++;
     }
 
-    if (rowCount == 0)
+    constexpr int expectedRows = 73; // 0..360 degrees, inclusive, at 5-degree spacing
+    if (rowCount != expectedRows)
     {
-        ConsoleError(L"Error: No valid data " + filepath.wstring() + L"\n");
+        ConsoleError(L"Error: Expected " + std::to_wstring(expectedRows)
+            + L" aerodynamic rows, got " + std::to_wstring(rowCount)
+            + L" file=" + filepath.wstring() + L"\n");
         return false;
     }
 
+    EnforcePeriodicEndpoint(parsedModels);
     outModels = std::move(parsedModels);
     return true;
 }
@@ -276,8 +377,7 @@ double AeroManager::getDataFromModels(const std::vector<BladeModel>& data, int m
 
     if (vec->empty()) return 0.0;
 
-    double angle = std::fmod(inputAngle, 360.0);
-    if (angle < 0) angle += 360.0;
+    const double angle = normalizeAngleDegrees(inputAngle);
 
     size_t n = vec->size();
     double maxAngle = (n - 1) * STEP;
@@ -309,6 +409,54 @@ std::filesystem::path AeroManager::buildLegacyFileName(const AeroCaseKey& key)
         + std::to_string(key.iceThickness) + "mm.csv";
 }
 
+const std::vector<int>& AeroManager::supportedBundleCounts()
+{
+    static const std::vector<int> values{ 1, 4 };
+    return values;
+}
+
+const std::vector<int>& AeroManager::supportedWindSpeeds()
+{
+    static const std::vector<int> values{ 10, 12, 14, 18 };
+    return values;
+}
+
+const std::vector<int>& AeroManager::supportedIceThicknesses()
+{
+    static const std::vector<int> values{ 12, 18, 20, 25, 28 };
+    return values;
+}
+
+bool AeroManager::isSupportedCase(const AeroCaseKey& key)
+{
+    return std::find(supportedBundleCounts().cbegin(), supportedBundleCounts().cend(),
+        key.bundleCount) != supportedBundleCounts().cend()
+        && isSupportedWindSpeed(key.windSpeed)
+        && isSupportedIceThickness(key.iceThickness);
+}
+
+bool AeroManager::isSupportedWindSpeed(int windSpeed)
+{
+    return std::find(supportedWindSpeeds().cbegin(), supportedWindSpeeds().cend(),
+        windSpeed) != supportedWindSpeeds().cend();
+}
+
+bool AeroManager::isSupportedIceThickness(int iceThickness)
+{
+    return std::find(supportedIceThicknesses().cbegin(), supportedIceThicknesses().cend(),
+        iceThickness) != supportedIceThicknesses().cend();
+}
+
+double AeroManager::normalizeAngleDegrees(double angleDegrees)
+{
+    if (!std::isfinite(angleDegrees))
+        return 0.0;
+    double normalized = std::fmod(angleDegrees, 360.0);
+    if (normalized < 0.0)
+        normalized += 360.0;
+    return normalized;
+}
+
 bool AeroManager::loadCSV(const std::filesystem::path& filepath)
 {
     std::vector<BladeModel> parsedModels;
@@ -324,6 +472,14 @@ bool AeroManager::loadCSV(const std::filesystem::path& filepath)
 
 bool AeroManager::loadCase(const std::filesystem::path& dataDir, const AeroCaseKey& key)
 {
+    const auto cached = caseModels.find(key);
+    if (cached != caseModels.end())
+    {
+        models = cached->second;
+        currentSourceFile = getCaseSourceFile(key);
+        return true;
+    }
+
     const std::filesystem::path chinesePath = dataDir / buildChineseFileName(key);
     const std::filesystem::path legacyPath = dataDir / buildLegacyFileName(key);
 
@@ -348,6 +504,14 @@ bool AeroManager::loadCase(const std::filesystem::path& dataDir, const AeroCaseK
     {
         return false;
     }
+    if (parsedModels.size() != static_cast<size_t>(key.bundleCount))
+    {
+        ConsoleError(L"Error: Aero profile count does not match bundle count. expected="
+            + std::to_wstring(key.bundleCount) + L", actual="
+            + std::to_wstring(parsedModels.size()) + L" file="
+            + selectedPath.wstring() + L"\n");
+        return false;
+    }
 
     models = parsedModels;
     currentSourceFile = selectedPath;
@@ -358,16 +522,12 @@ bool AeroManager::loadCase(const std::filesystem::path& dataDir, const AeroCaseK
 
 bool AeroManager::loadAllCases(const std::filesystem::path& dataDir)
 {
-    static const int bundleCounts[] = { 1, 4 };
-    static const int windSpeeds[] = { 10, 12, 14, 18 };
-    static const int iceThicknesses[] = { 12, 18, 20, 25, 28 };
-
     bool allLoaded = true;
-    for (int bundleCount : bundleCounts)
+    for (int bundleCount : supportedBundleCounts())
     {
-        for (int windSpeed : windSpeeds)
+        for (int windSpeed : supportedWindSpeeds())
         {
-            for (int iceThickness : iceThicknesses)
+            for (int iceThickness : supportedIceThicknesses())
             {
                 if (!loadCase(dataDir, AeroCaseKey{ bundleCount, windSpeed, iceThickness }))
                 {
@@ -406,6 +566,77 @@ double AeroManager::getData(const AeroCaseKey& key, int modelIdx, CoefType type,
     }
 
     return getDataFromModels(it->second, modelIdx, type, inputAngle);
+}
+
+const std::vector<BladeModel>* AeroManager::findCaseModels(const AeroCaseKey& key) const
+{
+    const auto found = caseModels.find(key);
+    return found == caseModels.cend() ? nullptr : &found->second;
+}
+
+AeroCoefficients AeroManager::getCoefficients(
+    const std::vector<BladeModel>& caseData, int modelIdx, double inputAngle) const
+{
+    AeroCoefficients result;
+    if (modelIdx < 0 || modelIdx >= static_cast<int>(caseData.size()))
+        return result;
+
+    const BladeModel& model = caseData[modelIdx];
+    if (model.lift.empty() || model.drag.empty() || model.moment.empty())
+        return result;
+
+    const double angle = normalizeAngleDegrees(inputAngle);
+
+    const std::size_t dataSize = std::min({
+        model.lift.size(), model.drag.size(), model.moment.size() });
+    const double maxAngle = (dataSize - 1) * STEP;
+    if (angle <= maxAngle)
+    {
+        const double exactPosition = (angle - START_VAL) / STEP;
+        const std::size_t firstIndex = std::min(
+            static_cast<std::size_t>(std::floor(exactPosition)), dataSize - 1);
+        const std::size_t secondIndex = std::min(firstIndex + 1, dataSize - 1);
+        const double ratio = secondIndex == firstIndex ? 0.0 : exactPosition - firstIndex;
+        const auto evaluate = [firstIndex, secondIndex, ratio](
+            const std::vector<double>& values)
+        {
+            return values[firstIndex]
+                + (values[secondIndex] - values[firstIndex]) * ratio;
+        };
+        result.lift = evaluate(model.lift);
+        result.drag = evaluate(model.drag);
+        result.moment = evaluate(model.moment);
+    }
+    else
+    {
+        const double ratio = (angle - maxAngle) / (360.0 - maxAngle);
+        const auto evaluate = [dataSize, ratio](const std::vector<double>& values)
+        {
+            return values[dataSize - 1]
+                + (values.front() - values[dataSize - 1]) * ratio;
+        };
+        result.lift = evaluate(model.lift);
+        result.drag = evaluate(model.drag);
+        result.moment = evaluate(model.moment);
+    }
+    return result;
+}
+
+AeroCoefficients AeroManager::getCoefficients(
+    const AeroCaseKey& key, int modelIdx, double inputAngle) const
+{
+    const auto* caseData = findCaseModels(key);
+    return caseData ? getCoefficients(*caseData, modelIdx, inputAngle) : AeroCoefficients{};
+}
+
+void AeroManager::setCaseData(const AeroCaseKey& key,
+    std::vector<BladeModel> caseData, const std::filesystem::path& sourceFile)
+{
+    EnforcePeriodicEndpoint(caseData);
+    models = caseData;
+    currentSourceFile = sourceFile;
+    caseModels[key] = std::move(caseData);
+    caseSourceFiles[key] = sourceFile;
 }
 
 int AeroManager::getModelCount() const

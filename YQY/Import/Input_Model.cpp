@@ -509,7 +509,14 @@ bool Input_Model::InputElementTruss(QTextStream& flow, const QStringList& /*list
             return false;
         }
 
-        int idElement = static_cast<int>(m_Structure->m_Elements.size()) + 1;
+        bool idOk = false;
+        int idElement = strlist_ele[0].toInt(&idOk);
+        if (!idOk || idElement <= 0 ||
+            m_Structure->m_Elements.find(idElement) != m_Structure->m_Elements.end())
+        {
+            qDebug().noquote() << QStringLiteral("Error: invalid or duplicate truss element ID: ") << strlist_ele[0];
+            return false;
+        }
         int idNode0 = strlist_ele[1].toInt();
         int idNode1 = strlist_ele[2].toInt();
         int idMaterial = strlist_ele[3].toInt();
@@ -566,7 +573,14 @@ bool Input_Model::InputElementCable(QTextStream& flow, const QStringList& list_s
             return false;
         }
 
-        int idElement = static_cast<int>(m_Structure->m_Elements.size()) + 1;
+        bool idOk = false;
+        int idElement = strlist_ele[0].toInt(&idOk);
+        if (!idOk || idElement <= 0 ||
+            m_Structure->m_Elements.find(idElement) != m_Structure->m_Elements.end())
+        {
+            qDebug().noquote() << QStringLiteral("Error: invalid or duplicate cable element ID: ") << strlist_ele[0];
+            return false;
+        }
         int idNode0 = strlist_ele[1].toInt();
         int idNode1 = strlist_ele[2].toInt();
         int idMaterial = strlist_ele[3].toInt();
@@ -623,7 +637,14 @@ bool Input_Model::InputElementBeam_CR3D(QTextStream& flow, const QStringList& li
             return false;
         }
 
-        int idElement = static_cast<int>(m_Structure->m_Elements.size()) + 1;
+        bool idOk = false;
+        int idElement = strlist_ele[0].toInt(&idOk);
+        if (!idOk || idElement <= 0 ||
+            m_Structure->m_Elements.find(idElement) != m_Structure->m_Elements.end())
+        {
+            qDebug().noquote() << QStringLiteral("Error: invalid or duplicate CR3D element ID: ") << strlist_ele[0];
+            return false;
+        }
         int idNode0 = strlist_ele[1].toInt();
         int idNode1 = strlist_ele[2].toInt();
         int idMaterial = strlist_ele[3].toInt();

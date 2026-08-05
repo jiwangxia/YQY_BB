@@ -32,6 +32,7 @@ public:
     double m_Stress = 0.0;                      // 单元应力
     ElementRole m_Role = ElementRole::Generic;  ///< 单元在模型中的业务用途
     int m_WireId = -1;                          ///< 子导线编号；非导线单元为 -1
+    int m_AeroBundleCount = 0;                  ///< 所属分裂数；0 表示旧模型未提供
     int m_AeroProfileId = -1;                   ///< 气动参数编号；小于 0 表示不参与气动计算
 
     bool HasAerodynamicLoad() const { return m_AeroProfileId >= 0; }
@@ -46,7 +47,7 @@ public:
      * @brief 获取单元所有自由度编号
      * @param [out] DOFs 自由度编号数组
      */
-    void GetDOFs(std::vector<int>& DOFs);
+    void GetDOFs(std::vector<int>& DOFs) const;
 
 
     Eigen::VectorXd m_inforce;

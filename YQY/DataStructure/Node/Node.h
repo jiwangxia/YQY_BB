@@ -8,6 +8,16 @@
 class Node : public Base
 {
 public:
+    struct TssbnRotationState
+    {
+        Eigen::Vector3d baseSpatialIncrement = Eigen::Vector3d::Zero();
+        Eigen::Vector3d embeddedSpatialIncrement = Eigen::Vector3d::Zero();
+        Eigen::Vector3d baseSpatialVelocity = Eigen::Vector3d::Zero();
+        Eigen::Vector3d embeddedSpatialVelocity = Eigen::Vector3d::Zero();
+        Eigen::Vector3d acceptedSpatialAcceleration =
+            Eigen::Vector3d::Zero();
+    };
+
     Node();
 
     double m_X, m_Y, m_Z;  ///< 节点坐标
@@ -34,6 +44,10 @@ public:
     Eigen::Vector3d m_OmegaMaterial_n = Eigen::Vector3d::Zero();
     Eigen::Vector3d m_AlphaMaterial_n = Eigen::Vector3d::Zero();
     Eigen::Vector3d m_StepRotation = Eigen::Vector3d::Zero();
+    Eigen::Vector3d m_TssbnOmegaMaterial1 = Eigen::Vector3d::Zero();
+    Eigen::Vector3d m_TssbnAlphaMaterial1 = Eigen::Vector3d::Zero();
+    Eigen::Vector3d m_TssbnOmegaMaterial2 = Eigen::Vector3d::Zero();
+    Eigen::Vector3d m_TssbnAlphaMaterial2 = Eigen::Vector3d::Zero();
 
     void BeginNewmarkStep(double dt, double beta, double gamma,
         const std::array<bool, 3>& translationActive,
@@ -41,5 +55,22 @@ public:
     void ApplyNewmarkCorrection(const Eigen::Vector3d& deltaTranslation,
         const Eigen::Vector3d& deltaRotation, double a0, double a1);
     void RollbackNewmarkStep();
+    void SetTssbnStageKinematics(
+        int stageIndex,
+        double timeStep,
+        double firstStageTime,
+        double secondStageTime,
+        double secondStageDiagonalFraction,
+        Eigen::Vector3d& spatialAngularVelocity,
+        Eigen::Vector3d& spatialAngularAcceleration);
+    TssbnRotationState IntegrateTssbnRotation(
+        double timeStep,
+        double stageAccelerationExtrapolation,
+        double baseFirstWeight,
+        double embeddedFirstWeight,
+        double embeddedSecondWeight,
+        double embeddedLastWeight,
+        double lastStageFirstCoefficient,
+        double lastStageSecondCoefficient) const;
 };
 

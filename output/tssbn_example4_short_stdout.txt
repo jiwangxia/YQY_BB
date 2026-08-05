@@ -1,0 +1,1 @@
+Le2012 Example4 min_ux=-18.2052 max_abs_uy=9.85655 max_abs_uz=3.97021 error_ux=0.0897384 error_uy=0.0143452 error_uz=0.134347 result=output/verification/le2012_example4_tssbn/response.csv

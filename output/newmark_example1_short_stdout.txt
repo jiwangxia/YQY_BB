@@ -1,0 +1,1 @@
+Le2012 Example1 tip_uz=[5.50894e-06,5.48387] elbow_uz=[0.000358663,5.51245] errors=[1,0.331236,1.00009,0.110895] result=output/verification/le2012_example1/response.csv
