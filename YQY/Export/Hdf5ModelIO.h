@@ -5,6 +5,7 @@
  */
 
 #include "Hdf5ResultData.h"
+#include "Base/EmptyOUT.h"
 #include "Utility/EnumKeyword.h"
 
 #include <QString>
@@ -109,14 +110,16 @@ public:
     /**
      * @brief 快速检查 H5 文件中的模型和结果数据规模，不读取完整结果数组。
      */
-    bool InspectHdf5(const QString& fileName, Hdf5ResultSummary& summary) const;
+    bool InspectHdf5(const QString& fileName, _OUT Hdf5ResultSummary& summary) const;
 
     // Opens one result file and keeps an ASCII-path temporary copy alive so
     // individual frames can be read efficiently by their HDF5 index records.
-    bool OpenResultFile(const QString& fileName, std::vector<Hdf5ResultFrameInfo>& frames);
-    bool ReadResultRanges(Hdf5ResultRanges& ranges) const;
-    bool ReadResultFrame(int frameIndex, Hdf5ResultFrame& frame) const;
-    bool ReadSolverIterationHistory(std::vector<SolverIterationRecord>& records) const;
+    bool OpenResultFile(const QString& fileName, _OUT std::vector<Hdf5ResultFrameInfo>& frames);
+    bool ReadResultRanges(_OUT Hdf5ResultRanges& ranges) const;
+    bool ReadResultFrame(int frameIndex, _OUT Hdf5ResultFrame& frame) const;
+    bool RestoreLastDynamicState(const QString& fileName, StructureData* pData,
+        _OUT double* time = nullptr, _OUT int* stepId = nullptr);
+    bool ReadSolverIterationHistory(_OUT std::vector<SolverIterationRecord>& records) const;
     void CloseResultFile();
 
 private:

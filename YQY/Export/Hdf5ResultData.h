@@ -28,7 +28,9 @@ struct Hdf5ResultFrameInfo
 struct Hdf5NodalResult
 {
     int id = 0;
-    double displacement[3] = {};
+    double displacement[6] = {};
+    double velocity[6] = {};
+    double acceleration[6] = {};
     double currentCoordinate[3] = {};
 };
 

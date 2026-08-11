@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Eigen/Dense>
+#include <map>
 
 class StructureData;
 class LoadBase;
@@ -20,6 +21,7 @@ public:
 
     static void AssembleGalloping(const Force_Wind& wind,
         const StructureData& structure,
+        const std::map<int, int>& elementProfileBindings,
         int iceThickness,
         double initialAttackDegrees,
         const Eigen::Vector3d& modelUp,

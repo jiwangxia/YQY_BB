@@ -20,7 +20,7 @@ public:
 	 * @param [out] str 读取到的字符串
 	 * @return 成功返回 true，到达文件末尾返回 false
 	 */
-	bool ReadLine(QTextStream& flow, QString& str);
+	bool ReadLine(QTextStream& flow, _OUT QString& str);
 
 	/**
 	 * @brief 读取模型数据文件
@@ -35,7 +35,7 @@ private:
 	std::shared_ptr<StructureData> m_Structure;  ///< 结构数据指针
 	QString m_InputFileDir;                      ///< 输入文件所在目录
 	QString m_LastError;
-	bool ValidateStructure(QString& errorMessage) const;
+	bool ValidateStructure(_OUT QString& errorMessage) const;
 
 	/**
 	 * @brief 读取节点数据

@@ -46,8 +46,12 @@ public:
      * @return 对应结果值
      */
     double GetValue(EnumKeyword::NodeResultType type) const;
+    double GetVelocityComponent(int component) const;
+    double GetAccelerationComponent(int component) const;
 
 private:
+    double m_vr1 = 0, m_vr2 = 0, m_vr3 = 0;
+    double m_ar1 = 0, m_ar2 = 0, m_ar3 = 0;
     double m_cx = 0, m_cy = 0, m_cz = 0;       // 当前坐标
     double m_u1 = 0, m_u2 = 0, m_u3 = 0;       // 位移
     double m_magnitudeU = 0;                   // 位移幅值

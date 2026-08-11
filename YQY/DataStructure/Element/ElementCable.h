@@ -25,9 +25,9 @@ public:
      * @brief 计算单元刚度矩阵
      * @param [out] ke 单元刚度矩阵（8x8）
      */
-    void Get_ke(MatrixXd& ke);
-    void Get_me_Lumped(MatrixXd& me);         //集中质量矩阵
-    void Get_me_Consistent(MatrixXd& me);     //一致质量矩阵
+    void Get_ke(_OUT MatrixXd& ke);
+    void Get_me_Lumped(_OUT MatrixXd& me);         //集中质量矩阵
+    void Get_me_Consistent(_OUT MatrixXd& me);     //一致质量矩阵
     void Get_L0();
-    void Assemble(const std::vector<double>& damping, MatrixXd& _OUT ce);
+    void Assemble(const std::vector<double>& damping, _OUT MatrixXd& ce);
 };

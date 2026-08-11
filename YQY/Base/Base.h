@@ -7,12 +7,10 @@
 #include <Eigen/Dense> 
 #include <Eigen/Sparse>
 
+#include "Base/EmptyOUT.h"
+
 #include "Utility/EnumKeyword.h"
 using namespace Eigen;
-
-#ifndef _OUT
-#define _OUT // 定义输出变量宏
-#endif
 
 #define PI 3.141592653589793
 

@@ -3,6 +3,8 @@
 #include "Solver/Constraint/NonlinearMPC.h"
 
 #include <QDebug>
+#include <QElapsedTimer>
+#include <QTextStream>
 
 #include <algorithm>
 
@@ -23,7 +25,15 @@ namespace SolverNameSpace
 
         m_dx = Vec::Zero(nDofs);
         m_R = Vec::Zero(nDofs);
-        m_cache.reset();
+        m_linearSolver.Reset();
+
+        const bool profile =
+            qEnvironmentVariableIntValue("YQY_PROFILE_STATIC") != 0;
+        qint64 matrixAndResidualNanoseconds = 0;
+        qint64 mpcAssemblyNanoseconds = 0;
+        qint64 mpcReductionNanoseconds = 0;
+        qint64 linearSolveNanoseconds = 0;
+        int totalNewtonIterations = 0;
 
         for (int increment = 1;
              increment <= m_param.numIncrements; ++increment)
@@ -54,10 +64,17 @@ namespace SolverNameSpace
                  iteration < m_param.maxIter; ++iteration)
             {
                 iterationCount = iteration + 1;
+                QElapsedTimer profileTimer;
+                if (profile)
+                    profileTimer.start();
                 model.Assemble_Matrix(m_K, false);
                 model.ComputeResidual(freeExternalForce, m_R);
+                if (profile)
+                    matrixAndResidualNanoseconds += profileTimer.nsecsElapsed();
 
                 NonlinearMPCData constraints;
+                if (profile)
+                    profileTimer.restart();
                 if (!model.AssembleNonlinearMPC(constraints))
                 {
                     model.ReportProgress(
@@ -67,6 +84,8 @@ namespace SolverNameSpace
                             .arg(increment).arg(iteration + 1));
                     return false;
                 }
+                if (profile)
+                    mpcAssemblyNanoseconds += profileTimer.nsecsElapsed();
 
                 SpMat solveTangent;
                 Vec solveRhs;
@@ -79,6 +98,8 @@ namespace SolverNameSpace
                 }
                 else
                 {
+                    if (profile)
+                        profileTimer.restart();
                     if (!NonlinearMPC::Reduce(
                             m_K, m_R, constraints, reduction))
                     {
@@ -93,6 +114,8 @@ namespace SolverNameSpace
                                 "从自由度Jacobian可能奇异");
                         return false;
                     }
+                    if (profile)
+                        mpcReductionNanoseconds += profileTimer.nsecsElapsed();
                     solveTangent = reduction.tangent;
                     solveRhs = reduction.rhs;
                     constraintNorm = reduction.constraintNorm;
@@ -140,6 +163,8 @@ namespace SolverNameSpace
                     break;
 
                 Vec independentIncrement;
+                if (profile)
+                    profileTimer.restart();
                 if (!SolveLinear(
                         solveTangent, solveRhs, independentIncrement))
                 {
@@ -152,6 +177,8 @@ namespace SolverNameSpace
                         << QStringLiteral("Error: 线性方程求解失败");
                     return false;
                 }
+                if (profile)
+                    linearSolveNanoseconds += profileTimer.nsecsElapsed();
 
                 m_dx = constraints.Empty()
                     ? independentIncrement
@@ -185,6 +212,8 @@ namespace SolverNameSpace
                 return false;
             }
 
+            totalNewtonIterations += iterationCount;
+
             model.SetNonlinearMPCMultipliers(convergedMultipliers);
             model.CalculateReactions(fixedExternalForce);
             Vec displacement;
@@ -204,6 +233,19 @@ namespace SolverNameSpace
         }
 
         qDebug().noquote() << QStringLiteral("静力非线性求解完成");
+        if (profile)
+        {
+            QTextStream(stdout)
+                << QStringLiteral(
+                    "static_profile newton=%1 matrix_residual_ms=%2 "
+                    "mpc_assembly_ms=%3 mpc_reduction_ms=%4 linear_ms=%5")
+                       .arg(totalNewtonIterations)
+                       .arg(matrixAndResidualNanoseconds / 1.0e6, 0, 'f', 3)
+                       .arg(mpcAssemblyNanoseconds / 1.0e6, 0, 'f', 3)
+                       .arg(mpcReductionNanoseconds / 1.0e6, 0, 'f', 3)
+                       .arg(linearSolveNanoseconds / 1.0e6, 0, 'f', 3)
+                << Qt::endl;
+        }
         return true;
     }
 
@@ -212,51 +254,6 @@ namespace SolverNameSpace
         const Vec& rightHandSide,
         Vec& solution)
     {
-        bool solved = false;
-
-        if (m_cache.useLdlt)
-        {
-            if (!m_cache.patternAnalyzed)
-                m_cache.ldlt.analyzePattern(tangent);
-            m_cache.ldlt.factorize(tangent);
-
-            if (m_cache.ldlt.info() == Eigen::Success)
-            {
-                solution = m_cache.ldlt.solve(rightHandSide);
-                if (m_cache.ldlt.info() == Eigen::Success)
-                {
-                    solved = true;
-                    m_cache.patternAnalyzed = true;
-                }
-            }
-
-            if (!solved)
-            {
-                m_cache.useLdlt = false;
-                m_cache.patternAnalyzed = false;
-            }
-        }
-
-        if (!solved)
-        {
-            if (!m_cache.patternAnalyzed)
-            {
-                m_cache.lu.analyzePattern(tangent);
-                m_cache.patternAnalyzed = true;
-            }
-            m_cache.lu.factorize(tangent);
-
-            if (m_cache.lu.info() == Eigen::Success)
-            {
-                solution = m_cache.lu.solve(rightHandSide);
-                solved = m_cache.lu.info() == Eigen::Success;
-            }
-            else
-            {
-                m_cache.patternAnalyzed = false;
-            }
-        }
-
-        return solved && solution.allFinite();
+        return m_linearSolver.Solve(tangent, rightHandSide, solution);
     }
 }

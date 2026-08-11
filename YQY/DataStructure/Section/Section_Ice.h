@@ -34,6 +34,6 @@ public:
 
 private:
     double GetIceThicknessAt(double theta) const;
-    void CalculateCrescentProperties(double& area, double& my, double& mz,
-        double& iyy, double& izz, double& iyz);
+    void CalculateCrescentProperties(_OUT double& area, _OUT double& my, _OUT double& mz,
+        _OUT double& iyy, _OUT double& izz, _OUT double& iyz);
 };

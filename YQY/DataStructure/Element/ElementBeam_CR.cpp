@@ -304,7 +304,7 @@ void ElementBeam_CR::Get_L0()
 
 void ElementBeam_CR::Assemble(
     const std::vector<double>& damping,
-    MatrixXd& _OUT ce)
+    _OUT MatrixXd& ce)
 {
     // 非线性速度切线属于惯性残量的运动学贡献，不是可选材料阻尼。
     // 保留该旧入口，并与 Newmark 使用的动力切线保持一致。
@@ -312,7 +312,7 @@ void ElementBeam_CR::Assemble(
     EvaluateDynamicSystem(nullptr, nullptr, &ce);
 }
 
-void ElementBeam_CR::Get_kl(const VectorXd& pl, const double& L, MatrixXd& _OUT kl, VectorXd& _OUT fl)
+void ElementBeam_CR::Get_kl(const VectorXd& pl, const double& L, _OUT MatrixXd& kl, _OUT VectorXd& fl)
 {
     // 1. 提取变形分量
     const double u = pl(0);

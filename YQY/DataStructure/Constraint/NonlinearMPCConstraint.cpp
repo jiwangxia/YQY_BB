@@ -287,7 +287,7 @@ bool RigidOffsetMPCConstraint::Evaluate(
     data.Clear();
     data.value = value;
     data.jacobian = Eigen::MatrixXd::Zero(3, freeDofs);
-    data.hessians.reserve(3);
+    data.hessianEntries.resize(3);
 
     int masterTranslation[3] = { -1, -1, -1 };
     int masterRotation[3] = { -1, -1, -1 };
@@ -327,16 +327,13 @@ bool RigidOffsetMPCConstraint::Evaluate(
             - 0.5 * (
                 basis * rotatedOffset.transpose()
                 + rotatedOffset * basis.transpose());
-        std::vector<Eigen::Triplet<double>> entries;
+        auto& entries = data.hessianEntries[component];
         entries.reserve(9);
         for (int i = 0; i < 3; ++i)
             for (int j = 0; j < 3; ++j)
                 AddEntry(
                     entries, masterRotation[i], masterRotation[j],
                     rotationHessian(i, j));
-        data.hessians.emplace_back(freeDofs, freeDofs);
-        data.hessians.back().setFromTriplets(
-            entries.begin(), entries.end());
     }
 
     for (int i = 0; i < 3; ++i)

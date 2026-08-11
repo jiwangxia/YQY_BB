@@ -92,8 +92,9 @@
           <item row="3" column="0"><widget class="QLabel" name="elementLabel"><property name="text"><string>单元类型</string></property></widget></item>
           <item row="3" column="1">
            <widget class="QComboBox" name="elementCombo">
-            <item><property name="text"><string>T3D2 桁架</string></property></item>
-            <item><property name="text"><string>CABLE 索</string></property></item>
+            <item><property name="text"><string>CABLE 共旋索单元</string></property></item>
+            <item><property name="text"><string>T3D2 桁架单元</string></property></item>
+            <item><property name="text"><string>CR3D 共旋梁单元</string></property></item>
            </widget>
           </item>
           <item row="4" column="0"><widget class="QLabel" name="startLabel"><property name="text"><string>左挂点 (m)</string></property></widget></item>
@@ -188,6 +189,7 @@
            <item><property name="text"><string>外框多边形</string></property></item>
            <item><property name="text"><string>中心对角撑</string></property></item>
            <item><property name="text"><string>内圈多边形</string></property></item>
+           <item><property name="text"><string>刚性中心 MPC（高效）</string></property></item>
           </widget></item>
          </layout>
         </widget>

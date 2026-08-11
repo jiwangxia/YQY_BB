@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file IAnalysisModel.h
  * @brief 分析模型接口 - 求解器通过此接口访问物理数据
  * 
@@ -12,6 +12,7 @@
 #include <QString>
 #include <functional>
 #include "Solver/Constraint/NonlinearMPC.h"
+#include "Base/EmptyOUT.h"
 
 namespace SolverNameSpace
 {
@@ -135,7 +136,7 @@ namespace SolverNameSpace
          * @param[out] v 速度向量
          * @param[out] a 加速度向量
          */
-        virtual void GetState(Vec& u, Vec& v, Vec& a) const = 0;
+        virtual void GetState(_OUT Vec& u, _OUT Vec& v, _OUT Vec& a) const = 0;
 
         // ============ 矩阵组装 ============
         /**
@@ -143,15 +144,15 @@ namespace SolverNameSpace
          * @param[out] K 等效刚度矩阵
          * @param[out] isDynamic 是否为动力分析
          */
-        virtual void Assemble_Matrix(SpMat& Keff, bool isDynamic) = 0;
+        virtual void Assemble_Matrix(_OUT SpMat& Keff, bool isDynamic) = 0;
 
         /**
          * @brief 组装当前试探状态的一致质量矩阵、陀螺切线和惯性力
          */
         virtual void AssembleDynamicSystem(
-            SpMat& mass,
-            SpMat& gyroscopic,
-            SpMat& centrifugal)
+            _OUT SpMat& mass,
+            _OUT SpMat& gyroscopic,
+            _OUT SpMat& centrifugal)
         {
             mass.resize(GetFreeDofs(), GetFreeDofs());
             gyroscopic.resize(GetFreeDofs(), GetFreeDofs());
@@ -164,7 +165,7 @@ namespace SolverNameSpace
         virtual void AssembleEffectiveDynamicSystem(
             double accelerationDerivative,
             double velocityDerivative,
-            SpMat& effectiveDynamicTangent)
+            _OUT SpMat& effectiveDynamicTangent)
         {
             SpMat mass;
             SpMat velocityTangent;
@@ -177,9 +178,24 @@ namespace SolverNameSpace
                 + configurationTangent;
         }
 
+        virtual void AssembleEffectiveTangent(
+            double accelerationDerivative,
+            double velocityDerivative,
+            _OUT SpMat& effectiveTangent)
+        {
+            SpMat stiffness;
+            SpMat dynamicTangent;
+            Assemble_Matrix(stiffness, true);
+            AssembleEffectiveDynamicSystem(
+                accelerationDerivative,
+                velocityDerivative,
+                dynamicTangent);
+            effectiveTangent = stiffness + dynamicTangent;
+        }
+
         /** @brief 组装当前试探状态下的非线性主从约束。 */
         virtual bool AssembleNonlinearMPC(
-            NonlinearMPCData& constraints)
+            _OUT NonlinearMPCData& constraints)
         {
             constraints.Clear();
             return true;
@@ -201,7 +217,7 @@ namespace SolverNameSpace
          * @param[out] F1 约束自由度对应的外力向量
          * @param[out] F2 自由自由度对应的外力向量
          */
-        virtual void ComputeExternalForce(double time, double loadFactor, Vec& F1, Vec& F2) = 0;
+        virtual void ComputeExternalForce(double time, double loadFactor, _OUT Vec& F1, _OUT Vec& F2) = 0;
 
         // ============ 约束位移计算 ============
         /**
@@ -212,7 +228,7 @@ namespace SolverNameSpace
          * @param[in] factor 位移因子（静力增量时使用）
          */
         virtual void Assemble_Constraint(
-            Vec& x1,
+            _OUT Vec& x1,
             double currentTime,
             double factor) = 0;
 
@@ -225,21 +241,21 @@ namespace SolverNameSpace
          * @param[in] F_ext 外荷载向量（自由自由度）
          * @param[out] R 残差向量
          */
-        virtual void ComputeResidual(const Vec& F_ext, Vec& R) = 0;
+        virtual void ComputeResidual(const Vec& F_ext, _OUT Vec& R) = 0;
 
         /**
          * @brief 计算不含惯性力的静力残差 F_ext-F_int
          *
          * HHT-alpha 方法使用该量在相邻时间步之间进行加权。
          */
-        virtual void ComputeStaticResidual(const Vec& F_ext, Vec& R)
+        virtual void ComputeStaticResidual(const Vec& F_ext, _OUT Vec& R)
         {
             ComputeResidual(F_ext, R);
         }
 
         /**
-         * @brief 计算反力向量
-         * @param [out] F1 约束自由度对应的反力向量
+         * @brief 根据约束自由度的外力计算并写入节点反力
+         * @param [in] F1 约束自由度对应的外力向量
          */
         virtual void CalculateReactions(Vec& F1) = 0;
 
@@ -263,7 +279,7 @@ namespace SolverNameSpace
         virtual void CommitState() = 0;
 
         virtual void BackupStepState() = 0;
-        virtual void GetStepIncrement(SolverNameSpace::Vec& dx_step) const = 0;
+        virtual void GetStepIncrement(_OUT SolverNameSpace::Vec& dx_step) const = 0;
 
         /** @brief 查询宿主任务是否请求取消。求解器在增量/时间步边界调用。 */
 	virtual bool IsCancellationRequested() const { return false; }

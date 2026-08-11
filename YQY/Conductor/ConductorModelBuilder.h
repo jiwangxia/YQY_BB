@@ -65,15 +65,15 @@ namespace Conductor
      */
     enum class InnerSpacerStyle
     {
-        OuterPolygon = 0,
-        CenterBraced,
-        InnerPolygon
+        OuterPolygon = 0,//外圈多边形
+        CenterBraced,    //中心点连外部多边形
+        InnerPolygon,    //内部多边形连外部多边形
+        RigidCenterMPC   //中心主节点通过刚性偏置 MPC 约束各子导线
     };
 
     struct InnerSpacerConfig
     {
-        double position = 0.0;                                             ///< 间隔棒位置，按距离或比例解释
-        bool useRatio = false;                                             ///< true=position 为比例，false=position 为距左端距离
+        double position = 0.0;                                             ///< 距左端的水平距离，单位 m
         InnerSpacerStyle style = InnerSpacerStyle::CenterBraced;           ///< 相内间隔棒形式
         double innerPolygonScale = 0.5;                                    ///< 内圈相对外框的比例
         EnumKeyword::ElementType elementType = EnumKeyword::ElementType::CR3D; ///< 间隔棒单元类型，默认 CR3D
@@ -88,7 +88,7 @@ namespace Conductor
         int count = 0;                                                      ///< 间隔棒数量
         double startOffset = 0.0;                                           ///< 距左端避让距离，单位 m
         double endOffset = 0.0;                                             ///< 距右端避让距离，单位 m
-        bool useEqualSpacing = true;                                        ///< true=均匀布置；false=按 THOP 标准次档距布置
+        bool useEqualSpacing = true;                                        ///< true=均匀布置；false=标准次档距布置
         InnerSpacerConfig spacer;                                           ///< 单个间隔棒的单元类型和属性
     };
 
@@ -122,14 +122,15 @@ namespace Conductor
     {
         int stationIndex = -1;
         Vector3d center = Vector3d::Zero();
-        int junctionNodeId = -1;
-        int supportNodeId = -1;
+        int junctionNodeId = -1;//交汇点节点ID
+        int supportNodeId = -1;//悬挂点节点ID
         std::vector<int> wireNodeIds;
         std::vector<int> yokeElementIds;
         int stringElementId = -1;
         int spacerCenterNodeId = -1;
         std::vector<int> spacerInnerNodeIds;
         std::vector<int> spacerElementIds;
+        std::vector<int> spacerMpcIds;
     };
 
     /**
@@ -159,6 +160,7 @@ namespace Conductor
         std::vector<int> innerNodeIds;      ///< 内圈小多边形节点 ID
         std::vector<int> nodeIds;           ///< 间隔棒关联节点 ID
         std::vector<int> elementIds;        ///< 间隔棒单元 ID
+        std::vector<int> mpcIds;            ///< 中心刚性表示生成的 MPC ID
     };
 
     /**
@@ -172,8 +174,8 @@ namespace Conductor
         int spanCount = 1;                                         ///< 结果中包含的档数
         int leftSupportNodeId = -1;                                ///< 左端公共支点节点 ID
         int rightSupportNodeId = -1;                               ///< 右端公共支点节点 ID
-        TensionEndModel leftTensionEnd;                             ///< 左侧 THOP 式耐张端部
-        TensionEndModel rightTensionEnd;                            ///< 右侧 THOP 式耐张端部
+        TensionEndModel leftTensionEnd;                             ///< 左侧耐张端部
+        TensionEndModel rightTensionEnd;                            ///< 右侧耐张端部
         std::vector<SuspensionPointModel> suspensionPoints;         ///< 中间 H 型悬垂点
         std::map<int, SubConductorModel> subConductors;            ///< 子导线索引
         std::vector<InnerSpacerModel> innerSpacers;                ///< 相内间隔棒索引
@@ -209,7 +211,7 @@ namespace Conductor
          * @param [out] error 失败原因
          * @return 成功返回 true
          */
-        bool BuildLine(const LineBuildConfig& config, LineBuildResult& result, std::string& error);
+        bool BuildLine(const LineBuildConfig& config, _OUT LineBuildResult& result, _OUT std::string& error);
 
         /**
          * @brief 生成单档导线，并按配置生成相内间隔棒
@@ -218,15 +220,15 @@ namespace Conductor
          * @param [out] error 失败原因
          * @return 成功返回 true
          */
-        bool BuildSpanConductor(const SpanConductorBuildConfig& config, LineBuildResult& result, std::string& error);
+        bool BuildSpanConductor(const SpanConductorBuildConfig& config, _OUT LineBuildResult& result, _OUT std::string& error);
 
         /**
          * @brief 生成同一耐张段内的多档导线
          *
-         * 首末站使用当前单档耐张端逻辑，中间站按 THOP 的 H 型悬垂端逻辑生成；
+         * 首末站使用当前单档耐张端逻辑，中间站H型悬垂端逻辑生成；
          * 相邻两档共享中间站的各子导线端节点。
          */
-        bool BuildMultiSpanConductor(const MultiSpanConductorBuildConfig& config, LineBuildResult& result, std::string& error);
+        bool BuildMultiSpanConductor(const MultiSpanConductorBuildConfig& config, _OUT LineBuildResult& result, _OUT std::string& error);
 
         /**
          * @brief 在已有导线上生成一个相内间隔棒
@@ -236,7 +238,7 @@ namespace Conductor
          * @param [out] error 失败原因
          * @return 成功返回 true
          */
-        bool BuildInnerSpacer(LineBuildResult& line, const InnerSpacerConfig& config, InnerSpacerModel& spacer, std::string& error);
+        bool BuildInnerSpacer(LineBuildResult& line, const InnerSpacerConfig& config, _OUT InnerSpacerModel& spacer, _OUT std::string& error);
 
         /**
          * @brief 在已有导线上批量生成相内间隔棒
@@ -245,10 +247,10 @@ namespace Conductor
          * @param [out] error 失败原因
          * @return 成功返回 true
          */
-        bool BuildInnerSpacers(LineBuildResult& line, const std::vector<InnerSpacerConfig>& configs, std::string& error);
+        bool BuildInnerSpacers(LineBuildResult& line, const std::vector<InnerSpacerConfig>& configs, _OUT std::string& error);
 
         /**
-         * @brief 按内置 THOP 次档距规则计算间隔棒位置
+         * @brief 按内置次档距规则计算间隔棒位置
          * @param [in] spanLength 水平档距，单位 m
          * @return 各间隔棒距左挂点的位置，单位 m
          */
@@ -262,7 +264,7 @@ namespace Conductor
          * @param [out] error 失败原因
          * @return 成功返回 true
          */
-        bool CalculateInnerSpacerConfigs(const LineBuildResult& line, const InnerSpacerLayoutConfig& layout, std::vector<InnerSpacerConfig>& configs, std::string& error) const;
+        bool CalculateInnerSpacerConfigs(const LineBuildResult& line, const InnerSpacerLayoutConfig& layout, _OUT std::vector<InnerSpacerConfig>& configs, _OUT std::string& error) const;
 
     private:
         std::shared_ptr<StructureData> m_ownedStructure;
@@ -270,19 +272,20 @@ namespace Conductor
 
         int NextNodeId() const;
         int NextElementId() const;
+        int NextMPCId() const;
 
-        bool ValidateProperty(std::shared_ptr<Property> property, const std::string& objectName, std::string& error) const;
-        std::shared_ptr<ElementBase> CreateLineElement(EnumKeyword::ElementType elementType, std::string& error) const;
+        bool ValidateProperty(std::shared_ptr<Property> property, const std::string& objectName, _OUT std::string& error) const;
+        std::shared_ptr<ElementBase> CreateLineElement(EnumKeyword::ElementType elementType, _OUT std::string& error) const;
         void PrepareElementLocalFrame(std::shared_ptr<ElementBase> element) const;
         int FindNearestNodeOnSubConductor(const SubConductorModel& sub, const Vector3d& leftBase, const Vector2d& direction, double targetDistance, bool excludeEndpoints) const;
         bool AddElement(int iNodeId, int jNodeId, EnumKeyword::ElementType elementType, std::shared_ptr<Property> property,
-            double initStress, int& elementId, std::string& error, ElementRole role = ElementRole::Generic,
+            double initStress, _OUT int& elementId, _OUT std::string& error, ElementRole role = ElementRole::Generic,
             int wireId = -1, int aeroProfileId = -1, int aeroBundleCount = 0);
-        bool AddNodes(BundleResult& raw, const LineBuildConfig& config, LineBuildResult& result, std::string& error);
-        bool AddElements(const BundleResult& raw, const LineBuildConfig& config, std::shared_ptr<Property> property, LineBuildResult& result, std::string& error);
-        bool AddTensionEndElements(const LineBuildConfig& config, LineBuildResult& result, std::string& error);
-        bool BuildSuspensionSpacer(SuspensionPointModel& suspension, const InnerSpacerConfig& config, std::string& error);
-        bool CreateSubConductorSets(const LineBuildConfig& config, LineBuildResult& result, std::string& error);
-        bool RenumberLineModel(LineBuildResult& result, std::string& error);
+        bool AddNodes(BundleResult& raw, const LineBuildConfig& config, _OUT LineBuildResult& result, _OUT std::string& error);
+        bool AddElements(const BundleResult& raw, const LineBuildConfig& config, std::shared_ptr<Property> property, _OUT LineBuildResult& result, _OUT std::string& error);
+        bool AddTensionEndElements(const LineBuildConfig& config, _OUT LineBuildResult& result, _OUT std::string& error);
+        bool BuildSuspensionSpacer(_OUT SuspensionPointModel& suspension, const InnerSpacerConfig& config, _OUT std::string& error);
+        bool CreateSubConductorSets(const LineBuildConfig& config, _OUT LineBuildResult& result, _OUT std::string& error);
+        bool RenumberLineModel(LineBuildResult& result, _OUT std::string& error);
     };
 }

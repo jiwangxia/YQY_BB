@@ -20,11 +20,11 @@ public:
     Eigen::Vector3d q0 = Eigen::Vector3d(0.0, 1.0, 0.0);
     Eigen::Matrix3d R0 = Eigen::Matrix3d::Identity();
 
-    void Get_ke(Eigen::MatrixXd& ke) override;
-    void Get_me_Lumped(Eigen::MatrixXd& me) override;
-    void Get_me_Consistent(Eigen::MatrixXd& me) override;
+    void Get_ke(_OUT Eigen::MatrixXd& ke) override;
+    void Get_me_Lumped(_OUT Eigen::MatrixXd& me) override;
+    void Get_me_Consistent(_OUT Eigen::MatrixXd& me) override;
     void Get_L0() override;
-    void Assemble(const std::vector<double>& damping, Eigen::MatrixXd& ce) override;
+    void Assemble(const std::vector<double>& damping, _OUT Eigen::MatrixXd& ce) override;
 
 private:
     struct GaussState
@@ -36,6 +36,6 @@ private:
     };
 
     GaussState EvaluateGaussState(double coordinate) const;
-    void GetSectionData(double& area, double& Iy, double& Iz, double& J,
-        double& young, double& shear, double& density) const;
+    void GetSectionData(_OUT double& area, _OUT double& Iy, _OUT double& Iz, _OUT double& J,
+        _OUT double& young, _OUT double& shear, _OUT double& density) const;
 };

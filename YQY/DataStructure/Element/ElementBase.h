@@ -1,4 +1,5 @@
-﻿#pragma once
+#pragma once
+#include "Base/EmptyOUT.h"
 #include "Base/Base.h"
 #include "DataStructure/Property/Property.h"
 #include "DataStructure/Section/SectionBase.h"
@@ -47,7 +48,7 @@ public:
      * @brief 获取单元所有自由度编号
      * @param [out] DOFs 自由度编号数组
      */
-    void GetDOFs(std::vector<int>& DOFs) const;
+    void GetDOFs(_OUT std::vector<int>& DOFs) const;
 
 
     Eigen::VectorXd m_inforce;
@@ -55,16 +56,16 @@ public:
      * @brief 获取单元刚度矩阵
      * @param [out] ke 单元刚度矩阵
      */
-    virtual void Get_ke(MatrixXd& _OUT ke) = 0;
-    virtual void Get_me_Lumped(MatrixXd& _OUT me) = 0;       //集中质量矩阵
-    virtual void Get_me_Consistent(MatrixXd& _OUT me) = 0;   //一致质量矩阵
+    virtual void Get_ke(_OUT MatrixXd& ke) = 0;
+    virtual void Get_me_Lumped(_OUT MatrixXd& me) = 0;       //集中质量矩阵
+    virtual void Get_me_Consistent(_OUT MatrixXd& me) = 0;   //一致质量矩阵
     /**
      * @brief 计算当前试探状态的单元惯性力
      *
      * 默认实现为 M*a。具有有限转动自由度的单元可重写该函数，
      * 以加入陀螺力矩等构型相关项。
      */
-    virtual void Get_InertiaForce(VectorXd& _OUT inertiaForce);
+    virtual void Get_InertiaForce(_OUT VectorXd& inertiaForce);
 
     /**
      * @brief 计算惯性力对速度的切线矩阵
@@ -72,7 +73,7 @@ public:
      * Newmark 有效切线中的系数为 gamma/(beta*dt)。
      * 不含陀螺项的单元使用默认零矩阵。
      */
-    virtual void Get_GyroscopicMatrix(MatrixXd& _OUT gyroscopicMatrix);
+    virtual void Get_GyroscopicMatrix(_OUT MatrixXd& gyroscopicMatrix);
 
     /**
      * @brief 计算惯性力对当前构型的切线矩阵
@@ -80,7 +81,7 @@ public:
      * 该项不乘 Newmark 的 a0 或 a1 系数。无有限转动惯性项的单元
      * 使用默认零矩阵。
      */
-    virtual void Get_CentrifugalMatrix(MatrixXd& _OUT centrifugalMatrix);
+    virtual void Get_CentrifugalMatrix(_OUT MatrixXd& centrifugalMatrix);
 
     /**
      * @brief 一次性计算当前试探状态的全部动力学贡献。
@@ -89,10 +90,10 @@ public:
      * 重写此接口，从而避免重复计算质量、惯性力和动力切线。
      */
     virtual void GetDynamicContributions(
-        MatrixXd& massMatrix,
-        VectorXd& inertiaForce,
-        MatrixXd& gyroscopicMatrix,
-        MatrixXd& centrifugalMatrix);
+        _OUT MatrixXd& massMatrix,
+        _OUT VectorXd& inertiaForce,
+        _OUT MatrixXd& gyroscopicMatrix,
+        _OUT MatrixXd& centrifugalMatrix);
     virtual void Get_L0() = 0;
 
     /**
@@ -107,5 +108,5 @@ public:
     * @param [in] Vector[4] damping   //依次上述值
     * @param [out] ce 单元阻尼矩阵
     */
-    virtual void Assemble(const std::vector<double>& damping, MatrixXd& _OUT ce) = 0;
+    virtual void Assemble(const std::vector<double>& damping, _OUT MatrixXd& ce) = 0;
 };

@@ -6,8 +6,7 @@
 
 #include "AdaptiveTssbnSettings.h"
 #include "../Interface/ISolver.h"
-
-#include <Eigen/SparseLU>
+#include "Solver/LinearSystemSolver.h"
 #include <limits>
 
 namespace SolverNameSpace
@@ -98,20 +97,6 @@ namespace SolverNameSpace
             Vec initialVelocity;
         };
 
-        class SparseLinearSolver
-        {
-        public:
-            void Reset();
-            bool Solve(const SpMat& matrix, const Vec& rhs, Vec& solution);
-
-        private:
-            Eigen::SparseLU<SpMat> solver_;
-            bool patternAnalyzed_ = false;
-            Eigen::Index rows_ = 0;
-            Eigen::Index cols_ = 0;
-            Eigen::Index nonZeros_ = 0;
-        };
-
         Params parameters_;
         BaseMethodCoefficients baseCoefficients_;
         EmbeddedMethodCoefficients embeddedCoefficients_;
@@ -133,7 +118,7 @@ namespace SolverNameSpace
         Vec residual_;
         Vec correction_;
 
-        SparseLinearSolver effectiveSystemSolver_;
+        LinearSystemSolver effectiveSystemSolver_;
         void ValidateParameters() const;
         void ComputeMethodCoefficients();
 
@@ -149,14 +134,14 @@ namespace SolverNameSpace
             double timeStep,
             const Vec& previousVelocity,
             const ImplicitStageDefinition& definition,
-            StageState& stage);
+            _OUT StageState& stage);
 
         bool EvaluateExplicitLastStage(
             double timeStep,
             const Vec& previousVelocity,
             const StageState& firstStage,
             const StageState& secondStage,
-            StageState& lastStage);
+            _OUT StageState& lastStage);
 
         void EstablishAcceptedState(
             IAnalysisModel& model,

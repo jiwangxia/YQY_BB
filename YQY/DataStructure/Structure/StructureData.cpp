@@ -10,88 +10,6 @@
 #include <algorithm>
 #include <iterator>
 
-namespace
-{
-// 梁单元在只与杆/索单元相连时，其截面转角没有刚度来源。为每个没有
-// 转角支承的梁连通分量补一个转角基准，消除刚体转角零模态；平动不受影响。
-// 该处理也覆盖由旧版 BDF/H5 导入的模型。
-void EnsureBeamRotationGaugeConstraints(StructureData& structure)
-{
-    std::map<int, int> parent;
-    std::map<int, int> degree;
-    const auto findRoot = [&parent](const auto& self, int nodeId) -> int {
-        const auto it = parent.find(nodeId);
-        if (it == parent.end() || it->second == nodeId)
-            return nodeId;
-        it->second = self(self, it->second);
-        return it->second;
-    };
-    const auto join = [&parent, &findRoot](int first, int second) {
-        const int firstRoot = findRoot(findRoot, first);
-        const int secondRoot = findRoot(findRoot, second);
-        if (firstRoot != secondRoot)
-            parent[secondRoot] = firstRoot;
-    };
-
-    for (const auto& [elementId, element] : structure.m_Elements)
-    {
-        if (!element || element->Get_NodeDOF() < 6 || element->m_pNode.size() < 2)
-            continue;
-        const auto first = element->m_pNode[0].lock();
-        const auto second = element->m_pNode[1].lock();
-        if (!first || !second)
-            continue;
-        parent.emplace(first->m_Id, first->m_Id);
-        parent.emplace(second->m_Id, second->m_Id);
-        ++degree[first->m_Id];
-        ++degree[second->m_Id];
-        join(first->m_Id, second->m_Id);
-    }
-    if (parent.empty())
-        return;
-
-    std::map<int, std::vector<int>> components;
-    for (const auto& [nodeId, ignored] : parent)
-        components[findRoot(findRoot, nodeId)].push_back(nodeId);
-
-    std::map<int, std::set<int>> constrainedRotations;
-    for (const auto& [constraintId, constraint] : structure.m_Constraint)
-    {
-        if (!constraint)
-            continue;
-        const auto node = constraint->m_pNode.lock();
-        const int direction = static_cast<int>(constraint->m_Direction);
-        if (node && direction >= 3 && direction <= 5)
-            constrainedRotations[node->m_Id].insert(direction);
-    }
-
-    for (const auto& [root, nodes] : components)
-    {
-        bool hasRotationSupport = false;
-        int referenceNodeId = 0;
-        int referenceDegree = -1;
-        for (const int nodeId : nodes)
-        {
-            const auto constrained = constrainedRotations.find(nodeId);
-            if (constrained != constrainedRotations.end()
-                && constrained->second.count(3) && constrained->second.count(4) && constrained->second.count(5))
-            {
-                hasRotationSupport = true;
-                break;
-            }
-            const int nodeDegree = degree[nodeId];
-            if (nodeDegree > referenceDegree || (nodeDegree == referenceDegree && nodeId < referenceNodeId))
-            {
-                referenceNodeId = nodeId;
-                referenceDegree = nodeDegree;
-            }
-        }
-        if (!hasRotationSupport && referenceNodeId > 0)
-            structure.Add_Constraint({ referenceNodeId }, { 3, 4, 5 }, { 0.0, 0.0, 0.0 });
-    }
-}
-}
-
 StructureData::~StructureData() = default;
 
 void StructureData::Clear()
@@ -784,8 +702,6 @@ void StructureData::EnsureDefaultAnalysisConfiguration()
         config.regionScope = AnalysisRegionScope::AllEnabledRegions;
         AddAnalysisStep(config);
     }
-
-    EnsureBeamRotationGaugeConstraints(*this);
 }
 
 std::vector<int> StructureData::ResolveAnalysisStepRegionIds(const AnalysisStep& step) const

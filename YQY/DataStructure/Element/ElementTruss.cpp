@@ -154,7 +154,7 @@ void ElementTruss::Get_L0()
     // 计算初始长度 L0
 }
 
-void ElementTruss::Assemble(const std::vector<double>& damping, MatrixXd& _OUT ce)
+void ElementTruss::Assemble(const std::vector<double>& damping, _OUT MatrixXd& ce)
 {
     if (damping.size() < 4)
     {

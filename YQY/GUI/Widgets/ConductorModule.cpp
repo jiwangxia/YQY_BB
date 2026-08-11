@@ -47,8 +47,30 @@ ConductorModule::ConductorModule(QWidget* p) : QWidget(p), m_ui(new Ui::Conducto
     m_ui->spacerStyleCombo->setItemData(0, static_cast<int>(Conductor::InnerSpacerStyle::OuterPolygon));
     m_ui->spacerStyleCombo->setItemData(1, static_cast<int>(Conductor::InnerSpacerStyle::CenterBraced));
     m_ui->spacerStyleCombo->setItemData(2, static_cast<int>(Conductor::InnerSpacerStyle::InnerPolygon));
+    m_ui->spacerStyleCombo->setItemData(3, static_cast<int>(Conductor::InnerSpacerStyle::RigidCenterMPC));
+    m_ui->spacerStyleCombo->setItemData(
+        3,
+        QStringLiteral("一个 6 自由度中心主节点 + 每根子导线一个刚性偏置 MPC；不生成间隔棒单元，也不计间隔棒质量"),
+        Qt::ToolTipRole);
     m_ui->spacerElementCombo->setItemData(0, static_cast<int>(EnumKeyword::ElementType::CR3D));
     m_ui->spacerElementCombo->setItemData(1, static_cast<int>(EnumKeyword::ElementType::T3D2));
+    // 显式绑定导线本体单元类型，不依赖 .ui 文件中的固定索引。
+    // 共旋索是导线分析默认项；桁架和共旋梁保留用于对照。
+    m_ui->elementCombo->clear();
+    m_ui->elementCombo->addItem(
+        QStringLiteral("CABLE 共旋索单元"),
+        static_cast<int>(EnumKeyword::ElementType::CABLE));
+    m_ui->elementCombo->addItem(
+        QStringLiteral("T3D2 桁架单元"),
+        static_cast<int>(EnumKeyword::ElementType::T3D2));
+    m_ui->elementCombo->addItem(
+        QStringLiteral("CR3D 共旋梁单元"),
+        static_cast<int>(EnumKeyword::ElementType::CR3D));
+    m_ui->elementCombo->setItemData(
+        0,
+        QStringLiteral("只受拉，包含初应力、几何刚度、扭转和一致质量"),
+        Qt::ToolTipRole);
+    m_ui->elementCombo->setCurrentIndex(0);
     m_ui->endTopologyCombo->setItemData(0, static_cast<int>(Conductor::BundleEndTopology::SingleSupport));
     m_ui->endTopologyCombo->setItemData(1, static_cast<int>(Conductor::BundleEndTopology::DualSupportByGroup));
     m_ui->endTopologyCombo->setItemData(2, static_cast<int>(Conductor::BundleEndTopology::DirectWireSupports));
@@ -100,6 +122,8 @@ ConductorModule::ConductorModule(QWidget* p) : QWidget(p), m_ui(new Ui::Conducto
     connect(m_ui->innerSpacerCheck, &QCheckBox::toggled, this,
             [this]() { updateSpacerUi(); });
     connect(m_ui->spacerLayoutCombo, qOverload<int>(&QComboBox::currentIndexChanged), this,
+            [this]() { updateSpacerUi(); });
+    connect(m_ui->spacerStyleCombo, qOverload<int>(&QComboBox::currentIndexChanged), this,
             [this]() { updateSpacerUi(); });
     connect(m_ui->spacerCountSpin, qOverload<int>(&QSpinBox::valueChanged), this,
             [this]() { updateSpacerPreview(); });
@@ -233,9 +257,19 @@ std::vector<Vector3d> ConductorModule::stationCenters(QString& error) const
 
 void ConductorModule::updateSpacerUi()
 {
-    const bool multipleBundle = m_ui->bundleCombo->currentText().toInt() > 1;
+    const int bundleCount = m_ui->bundleCombo->currentText().toInt();
+    const bool multipleBundle = bundleCount > 1;
     const bool enabled = m_ui->innerSpacerCheck->isChecked() && multipleBundle;
     const bool equalSpacing = m_ui->spacerLayoutCombo->currentData().toBool();
+    if (bundleCount <= 2 &&
+        static_cast<Conductor::InnerSpacerStyle>(
+            m_ui->spacerStyleCombo->currentData().toInt()) ==
+            Conductor::InnerSpacerStyle::RigidCenterMPC)
+        m_ui->spacerStyleCombo->setCurrentIndex(0);
+    const bool rigidCenterMpc =
+        static_cast<Conductor::InnerSpacerStyle>(
+            m_ui->spacerStyleCombo->currentData().toInt()) ==
+        Conductor::InnerSpacerStyle::RigidCenterMPC;
     for (auto* widget : {static_cast<QWidget*>(m_ui->spacerLayoutCombo),
                          static_cast<QWidget*>(m_ui->spacerStyleCombo),
                          static_cast<QWidget*>(m_ui->spacerElementCombo),
@@ -244,7 +278,16 @@ void ConductorModule::updateSpacerUi()
     {
         widget->setEnabled(enabled);
     }
-    m_ui->spacerStyleCombo->setEnabled(enabled && m_ui->bundleCombo->currentText().toInt() > 2);
+    m_ui->spacerStyleCombo->setEnabled(enabled && bundleCount > 2);
+    for (auto* widget : {static_cast<QWidget*>(m_ui->spacerElementCombo),
+                         static_cast<QWidget*>(m_ui->spacerMaterialCombo),
+                         static_cast<QWidget*>(m_ui->spacerSectionCombo),
+                         static_cast<QWidget*>(m_ui->spacerElementLabel),
+                         static_cast<QWidget*>(m_ui->spacerMaterialLabel),
+                         static_cast<QWidget*>(m_ui->spacerSectionLabel)})
+    {
+        widget->setEnabled(enabled && !rigidCenterMpc);
+    }
     m_ui->spacerCountLabel->setVisible(equalSpacing);
     m_ui->spacerCountSpin->setVisible(equalSpacing);
     m_ui->spacerCountSpin->setEnabled(enabled);
@@ -292,15 +335,32 @@ void ConductorModule::updateSpacerPreview()
         return;
     }
 
+    const int bundleCount = m_ui->bundleCombo->currentText().toInt();
+    const bool rigidCenterMpc =
+        static_cast<Conductor::InnerSpacerStyle>(
+            m_ui->spacerStyleCombo->currentData().toInt()) ==
+        Conductor::InnerSpacerStyle::RigidCenterMPC;
+    const auto topologyDescription = [=](int spacerCount)
+        {
+            return rigidCenterMpc
+                ? QStringLiteral("%1 个中心节点、%2 个刚性偏置 MPC、0 个间隔棒单元；不计间隔棒质量")
+                    .arg(spacerCount)
+                    .arg(spacerCount * bundleCount)
+                : QString();
+        };
+
     if (m_ui->spacerLayoutCombo->currentData().toBool())
     {
         const int spanCount = m_ui->modelModeCombo->currentIndex() == 1
             ? std::max(0, m_ui->stationTable->rowCount() - 1) : 1;
+        const int spacerCount = m_ui->spacerCountSpin->value() * spanCount;
         m_ui->spacerCountPreview->setText(
             QStringLiteral("%1 个（%2 档等距布置）")
-                .arg(m_ui->spacerCountSpin->value() * spanCount)
+                .arg(spacerCount)
                 .arg(spanCount));
-        m_ui->spacerCountPreview->setToolTip(QStringLiteral("每一档均按指定数量等距布置"));
+        m_ui->spacerCountPreview->setToolTip(
+            rigidCenterMpc ? topologyDescription(spacerCount)
+                           : QStringLiteral("每一档均按指定数量等距布置"));
         return;
     }
 
@@ -343,7 +403,12 @@ void ConductorModule::updateSpacerPreview()
     m_ui->spacerCountPreview->setToolTip(
         positions.empty()
             ? QStringLiteral("当前水平档距无效")
-            : QStringLiteral("距左挂点位置：%1 m").arg(positionTexts.join(QStringLiteral("、"))));
+            : (rigidCenterMpc
+                ? topologyDescription(static_cast<int>(positions.size())) +
+                    QStringLiteral("；距左挂点位置：%1 m")
+                        .arg(positionTexts.join(QStringLiteral("、")))
+                : QStringLiteral("距左挂点位置：%1 m")
+                    .arg(positionTexts.join(QStringLiteral("、")))));
 }
 
 void ConductorModule::setPropertyLibrary(Conductor::PropertyLibrary* library)
@@ -372,11 +437,6 @@ void ConductorModule::setPropertyLibrary(Conductor::PropertyLibrary* library)
         m_ui->spacerSectionCombo->addItem(text);
         m_ui->spacerSectionCombo->setItemData(m_ui->spacerSectionCombo->count() - 1, text, Qt::ToolTipRole);
     }
-    m_ui->elementCombo->setItemData(0, static_cast<int>(EnumKeyword::ElementType::T3D2));
-    m_ui->elementCombo->setItemData(1, static_cast<int>(EnumKeyword::ElementType::CABLE));
-    if (m_ui->elementCombo->count() < 3)
-        m_ui->elementCombo->addItem(QStringLiteral("CR3D 共旋梁"));
-    m_ui->elementCombo->setItemData(2, static_cast<int>(EnumKeyword::ElementType::CR3D));
     const QList<int> bundleCounts = {1, 2, 4, 6, 8};
     for (int index = 0; index < bundleCounts.size(); ++index)
         m_ui->bundleCombo->setItemData(index, bundleCounts.at(index));
@@ -458,8 +518,7 @@ ConductorModule::BuildResult ConductorModule::buildModel(Conductor::PropertyLibr
     config.conductor.nBundle = m_ui->bundleCombo->currentData().toInt();
     config.conductor.spacing = m_ui->spacingSpin->value();
     config.conductor.segments = m_ui->segmentsSpin->value();
-    config.conductor.stress0 = m_ui->stressSpin->value() * 1.0e6;
-    config.conductor.connecttype = Conductor::ConnectionMode::Parallel;
+    config.conductor.initialStress = m_ui->stressSpin->value() * 1.0e6;
     config.endTopology = static_cast<Conductor::BundleEndTopology>(m_ui->endTopologyCombo->currentData().toInt());
     config.dualSupportSpacing = m_ui->dualSupportSpacingSpin->value();
     config.setNamePrefix = m_ui->nameEdit->text().trimmed();
@@ -477,15 +536,22 @@ ConductorModule::BuildResult ConductorModule::buildModel(Conductor::PropertyLibr
     spanConfig.line = config;
     if (m_ui->innerSpacerCheck->isChecked() && config.conductor.nBundle > 1)
     {
-        auto spacerProperty = library.instantiateProperty(
-            m_ui->spacerMaterialCombo->currentIndex(),
-            m_ui->spacerSectionCombo->currentIndex(),
-            *build.structure,
-            build.error);
-        if (!spacerProperty)
+        const auto spacerStyle =
+            static_cast<Conductor::InnerSpacerStyle>(
+                m_ui->spacerStyleCombo->currentData().toInt());
+        std::shared_ptr<Property> spacerProperty;
+        if (spacerStyle != Conductor::InnerSpacerStyle::RigidCenterMPC)
         {
-            build.structure.reset();
-            return build;
+            spacerProperty = library.instantiateProperty(
+                m_ui->spacerMaterialCombo->currentIndex(),
+                m_ui->spacerSectionCombo->currentIndex(),
+                *build.structure,
+                build.error);
+            if (!spacerProperty)
+            {
+                build.structure.reset();
+                return build;
+            }
         }
         spanConfig.useInnerSpacerLayout = true;
         spanConfig.innerSpacerLayout.useEqualSpacing = m_ui->spacerLayoutCombo->currentData().toBool();
@@ -493,8 +559,7 @@ ConductorModule::BuildResult ConductorModule::buildModel(Conductor::PropertyLibr
         spanConfig.innerSpacerLayout.spacer.elementType =
             static_cast<EnumKeyword::ElementType>(m_ui->spacerElementCombo->currentData().toInt());
         spanConfig.innerSpacerLayout.spacer.property = spacerProperty;
-        spanConfig.innerSpacerLayout.spacer.style =
-            static_cast<Conductor::InnerSpacerStyle>(m_ui->spacerStyleCombo->currentData().toInt());
+        spanConfig.innerSpacerLayout.spacer.style = spacerStyle;
     }
     bool built = false;
     if (multiSpan)
@@ -570,80 +635,6 @@ ConductorModule::BuildResult ConductorModule::buildModel(Conductor::PropertyLibr
                 directions.push_back(direction);
             build.structure->Add_Constraint({ nodeId }, directions, values);
         };
-        // A CR3D beam has three sectional rotation DOFs at each node. When a
-        // beam-type spacer is connected only to truss/cable conductors, its
-        // translations are carried by the conductors but its whole sectional
-        // rotation field has no reference. This gauge mode makes the static
-        // tangent matrix singular. Build connected beam groups and pin the
-        // rotation at one deterministic node only when the group does not
-        // already reach a rotationally constrained end support.
-        std::map<int, int> beamParent;
-        std::map<int, int> beamNodeDegree;
-        const auto findBeamRoot = [&beamParent](int nodeId, const auto& self) -> int
-        {
-            const auto found = beamParent.find(nodeId);
-            if (found == beamParent.cend() || found->second == nodeId)
-                return nodeId;
-            found->second = self(found->second, self);
-            return found->second;
-        };
-        const auto joinBeamNodes = [&beamParent, &findBeamRoot](int firstId, int secondId)
-        {
-            beamParent.try_emplace(firstId, firstId);
-            beamParent.try_emplace(secondId, secondId);
-            const int firstRoot = findBeamRoot(firstId, findBeamRoot);
-            const int secondRoot = findBeamRoot(secondId, findBeamRoot);
-            if (firstRoot != secondRoot)
-                beamParent[firstRoot] = secondRoot;
-        };
-        for (const auto& [elementId, element] : build.structure->m_Elements)
-        {
-            Q_UNUSED(elementId);
-            if (!element || element->Get_NodeDOF() < 6 || element->m_pNode.size() != 2)
-                continue;
-            const auto first = element->m_pNode[0].lock();
-            const auto second = element->m_pNode[1].lock();
-            if (!first || !second)
-                continue;
-            joinBeamNodes(first->m_Id, second->m_Id);
-            ++beamNodeDegree[first->m_Id];
-            ++beamNodeDegree[second->m_Id];
-        }
-        std::map<int, std::vector<int>> beamComponents;
-        for (const auto& [nodeId, parent] : beamParent)
-        {
-            Q_UNUSED(parent);
-            beamComponents[findBeamRoot(nodeId, findBeamRoot)].push_back(nodeId);
-        }
-        std::set<int> rotationallySupportedEndpoints;
-        for (int endpointId : endpointIds)
-        {
-            if (requiredNodeDofs(endpointId) >= 6)
-                rotationallySupportedEndpoints.insert(endpointId);
-        }
-        for (auto& [root, nodeIds] : beamComponents)
-        {
-            Q_UNUSED(root);
-            const bool hasRotationalSupport = std::any_of(
-                nodeIds.cbegin(), nodeIds.cend(),
-                [&rotationallySupportedEndpoints](int nodeId)
-                {
-                    return rotationallySupportedEndpoints.find(nodeId)
-                        != rotationallySupportedEndpoints.cend();
-                });
-            if (hasRotationalSupport)
-                continue;
-            const int referenceNodeId = *std::max_element(
-                nodeIds.cbegin(), nodeIds.cend(),
-                [&beamNodeDegree](int lhs, int rhs)
-                {
-                    const int lhsDegree = beamNodeDegree[lhs];
-                    const int rhsDegree = beamNodeDegree[rhs];
-                    return lhsDegree != rhsDegree ? lhsDegree < rhsDegree : lhs > rhs;
-                });
-            build.structure->Add_Constraint(
-                { referenceNodeId }, { 3, 4, 5 }, { 0.0, 0.0, 0.0 });
-        }
         for (int endpointId : endpointIds)
             addZeroConstraint(endpointId, requiredNodeDofs(endpointId));
         // 中间 P 节点只连接 H 型悬垂串。当前悬垂串固定采用 T3D2，

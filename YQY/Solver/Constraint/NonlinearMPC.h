@@ -3,6 +3,7 @@
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
 #include <vector>
+#include "Base/EmptyOUT.h"
 
 namespace SolverNameSpace
 {
@@ -17,6 +18,10 @@ namespace SolverNameSpace
         Eigen::VectorXd value;
         Eigen::MatrixXd jacobian;
         std::vector<Eigen::SparseMatrix<double>> hessians;
+        // Local Hessian entries.  This avoids allocating a full global
+        // sparse matrix for constraints whose second derivative is only a
+        // small rotational block (for example a rigid offset MPC).
+        std::vector<std::vector<Eigen::Triplet<double>>> hessianEntries;
         std::vector<int> slaveDofs;
 
         void Clear();
@@ -53,7 +58,7 @@ namespace SolverNameSpace
             const Eigen::SparseMatrix<double>& tangent,
             const Eigen::VectorXd& rhs,
             const NonlinearMPCData& constraints,
-            NonlinearMPCReduction& reduction,
+            _OUT NonlinearMPCReduction& reduction,
             double rankTolerance = 1.0e-12);
     };
 }

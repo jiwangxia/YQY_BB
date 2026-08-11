@@ -1,5 +1,6 @@
 #include "Controllers/SolveTaskController.h"
 
+#include "Application/ApplicationPaths.h"
 #include "DataStructure/AnalysisStep/AnalysisStep.h"
 #include "DataStructure/Structure/StructureData.h"
 #include "Export/Hdf5ModelIO.h"
@@ -25,7 +26,7 @@ QString hdf5OutputDirectory(const StructureData& model)
     if (!configuredFileName.isEmpty())
         return QFileInfo(configuredFileName).absoluteDir().absolutePath();
 
-    return QDir(QDir::current().filePath(QStringLiteral("YQY/Export/ExportH5"))).absolutePath();
+    return ApplicationPaths::hdf5ResultDirectory();
 }
 }
 

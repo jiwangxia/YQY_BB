@@ -153,9 +153,6 @@ public:
     explicit AdaptiveTssbnSettingsEditor(QWidget* parent)
         : QGroupBox(QStringLiteral("自适应 TSSBN 参数"), parent)
     {
-        // Keep this editor compact: it occupies the lower half of the right
-        // column in the step dialog, so two parameter pairs per row are much
-        // easier to scan than a 13-row single-column form.
         auto* form = new QGridLayout(this);
         form->setHorizontalSpacing(10);
         form->setVerticalSpacing(6);
@@ -802,7 +799,10 @@ public:
                 QString(component == 0 ? "X " : component == 1 ? "Y " : "Z "));
             windDirectionLayout->addWidget(m_windDirection[component]);
         }
-        m_windDirection[1]->setValue(1.0);
+        // Conductor X / vertical Z uses -Y as the reference inflow.  This is
+        // the right-handed mapping of the legacy TSSBN X/Y(vertical)/Z(wind)
+        // convention and makes positive Cl point toward +Z.
+        m_windDirection[1]->setValue(-1.0);
         m_directionStack->addWidget(windDirectionWidget);
         form.formLayout->setWidget(4, QFormLayout::FieldRole, m_directionStack);
         m_value = form.valueSpin;

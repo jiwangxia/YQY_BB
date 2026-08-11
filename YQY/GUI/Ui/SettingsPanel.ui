@@ -37,8 +37,25 @@
           <property name="suffix"><string> 个分析步</string></property>
          </widget>
        </item>
-       <item row="1" column="0"><widget class="QLabel" name="nodeLabelModeLabel"><property name="text"><string>节点编号显示</string></property></widget></item>
+       <item row="1" column="0"><widget class="QLabel" name="assemblyThreadsLabel"><property name="text"><string>单步装配线程</string></property></widget></item>
        <item row="1" column="1">
+        <widget class="QSpinBox" name="assemblyThreadsSpin">
+         <property name="minimumSize"><size><width>150</width><height>0</height></size></property>
+         <property name="minimum"><number>1</number></property>
+         <property name="maximum"><number>12</number></property>
+         <property name="value"><number>1</number></property>
+         <property name="suffix"><string> 个线程</string></property>
+        </widget>
+       </item>
+       <item row="2" column="0"><widget class="QLabel" name="gpuSolverLabel"><property name="text"><string>GPU 稀疏求解</string></property></widget></item>
+       <item row="2" column="1">
+        <widget class="QCheckBox" name="gpuSolverCheckBox">
+         <property name="text"><string>大模型自动 GPU</string></property>
+         <property name="toolTip"><string>仅在线性系统达到 10000 自由度时尝试 NVIDIA GPU；小模型继续使用 CPU，不收敛时自动回退 CPU。</string></property>
+        </widget>
+       </item>
+       <item row="3" column="0"><widget class="QLabel" name="nodeLabelModeLabel"><property name="text"><string>节点编号显示</string></property></widget></item>
+       <item row="3" column="1">
         <widget class="QComboBox" name="nodeLabelModeCombo">
          <property name="minimumSize"><size><width>150</width><height>0</height></size></property>
          <item><property name="text"><string>全部</string></property></item>

@@ -61,8 +61,8 @@ public:
         double firstStageTime,
         double secondStageTime,
         double secondStageDiagonalFraction,
-        Eigen::Vector3d& spatialAngularVelocity,
-        Eigen::Vector3d& spatialAngularAcceleration);
+        _OUT Eigen::Vector3d& spatialAngularVelocity,
+        _OUT Eigen::Vector3d& spatialAngularAcceleration);
     TssbnRotationState IntegrateTssbnRotation(
         double timeStep,
         double stageAccelerationExtrapolation,

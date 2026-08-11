@@ -4,8 +4,7 @@
  */
 #pragma once
 #include "../Interface/ISolver.h"
-#include <Eigen/SparseCholesky>
-#include <Eigen/SparseLU>
+#include "Solver/LinearSystemSolver.h"
 
 namespace SolverNameSpace
 {
@@ -62,20 +61,7 @@ namespace SolverNameSpace
         void ComputeCoeffs();
 
         // 线性求解器缓存
-        struct LinearCache
-        {
-            Eigen::SimplicialLDLT<SpMat> ldlt;  // 首选（快）
-            Eigen::SparseLU<SpMat> lu;           // 备选（稳）
-            bool useLdlt = true;
-            bool patternAnalyzed = false;
-
-            void reset()
-            {
-                useLdlt = true;
-                patternAnalyzed = false;
-            }
-        };
-        mutable LinearCache m_cache;
+        LinearSystemSolver m_linearSolver;
 
         // 工作区（避免重复分配内存）
         SpMat m_K, m_M, m_C, m_Keff;
@@ -91,7 +77,7 @@ namespace SolverNameSpace
          * @brief 求解线性方程组 K * x = b
          * @return 是否成功
          */
-        bool SolveLinear(const SpMat& K, const Vec& b, Vec& x);
+        bool SolveLinear(const SpMat& K, const Vec& b, _OUT Vec& x);
 
         /**
          * @brief 求解 C1 子步

@@ -5,6 +5,7 @@
 #include "Solver/Dynamic/AdaptiveTssbnSettings.h"
 #include <memory>
 #include <functional>
+#include <map>
 #include <set>
 #include <Eigen/SparseLU>
 typedef Eigen::SparseMatrix<double> SpMat;
@@ -154,22 +155,26 @@ public:
         SolverNameSpace::Vec& embeddedIncrement,
         SolverNameSpace::Vec& embeddedVelocity,
         SolverNameSpace::Vec& acceptedAcceleration) override;
-    void GetState(SolverNameSpace::Vec& u, SolverNameSpace::Vec& v, SolverNameSpace::Vec& a) const override;
-    void Assemble_Matrix(SpMat& Keff, bool isDynamic);          //组装整体等效刚度矩阵
+    void GetState(_OUT SolverNameSpace::Vec& u, _OUT SolverNameSpace::Vec& v, _OUT SolverNameSpace::Vec& a) const override;
+    void Assemble_Matrix(_OUT SpMat& Keff, bool isDynamic);          //组装整体等效刚度矩阵
     void AssembleDynamicSystem(
-        SpMat& mass, SpMat& gyroscopic, SpMat& centrifugal) override;
-    void AssembleEffectiveDynamicSystem(
-        double accelerationDerivative,
-        double velocityDerivative,
-        SpMat& effectiveDynamicTangent) override;
+        _OUT SpMat& mass, _OUT SpMat& gyroscopic, _OUT SpMat& centrifugal) override;
+        void AssembleEffectiveDynamicSystem(
+            double accelerationDerivative,
+            double velocityDerivative,
+            _OUT SpMat& effectiveDynamicTangent) override;
+        void AssembleEffectiveTangent(
+            double accelerationDerivative,
+            double velocityDerivative,
+            _OUT SpMat& effectiveTangent) override;
     bool AssembleNonlinearMPC(
-        SolverNameSpace::NonlinearMPCData& constraints) override;
+        _OUT SolverNameSpace::NonlinearMPCData& constraints) override;
     void SetNonlinearMPCMultipliers(
         const SolverNameSpace::Vec& multipliers) override;
-    void ComputeResidual(const SolverNameSpace::Vec& F_ext, SolverNameSpace::Vec& R) override;
+    void ComputeResidual(const SolverNameSpace::Vec& F_ext, _OUT SolverNameSpace::Vec& R) override;
     void ComputeStaticResidual(
         const SolverNameSpace::Vec& F_ext,
-        SolverNameSpace::Vec& R) override;
+        _OUT SolverNameSpace::Vec& R) override;
     void OnStepCompleted(double time) override;
     void RecordStepIterations(double time, int iterations) override;
     void CommitState() override;
@@ -184,6 +189,9 @@ private:
     CancelCallback m_cancelCallback;
     SolverNameSpace::Vec m_mpcMultipliers;
     SolverNameSpace::Vec m_dynamicInertiaForce;
+    // Fixed for one analysis step after resolving physical wire labels against
+    // that step's wind direction. Time integration only changes the angle row.
+    std::map<int, int> m_gallopingProfileBindings;
 
     struct DynamicElementData
     {
@@ -217,6 +225,7 @@ private:
     bool PrepareData();
     bool ValidateGallopingConfiguration(QString* errorMessage) const;
     bool PrepareGallopingData(QString* errorMessage);
+    bool BindGallopingProfiles(QString* errorMessage);
     Eigen::Vector3d GetModelUpDirection() const;
 
     /**
@@ -255,7 +264,7 @@ private:
      * @param [in] Factor 荷载缩放系数
      * @param [in] currentTime 当前时间
      */
-    void Assemble_AllLoads(VectorXd& F1, VectorXd& F2, double& Factor, double currentTime);
+    void Assemble_AllLoads(_OUT VectorXd& F1, _OUT VectorXd& F2, _OUT double& Factor, double currentTime);
 
     /**
      * @brief 计算外荷载（不包含内力和惯性力）
@@ -264,7 +273,7 @@ private:
      * @param [out] F1 约束自由度对应的外力向量
      * @param [out] F2 自由自由度对应的外力向量
      */
-    void ComputeExternalForce(double time, double loadFactor, VectorXd& F1, VectorXd& F2);
+    void ComputeExternalForce(double time, double loadFactor, _OUT VectorXd& F1, _OUT VectorXd& F2);
 
     /**
      * @brief 获取当前时刻的力向量
@@ -275,29 +284,29 @@ private:
 
     void Get_CurrentInforce(VectorXd& Inforce);
 
-    bool Check_Rhs(Eigen::VectorXd& F2, Eigen::VectorXd& f2, Eigen::VectorXd& Rhs);
+    bool Check_Rhs(const Eigen::VectorXd& F2, const Eigen::VectorXd& f2, _OUT Eigen::VectorXd& Rhs);
 
     /**
      * @brief 组装约束位移
      * @param [out] x1 约束位移向量
      */
     void Assemble_Constraint(
-        VectorXd& x1,
+        _OUT VectorXd& x1,
         double currentTime,
         double factor);
 
     /**
-    * @brief 计算反力向量
-    * @param [out] F1 约束自由度对应的反力向量
+    * @brief 根据约束自由度的外力计算并写入节点反力
+    * @param [in] F1 约束自由度对应的外力向量
     */
     void CalculateReactions(VectorXd& F1);
 
-    void Get_CurrentStepState(VectorXd& U, VectorXd& V, VectorXd& A) const;
+    void Get_CurrentStepState(_OUT VectorXd& U, _OUT VectorXd& V, _OUT VectorXd& A) const;
 
     // ============ IAnalysisModel 接口辅助函数 ============
     VectorXd GetCurrentVelocity() const;
     VectorXd GetCurrentAcceleration() const;
 
     void BackupStepState() override;
-    void GetStepIncrement(SolverNameSpace::Vec& dx_step) const override;
+    void GetStepIncrement(_OUT SolverNameSpace::Vec& dx_step) const override;
 };

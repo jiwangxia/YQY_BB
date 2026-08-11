@@ -1006,7 +1006,7 @@ bool ModelViewport::displayResultFrame(const Hdf5ResultFrame& frame, ResultField
         const auto& original = originalIt->second;
         double displacement[3] = {};
         if (result)
-            std::copy(std::begin(result->displacement), std::end(result->displacement), displacement);
+            std::copy_n(result->displacement, 3, displacement);
         m_points->SetPoint(pointId, original[0] + displacement[0] * deformationScale,
             original[1] + displacement[1] * deformationScale,
             original[2] + displacement[2] * deformationScale);

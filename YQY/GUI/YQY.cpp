@@ -18,6 +18,8 @@
 #include "Dialogs/ElementResultExportDialog.h"
 #include "Dialogs/ModelImportFileDialog.h"
 #include "Application/ApplicationPaths.h"
+#include "Solver/AssemblySettings.h"
+#include "Solver/GpuSettings.h"
 #include "DataStructure/Structure/StructureData.h"
 #include "Export/Hdf5ModelIO.h"
 #include "Export/Outputter.h"
@@ -30,6 +32,7 @@
 
 #include <cmath>
 #include <QComboBox>
+#include <QCheckBox>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QMessageBox>
@@ -988,7 +991,6 @@ ThemeColors themeColors(int themeIndex)
 {
     if (themeIndex == 3)
     {
-        // Keep this palette aligned with D:\VS\THOP\FEM\FEM\FEMStyleBase.cpp.
         return {QStringLiteral("#F4F7FB"), QStringLiteral("#FFFFFF"), QStringLiteral("#F7FAFF"),
                 QStringLiteral("#FFFFFF"), QStringLiteral("#F8FBFF"), QStringLiteral("#F8FBFF"),
                 QStringLiteral("#D9E3EF"), QStringLiteral("#D9E3EF"), QStringLiteral("#1D2B3A"),
@@ -1519,6 +1521,8 @@ void YQY::initializeSettingsModule()
 {
     m_settingsPanel = new SettingsPanel(ui.settingsModulePage);
     auto* concurrencySpin = m_settingsPanel->concurrencySpin();
+    auto* assemblyThreadsSpin = m_settingsPanel->assemblyThreadsSpin();
+    auto* gpuSolverCheckBox = m_settingsPanel->gpuSolverCheckBox();
     auto* nodeLabelModeCombo = m_settingsPanel->nodeLabelModeCombo();
     const int availableThreads = SolveTaskController::availableThreadCount();
     const int allowedThreads = SolveTaskController::maximumAllowedThreadCount();
@@ -1527,6 +1531,11 @@ void YQY::initializeSettingsModule()
     concurrencySpin->setMinimumWidth(150);
     concurrencySpin->setToolTip(
         QStringLiteral("本机可选范围 1～%1；降低上限不会中断正在计算的任务").arg(allowedThreads));
+    assemblyThreadsSpin->setRange(1, allowedThreads);
+    assemblyThreadsSpin->setSuffix(QStringLiteral(" 个线程"));
+    assemblyThreadsSpin->setMinimumWidth(150);
+    assemblyThreadsSpin->setToolTip(
+        QStringLiteral("单个分析步的单元装配工作线程数。大模型可提高该值；多个分析步同时计算时，请避免两项设置的乘积超过本机线程数。"));
 
     QSettings settings;
     const bool adaptiveNodeLabels = settings.value(
@@ -1548,24 +1557,53 @@ void YQY::initializeSettingsModule()
         allowedThreads);
     concurrencySpin->setValue(savedConcurrency);
     m_solveTaskController->setMaximumThreadCount(savedConcurrency);
+    const int savedAssemblyThreads = qBound(
+        1,
+        settings.value(QStringLiteral("solver/assemblyThreads"), 1).toInt(),
+        allowedThreads);
+    assemblyThreadsSpin->setValue(savedAssemblyThreads);
+    SolverNameSpace::AssemblySettings::SetThreadCount(savedAssemblyThreads);
+    const bool useGpuSolver = settings.value(
+        QStringLiteral("solver/useGpuSparseSolver"), false).toBool();
+    gpuSolverCheckBox->setChecked(useGpuSolver);
+    SolverNameSpace::GpuSettings::SetEnabled(useGpuSolver);
     auto* status = m_settingsPanel->statusLabel();
-    const auto updateStatus = [status, availableThreads, allowedThreads](int count)
+    const auto updateStatus = [status, availableThreads, allowedThreads](
+        int concurrency, int assemblyThreads)
     {
         status->setText(
-            QStringLiteral("检测到 %1 个逻辑线程，本机安全上限为 %2；当前每个分析步最多同时运行 %3 个计算区域。")
+            QStringLiteral("检测到 %1 个逻辑线程，本机安全上限为 %2；当前最多并发 %3 个分析步，每个分析步使用 %4 个装配线程。")
                 .arg(availableThreads)
                 .arg(allowedThreads)
-                .arg(count));
+                .arg(concurrency)
+                .arg(assemblyThreads));
     };
-    updateStatus(savedConcurrency);
+    updateStatus(savedConcurrency, savedAssemblyThreads);
     connect(concurrencySpin, qOverload<int>(&QSpinBox::valueChanged), this,
-            [this, status, updateStatus](int count)
+            [this, assemblyThreadsSpin, updateStatus](int count)
             {
                 m_solveTaskController->setMaximumThreadCount(count);
                 const int applied = m_solveTaskController->maximumThreadCount();
                 QSettings().setValue(QStringLiteral("solver/maxConcurrentSteps"), applied);
-                updateStatus(applied);
+                updateStatus(applied, assemblyThreadsSpin->value());
                 setWorkspaceMessage(QStringLiteral("最大并发计算区域已设置为 %1").arg(applied));
+            });
+    connect(assemblyThreadsSpin, qOverload<int>(&QSpinBox::valueChanged), this,
+            [this, concurrencySpin, updateStatus](int count)
+            {
+                SolverNameSpace::AssemblySettings::SetThreadCount(count);
+                QSettings().setValue(QStringLiteral("solver/assemblyThreads"), count);
+                updateStatus(concurrencySpin->value(), count);
+                setWorkspaceMessage(QStringLiteral("单步单元装配线程已设置为 %1").arg(count));
+            });
+    connect(gpuSolverCheckBox, &QCheckBox::toggled, this,
+            [this](bool enabled)
+            {
+                SolverNameSpace::GpuSettings::SetEnabled(enabled);
+                QSettings().setValue(QStringLiteral("solver/useGpuSparseSolver"), enabled);
+                setWorkspaceMessage(enabled
+                    ? QStringLiteral("GPU 稀疏迭代求解已启用；失败时将回退到 CPU")
+                    : QStringLiteral("GPU 稀疏迭代求解已关闭"));
             });
 
     ui.settingsModuleLayout->insertWidget(1, m_settingsPanel);

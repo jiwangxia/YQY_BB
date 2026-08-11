@@ -2,9 +2,36 @@
 #include "Application/UiAuditRunner.h"
 #include "Application/VerificationRunner.h"
 #include "GUI/YQY.h"
+#include "Solver/GpuSettings.h"
+
+#include <cstdio>
+
+namespace
+{
+void PrintGpuSolverStatistics()
+{
+    std::fprintf(stdout, "gpu_solver attempts=%d successes=%d fallbacks=%d max_matrix_dofs=%d threshold=%d\n",
+        SolverNameSpace::GpuSettings::Attempts(),
+        SolverNameSpace::GpuSettings::Successes(),
+        SolverNameSpace::GpuSettings::Fallbacks(),
+        SolverNameSpace::GpuSettings::MaximumMatrixDofs(),
+        SolverNameSpace::GpuSettings::MinimumGpuDofs);
+}
+}
 
 int main(int argc, char* argv[])
 {
+    for (int argumentIndex = 1; argumentIndex < argc; ++argumentIndex)
+    {
+        if (QString::fromLocal8Bit(argv[argumentIndex])
+            == QStringLiteral("--gpu-solver"))
+        {
+            SolverNameSpace::GpuSettings::SetEnabled(true);
+            SolverNameSpace::GpuSettings::ResetStatistics();
+            std::atexit(PrintGpuSolverStatistics);
+            break;
+        }
+    }
     bool headlessVerification = false;
     for (int argumentIndex = 1; argumentIndex < argc; ++argumentIndex)
     {
@@ -25,8 +52,7 @@ int main(int argc, char* argv[])
     if (headlessVerification)
     {
         QCoreApplication application(argc, argv);
-        if (const auto result =
-                VerificationRunner::runHeadless(application.arguments()))
+        if (const auto result = VerificationRunner::runHeadless(application.arguments()))
             return *result;
         return 1;
     }

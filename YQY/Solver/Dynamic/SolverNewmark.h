@@ -4,8 +4,7 @@
  */
 #pragma once
 #include "../Interface/ISolver.h"
-#include <Eigen/SparseCholesky>
-#include <Eigen/SparseLU>
+#include "Solver/LinearSystemSolver.h"
 
 namespace SolverNameSpace
 {
@@ -28,6 +27,15 @@ namespace SolverNameSpace
             double gamma = 0.5;       ///< Newmark γ 参数
             int maxIter = 10;         ///< 每个时间步的最大 N-R 迭代次数
             double tol = 1e-6;        ///< 收敛容差
+            double constraintTolerance = 1e-8; ///< position-level MPC tolerance
+            // A failed nonlinear trial is rolled back and retried with a
+            // smaller physical time increment.  This is a convergence aid,
+            // not numerical damping; accepted increments still use the
+            // average-acceleration Newmark scheme above.
+            double minimumTimeStep = 1.0e-5;
+            double cutbackFactor = 0.5;
+            double recoveryFactor = 1.25;
+            int maximumCutbacks = 12;
         };
 
         /**
@@ -65,20 +73,7 @@ namespace SolverNameSpace
         void ComputeCoeffs(double dt);
 
         // 线性求解器缓存
-        struct LinearCache
-        {
-            Eigen::SimplicialLDLT<SpMat> ldlt;  // 首选（快）
-            Eigen::SparseLU<SpMat> lu;           // 备选（稳）
-            bool useLdlt = true;
-            bool patternAnalyzed = false;
-
-            void reset()
-            {
-                useLdlt = true;
-                patternAnalyzed = false;
-            }
-        };
-        mutable LinearCache m_cache;
+        LinearSystemSolver m_linearSolver;
 
         // 工作区（避免重复分配内存）
         SpMat m_K, m_M, m_C, m_Kc, m_Keff;
@@ -89,6 +84,6 @@ namespace SolverNameSpace
          * @brief 求解线性方程组 K * x = b
          * @return 是否成功
          */
-        bool SolveLinear(const SpMat& K, const Vec& b, Vec& x);
+        bool SolveLinear(const SpMat& K, const Vec& b, _OUT Vec& x);
     };
 }

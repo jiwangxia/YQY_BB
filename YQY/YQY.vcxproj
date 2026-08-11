@@ -37,12 +37,12 @@
   </ImportGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="QtSettings">
     <QtInstall>6.8.2_msvc2022_64</QtInstall>
-      <QtModules>core;gui;widgets;opengl;openglwidgets;concurrent</QtModules>
+    <QtModules>core;gui;widgets;opengl;openglwidgets;concurrent</QtModules>
     <QtBuildConfig>debug</QtBuildConfig>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="QtSettings">
     <QtInstall>6.8.2_msvc2022_64</QtInstall>
-      <QtModules>core;gui;widgets;opengl;openglwidgets;concurrent</QtModules>
+    <QtModules>core;gui;widgets;opengl;openglwidgets;concurrent</QtModules>
     <QtBuildConfig>release</QtBuildConfig>
   </PropertyGroup>
   <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\qt.targets') or !Exists('$(QtMsBuild)\qt.props')">
@@ -60,7 +60,10 @@
     <Import Project="$(QtMsBuild)\Qt.props" />
     <Import Project="ThirdPartyLibrary\Config_Release.props" />
   </ImportGroup>
-  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Label="UserMacros">
+    <!-- 由 vcpkg.exe 复制运行时 DLL，避免 vcpkg 先尝试不存在的 pwsh.exe。 -->
+    <VcpkgXUseBuiltInApplocalDeps>true</VcpkgXUseBuiltInApplocalDeps>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
     <IncludePath>$(IncludePath)</IncludePath>
   </PropertyGroup>
@@ -74,18 +77,20 @@
       <PrecompiledHeaderFile>Utility\pch.h</PrecompiledHeaderFile>
       <ForcedIncludeFiles>Utility\pch.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
       <WarningLevel>Level3</WarningLevel>
-      <LanguageStandard>stdcpp17</LanguageStandard>
+      <LanguageStandard>stdcpp20</LanguageStandard>
       <TreatAngleIncludeAsExternal>true</TreatAngleIncludeAsExternal>
       <ExternalWarningLevel>TurnOffAllWarnings</ExternalWarningLevel>
       <DisableAnalyzeExternal>true</DisableAnalyzeExternal>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalIncludeDirectories>$(ProjectDir)GUI;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>/std:c++20 /utf-8 /bigobj %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>$(ProjectDir)GUI;$(CUDA_PATH)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>$(CUDA_PATH)\lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>cudart.lib;cublas.lib;cusparse.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="Configuration">
@@ -95,22 +100,24 @@
       <PrecompiledHeaderFile>Utility\pch.h</PrecompiledHeaderFile>
       <ForcedIncludeFiles>Utility\pch.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
       <WarningLevel>Level3</WarningLevel>
-      <LanguageStandard>stdcpp17</LanguageStandard>
+      <LanguageStandard>stdcpp20</LanguageStandard>
       <TreatAngleIncludeAsExternal>true</TreatAngleIncludeAsExternal>
       <ExternalWarningLevel>TurnOffAllWarnings</ExternalWarningLevel>
       <DisableAnalyzeExternal>true</DisableAnalyzeExternal>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/std:c++20 /utf-8 /bigobj %(AdditionalOptions)</AdditionalOptions>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <AdditionalIncludeDirectories>$(ProjectDir)GUI;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)GUI;$(CUDA_PATH)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>false</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalLibraryDirectories>$(CUDA_PATH)\lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>cudart.lib;cublas.lib;cusparse.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -164,6 +171,7 @@
     <ClCompile Include="Solver\AnalysisSolve.cpp" />
     <ClCompile Include="Solver\Static\SolverStatic.cpp" />
     <ClCompile Include="Solver\Constraint\NonlinearMPC.cpp" />
+    <ClCompile Include="Solver\CudaSparseSolver.cpp" />
     <ClCompile Include="Utility\ModelManager.cpp" />
     <ClCompile Include="Utility\EnumKeyword.cpp" />
     <ClCompile Include="DataStructure\Section\SectionBase.cpp" />
@@ -253,6 +261,7 @@
     <ClInclude Include="DataStructure\Region\ComputeRegion.h" />
     <ClInclude Include="DataStructure\Region\ModelSet.h" />
     <ClInclude Include="Base\Base.h" />
+    <ClInclude Include="Base\EmptyOUT.h" />
     <ClInclude Include="DataStructure\Constraint\Constraint.h" />
     <ClInclude Include="DataStructure\Constraint\NonlinearMPCConstraint.h" />
     <ClInclude Include="DataStructure\Load\LoadBase.h" />
@@ -281,6 +290,10 @@
     <ClInclude Include="Solver\Dynamic\RayleighDamping.h" />
     <ClInclude Include="Solver\Interface\IAnalysisModel.h" />
     <ClInclude Include="Solver\Interface\ISolver.h" />
+    <ClInclude Include="Solver\LinearSystemSolver.h" />
+    <ClInclude Include="Solver\CudaSparseSolver.h" />
+    <ClInclude Include="Solver\GpuSettings.h" />
+    <ClInclude Include="Solver\AssemblySettings.h" />
     <ClInclude Include="Solver\AnalysisSolve.h" />
     <ClInclude Include="Solver\SolverFactory.h" />
     <ClInclude Include="Solver\Static\SolverStatic.h" />
@@ -319,4 +332,28 @@
   <ImportGroup Condition="Exists('$(QtMsBuild)\qt.targets')">
     <Import Project="$(QtMsBuild)\qt.targets" />
   </ImportGroup>
+  <!-- Qt MSBuild targets are imported above and otherwise reset this to C++17. -->
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
+    <ClCompile>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalOptions>/std:c++20 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
+    <ClCompile>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalOptions>/std:c++20 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <Target Name="CopyCudaRuntime" AfterTargets="Build" Condition="Exists('$(CUDA_PATH)\bin\x64\cudart64_13.dll')">
+    <ItemGroup>
+      <CudaRuntimeDll Include="$(CUDA_PATH)\bin\x64\cudart64_13.dll" />
+      <CudaRuntimeDll Include="$(CUDA_PATH)\bin\x64\cublas64_13.dll" />
+      <CudaRuntimeDll Include="$(CUDA_PATH)\bin\x64\cublasLt64_13.dll" />
+      <CudaRuntimeDll Include="$(CUDA_PATH)\bin\x64\cusparse64_12.dll" />
+      <CudaRuntimeDll Include="$(APPDATA)\Python\Python312\site-packages\nvidia\cu13\bin\x86_64\nvJitLink_130_0.dll"
+                      Condition="Exists('$(APPDATA)\Python\Python312\site-packages\nvidia\cu13\bin\x86_64\nvJitLink_130_0.dll')" />
+    </ItemGroup>
+    <Copy SourceFiles="@(CudaRuntimeDll)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
 </Project>

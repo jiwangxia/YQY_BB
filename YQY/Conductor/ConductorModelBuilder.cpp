@@ -4,6 +4,7 @@
 #include "DataStructure/Element/ElementCable.h"
 #include "DataStructure/Element/ElementBase.h"
 #include "DataStructure/Element/ElementTruss.h"
+#include "DataStructure/Constraint/NonlinearMPCConstraint.h"
 #include "DataStructure/Material/Material.h"
 #include "DataStructure/Node/Node.h"
 #include "DataStructure/Property/Property.h"
@@ -14,6 +15,7 @@
 #include <cmath>
 #include <iterator>
 #include <limits>
+#include <numbers>
 #include <set>
 
 namespace Conductor
@@ -89,7 +91,7 @@ namespace Conductor
     {
     }
 
-    bool ConductorModelBuilder::BuildLine(const LineBuildConfig& config, LineBuildResult& result, std::string& error)
+    bool ConductorModelBuilder::BuildLine(const LineBuildConfig& config, _OUT LineBuildResult& result, _OUT std::string& error)
     {
         result = LineBuildResult{};
 
@@ -141,19 +143,13 @@ namespace Conductor
             return false;
         }
 
-        if (config.conductor.connecttype != ConnectionMode::Parallel)
-        {
-            error = "当前阶段仅支持 Parallel 导线连接方式";
-            return false;
-        }
-
         if (config.conductor.segments <= 0)
         {
             error = "导线离散段数必须大于 0";
             return false;
         }
 
-        if (config.conductor.stress0 <= 0.0)
+        if (config.conductor.initialStress <= 0.0)
         {
             error = "导线初始应力必须大于 0";
             return false;
@@ -179,21 +175,21 @@ namespace Conductor
         }
 
         result.start = config.start;
-        result.end = config.end;
+        result.end   = config.end;
         result.spanLength = horizontalSpan.norm();
 
-        ConductorConfig conductor = config.conductor;
-        conductor.unitWeight = material->m_Density * 9.81;
+        const double lineWeight = material->m_Density * section->m_Area * 9.81;
+        const double horizontalTension = config.conductor.initialStress * section->m_Area;
 
-        double leftCutLength = config.leftCutLength;
-        double rightCutLength = config.rightCutLength;
-        const bool convergeEnds = config.convergeBundleEnds && conductor.nBundle > 1;
-        if (convergeEnds && config.bundleEndTransitionLength > 0.0)
+        double leftCutLength    = config.leftCutLength;
+        double rightCutLength   = config.rightCutLength;
+        const bool convergeEnds = config.convergeBundleEnds && config.conductor.nBundle > 1;
+        // 单分裂同样保留默认的端部过渡长度，避免“精确挂点”与悬链线
+        // 第一个内点仅相距 CatenaryModel 的数值下限 1e-4 m，形成极短单元。
+        const bool useDefaultEndTransition = config.conductor.nBundle == 1 || convergeEnds;
+        if (useDefaultEndTransition && config.bundleEndTransitionLength > 0.0)
         {
-            // CreateBundle 的截断长度就是公共支点至首/末分裂截面的弧长。
-            // 未显式设置截断长度时保留一段实际过渡，避免分裂半径在近零距离内突变。
-            const double transitionLength =
-                std::min(config.bundleEndTransitionLength, result.spanLength * 0.1);
+            const double transitionLength = std::min(config.bundleEndTransitionLength, result.spanLength * 0.1);
             if (leftCutLength <= 1e-7)
                 leftCutLength = transitionLength;
             if (rightCutLength <= 1e-7)
@@ -201,11 +197,9 @@ namespace Conductor
         }
 
         BundleResult raw = Generator::CreateBundle(
-            config.start.data(),
-            config.end.data(),
-            leftCutLength,
-            rightCutLength,
-            conductor);
+            config.start.data(), config.end.data(),
+            leftCutLength, rightCutLength,
+            horizontalTension, lineWeight, config.conductor);
 
         if (raw.wiresNode.empty())
         {
@@ -277,7 +271,7 @@ namespace Conductor
         return true;
     }
 
-    bool ConductorModelBuilder::BuildSpanConductor(const SpanConductorBuildConfig& config, LineBuildResult& result, std::string& error)
+    bool ConductorModelBuilder::BuildSpanConductor(const SpanConductorBuildConfig& config, _OUT LineBuildResult& result, _OUT std::string& error)
     {
         if (!BuildLine(config.line, result, error))
         {
@@ -288,6 +282,10 @@ namespace Conductor
             {
                 for (const auto& spacer : result.innerSpacers)
                 {
+                    for (int mpcId : spacer.mpcIds)
+                    {
+                        m_structure->m_MPCConstraints.erase(mpcId);
+                    }
                     for (int elementId : spacer.elementIds)
                     {
                         m_structure->m_Elements.erase(elementId);
@@ -368,8 +366,8 @@ namespace Conductor
 
     bool ConductorModelBuilder::BuildMultiSpanConductor(
         const MultiSpanConductorBuildConfig& config,
-        LineBuildResult& result,
-        std::string& error)
+        _OUT LineBuildResult& result,
+        _OUT std::string& error)
     {
         result = LineBuildResult{};
         if (!m_structure)
@@ -418,9 +416,8 @@ namespace Conductor
             error = "耐张稳定梁单元类型不能为 UNKNOWN";
             return false;
         }
-        if (lineConfig.conductor.connecttype != ConnectionMode::Parallel ||
-            lineConfig.conductor.segments <= 0 ||
-            lineConfig.conductor.stress0 <= 0.0 ||
+        if (lineConfig.conductor.segments <= 0 ||
+            lineConfig.conductor.initialStress <= 0.0 ||
             lineConfig.conductor.spacing < 0.0)
         {
             error = "多档导线的连接方式、离散段数、初始应力或分裂间距无效";
@@ -444,14 +441,25 @@ namespace Conductor
         std::set<int> originalNodeIds;
         std::set<int> originalElementIds;
         std::set<int> originalSetIds;
+        std::set<int> originalMpcIds;
         for (const auto& [id, node] : m_structure->m_Nodes)
             originalNodeIds.insert(id);
         for (const auto& [id, element] : m_structure->m_Elements)
             originalElementIds.insert(id);
         for (const auto& [id, modelSet] : m_structure->m_ModelSets)
             originalSetIds.insert(id);
+        for (const auto& [id, mpc] : m_structure->m_MPCConstraints)
+            originalMpcIds.insert(id);
         auto rollback = [&]()
             {
+                for (auto it = m_structure->m_MPCConstraints.begin();
+                     it != m_structure->m_MPCConstraints.end();)
+                {
+                    if (originalMpcIds.find(it->first) == originalMpcIds.end())
+                        it = m_structure->m_MPCConstraints.erase(it);
+                    else
+                        ++it;
+                }
                 for (auto it = m_structure->m_Elements.begin(); it != m_structure->m_Elements.end();)
                 {
                     if (originalElementIds.find(it->first) == originalElementIds.end())
@@ -495,8 +503,8 @@ namespace Conductor
         result.spanLength = 0.0;
         result.property = lineConfig.property;
 
-        ConductorConfig conductor = lineConfig.conductor;
-        conductor.unitWeight = material->m_Density * 9.81;
+        const double lineWeight = material->m_Density * section->m_Area * 9.81;
+        const double horizontalTension = lineConfig.conductor.initialStress * section->m_Area;
         std::vector<BundleResult> rawSpans;
         rawSpans.reserve(spanCount);
         for (std::size_t spanIndex = 0; spanIndex < spanCount; ++spanIndex)
@@ -515,7 +523,8 @@ namespace Conductor
                 std::max(0.0, lineConfig.bundleEndTransitionLength),
                 horizontalLength * 0.1);
             BundleResult raw = Generator::CreateBundle(
-                start.data(), end.data(), transitionLength, transitionLength, conductor);
+                start.data(), end.data(), transitionLength, transitionLength,
+                horizontalTension, lineWeight, lineConfig.conductor);
             if (raw.wiresNode.size() != static_cast<std::size_t>(wireCount))
             {
                 error = "第 " + std::to_string(spanIndex + 1) + " 档导线几何生成失败";
@@ -694,23 +703,26 @@ namespace Conductor
                 double startAngle = 0.0;
                 double radius = 0.0;
                 if (wireCount == 2)
-                    radius = conductor.spacing * 0.5;
+                    radius = lineConfig.conductor.spacing * 0.5;
                 else if (wireCount == 4)
                 {
-                    startAngle = -Math_PI / 4.0;
-                    radius = conductor.spacing / (2.0 * std::sin(Math_PI / 4.0));
+                    startAngle = -std::numbers::pi / 4.0;
+                    radius = lineConfig.conductor.spacing /
+                        (2.0 * std::sin(std::numbers::pi / 4.0));
                 }
                 else if (wireCount == 6)
                 {
-                    startAngle = -Math_PI / 3.0;
-                    radius = conductor.spacing / (2.0 * std::sin(Math_PI / 6.0));
+                    startAngle = -std::numbers::pi / 3.0;
+                    radius = lineConfig.conductor.spacing /
+                        (2.0 * std::sin(std::numbers::pi / 6.0));
                 }
                 else if (wireCount == 8)
                 {
-                    startAngle = -3.0 * Math_PI / 8.0;
-                    radius = conductor.spacing / (2.0 * std::sin(Math_PI / 8.0));
+                    startAngle = -3.0 * std::numbers::pi / 8.0;
+                    radius = lineConfig.conductor.spacing /
+                        (2.0 * std::sin(std::numbers::pi / 8.0));
                 }
-                const double angle = startAngle + 2.0 * Math_PI * wireId / wireCount;
+                const double angle = startAngle + 2.0 * std::numbers::pi * wireId / wireCount;
                 const Vector2d right(direction.y(), -direction.x());
                 return Vector3d(
                     right.x() * std::cos(angle) * radius,
@@ -740,8 +752,8 @@ namespace Conductor
             double rise = 0.0;
             if (wireCount > 1)
             {
-                rise = conductor.spacing * 0.5 *
-                    (1.0 + 1.0 / std::tan(Math_PI / wireCount));
+                rise = lineConfig.conductor.spacing * 0.5 *
+                    (1.0 + 1.0 / std::tan(std::numbers::pi / wireCount));
             }
             const Vector3d junctionPosition = suspension.center + Vector3d(0.0, 0.0, rise);
             if (wireCount == 1)
@@ -780,7 +792,7 @@ namespace Conductor
                         // 上部挂点仅引入平动自由度，避免转角自由度导致奇异。
                         EnumKeyword::ElementType::T3D2,
                         lineConfig.property,
-                        lineConfig.conductor.stress0,
+                            lineConfig.conductor.initialStress,
                         elementId,
                         error,
                         ElementRole::SuspensionHardware))
@@ -796,7 +808,7 @@ namespace Conductor
                     suspension.supportNodeId,
                     config.suspensionElementType,
                     suspensionProperty,
-                    lineConfig.conductor.stress0,
+                            lineConfig.conductor.initialStress,
                     suspension.stringElementId,
                     error,
                     ElementRole::SuspensionHardware))
@@ -936,7 +948,7 @@ namespace Conductor
                             rawNodes[jIndex].id,
                             lineConfig.elementType,
                             lineConfig.property,
-                            rawElement.stress0,
+                            rawElement.initialStress,
                             elementId,
                             error,
                             ElementRole::Conductor,
@@ -1023,7 +1035,14 @@ namespace Conductor
         return nextId(m_structure->m_Elements);
     }
 
-    bool ConductorModelBuilder::ValidateProperty(std::shared_ptr<Property> property, const std::string& objectName, std::string& error) const
+    int ConductorModelBuilder::NextMPCId() const
+    {
+        if (!m_structure || m_structure->m_MPCConstraints.empty())
+            return 1;
+        return m_structure->m_MPCConstraints.rbegin()->first + 1;
+    }
+
+    bool ConductorModelBuilder::ValidateProperty(std::shared_ptr<Property> property, const std::string& objectName, _OUT std::string& error) const
     {
         if (!property)
         {
@@ -1054,7 +1073,7 @@ namespace Conductor
         return true;
     }
 
-    std::shared_ptr<ElementBase> ConductorModelBuilder::CreateLineElement(EnumKeyword::ElementType elementType, std::string& error) const
+    std::shared_ptr<ElementBase> ConductorModelBuilder::CreateLineElement(EnumKeyword::ElementType elementType, _OUT std::string& error) const
     {
         switch (elementType)
         {
@@ -1154,8 +1173,8 @@ namespace Conductor
         EnumKeyword::ElementType elementType,
         std::shared_ptr<Property> property,
         double initStress,
-        int& elementId,
-        std::string& error,
+        _OUT int& elementId,
+        _OUT std::string& error,
         ElementRole role,
         int wireId,
         int aeroProfileId,
@@ -1199,15 +1218,24 @@ namespace Conductor
     }
 
     bool ConductorModelBuilder::BuildSuspensionSpacer(
-        SuspensionPointModel& suspension,
+        _OUT SuspensionPointModel& suspension,
         const InnerSpacerConfig& config,
-        std::string& error)
+        _OUT std::string& error)
     {
         if (suspension.wireNodeIds.size() < 2)
             return true;
-        if (!ValidateProperty(config.property, "悬垂端相内间隔棒", error))
+        const bool rigidCenterMpc =
+            config.style == InnerSpacerStyle::RigidCenterMPC;
+        if (rigidCenterMpc && suspension.wireNodeIds.size() < 3)
+        {
+            error = "刚性中心 MPC 间隔棒至少需要三个子导线节点";
             return false;
-        if (config.elementType == EnumKeyword::ElementType::UNKNOWN)
+        }
+        if (!rigidCenterMpc &&
+            !ValidateProperty(config.property, "悬垂端相内间隔棒", error))
+            return false;
+        if (!rigidCenterMpc &&
+            config.elementType == EnumKeyword::ElementType::UNKNOWN)
         {
             error = "悬垂端相内间隔棒单元类型不能为 UNKNOWN";
             return false;
@@ -1215,8 +1243,11 @@ namespace Conductor
 
         std::vector<int> createdNodeIds;
         std::vector<int> createdElementIds;
+        std::vector<int> createdMpcIds;
         auto rollback = [&]()
             {
+                for (int mpcId : createdMpcIds)
+                    m_structure->m_MPCConstraints.erase(mpcId);
                 for (int elementId : createdElementIds)
                     m_structure->m_Elements.erase(elementId);
                 for (int nodeId : createdNodeIds)
@@ -1224,6 +1255,7 @@ namespace Conductor
                 suspension.spacerCenterNodeId = -1;
                 suspension.spacerInnerNodeIds.clear();
                 suspension.spacerElementIds.clear();
+                suspension.spacerMpcIds.clear();
             };
         auto addNode = [&](const Vector3d& position, int& nodeId) -> bool
             {
@@ -1273,6 +1305,43 @@ namespace Conductor
             center += position;
         }
         center /= static_cast<double>(wirePositions.size());
+
+        if (rigidCenterMpc)
+        {
+            if (!addNode(center, suspension.spacerCenterNodeId))
+            {
+                error = "添加悬垂端刚性间隔棒中心节点失败";
+                rollback();
+                return false;
+            }
+            const auto master =
+                m_structure->FindNode(suspension.spacerCenterNodeId);
+            master->SetNumDOFs(6);
+            for (std::size_t wireId = 0;
+                 wireId < suspension.wireNodeIds.size(); ++wireId)
+            {
+                const auto slave =
+                    m_structure->FindNode(suspension.wireNodeIds[wireId]);
+                const int mpcId = NextMPCId();
+                auto mpc = std::make_shared<RigidOffsetMPCConstraint>();
+                mpc->m_Id = mpcId;
+                mpc->m_Name = QStringLiteral("悬垂端刚性中心间隔棒_%1")
+                    .arg(mpcId);
+                mpc->m_pMasterNode = master;
+                mpc->m_pSlaveNode = slave;
+                mpc->m_Offset = wirePositions[wireId] - center;
+                mpc->m_SlaveDirections = {0, 1, 2};
+                if (!m_structure->m_MPCConstraints.emplace(mpcId, mpc).second)
+                {
+                    error = "添加悬垂端刚性间隔棒 MPC 失败";
+                    rollback();
+                    return false;
+                }
+                createdMpcIds.push_back(mpcId);
+                suspension.spacerMpcIds.push_back(mpcId);
+            }
+            return true;
+        }
 
         const std::vector<int>& spacerWireNodeIds =
             suspension.wireNodeIds;
@@ -1345,10 +1414,13 @@ namespace Conductor
         return true;
     }
 
-    bool ConductorModelBuilder::BuildInnerSpacer(LineBuildResult& line, const InnerSpacerConfig& config, InnerSpacerModel& spacer, std::string& error)
+    bool ConductorModelBuilder::BuildInnerSpacer(LineBuildResult& line, const InnerSpacerConfig& config, _OUT InnerSpacerModel& spacer, _OUT std::string& error)
     {
         spacer = InnerSpacerModel{};
         std::vector<int> createdNodeIds;
+        std::vector<int> createdMpcIds;
+        const bool rigidCenterMpc =
+            config.style == InnerSpacerStyle::RigidCenterMPC;
 
         if (m_structure == nullptr)
         {
@@ -1361,6 +1433,11 @@ namespace Conductor
             error = "单分裂导线不需要相内间隔棒";
             return false;
         }
+        if (rigidCenterMpc && line.subConductors.size() < 3)
+        {
+            error = "刚性中心 MPC 间隔棒至少需要三个子导线节点";
+            return false;
+        }
 
         if (line.spanLength <= 1e-7)
         {
@@ -1368,13 +1445,15 @@ namespace Conductor
             return false;
         }
 
-        if (config.elementType == EnumKeyword::ElementType::UNKNOWN)
+        if (!rigidCenterMpc &&
+            config.elementType == EnumKeyword::ElementType::UNKNOWN)
         {
             error = "相内间隔棒单元类型不能为 UNKNOWN";
             return false;
         }
 
-        if (!ValidateProperty(config.property, "相内间隔棒", error))
+        if (!rigidCenterMpc &&
+            !ValidateProperty(config.property, "相内间隔棒", error))
         {
             return false;
         }
@@ -1400,23 +1479,10 @@ namespace Conductor
             }
         }
 
-        auto clampRatio = [](double value)
-            {
-                if (value < 0.0)
-                {
-                    return 0.0;
-                }
-                if (value > 1.0)
-                {
-                    return 1.0;
-                }
-                return value;
-            };
-
-        double ratio = config.useRatio ? config.position : config.position / line.spanLength;
-        ratio = clampRatio(ratio);
+        const double position = std::clamp(config.position, 0.0, line.spanLength);
+        const double ratio = position / line.spanLength;
         spacer.ratio = ratio;
-        spacer.position = ratio * line.spanLength;
+        spacer.position = position;
 
         Vector2d horizontalSpan = (line.end - line.start).head<2>();
         if (horizontalSpan.norm() <= 1e-7)
@@ -1451,7 +1517,8 @@ namespace Conductor
         center /= static_cast<double>(wireNodeIds.size());
 
         int centerNodeId = -1;
-        if (wireNodeIds.size() > 2 && config.style == InnerSpacerStyle::CenterBraced)
+        if (wireNodeIds.size() > 2 &&
+            (config.style == InnerSpacerStyle::CenterBraced || rigidCenterMpc))
         {
             centerNodeId = NextNodeId();
             auto centerNode = std::make_shared<Node>();
@@ -1470,10 +1537,16 @@ namespace Conductor
             createdNodeIds.push_back(centerNodeId);
             spacer.centerNodeId = centerNodeId;
             spacer.nodeIds.push_back(centerNodeId);
+            if (rigidCenterMpc)
+                centerNode->SetNumDOFs(6);
         }
 
         auto rollback = [&]()
             {
+                for (int mpcId : createdMpcIds)
+                {
+                    m_structure->m_MPCConstraints.erase(mpcId);
+                }
                 for (int elementId : spacer.elementIds)
                 {
                     m_structure->m_Elements.erase(elementId);
@@ -1501,6 +1574,43 @@ namespace Conductor
                 spacer.elementIds.push_back(elementId);
                 return true;
             };
+
+        if (rigidCenterMpc)
+        {
+            if (centerNodeId < 0)
+            {
+                error = "刚性中心 MPC 间隔棒至少需要三个子导线节点";
+                rollback();
+                return false;
+            }
+            const auto master = m_structure->FindNode(centerNodeId);
+            for (std::size_t wireId = 0; wireId < wireNodeIds.size(); ++wireId)
+            {
+                const auto slave = m_structure->FindNode(wireNodeIds[wireId]);
+                const int mpcId = NextMPCId();
+                auto mpc = std::make_shared<RigidOffsetMPCConstraint>();
+                mpc->m_Id = mpcId;
+                mpc->m_Name = QStringLiteral("刚性中心间隔棒_%1")
+                    .arg(mpcId);
+                mpc->m_pMasterNode = master;
+                mpc->m_pSlaveNode = slave;
+                mpc->m_Offset = Vector3d(
+                    slave->m_X, slave->m_Y, slave->m_Z) - center;
+                mpc->m_SlaveDirections = {0, 1, 2};
+                if (!m_structure->m_MPCConstraints.emplace(mpcId, mpc).second)
+                {
+                    error = "添加刚性中心间隔棒 MPC 失败";
+                    rollback();
+                    return false;
+                }
+                if (spacer.mpcIds.empty())
+                    spacer.id = mpcId;
+                createdMpcIds.push_back(mpcId);
+                spacer.mpcIds.push_back(mpcId);
+            }
+            line.innerSpacers.push_back(spacer);
+            return true;
+        }
 
         if (wireNodeIds.size() == 2)
         {
@@ -1588,7 +1698,7 @@ namespace Conductor
         return true;
     }
 
-    bool ConductorModelBuilder::BuildInnerSpacers(LineBuildResult& line, const std::vector<InnerSpacerConfig>& configs, std::string& error)
+    bool ConductorModelBuilder::BuildInnerSpacers(LineBuildResult& line, const std::vector<InnerSpacerConfig>& configs, _OUT std::string& error)
     {
         int oldSpacerCount = static_cast<int>(line.innerSpacers.size());
 
@@ -1599,6 +1709,10 @@ namespace Conductor
             {
                 for (int i = static_cast<int>(line.innerSpacers.size()) - 1; i >= oldSpacerCount; --i)
                 {
+                    for (int mpcId : line.innerSpacers[i].mpcIds)
+                    {
+                        m_structure->m_MPCConstraints.erase(mpcId);
+                    }
                     for (int elementId : line.innerSpacers[i].elementIds)
                     {
                         m_structure->m_Elements.erase(elementId);
@@ -1694,8 +1808,8 @@ namespace Conductor
     bool ConductorModelBuilder::CalculateInnerSpacerConfigs(
         const LineBuildResult& line,
         const InnerSpacerLayoutConfig& layout,
-        std::vector<InnerSpacerConfig>& configs,
-        std::string& error) const
+        _OUT std::vector<InnerSpacerConfig>& configs,
+        _OUT std::string& error) const
     {
         configs.clear();
 
@@ -1728,7 +1842,6 @@ namespace Conductor
                     continue;
                 InnerSpacerConfig config = layout.spacer;
                 config.position = position;
-                config.useRatio = false;
                 configs.push_back(config);
             }
             return true;
@@ -1757,7 +1870,6 @@ namespace Conductor
         {
             InnerSpacerConfig config = layout.spacer;
             config.position = start + spacing * i;
-            config.useRatio = false;
             configs.push_back(config);
         }
 
@@ -1767,8 +1879,8 @@ namespace Conductor
     bool ConductorModelBuilder::AddNodes(
         BundleResult& raw,
         const LineBuildConfig& config,
-        LineBuildResult& result,
-        std::string& error)
+        _OUT LineBuildResult& result,
+        _OUT std::string& error)
     {
         std::vector<int> createdNodeIds;
         auto rollback = [&]()
@@ -1993,7 +2105,7 @@ namespace Conductor
         return true;
     }
 
-    bool ConductorModelBuilder::AddElements(const BundleResult& raw, const LineBuildConfig& config, std::shared_ptr<Property> property, LineBuildResult& result, std::string& error)
+    bool ConductorModelBuilder::AddElements(const BundleResult& raw, const LineBuildConfig& config, std::shared_ptr<Property> property, _OUT LineBuildResult& result, _OUT std::string& error)
     {
         std::vector<int> createdElementIds;
         auto rollback = [&]()
@@ -2041,7 +2153,7 @@ namespace Conductor
 
                 int elementId = -1;
                 if (!AddElement(rawNodes[iIndex].id, rawNodes[jIndex].id, config.elementType, property,
-                    rawElement.stress0, elementId, error, ElementRole::Conductor, wireId, wireId,
+                    rawElement.initialStress, elementId, error, ElementRole::Conductor, wireId, wireId,
                     config.conductor.nBundle))
                 {
                     error = "添加导线单元失败：" + error;
@@ -2059,8 +2171,8 @@ namespace Conductor
 
     bool ConductorModelBuilder::AddTensionEndElements(
         const LineBuildConfig& config,
-        LineBuildResult& result,
-        std::string& error)
+        _OUT LineBuildResult& result,
+        _OUT std::string& error)
     {
         if (!config.convergeBundleEnds || config.conductor.nBundle <= 1 ||
             config.endTopology == BundleEndTopology::DirectWireSupports)
@@ -2100,7 +2212,7 @@ namespace Conductor
                             groupNodeId,
                             config.elementType,
                             config.property,
-                            config.conductor.stress0,
+                            config.conductor.initialStress,
                             elementId,
                             error,
                             ElementRole::TensionHardware))
@@ -2117,7 +2229,7 @@ namespace Conductor
                             endModel.groupNodeIds[1],
                             config.endFittingElementType,
                             stabilizerProperty,
-                            config.conductor.stress0,
+                            config.conductor.initialStress,
                             elementId,
                             error,
                             ElementRole::TensionHardware))
@@ -2130,7 +2242,7 @@ namespace Conductor
 
         if (!buildSide(result.leftTensionEnd) || !buildSide(result.rightTensionEnd))
         {
-            error = "添加 THOP 式耐张端部失败：" + error;
+            error = "添加耐张端部失败：" + error;
             rollback();
             return false;
         }
@@ -2139,8 +2251,8 @@ namespace Conductor
 
     bool ConductorModelBuilder::CreateSubConductorSets(
         const LineBuildConfig& config,
-        LineBuildResult& result,
-        std::string& error)
+        _OUT LineBuildResult& result,
+        _OUT std::string& error)
     {
         std::vector<int> createdSetIds;
         auto rollback = [&]()
@@ -2203,7 +2315,7 @@ namespace Conductor
         return true;
     }
 
-    bool ConductorModelBuilder::RenumberLineModel(LineBuildResult& result, std::string& error)
+    bool ConductorModelBuilder::RenumberLineModel(LineBuildResult& result, _OUT std::string& error)
     {
         if (!m_structure)
         {

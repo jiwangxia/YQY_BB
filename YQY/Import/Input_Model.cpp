@@ -1,4 +1,5 @@
 #include "Input_Model.h"
+#include "Application/ApplicationPaths.h"
 #include "DataStructure/Structure/StructureData.h"
 #include "Utility/Logger/Logger.h"
 #include <QRegularExpression>
@@ -17,7 +18,7 @@ namespace
 QString GetDefaultHdf5FileName(const QString& inputFileName)
 {
     const QFileInfo inputFileInfo(inputFileName);
-    QDir outputDir(QDir::current().filePath("YQY/Export/ExportH5"));
+    QDir outputDir(ApplicationPaths::hdf5ResultDirectory());
     if (!outputDir.exists())
     {
         QDir().mkpath(outputDir.absolutePath());

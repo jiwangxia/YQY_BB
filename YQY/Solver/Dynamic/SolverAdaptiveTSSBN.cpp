@@ -3,6 +3,7 @@
  * @brief 用于非线性动力学的自适应 rho∞-TSSBN 积分器。
  */
 #include "SolverAdaptiveTSSBN.h"
+#include "Solver/Constraint/NonlinearMPC.h"
 
 #include <Eigen/Dense>
 #include <QDebug>
@@ -47,51 +48,6 @@ namespace SolverNameSpace
     {
         ValidateParameters();
         ComputeMethodCoefficients();
-    }
-
-    void SolverAdaptiveTSSBN::SparseLinearSolver::Reset()
-    {
-        patternAnalyzed_ = false;
-        rows_ = 0;
-        cols_ = 0;
-        nonZeros_ = 0;
-    }
-
-    bool SolverAdaptiveTSSBN::SparseLinearSolver::Solve(
-        const SpMat& matrix,
-        const Vec& rhs,
-        Vec& solution)
-    {
-        if (matrix.rows() != matrix.cols() || matrix.rows() != rhs.size())
-            return false;
-
-        const bool patternMayHaveChanged =
-            !patternAnalyzed_
-            || rows_ != matrix.rows()
-            || cols_ != matrix.cols()
-            || nonZeros_ != matrix.nonZeros();
-        if (patternMayHaveChanged)
-        {
-            solver_.analyzePattern(matrix);
-            patternAnalyzed_ = true;
-            rows_ = matrix.rows();
-            cols_ = matrix.cols();
-            nonZeros_ = matrix.nonZeros();
-        }
-
-        solver_.factorize(matrix);
-        if (solver_.info() != Eigen::Success)
-        {
-            Reset();
-            return false;
-        }
-        solution = solver_.solve(rhs);
-        if (solver_.info() != Eigen::Success || !solution.allFinite())
-        {
-            Reset();
-            return false;
-        }
-        return true;
     }
 
     void SolverAdaptiveTSSBN::ValidateParameters() const
@@ -298,32 +254,65 @@ namespace SolverNameSpace
                 1.0,
                 constrainedForce,
                 externalForce);
-            model.Assemble_Matrix(tangentStiffness_, true);
-            model.AssembleEffectiveDynamicSystem(
+            model.AssembleEffectiveTangent(
                 accelerationDerivative,
                 velocityDerivative,
-                dynamicTangent_);
-            effectiveTangent_ =
-                tangentStiffness_ + dynamicTangent_;
+                effectiveTangent_);
             model.ComputeResidual(externalForce, residual_);
 
+            // Use the same consistently linearized nonlinear MPC
+            // elimination as Newmark for every implicit TSSBN stage.
+            NonlinearMPCData constraints;
+            if (!model.AssembleNonlinearMPC(constraints))
+            {
+                lastStageFailureReason_ = QStringLiteral("MPC assembly failed");
+                return false;
+            }
+            SpMat solveTangent;
+            Vec solveRhs;
+            NonlinearMPCReduction reduction;
+            double constraintNorm = 0.0;
+            if (constraints.Empty())
+            {
+                solveTangent = effectiveTangent_;
+                solveRhs = residual_;
+            }
+            else
+            {
+                if (!NonlinearMPC::Reduce(
+                        effectiveTangent_, residual_, constraints, reduction))
+                {
+                    lastStageFailureReason_ = QStringLiteral("MPC reduction failed");
+                    return false;
+                }
+                solveTangent = reduction.tangent;
+                solveRhs = reduction.rhs;
+                constraintNorm = reduction.constraintNorm;
+            }
+
             const double residualScale = std::max(1.0, externalForce.norm());
-            lastResidualNorm_ = residual_.norm();
+            lastResidualNorm_ = solveRhs.norm();
             lastResidualLimit_ =
                 parameters_.nonlinearTolerance * residualScale;
-            if (residual_.allFinite()
-                && lastResidualNorm_ <= lastResidualLimit_)
+            if (solveRhs.allFinite() && std::isfinite(constraintNorm)
+                && lastResidualNorm_ <= lastResidualLimit_
+                && constraintNorm <= parameters_.nonlinearTolerance)
             {
+                if (!constraints.Empty())
+                    model.SetNonlinearMPCMultipliers(reduction.multipliers);
                 return true;
             }
-            if (!residual_.allFinite())
+            if (!solveRhs.allFinite() || !std::isfinite(constraintNorm))
             {
                 lastStageFailureReason_ =
                     QStringLiteral("非线性残差包含非有限数值");
                 return false;
             }
+            if (!constraints.Empty())
+                effectiveSystemSolver_.Reset();
+            Vec independentCorrection;
             const bool linearSolveSucceeded = effectiveSystemSolver_.Solve(
-                effectiveTangent_, residual_, correction_);
+                solveTangent, solveRhs, independentCorrection);
             if (!linearSolveSucceeded)
             {
                 lastStageFailureReason_ =
@@ -331,6 +320,15 @@ namespace SolverNameSpace
                 return false;
             }
 
+            correction_ = constraints.Empty()
+                ? independentCorrection
+                : reduction.RecoverFullIncrement(independentCorrection);
+            if (correction_.size() != residual_.size()
+                || !correction_.allFinite())
+            {
+                lastStageFailureReason_ = QStringLiteral("invalid MPC correction");
+                return false;
+            }
             model.ApplyIncrement(correction_);
             model.GetStepIncrement(stage.stepIncrement);
         }
@@ -641,8 +639,7 @@ namespace SolverNameSpace
                                 .arg(lastResidualLimit_, 0, 'g', 8);
                         model.ReportProgress(
                             currentTime / duration, failureMessage);
-                        QTextStream(stderr)
-                            << failureMessage << Qt::endl;
+                        qDebug().noquote() << failureMessage;
                         qDebug().noquote()
                             << QStringLiteral(
                                 "自适应 TSSBN 在最小时间步未收敛");
@@ -741,8 +738,7 @@ namespace SolverNameSpace
                                 .arg(normalizedError, 0, 'g', 8);
                         model.ReportProgress(
                             currentTime / duration, failureMessage);
-                        QTextStream(stderr)
-                            << failureMessage << Qt::endl;
+                        qDebug().noquote() << failureMessage;
                         return false;
                     }
                     model.RollbackDynamicStep();
@@ -825,8 +821,7 @@ namespace SolverNameSpace
                         .arg(lastNormalizedError, 0, 'g', 8);
                 model.ReportProgress(
                     currentTime / duration, failureMessage);
-                QTextStream(stderr)
-                    << failureMessage << Qt::endl;
+                qDebug().noquote() << failureMessage;
                 return false;
             }
         }
@@ -834,13 +829,6 @@ namespace SolverNameSpace
         averageTimeStep_ = acceptedStepCount_ > 0
             ? acceptedTimeStepSum / static_cast<double>(acceptedStepCount_)
             : 0.0;
-        QTextStream(stdout)
-            << "自适应 TSSBN 完成：接受="
-            << acceptedStepCount_ << "，拒绝=" << rejectedStepCount_
-            << "，平均 dt=" << averageTimeStep_
-            << "，平均 Newton=" << GetAverageStageNewtonIterations()
-            << "，最大 Newton=" << maximumStageNewtonIterations_
-            << Qt::endl;
         qDebug().noquote()
             << QStringLiteral(
                 "自适应 TSSBN 完成：接受=%1，拒绝=%2，"

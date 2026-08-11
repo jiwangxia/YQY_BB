@@ -16,6 +16,5 @@ public:
     /**
      * @brief 根据截面面积计算截面惯性矩
      */
-    void Calculate_I(double& Iy, double& Iz,double& J) override;
+    void Calculate_I(_OUT double& Iy, _OUT double& Iz, _OUT double& J) override;
 };
-

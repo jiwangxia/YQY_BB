@@ -13,19 +13,18 @@ void ApplicationBootstrap::prepareEnvironment()
 
 void ApplicationBootstrap::configureApplication(QApplication& application)
 {
-    Q_UNUSED(application);
+    Q_UNUSED(application);//消除未使用参数警告
     QApplication::setOrganizationName(QStringLiteral("YQY"));
-    QApplication::setApplicationName(QStringLiteral("YQY CAE"));
+    QApplication::setApplicationName(QStringLiteral("YQY"));
     QApplication::setWindowIcon(QIcon(QStringLiteral(":/YQY/app_icon.ico")));
-    QApplication::setStyle(QStringLiteral("Fusion"));
-    QApplication::setFont(QFont(QStringLiteral("Microsoft YaHei UI"), 9));
+    QApplication::setStyle(QStringLiteral("Fusion"));//默认风格
+    QApplication::setFont(QFont(QStringLiteral("Microsoft YaHei UI"), 9));//默认字体
 }
 
 void ApplicationBootstrap::prepareMainWindow(YQY& window)
 {
     const QScreen* screen = QGuiApplication::primaryScreen();
-    if (!screen)
-        return;
+    if (!screen) return;
 
     const QRect available = screen->availableGeometry();
     constexpr int margin = 24;

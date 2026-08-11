@@ -50,8 +50,13 @@ void ElementCable::Get_ke(MatrixXd& ke)
 
     const double shearModulus = pMaterial->m_Young
         / (2.0 * (1.0 + pMaterial->m_Poisson));
-    const double axialStiffness = pMaterial->m_Young * area / currentLength;
-    const double torsionalStiffness = shearModulus * polarMoment / currentLength;
+    // 与 TSSBN 参考实现 Element_Cable_CR::Calculate_ke_TSSBN 保持一致：
+    // 采用初始构形（材料坐标）上的工程应变和扭转率。这样
+    // N = N0 + EA/L0*(L-L0)、M = M0 + GJ/L0*theta 的导数与下方
+    // 材料切线严格一致。旧实现使用当前长度作分母，却仍把 EA/L
+    // 直接当作切线，内力与切线并不共轭，会破坏 Newton 收敛和动力频率。
+    const double axialStiffness = pMaterial->m_Young * area / L0;
+    const double torsionalStiffness = shearModulus * polarMoment / L0;
     const double extension = currentLength - L0;
     const double twist = pNode1->m_Displacement[3] - pNode0->m_Displacement[3];
 
@@ -90,22 +95,29 @@ void ElementCable::Get_ke(MatrixXd& ke)
 
 void ElementCable::Get_me_Lumped(MatrixXd& me)//集中质量矩阵
 {
-    auto pMaterial = m_pProperty.lock()->m_pMaterial.lock();
-    auto pSectI0n = m_pProperty.lock()->m_pSection.lock();
+    const auto property = m_pProperty.lock();
+    const auto material = property ? property->m_pMaterial.lock() : nullptr;
+    const auto section = property ? property->m_pSection.lock() : nullptr;
+    if (!material || !section)
+        throw std::runtime_error("ElementCable has incomplete material/section references");
 
-    double A = pSectI0n->m_Area;
-    double Radius = pSectI0n->m_Radius;
-    double Density = pMaterial->m_Density;
-    Get_L0();  // 获取原长 L
+    Get_L0();
+    if (section->m_Area <= 0.0 || material->m_Density < 0.0)
+        throw std::runtime_error("ElementCable mass properties must be nonnegative");
+    double Iy = 0.0, Iz = 0.0, polarMoment = 0.0;
+    section->Calculate_I(Iy, Iz, polarMoment);
+    if (polarMoment < 0.0)
+        throw std::runtime_error("ElementCable polar moment must not be negative");
 
-    double Linear_density = A * Density;               //线性密度---单位长度质量
-    double I = 0.5 * Linear_density * Radius * Radius; //单位长度转动惯量
-    double Sy = 0, Sz = 0.0;
+    const double linearDensity = section->m_Area * material->m_Density;
+    const double rotaryDensity = polarMoment * material->m_Density;
+    constexpr double Sy = 0.0;
+    constexpr double Sz = 0.0;
 
     me.setZero(8, 8);
 
-    me(0, 0) = me(1, 1) = me(2, 2) = me(4, 4) = me(5, 5) = me(6, 6) = Linear_density;
-    me(3, 3) = me(7, 7) = I;
+    me(0, 0) = me(1, 1) = me(2, 2) = me(4, 4) = me(5, 5) = me(6, 6) = linearDensity;
+    me(3, 3) = me(7, 7) = rotaryDensity;
     me(1, 3) = me(3, 1) = me(5, 7) = me(7, 5) = -Sy;
     me(2, 3) = me(3, 2) = me(6, 7) = me(7, 6) = Sz;
 
@@ -114,21 +126,29 @@ void ElementCable::Get_me_Lumped(MatrixXd& me)//集中质量矩阵
 
 void ElementCable::Get_me_Consistent(MatrixXd& me) //一致质量矩阵
 {
-    auto pMaterial = m_pProperty.lock()->m_pMaterial.lock();
-    auto pSectI0n = m_pProperty.lock()->m_pSection.lock();
+    const auto property = m_pProperty.lock();
+    const auto material = property ? property->m_pMaterial.lock() : nullptr;
+    const auto section = property ? property->m_pSection.lock() : nullptr;
+    if (!material || !section)
+        throw std::runtime_error("ElementCable has incomplete material/section references");
 
-    double A = pSectI0n->m_Area;
-    double Radius = pSectI0n->m_Radius;
-    double Density = pMaterial->m_Density;
-    Get_L0();  //原长
-    double Linear_density = A * Density;               //线性密度---单位长度质量
-    double Sy = 0.0, Sz = 0.0;//目前只考虑对称截面
-    double I = 0.5 * Linear_density * Radius * Radius; // 单位长度极质量惯量 rho*J
+    Get_L0();
+    if (section->m_Area <= 0.0 || material->m_Density < 0.0)
+        throw std::runtime_error("ElementCable mass properties must be nonnegative");
+    double Iy = 0.0, Iz = 0.0, polarMoment = 0.0;
+    section->Calculate_I(Iy, Iz, polarMoment);
+    if (polarMoment < 0.0)
+        throw std::runtime_error("ElementCable polar moment must not be negative");
+
+    const double linearDensity = section->m_Area * material->m_Density;
+    const double rotaryDensity = polarMoment * material->m_Density;
+    constexpr double Sy = 0.0;
+    constexpr double Sz = 0.0; // 当前只考虑质心与剪心重合的对称截面
     me.setZero(8, 8);
 
     MatrixXd mu = MatrixXd::Zero(4, 4);
-    mu(0, 0) = mu(1, 1) = mu(2, 2) = Linear_density;
-    mu(3, 3) = I;
+    mu(0, 0) = mu(1, 1) = mu(2, 2) = linearDensity;
+    mu(3, 3) = rotaryDensity;
     mu(1, 3) = mu(3, 1) = -Sy;
     mu(2, 3) = mu(3, 2) =  Sz;
 
@@ -155,7 +175,7 @@ void ElementCable::Get_L0()
 
 }
 
-void ElementCable::Assemble(const std::vector<double>& damping, MatrixXd& _OUT ce)
+void ElementCable::Assemble(const std::vector<double>& damping, _OUT MatrixXd& ce)
 {
     if (damping.size() < 4) 
     {

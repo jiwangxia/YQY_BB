@@ -276,6 +276,9 @@
     <ClInclude Include="Base\Base.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Base\EmptyOUT.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="Utility\pch.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -379,6 +382,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Solver\Interface\ISolver.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Solver\LinearSystemSolver.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Solver\AssemblySettings.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Solver\SolverFactory.h">

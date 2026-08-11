@@ -1,14 +1,19 @@
 #include "AnalysisStep.h"
 #include "Application/ApplicationPaths.h"
 #include <algorithm>
+#include <future>
+#include <iterator>
+#include <thread>
 #include "DataStructure/Structure/StructureData.h"
 #include "DataStructure/Element/ElementBase.h"
 #include "DataStructure/Aerodynamics/AeroManager.h"
+#include "DataStructure/Aerodynamics/BundleAeroMapper.h"
 #include "DataStructure/Load/LoadAssembler.h"
 #include "DataStructure/Load/Force_Gravity.h"
 #include "DataStructure/Load/Force_Wind.h"
 #include "Solver/Interface/ISolver.h"
 #include "Solver/SolverFactory.h"
+#include "Solver/AssemblySettings.h"
 #include <Eigen/SparseCholesky>
 
 AeroCaseKey AnalysisStep::GetGallopingAeroCase(
@@ -308,6 +313,104 @@ bool AnalysisStep::PrepareGallopingData(QString* errorMessage)
     return true;
 }
 
+bool AnalysisStep::BindGallopingProfiles(QString* errorMessage)
+{
+    m_gallopingProfileBindings.clear();
+    if (!m_EnableGalloping)
+        return true;
+
+    std::shared_ptr<Force_Wind> wind;
+    for (const auto& [loadId, load] : m_pData->m_Load)
+    {
+        Q_UNUSED(loadId);
+        const auto candidate = std::dynamic_pointer_cast<Force_Wind>(load);
+        if (candidate && IsStepScopedDataActive(candidate->m_StepId))
+        {
+            wind = candidate;
+            break;
+        }
+    }
+    if (!wind)
+    {
+        if (errorMessage)
+            *errorMessage = QStringLiteral(
+                "Galloping profile binding requires a wind load.");
+        return false;
+    }
+
+    int legacyBundleCount = 1;
+    for (const auto& [elementId, element] : m_pData->m_Elements)
+    {
+        Q_UNUSED(elementId);
+        if (element && element->HasAerodynamicLoad())
+            legacyBundleCount = std::max(
+                legacyBundleCount, element->m_AeroProfileId + 1);
+    }
+    if (legacyBundleCount > 1)
+        legacyBundleCount = 4;
+
+    const Eigen::Vector3d modelUp = GetModelUpDirection();
+    const Eigen::Vector3d windVelocity = wind->GetWindVelocityGlobal();
+    const auto currentPosition = [](const Node& node)
+    {
+        Eigen::Vector3d position(node.m_X, node.m_Y, node.m_Z);
+        for (int component = 0; component < 3
+            && component < static_cast<int>(node.m_Displacement.size());
+            ++component)
+            position[component] += node.m_Displacement[component];
+        return position;
+    };
+
+    for (const auto& [elementId, element] : m_pData->m_Elements)
+    {
+        if (!element || !element->HasAerodynamicLoad()
+            || element->m_pNode.size() != 2)
+            continue;
+        const auto first = element->m_pNode[0].lock();
+        const auto second = element->m_pNode[1].lock();
+        if (!first || !second)
+        {
+            if (errorMessage)
+                *errorMessage = QStringLiteral(
+                    "Aerodynamic element %1 has invalid end nodes.")
+                    .arg(elementId);
+            return false;
+        }
+
+        const int bundleCount = element->m_AeroBundleCount > 0
+            ? element->m_AeroBundleCount : legacyBundleCount;
+        const int wireId = element->m_WireId >= 0
+            ? element->m_WireId : element->m_AeroProfileId;
+        try
+        {
+            m_gallopingProfileBindings.emplace(
+                elementId,
+                BundleAeroMapper::ResolveProfile(
+                    bundleCount, wireId,
+                    currentPosition(*second) - currentPosition(*first),
+                    modelUp, windVelocity));
+        }
+        catch (const std::exception& exception)
+        {
+            if (errorMessage)
+                *errorMessage = QStringLiteral(
+                    "Cannot bind aerodynamic profile for element %1: %2")
+                    .arg(elementId)
+                    .arg(QString::fromUtf8(exception.what()));
+            return false;
+        }
+    }
+
+    if (m_gallopingProfileBindings.empty())
+    {
+        if (errorMessage)
+            *errorMessage = QStringLiteral(
+                "Galloping is enabled but no aerodynamic conductor elements were found.");
+        return false;
+    }
+    return true;
+}
+
 Eigen::Vector3d AnalysisStep::GetModelUpDirection() const
 {
     if (!m_pData)
@@ -452,17 +555,24 @@ void AnalysisStep::Assemble_AllLoads(VectorXd& F1, VectorXd& F2, double& Factor,
             }
             loadScale = Factor * pLoadBase->GetScaleFactor(currentTime);
         }
-        LoadAssembler::Assemble(*pLoadBase, *m_pData, m_nFixed, loadScale, F1, F2);
-        if (m_EnableGalloping
-            && pLoadBase->m_LoadType == EnumKeyword::LoadType::FORCE_WIND)
+        const bool isGallopingWind = m_EnableGalloping
+            && pLoadBase->m_LoadType == EnumKeyword::LoadType::FORCE_WIND;
+        if (isGallopingWind)
         {
             gallopingWind = static_cast<const Force_Wind*>(pLoadBase.get());
             gallopingScale = loadScale;
+            // AssembleGalloping already contains the complete mean drag,
+            // lift and moment.  Adding AssembleWind here as well applies an
+            // extra qD force in the wind direction and shifts the dynamic
+            // equilibrium twice.
+            continue;
         }
+        LoadAssembler::Assemble(*pLoadBase, *m_pData, m_nFixed, loadScale, F1, F2);
     }
     if (gallopingWind && gallopingScale != 0.0)
         LoadAssembler::AssembleGalloping(
-            *gallopingWind, *m_pData, m_GallopingIceThickness,
+            *gallopingWind, *m_pData, m_gallopingProfileBindings,
+            m_GallopingIceThickness,
             m_GallopingInitialAttackDegrees,
             GetModelUpDirection(), m_nFixed, gallopingScale, F1, F2);
     //std::cout << "\nF2:" << F2[56] << "\n";
@@ -572,7 +682,7 @@ void AnalysisStep::Get_CurrentInforce(VectorXd& Inforce)
     }
 }
 
-bool AnalysisStep::Check_Rhs(Eigen::VectorXd& Exteralforce, Eigen::VectorXd& Inforce, Eigen::VectorXd& Rhs)
+bool AnalysisStep::Check_Rhs(const Eigen::VectorXd& Exteralforce, const Eigen::VectorXd& Inforce, Eigen::VectorXd& Rhs)
 {
     Rhs = Exteralforce - Inforce;
     double RhsNorm = Rhs.norm();
@@ -652,6 +762,12 @@ bool AnalysisStep::Solve(bool persistHdf5)
         return false;
     }
     Init();
+    if (!BindGallopingProfiles(&gallopingError))
+    {
+        qDebug().noquote() << QStringLiteral("Galloping profile binding error:")
+                           << gallopingError;
+        return false;
+    }
 
     // 初始化单元长度
     Get_ElementLength();
@@ -1208,6 +1324,105 @@ void AnalysisStep::AssembleEffectiveDynamicSystem(
         triplets.begin(), triplets.end());
 }
 
+void AnalysisStep::AssembleEffectiveTangent(
+    double accelerationDerivative,
+    double velocityDerivative,
+    SpMat& effectiveTangent)
+{
+    struct AssemblyBuffer
+    {
+        std::vector<Tri> triplets;
+        VectorXd inertiaForce;
+    };
+
+    std::vector<std::shared_ptr<ElementBase>> elements;
+    elements.reserve(m_pData->m_Elements.size());
+    for (const auto& [elementId, element] : m_pData->m_Elements)
+    {
+        Q_UNUSED(elementId);
+        if (element)
+            elements.push_back(element);
+    }
+
+    const int requestedThreads = SolverNameSpace::AssemblySettings::ThreadCount();
+    const int workerCount = std::min(
+        requestedThreads, static_cast<int>(elements.size()));
+    m_dynamicInertiaForce = VectorXd::Zero(m_nFree);
+
+    const auto assembleRange =
+        [this, &elements, accelerationDerivative, velocityDerivative](
+            std::size_t first, std::size_t last)
+    {
+        AssemblyBuffer buffer;
+        buffer.triplets.reserve((last - first) * 36);
+        buffer.inertiaForce = VectorXd::Zero(m_nFree);
+        MatrixXd stiffness;
+        MatrixXd elementEffective;
+        DynamicElementData elementData;
+        for (std::size_t index = first; index < last; ++index)
+        {
+            ElementBase& element = *elements[index];
+            element.Get_ke(stiffness);
+            EvaluateDynamicElement(element, elementData);
+            elementEffective = stiffness
+                + accelerationDerivative * elementData.mass
+                + velocityDerivative * elementData.velocityTangent
+                + elementData.configurationTangent;
+            AssembleFreeFree(elementData.dofs, elementEffective,
+                buffer.triplets);
+            for (int localDof = 0;
+                localDof < static_cast<int>(elementData.dofs.size());
+                ++localDof)
+            {
+                const int freeDof = elementData.dofs[localDof] - m_nFixed;
+                if (freeDof >= 0 && freeDof < m_nFree)
+                    buffer.inertiaForce[freeDof] +=
+                        elementData.inertiaForce[localDof];
+            }
+        }
+        return buffer;
+    };
+
+    std::vector<AssemblyBuffer> buffers;
+    if (workerCount <= 1)
+    {
+        buffers.push_back(assembleRange(0, elements.size()));
+    }
+    else
+    {
+        std::vector<std::future<AssemblyBuffer>> futures;
+        futures.reserve(workerCount);
+        for (int worker = 0; worker < workerCount; ++worker)
+        {
+            const std::size_t first = elements.size()
+                * static_cast<std::size_t>(worker) / workerCount;
+            const std::size_t last = elements.size()
+                * static_cast<std::size_t>(worker + 1) / workerCount;
+            futures.push_back(std::async(std::launch::async,
+                assembleRange, first, last));
+        }
+        buffers.reserve(futures.size());
+        for (auto& future : futures)
+            buffers.push_back(future.get());
+    }
+
+    std::size_t tripletCount = 0;
+    for (const AssemblyBuffer& buffer : buffers)
+        tripletCount += buffer.triplets.size();
+    std::vector<Tri> triplets;
+    triplets.reserve(tripletCount);
+    for (AssemblyBuffer& buffer : buffers)
+    {
+        triplets.insert(triplets.end(),
+            std::make_move_iterator(buffer.triplets.begin()),
+            std::make_move_iterator(buffer.triplets.end()));
+        m_dynamicInertiaForce += buffer.inertiaForce;
+    }
+
+    effectiveTangent.resize(m_nFree, m_nFree);
+    effectiveTangent.setFromTriplets(triplets.begin(), triplets.end());
+}
+
 void AnalysisStep::EvaluateDynamicElement(
     ElementBase& element,
     DynamicElementData& result)
@@ -1269,20 +1484,25 @@ bool AnalysisStep::AssembleNonlinearMPC(
     constraints.value = Eigen::VectorXd::Zero(equationCount);
     constraints.jacobian =
         Eigen::MatrixXd::Zero(equationCount, m_nFree);
-    constraints.hessians.reserve(equationCount);
+    constraints.hessians.resize(equationCount);
+    constraints.hessianEntries.resize(equationCount);
     constraints.slaveDofs.reserve(equationCount);
 
     int row = 0;
-    for (const auto& contribution : contributions)
+    for (auto& contribution : contributions)
     {
         const int rows = static_cast<int>(contribution.value.size());
         constraints.value.segment(row, rows) = contribution.value;
         constraints.jacobian.middleRows(row, rows) =
             contribution.jacobian;
-        constraints.hessians.insert(
-            constraints.hessians.end(),
-            contribution.hessians.begin(),
-            contribution.hessians.end());
+        if (static_cast<int>(contribution.hessians.size()) == rows)
+            for (int i = 0; i < rows; ++i)
+                constraints.hessians[row + i] =
+                    std::move(contribution.hessians[i]);
+        if (static_cast<int>(contribution.hessianEntries.size()) == rows)
+            for (int i = 0; i < rows; ++i)
+                constraints.hessianEntries[row + i] =
+                    std::move(contribution.hessianEntries[i]);
         constraints.slaveDofs.insert(
             constraints.slaveDofs.end(),
             contribution.slaveDofs.begin(),

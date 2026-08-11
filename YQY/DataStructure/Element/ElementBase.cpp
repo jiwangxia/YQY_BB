@@ -50,7 +50,22 @@ void ElementBase::GetDynamicContributions(
     MatrixXd& centrifugalMatrix)
 {
     Get_me_Consistent(massMatrix);
-    Get_InertiaForce(inertiaForce);
+    const int elementDofs = static_cast<int>(massMatrix.rows());
+    VectorXd acceleration = VectorXd::Zero(elementDofs);
+    int offset = 0;
+    for (const auto& nodeReference : m_pNode)
+    {
+        const auto node = nodeReference.lock();
+        if (!node)
+            continue;
+
+        const int nodeDofs = std::min(
+            Get_NodeDOF(), static_cast<int>(node->m_Acceleration.size()));
+        for (int i = 0; i < nodeDofs && offset + i < elementDofs; ++i)
+            acceleration[offset + i] = node->m_Acceleration[i];
+        offset += Get_NodeDOF();
+    }
+    inertiaForce = massMatrix * acceleration;
     Get_GyroscopicMatrix(gyroscopicMatrix);
     Get_CentrifugalMatrix(centrifugalMatrix);
 }

@@ -3,6 +3,7 @@
 #include <QWidget>
 
 class QLabel;
+class QCheckBox;
 class QComboBox;
 class QSpinBox;
 
@@ -15,6 +16,8 @@ public:
     ~SettingsPanel() override;
 
     QSpinBox* concurrencySpin() const;
+    QSpinBox* assemblyThreadsSpin() const;
+    QCheckBox* gpuSolverCheckBox() const;
     QComboBox* nodeLabelModeCombo() const;
     QLabel* statusLabel() const;
 

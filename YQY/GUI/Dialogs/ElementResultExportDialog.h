@@ -1,4 +1,5 @@
 #pragma once
+#include "Application/ApplicationPaths.h"
 
 #include "Utility/EnumKeyword.h"
 #include "Widgets/DialogSizing.h"
@@ -123,10 +124,7 @@ private:
     struct FieldDefinition { QString label; EnumKeyword::ElementResultType type; bool checked; };
     static QString exportDirectory()
     {
-        const QString path = QDir::current().absoluteFilePath(QStringLiteral("YQY/Export/ExportFile"));
-        if (QDir(path).exists()) return path;
-        const QString fallback = QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(QStringLiteral("Export/ExportFile"));
-        QDir().mkpath(fallback); return fallback;
+        return ApplicationPaths::resultExportDirectory();
     }
     void addFieldGroup(QVBoxLayout* layout, const QString& caption, std::initializer_list<FieldDefinition> definitions)
     {

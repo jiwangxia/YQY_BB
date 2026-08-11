@@ -4,7 +4,6 @@
 #include <stdexcept>
 
 #include "DataStructure/Aerodynamics/AeroManager.h"
-#include "DataStructure/Aerodynamics/BundleAeroMapper.h"
 #include "DataStructure/Element/ElementBase.h"
 #include "DataStructure/Load/AerodynamicLoadCalculator.h"
 #include "DataStructure/Load/Force_Element.h"
@@ -52,11 +51,6 @@ void AddNodeForce(const Node& node, int component, double value,
     else free[dof - fixedDofs] += value;
 }
 
-// For a spatial uniform load q, this is equivalent to THOP's sequence:
-// q_local = R_current^T q -> local consistent load -> R_current transform.
-// Writing its invariant global form avoids duplicating every element's local
-// frame definition while still using the current chord and producing beam end
-// moments correctly.
 Vec SpatialUniformLineLoad(const ElementBase& element, const Vec3& q)
 {
     if (element.m_pNode.size() != 2)
@@ -186,7 +180,9 @@ void LoadAssembler::Assemble(const LoadBase& load, const StructureData& structur
 }
 
 void LoadAssembler::AssembleGalloping(const Force_Wind& wind,
-    const StructureData& structure, int iceThickness,
+    const StructureData& structure,
+    const std::map<int, int>& elementProfileBindings,
+    int iceThickness,
     double initialAttackDegrees,
     const Eigen::Vector3d& modelUp, int fixedDofs, double scale,
     Vec& fixed, Vec& free)
@@ -269,9 +265,11 @@ void LoadAssembler::AssembleGalloping(const Force_Wind& wind,
             AerodynamicLoadCalculator::ComputeKinematics(state);
         if (result.relativeSpeed <= 1.0e-12)
             continue;
-        const int profileId = BundleAeroMapper::ResolveProfile(
-            bundleCount, element->m_WireId, result.axis,
-            modelUp, windVelocity);
+        const auto binding = elementProfileBindings.find(id);
+        if (binding == elementProfileBindings.end())
+            throw std::runtime_error(
+                "Galloping element has no step-level aerodynamic profile binding");
+        const int profileId = binding->second;
         const AeroCoefficients coefficients =
             structure.m_AeroManager.getCoefficients(
                 *caseIt->second, profileId,

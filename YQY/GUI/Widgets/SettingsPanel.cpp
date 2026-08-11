@@ -3,6 +3,7 @@
 #include "ui_SettingsPanel.h"
 
 #include <QLabel>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QSpinBox>
 
@@ -24,6 +25,16 @@ SettingsPanel::~SettingsPanel()
 QSpinBox* SettingsPanel::concurrencySpin() const
 {
     return m_ui->concurrencySpin;
+}
+
+QSpinBox* SettingsPanel::assemblyThreadsSpin() const
+{
+    return m_ui->assemblyThreadsSpin;
+}
+
+QCheckBox* SettingsPanel::gpuSolverCheckBox() const
+{
+    return m_ui->gpuSolverCheckBox;
 }
 
 QComboBox* SettingsPanel::nodeLabelModeCombo() const

@@ -9,7 +9,7 @@ namespace Utility
         // ========================================================================
         // 1. 反对称矩阵
         // ========================================================================
-        void SkewSymmetric(const Eigen::Vector3d& v, Eigen::Matrix3d& _OUT  result)
+        void SkewSymmetric(const Eigen::Vector3d& v, _OUT Eigen::Matrix3d& result)
         {
             result << 0.0, -v(2), v(1),
                 v(2), 0.0, -v(0),
@@ -19,7 +19,7 @@ namespace Utility
         // ========================================================================
         // 2. 计算 Ts 矩阵
         // ========================================================================
-        void Calculate_Ts(const Eigen::Vector3d& vartheta, Eigen::Matrix3d& _OUT result)
+        void Calculate_Ts(const Eigen::Vector3d& vartheta, _OUT Eigen::Matrix3d& result)
         {
             double theta = vartheta.norm();
             Eigen::Vector3d n;
@@ -57,7 +57,7 @@ namespace Utility
         // ========================================================================
         // 3. 计算 Ts 的逆矩阵
         // ========================================================================
-        void Calculate_Ts_Inv(const Eigen::Vector3d& vartheta, Eigen::Matrix3d& _OUT  result)
+        void Calculate_Ts_Inv(const Eigen::Vector3d& vartheta, _OUT Eigen::Matrix3d& result)
         {
             double theta = vartheta.norm();
             Eigen::Vector3d n;
@@ -90,7 +90,7 @@ namespace Utility
         // ========================================================================
         // 4. 罗德里格斯公式 (向量 -> 矩阵)
         // ========================================================================
-        void Calculate_RotationMatrix(const Eigen::Vector3d& vartheta, Eigen::Matrix3d& _OUT result)
+        void Calculate_RotationMatrix(const Eigen::Vector3d& vartheta, _OUT Eigen::Matrix3d& result)
         {
             double theta = vartheta.norm();
             Eigen::Matrix3d I = Eigen::Matrix3d::Identity();
@@ -117,7 +117,7 @@ namespace Utility
         // ========================================================================
         // 5. 计算随动坐标系 Rr (局部坐标系架设)
         // ========================================================================
-        void Calculate_Rr(const Eigen::Vector3d& p1_def, const Eigen::Vector3d& p2_def, const Eigen::Vector3d& q, Eigen::Matrix3d& _OUT result)
+        void Calculate_Rr(const Eigen::Vector3d& p1_def, const Eigen::Vector3d& p2_def, const Eigen::Vector3d& q, _OUT Eigen::Matrix3d& result)
         {
             // 1. 局部 x 轴 (r1)：沿弦线方向
             Eigen::Vector3d d = p2_def - p1_def;
@@ -151,7 +151,7 @@ namespace Utility
         // ========================================================================
         // 6. 对数映射 (矩阵 -> 向量)
         // ========================================================================
-        void Extract_RotationVector(const Eigen::Matrix3d& R, Eigen::Vector3d& _OUT result)
+        void Extract_RotationVector(const Eigen::Matrix3d& R, _OUT Eigen::Vector3d& result)
         {
             Eigen::Quaterniond q(R);
             q.normalize();
@@ -175,7 +175,7 @@ namespace Utility
         // 7. 节点姿态增量更新 (乘法更新法则)
         // R_new = exp(delta_theta) * R_old
         // ========================================================================
-        void Update_NodalRotation(const Eigen::Vector3d& delta_theta, const Eigen::Matrix3d& R_old, Eigen::Matrix3d& _OUT R_new)
+        void Update_NodalRotation(const Eigen::Vector3d& delta_theta, const Eigen::Matrix3d& R_old, _OUT Eigen::Matrix3d& R_new)
         {
             Eigen::Matrix3d delta_R;
             // 1. 先用罗德里格斯公式把转角增量变成增量旋转矩阵
@@ -189,7 +189,7 @@ namespace Utility
         // ========================================================================
         // 9. 欧拉角转旋转矩阵 (以绕 X-Y-Z 顺序为例，对应 Roll-Pitch-Yaw)
         // ========================================================================
-        void EulerAngles_To_RotationMatrix(const Eigen::Vector3d& eulerAngles, Eigen::Matrix3d& _OUT result)
+        void EulerAngles_To_RotationMatrix(const Eigen::Vector3d& eulerAngles, _OUT Eigen::Matrix3d& result)
         {
             double cx = std::cos(eulerAngles(0));
             double sx = std::sin(eulerAngles(0));
@@ -219,7 +219,7 @@ namespace Utility
         // 组装三维梁专属的 Ba 矩阵 (7x7)
         // 自由度排布: [u, tx1, ty1, tz1, tx2, ty2, tz2]
         // ========================================================================
-        void Assemble_Matrix_Ba(const Eigen::Vector3d& vartheta1, const Eigen::Vector3d& vartheta2, Eigen::MatrixXd& _OUT result)
+        void Assemble_Matrix_Ba(const Eigen::Vector3d& vartheta1, const Eigen::Vector3d& vartheta2, _OUT Eigen::MatrixXd& result)
         {
             // 初始化为 7x7 的单位矩阵
             // 这保证了轴向自由度 u 的映射系数为 1.0
@@ -239,7 +239,7 @@ namespace Utility
         // ========================================================================
         // 计算单个节点的 3x3 局部几何刚度块 Khi
         // ========================================================================
-        void Calculate_Khi(const Eigen::Vector3d& v, const Eigen::Vector3d& m, Eigen::Matrix3d& _OUT result)
+        void Calculate_Khi(const Eigen::Vector3d& v, const Eigen::Vector3d& m, _OUT Eigen::Matrix3d& result)
         {
             double theta = v.norm();
             double c1, c2, c3;
@@ -280,7 +280,7 @@ namespace Utility
         // ========================================================================
         // 组装三维梁专属的 Kh 矩阵 (7x7)
         // ========================================================================
-        void Assemble_Matrix_Kh(const Eigen::Vector3d& vartheta1, const Eigen::Vector3d& vartheta2, const Eigen::VectorXd& fl, Eigen::MatrixXd& _OUT result)
+        void Assemble_Matrix_Kh(const Eigen::Vector3d& vartheta1, const Eigen::Vector3d& vartheta2, const Eigen::VectorXd& fl, _OUT Eigen::MatrixXd& result)
         {
             result = Eigen::MatrixXd::Zero(7, 7);
 
@@ -301,7 +301,7 @@ namespace Utility
         // ========================================================================
         // 组装三维梁专属的转换矩阵 E (12x12)
         // ========================================================================
-        void Assemble_Matrix_E(const Eigen::Matrix3d& Rr, Eigen::MatrixXd& _OUT result)
+        void Assemble_Matrix_E(const Eigen::Matrix3d& Rr, _OUT Eigen::MatrixXd& result)
         {
             // 1. 初始化为 12x12 的单位矩阵 (对角线为 1)
             result = Eigen::MatrixXd::Identity(12, 12);
@@ -320,7 +320,7 @@ namespace Utility
         // ========================================================================
         // 组装投影矩阵 P (7x12) 和自旋矩阵 G (3x12)
         // ========================================================================
-        void Assemble_Matrix_PG(const Eigen::Vector3d& p1_def, const Eigen::Vector3d& p2_def, const Eigen::Vector3d& q1, const Eigen::Vector3d& q2, const Eigen::Matrix3d& Rr, Eigen::MatrixXd& _OUT P_result, Eigen::MatrixXd& _OUT G_result)
+        void Assemble_Matrix_PG(const Eigen::Vector3d& p1_def, const Eigen::Vector3d& p2_def, const Eigen::Vector3d& q1, const Eigen::Vector3d& q2, const Eigen::Matrix3d& Rr, _OUT Eigen::MatrixXd& P_result, _OUT Eigen::MatrixXd& G_result)
         {
             double Ln = (p2_def - p1_def).norm();
 
@@ -366,7 +366,7 @@ namespace Utility
         }
 
 
-        void Assemble_stress_k(double L, const Eigen::VectorXd& fa, const Eigen::MatrixXd& G, const Eigen::MatrixXd& P, const Eigen::Matrix3d& Rr, const Eigen::Vector3d& q1_global, const Eigen::Vector3d& q2_global, const Eigen::Vector3d& r1, Eigen::MatrixXd& _OUT result)
+        void Assemble_stress_k(double L, const Eigen::VectorXd& fa, const Eigen::MatrixXd& G, const Eigen::MatrixXd& P, const Eigen::Matrix3d& Rr, const Eigen::Vector3d& q1_global, const Eigen::Vector3d& q2_global, const Eigen::Vector3d& r1, _OUT Eigen::MatrixXd& result)
         {
             Eigen::Matrix3d Rr_T = Rr.transpose();
             Eigen::Vector3d q1_l = Rr_T * q1_global;

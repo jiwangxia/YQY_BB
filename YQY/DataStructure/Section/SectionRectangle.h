@@ -12,6 +12,5 @@ public:
     /**
      * @brief 根据宽高计算截面惯性矩
      */
-    void Calculate_I(double& Iy, double& Iz,double& J);
+    void Calculate_I(_OUT double& Iy, _OUT double& Iz, _OUT double& J);
 };
-

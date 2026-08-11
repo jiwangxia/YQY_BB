@@ -37,7 +37,7 @@ QStringList dataRows(const QString& resourcePath, QString& error)
 
 namespace Conductor
 {
-bool PropertyLibrary::load(QString& error)
+bool PropertyLibrary::load(_OUT QString& error)
 {
     m_materials.clear();
     m_sections.clear();
@@ -71,7 +71,7 @@ bool PropertyLibrary::load(QString& error)
     return true;
 }
 
-bool PropertyLibrary::loadBdf(const QString& filePath, QString& error)
+bool PropertyLibrary::loadBdf(const QString& filePath, _OUT QString& error)
 {
     QFile file(filePath);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
@@ -152,7 +152,7 @@ bool PropertyLibrary::loadBdf(const QString& filePath, QString& error)
     return true;
 }
 
-bool PropertyLibrary::loadMaterials(const QString& resourcePath, QString& error)
+bool PropertyLibrary::loadMaterials(const QString& resourcePath, _OUT QString& error)
 {
     const QStringList rows = dataRows(resourcePath, error);
     if (rows.isEmpty())
@@ -187,7 +187,7 @@ bool PropertyLibrary::loadMaterials(const QString& resourcePath, QString& error)
     return !m_materials.isEmpty();
 }
 
-bool PropertyLibrary::loadSections(const QString& resourcePath, QString& error)
+bool PropertyLibrary::loadSections(const QString& resourcePath, _OUT QString& error)
 {
     const QStringList rows = dataRows(resourcePath, error);
     if (rows.isEmpty())
@@ -218,7 +218,7 @@ bool PropertyLibrary::loadSections(const QString& resourcePath, QString& error)
     return !m_sections.isEmpty();
 }
 
-bool PropertyLibrary::updateMaterial(int index, const MaterialPreset& value, QString& error)
+bool PropertyLibrary::updateMaterial(int index, const MaterialPreset& value, _OUT QString& error)
 {
     if (index < 0 || index >= m_materials.size() || value.young <= 0.0 ||
         value.poisson <= -1.0 || value.poisson >= 0.5 || value.density <= 0.0 ||
@@ -231,7 +231,7 @@ bool PropertyLibrary::updateMaterial(int index, const MaterialPreset& value, QSt
     return true;
 }
 
-bool PropertyLibrary::updateSection(int index, const SectionPreset& value, QString& error)
+bool PropertyLibrary::updateSection(int index, const SectionPreset& value, _OUT QString& error)
 {
     if (index < 0 || index >= m_sections.size() || value.area <= 0.0)
     {
@@ -243,7 +243,7 @@ bool PropertyLibrary::updateSection(int index, const SectionPreset& value, QStri
 }
 
 std::shared_ptr<Property> PropertyLibrary::instantiateProperty(
-    int materialIndex, int sectionIndex, StructureData& target, QString& error) const
+    int materialIndex, int sectionIndex, StructureData& target, _OUT QString& error) const
 {
     if (materialIndex < 0 || materialIndex >= m_materials.size() ||
         sectionIndex < 0 || sectionIndex >= m_sections.size())

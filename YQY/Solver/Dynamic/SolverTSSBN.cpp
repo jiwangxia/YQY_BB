@@ -81,7 +81,7 @@ namespace SolverNameSpace
         m_Vn.resize(nDofs);
         m_An.resize(nDofs);
 
-        m_cache.reset();
+        m_linearSolver.Reset();
 
         // 获取初始状态
         model.GetState(m_Un, m_Vn, m_An);
@@ -299,57 +299,6 @@ namespace SolverNameSpace
 
     bool SolverTSSBN::SolveLinear(const SpMat& K, const Vec& b, Vec& x)
     {
-        bool solved = false;
-
-        // 尝试 LDLT（更快）
-        if (m_cache.useLdlt)
-        {
-            if (!m_cache.patternAnalyzed)
-            {
-                m_cache.ldlt.analyzePattern(K);
-            }
-            m_cache.ldlt.factorize(K);
-
-            if (m_cache.ldlt.info() == Eigen::Success)
-            {
-                x = m_cache.ldlt.solve(b);
-                if (m_cache.ldlt.info() == Eigen::Success)
-                {
-                    solved = true;
-                    m_cache.patternAnalyzed = true;
-                }
-            }
-
-            if (!solved)
-            {
-                qDebug() << "LDLT failed, switching to LU...";
-                m_cache.useLdlt = false;
-                m_cache.patternAnalyzed = false;
-            }
-        }
-
-        // 如果 LDLT 失败，尝试 LU
-        if (!solved)
-        {
-            if (!m_cache.patternAnalyzed)
-            {
-                m_cache.lu.analyzePattern(K);
-                m_cache.patternAnalyzed = true;
-            }
-            m_cache.lu.factorize(K);
-
-            if (m_cache.lu.info() == Eigen::Success)
-            {
-                x = m_cache.lu.solve(b);
-                solved = true;
-            }
-            else
-            {
-                qDebug() << "LU factorization failed!";
-                m_cache.patternAnalyzed = false;
-            }
-        }
-
-        return solved;
+        return m_linearSolver.Solve(K, b, x);
     }
 }

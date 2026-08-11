@@ -1,4 +1,5 @@
 #pragma once
+#include "Application/ApplicationPaths.h"
 #include "Utility/EnumKeyword.h"
 #include "Widgets/DialogSizing.h"
 #include "ui_NodeResultExportDialog.h"
@@ -21,22 +22,7 @@ namespace
 {
 QString nodeResultExportDirectory()
 {
-    const QStringList candidates = {
-        QDir::current().absoluteFilePath(QStringLiteral("YQY/Export/ExportFile")),
-        QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(QStringLiteral("../../YQY/Export/ExportFile")),
-        QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(QStringLiteral("../../Export/ExportFile")),
-        QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(QStringLiteral("../Export/ExportFile"))};
-    for (const QString& candidate : candidates)
-    {
-        const QDir directory(candidate);
-        if (directory.exists())
-            return directory.absolutePath();
-    }
-
-    const QString fallback =
-        QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(QStringLiteral("Export/ExportFile"));
-    QDir().mkpath(fallback);
-    return QDir(fallback).absolutePath();
+    return ApplicationPaths::resultExportDirectory();
 }
 }
 

@@ -99,9 +99,11 @@ private:
  * @brief 自适应TSSBN方法求解器
  * 带误差估计和自适应步长控制的TSSBN方法
  */
-class AdaptiveTSSBNSolver : public TimeIntegrationSolver {
+class AdaptiveTSSBNSolver : public TimeIntegrationSolver 
+{
 public:
-    struct Params {
+    struct Params 
+    {
         // TSSBN参数
         double rho_inf = 0.9;
         double c1, c2, alpha, b1;

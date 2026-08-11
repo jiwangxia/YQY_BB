@@ -89,6 +89,6 @@ void ElementBeam_CR2D::Get_L0()
     }
 }
 
-void ElementBeam_CR2D::Assemble(const std::vector<double>& damping, MatrixXd& _OUT ce)
+void ElementBeam_CR2D::Assemble(const std::vector<double>& damping, _OUT MatrixXd& ce)
 {
 }

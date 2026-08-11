@@ -37,8 +37,6 @@ AerodynamicSectionResult AerodynamicLoadCalculator::ComputeKinematics(
     if (normalWind.norm() <= tolerance)
         return result;
 
-    // e3 follows the undisturbed cross-wind.  For a horizontal conductor and
-    // horizontal wind, e2=e3xe1 is vertical, matching the THOP convention.
     result.windNormal = normalWind.normalized();
     result.transverse = result.windNormal.cross(result.axis).normalized();
 

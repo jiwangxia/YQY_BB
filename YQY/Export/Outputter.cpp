@@ -110,11 +110,17 @@ void NodeData::ExtractFromNode(const Node* pNode)
     if (pNode->m_Velocity.size() >= 1) m_v1 = pNode->m_Velocity[0];
     if (pNode->m_Velocity.size() >= 2) m_v2 = pNode->m_Velocity[1];
     if (pNode->m_Velocity.size() >= 3) m_v3 = pNode->m_Velocity[2];
+    if (pNode->m_Velocity.size() >= 4) m_vr1 = pNode->m_Velocity[3];
+    if (pNode->m_Velocity.size() >= 5) m_vr2 = pNode->m_Velocity[4];
+    if (pNode->m_Velocity.size() >= 6) m_vr3 = pNode->m_Velocity[5];
 
     // 直接从节点读取加速度
     if (pNode->m_Acceleration.size() >= 1) m_a1 = pNode->m_Acceleration[0];
     if (pNode->m_Acceleration.size() >= 2) m_a2 = pNode->m_Acceleration[1];
     if (pNode->m_Acceleration.size() >= 3) m_a3 = pNode->m_Acceleration[2];
+    if (pNode->m_Acceleration.size() >= 4) m_ar1 = pNode->m_Acceleration[3];
+    if (pNode->m_Acceleration.size() >= 5) m_ar2 = pNode->m_Acceleration[4];
+    if (pNode->m_Acceleration.size() >= 6) m_ar3 = pNode->m_Acceleration[5];
 
     // 直接从节点读取内力
     if (pNode->m_Force.size() >= 1) m_f1 = pNode->m_Force[0];
@@ -130,6 +136,18 @@ void NodeData::ExtractFromNode(const Node* pNode)
     if (pNode->m_ReactionForce.size() >= 1) m_r1 = pNode->m_ReactionForce[0];
     if (pNode->m_ReactionForce.size() >= 2) m_r2 = pNode->m_ReactionForce[1];
     if (pNode->m_ReactionForce.size() >= 3) m_r3 = pNode->m_ReactionForce[2];
+}
+
+double NodeData::GetVelocityComponent(int component) const
+{
+    const double values[6] = {m_v1, m_v2, m_v3, m_vr1, m_vr2, m_vr3};
+    return component >= 0 && component < 6 ? values[component] : 0.0;
+}
+
+double NodeData::GetAccelerationComponent(int component) const
+{
+    const double values[6] = {m_a1, m_a2, m_a3, m_ar1, m_ar2, m_ar3};
+    return component >= 0 && component < 6 ? values[component] : 0.0;
 }
 
 double NodeData::GetValue(EnumKeyword::NodeResultType type) const

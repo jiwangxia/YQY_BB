@@ -23,7 +23,7 @@ public:
     virtual bool Evaluate(
         int fixedDofs,
         int freeDofs,
-        SolverNameSpace::NonlinearMPCData& data) const = 0;
+        _OUT SolverNameSpace::NonlinearMPCData& data) const = 0;
     virtual std::shared_ptr<NonlinearMPCConstraint> Clone(
         const std::map<int, std::shared_ptr<Node>>& nodes) const = 0;
     virtual std::vector<int> GetNodeIds() const = 0;
@@ -49,7 +49,7 @@ public:
     bool Evaluate(
         int fixedDofs,
         int freeDofs,
-        SolverNameSpace::NonlinearMPCData& data) const override;
+        _OUT SolverNameSpace::NonlinearMPCData& data) const override;
     std::shared_ptr<NonlinearMPCConstraint> Clone(
         const std::map<int, std::shared_ptr<Node>>& nodes) const override;
     std::vector<int> GetNodeIds() const override;
@@ -71,7 +71,7 @@ public:
     bool Evaluate(
         int fixedDofs,
         int freeDofs,
-        SolverNameSpace::NonlinearMPCData& data) const override;
+        _OUT SolverNameSpace::NonlinearMPCData& data) const override;
     std::shared_ptr<NonlinearMPCConstraint> Clone(
         const std::map<int, std::shared_ptr<Node>>& nodes) const override;
     std::vector<int> GetNodeIds() const override;
@@ -98,7 +98,7 @@ public:
     bool Evaluate(
         int fixedDofs,
         int freeDofs,
-        SolverNameSpace::NonlinearMPCData& data) const override;
+        _OUT SolverNameSpace::NonlinearMPCData& data) const override;
     std::shared_ptr<NonlinearMPCConstraint> Clone(
         const std::map<int, std::shared_ptr<Node>>& nodes) const override;
     std::vector<int> GetNodeIds() const override;
@@ -126,7 +126,7 @@ public:
     bool Evaluate(
         int fixedDofs,
         int freeDofs,
-        SolverNameSpace::NonlinearMPCData& data) const override;
+        _OUT SolverNameSpace::NonlinearMPCData& data) const override;
     std::shared_ptr<NonlinearMPCConstraint> Clone(
         const std::map<int, std::shared_ptr<Node>>& nodes) const override;
     std::vector<int> GetNodeIds() const override;

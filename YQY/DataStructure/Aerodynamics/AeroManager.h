@@ -1,9 +1,10 @@
-﻿#pragma once
+#pragma once
 #include <vector>
 
 #include <string>
 #include <filesystem>
 #include <map>
+#include "Base/EmptyOUT.h"
 
 // ============ 控制台颜色支持 ============
 const int COLOR_GREEN = 10;
@@ -74,7 +75,7 @@ private:
 
     // 私有辅助函数
     std::vector<std::string> split(const std::string& s, char delimiter) const;
-    bool loadModelsFromCSV(const std::filesystem::path& filepath, std::vector<BladeModel>& outModels) const;
+    bool loadModelsFromCSV(const std::filesystem::path& filepath, _OUT std::vector<BladeModel>& outModels) const;
     double interpolate(const std::vector<double>& yValues, double inputX) const;
     double parseDouble(const std::string& str) const;
     bool removeUTF8BOM(std::string& line) const;
