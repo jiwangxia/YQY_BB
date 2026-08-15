@@ -2,7 +2,9 @@
 #include "Widgets/DialogSizing.h"
 #include "ui_PropertyItemEditorDialog.h"
 #include <QDoubleSpinBox>
-PropertyItemEditorDialog::PropertyItemEditorDialog(QWidget* p) : QDialog(p), m_ui(new Ui::PropertyItemEditorDialogClass)
+PropertyItemEditorDialog::PropertyItemEditorDialog(QWidget* p)
+    : QDialog(p)
+    , m_ui(new Ui::PropertyItemEditorDialogClass)
 {
     m_ui->setupUi(this);
     DialogSizing::lockHeightToContents(this);
@@ -65,7 +67,13 @@ void PropertyItemEditorDialog::configureSection(const QString& s, int id, const 
         return m_ui->name##Spin;                                                                                       \
     }
 G(young)
-G(poisson) G(density) G(stress) G(expansion) G(area) G(width) G(height)
+G(poisson)
+G(density)
+G(stress)
+G(expansion)
+G(area)
+G(width)
+G(height)
 #undef G
     QDialogButtonBox* PropertyItemEditorDialog::buttons() const
 {

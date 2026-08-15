@@ -8,6 +8,7 @@
 #include "DataStructure/Element/ElementBeam_CR.h"
 #include "DataStructure/Element/ElementCable.h"
 #include "DataStructure/Element/ElementTruss.h"
+#include "DataStructure/Inertia/RigidBodyInertia.h"
 #include "DataStructure/Load/Force_Wind.h"
 #include "DataStructure/Load/LoadAssembler.h"
 #include "DataStructure/Load/AerodynamicLoadCalculator.h"
@@ -21,18 +22,164 @@
 #include "GUI/Widgets/ConductorModule.h"
 #include "Import/Input_Model.h"
 #include "Solver/AnalysisSolve.h"
+#include "Solver/CudssSolver.h"
+#include "Solver/CudaSparseSolver.h"
 #include "Solver/Dynamic/SolverAdaptiveTSSBN.h"
 #include "Solver/Dynamic/SolverNewmark.h"
+#include "Solver/Dynamic/StructuralDamping.h"
+#include "Solver/LinearSystemSolver.h"
+#include "Solver/PardisoSolver.h"
 #include "Solver/SolverFactory.h"
+#include "Utility/CR.h"
 
 #include <QComboBox>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QTemporaryDir>
+#include <array>
 #include <cmath>
+#include <numbers>
 
 namespace
 {
+std::optional<int> verifyLowRankDampingSolver(const QStringList& arguments)
+{
+    if (!arguments.contains(QStringLiteral("--verify-low-rank-damping")))
+        return std::nullopt;
+
+    constexpr int dimension = 256;
+    constexpr int rank = 4;
+    constexpr double scale = 17.0;
+    std::vector<Eigen::Triplet<double>> triplets;
+    triplets.reserve(dimension * 3);
+    for (int row = 0; row < dimension; ++row)
+    {
+        triplets.emplace_back(row, row, 6.0);
+        if (row > 0)
+            triplets.emplace_back(row, row - 1, -1.0);
+        if (row + 1 < dimension)
+            triplets.emplace_back(row, row + 1, -1.0);
+    }
+    SolverNameSpace::SpMat base(dimension, dimension);
+    base.setFromTriplets(triplets.begin(), triplets.end());
+    Eigen::MatrixXd factor(dimension, rank);
+    for (int row = 0; row < dimension; ++row)
+        for (int column = 0; column < rank; ++column)
+            factor(row, column) = 0.01 * std::sin((row + 1.0) * (column + 1.0) * 0.037);
+    const Eigen::VectorXd rhs = Eigen::VectorXd::LinSpaced(dimension, -1.0, 2.0);
+    const Eigen::MatrixXd explicitMatrix = Eigen::MatrixXd(base) + scale * factor * factor.transpose();
+    const Eigen::VectorXd reference = explicitMatrix.partialPivLu().solve(rhs);
+    if (!reference.allFinite())
+        return 1;
+
+    const std::array<std::pair<SolverNameSpace::LinearSolverMode, const char*>, 6> modes = {
+        std::pair{SolverNameSpace::LinearSolverMode::Ldlt, "ldlt"},
+        std::pair{SolverNameSpace::LinearSolverMode::Lu, "lu"},
+        std::pair{SolverNameSpace::LinearSolverMode::Pardiso, "pardiso"},
+        std::pair{SolverNameSpace::LinearSolverMode::CudaIterative, "cuda_iterative"},
+        std::pair{SolverNameSpace::LinearSolverMode::Cudss, "cudss"},
+        std::pair{SolverNameSpace::LinearSolverMode::Automatic, "automatic"}};
+    for (const auto& [mode, name] : modes)
+    {
+        SolverNameSpace::LinearSolverSettings::SetMode(mode);
+        SolverNameSpace::LinearSystemSolver solver;
+        Eigen::VectorXd solution;
+        if (!solver.SolveLowRank(base, factor, scale, rhs, solution))
+        {
+            SolverNameSpace::LinearSolverSettings::SetMode(SolverNameSpace::LinearSolverMode::Automatic);
+            QTextStream(stderr) << "low_rank_damping backend=" << name << " failed" << Qt::endl;
+            return 2;
+        }
+        const double relativeError = (solution - reference).norm() / std::max(1.0, reference.norm());
+        QTextStream(stdout) << "low_rank_damping backend=" << name << " relative_error=" << relativeError
+                            << Qt::endl;
+        if (!std::isfinite(relativeError) || relativeError > 1.0e-8)
+        {
+            SolverNameSpace::LinearSolverSettings::SetMode(SolverNameSpace::LinearSolverMode::Automatic);
+            return 3;
+        }
+    }
+    SolverNameSpace::LinearSolverSettings::SetMode(SolverNameSpace::LinearSolverMode::Automatic);
+    return 0;
+}
+
+std::optional<int> verifyStructuralDamping(const QStringList& arguments)
+{
+    const int hdf5Index = arguments.indexOf(QStringLiteral("--verify-structural-damping-hdf5"));
+    if (hdf5Index >= 0)
+    {
+        if (hdf5Index + 1 >= arguments.size())
+            return 1;
+        StructureData restored;
+        Hdf5ModelIO hdf5;
+        if (!hdf5.ImportHdf5(arguments.at(hdf5Index + 1), &restored))
+            return 2;
+        for (const auto& [stepId, step] : restored.m_AnalysisStep)
+        {
+            if (!step || !step->isDynamic || !step->m_StructuralDamping.settings.enabled)
+                continue;
+            const auto& settings = step->m_StructuralDamping.settings;
+            QTextStream(stdout) << "structural_damping_hdf5 step=" << stepId
+                                << " translation_ratio=" << settings.translationDampingRatio
+                                << " torsion_ratio=" << settings.torsionDampingRatio
+                                << " maximum_frequency_hz=" << settings.maximumFrequencyHz << Qt::endl;
+            return std::abs(settings.translationDampingRatio - 0.005) <= 1.0e-14 &&
+                           std::abs(settings.torsionDampingRatio - 0.038) <= 1.0e-14 &&
+                           std::abs(settings.maximumFrequencyHz - 3.0) <= 1.0e-14
+                       ? 0
+                       : 3;
+        }
+        return 4;
+    }
+    if (!arguments.contains(QStringLiteral("--verify-structural-damping")))
+        return std::nullopt;
+
+    constexpr int dofCount = 4;
+    constexpr double translationRatio = 0.005;
+    constexpr double torsionRatio = 0.038;
+    const Eigen::Vector4d modalMasses(2.0, 3.0, 5.0, 7.0);
+    const Eigen::Vector4d frequenciesHz(1.0, 1.5, 2.0, 2.5);
+    Eigen::Vector4d stiffnessDiagonal;
+    for (int dof = 0; dof < dofCount; ++dof)
+    {
+        const double omega = 2.0 * std::numbers::pi * frequenciesHz[dof];
+        stiffnessDiagonal[dof] = modalMasses[dof] * omega * omega;
+    }
+    const Eigen::SparseMatrix<double> mass(modalMasses.asDiagonal());
+    const Eigen::SparseMatrix<double> stiffness(stiffnessDiagonal.asDiagonal());
+    SolverNameSpace::StructuralDampingModel damping;
+    damping.settings.enabled = true;
+    damping.settings.translationDampingRatio = translationRatio;
+    damping.settings.torsionDampingRatio = torsionRatio;
+    damping.settings.maximumFrequencyHz = 3.0;
+    QString error;
+    Eigen::SparseMatrix<double> identity(dofCount, dofCount);
+    identity.setIdentity();
+    if (!damping.Calculate(stiffness, mass, {false, false, true, true}, identity, error))
+    {
+        QTextStream(stderr) << "structural damping calculation failed: " << error << Qt::endl;
+        return 1;
+    }
+    const Eigen::MatrixXd actual = damping.Factor() * damping.Factor().transpose();
+    Eigen::Vector4d expectedDiagonal;
+    for (int dof = 0; dof < dofCount; ++dof)
+    {
+        const double ratio = dof < 2 ? translationRatio : torsionRatio;
+        expectedDiagonal[dof] = 2.0 * ratio * 2.0 * std::numbers::pi * frequenciesHz[dof] * modalMasses[dof];
+    }
+    const double diagonalError = (actual.diagonal() - expectedDiagonal).cwiseAbs().maxCoeff();
+    const Eigen::MatrixXd diagonalMatrix = actual.diagonal().asDiagonal();
+    const double offDiagonalError = (actual - diagonalMatrix).cwiseAbs().maxCoeff();
+    QTextStream(stdout) << "structural_damping selected_modes=" << damping.report.selectedModeCount
+                        << " maximum_backcheck_error=" << damping.report.maximumBackCheckError
+                        << " diagonal_error=" << diagonalError << " off_diagonal_error=" << offDiagonalError
+                        << Qt::endl;
+    return diagonalError <= 1.0e-10 && offDiagonalError <= 1.0e-10 &&
+                   damping.report.maximumBackCheckError <= 1.0e-10
+               ? 0
+               : 2;
+}
+
 std::optional<int> verifyGallopingStability(const QStringList& arguments)
 {
     const int index = arguments.indexOf(QStringLiteral("--verify-galloping-stability"));
@@ -46,8 +193,7 @@ std::optional<int> verifyGallopingStability(const QStringList& arguments)
     const QString modelPath = arguments.at(index + 1);
     if (!hdf5.ImportHdf5(modelPath, &structure))
     {
-        QTextStream(stderr) << "cannot import galloping stability model="
-                            << modelPath << Qt::endl;
+        QTextStream(stderr) << "cannot import galloping stability model=" << modelPath << Qt::endl;
         return 2;
     }
 
@@ -63,19 +209,13 @@ std::optional<int> verifyGallopingStability(const QStringList& arguments)
     stream << "galloping stability model=" << modelPath << Qt::endl;
     for (const auto& [key, models] : cases)
     {
-        const auto intervals =
-            GallopingStabilityAnalyzer::FindNegativeDampingIntervals(models);
-        stream << "case bundle=" << key.bundleCount
-               << " wind=" << key.windSpeed
-               << " ice=" << key.iceThickness
-               << " profiles=" << models.size()
-               << " negative_intervals=" << intervals.size() << Qt::endl;
+        const auto intervals = GallopingStabilityAnalyzer::FindNegativeDampingIntervals(models);
+        stream << "case bundle=" << key.bundleCount << " wind=" << key.windSpeed << " ice=" << key.iceThickness
+               << " profiles=" << models.size() << " negative_intervals=" << intervals.size() << Qt::endl;
         for (const GallopingInstabilityInterval& interval : intervals)
         {
-            stream << "  profile=" << interval.profileId
-                   << " alpha_start=" << interval.startAngleDegrees
-                   << " alpha_end=" << interval.endAngleDegrees
-                   << " min_H=" << interval.minimumDenHartog << Qt::endl;
+            stream << "  profile=" << interval.profileId << " alpha_start=" << interval.startAngleDegrees
+                   << " alpha_end=" << interval.endAngleDegrees << " min_H=" << interval.minimumDenHartog << Qt::endl;
         }
         intervalCount += static_cast<int>(intervals.size());
     }
@@ -95,18 +235,25 @@ public:
         BackupStepState();
     }
 
-    int GetFreeDofs() const override { return 1; }
-    int GetFixedDofs() const override { return 0; }
+    int GetFreeDofs() const override
+    {
+        return 1;
+    }
+    int GetFixedDofs() const override
+    {
+        return 0;
+    }
 
     void ApplyIncrement(const SolverNameSpace::Vec& increment) override
     {
         displacement_ += increment;
     }
 
-    void BeginDynamicStep(double, double, double) override {}
+    void BeginDynamicStep(double, double, double) override
+    {
+    }
 
-    void ApplyDynamicCorrection(
-        const SolverNameSpace::Vec& increment, double a0, double a1) override
+    void ApplyDynamicCorrection(const SolverNameSpace::Vec& increment, double a0, double a1) override
     {
         displacement_ += increment;
         velocity_ += a1 * increment;
@@ -120,18 +267,14 @@ public:
         acceleration_ = savedAcceleration_;
     }
 
-    void SetTrialKinematics(
-        const SolverNameSpace::Vec& velocity,
-        const SolverNameSpace::Vec& acceleration) override
+    void SetTrialKinematics(const SolverNameSpace::Vec& velocity, const SolverNameSpace::Vec& acceleration) override
     {
         velocity_ = velocity;
         acceleration_ = acceleration;
     }
 
-    void GetState(
-        SolverNameSpace::Vec& displacement,
-        SolverNameSpace::Vec& velocity,
-        SolverNameSpace::Vec& acceleration) const override
+    void GetState(SolverNameSpace::Vec& displacement, SolverNameSpace::Vec& velocity,
+                  SolverNameSpace::Vec& acceleration) const override
     {
         displacement = displacement_;
         velocity = velocity_;
@@ -146,10 +289,8 @@ public:
         stiffness.makeCompressed();
     }
 
-    void AssembleDynamicSystem(
-        SolverNameSpace::SpMat& mass,
-        SolverNameSpace::SpMat& gyroscopic,
-        SolverNameSpace::SpMat& centrifugal) override
+    void AssembleDynamicSystem(SolverNameSpace::SpMat& mass, SolverNameSpace::SpMat& gyroscopic,
+                               SolverNameSpace::SpMat& centrifugal) override
     {
         mass.resize(1, 1);
         mass.setZero();
@@ -161,40 +302,34 @@ public:
         centrifugal.setZero();
     }
 
-    void ComputeExternalForce(
-        double,
-        double,
-        SolverNameSpace::Vec& constrained,
-        SolverNameSpace::Vec& free) override
+    void ComputeExternalForce(double, double, SolverNameSpace::Vec& constrained, SolverNameSpace::Vec& free) override
     {
         constrained.resize(0);
         free = SolverNameSpace::Vec::Zero(1);
     }
 
-    void Assemble_Constraint(
-        SolverNameSpace::Vec& constrained,
-        double,
-        double) override
+    void Assemble_Constraint(SolverNameSpace::Vec& constrained, double, double) override
     {
         constrained.resize(0);
     }
 
-    void ComputeResidual(
-        const SolverNameSpace::Vec& external,
-        SolverNameSpace::Vec& residual) override
+    void ComputeResidual(const SolverNameSpace::Vec& external, SolverNameSpace::Vec& residual) override
     {
-        residual = external
-            - stiffness_ * displacement_
-            - mass_ * acceleration_;
+        residual = external - stiffness_ * displacement_ - mass_ * acceleration_;
     }
 
-    void CalculateReactions(SolverNameSpace::Vec& reactions) override
+    void CalculateReactions(_OUT SolverNameSpace::Vec& reactions) override
     {
         reactions.resize(0);
     }
 
-    void OnStepCompleted(double) override { ++completedSteps_; }
-    void CommitState() override {}
+    void OnStepCompleted(double) override
+    {
+        ++completedSteps_;
+    }
+    void CommitState() override
+    {
+    }
 
     void BackupStepState() override
     {
@@ -208,55 +343,52 @@ public:
         increment = displacement_ - savedDisplacement_;
     }
 
-    int CompletedSteps() const { return completedSteps_; }
+    int CompletedSteps() const
+    {
+        return completedSteps_;
+    }
 
 private:
     double mass_ = 1.0;
     double stiffness_ = 1.0;
-    SolverNameSpace::Vec displacement_ =
-        SolverNameSpace::Vec::Zero(1);
-    SolverNameSpace::Vec velocity_ =
-        SolverNameSpace::Vec::Zero(1);
-    SolverNameSpace::Vec acceleration_ =
-        SolverNameSpace::Vec::Zero(1);
-    SolverNameSpace::Vec savedDisplacement_ =
-        SolverNameSpace::Vec::Zero(1);
-    SolverNameSpace::Vec savedVelocity_ =
-        SolverNameSpace::Vec::Zero(1);
-    SolverNameSpace::Vec savedAcceleration_ =
-        SolverNameSpace::Vec::Zero(1);
+    SolverNameSpace::Vec displacement_ = SolverNameSpace::Vec::Zero(1);
+    SolverNameSpace::Vec velocity_ = SolverNameSpace::Vec::Zero(1);
+    SolverNameSpace::Vec acceleration_ = SolverNameSpace::Vec::Zero(1);
+    SolverNameSpace::Vec savedDisplacement_ = SolverNameSpace::Vec::Zero(1);
+    SolverNameSpace::Vec savedVelocity_ = SolverNameSpace::Vec::Zero(1);
+    SolverNameSpace::Vec savedAcceleration_ = SolverNameSpace::Vec::Zero(1);
     int completedSteps_ = 0;
 };
 
-class RigidOffsetOscillatorModel final
-    : public SolverNameSpace::IAnalysisModel
+class RigidOffsetOscillatorModel final : public SolverNameSpace::IAnalysisModel
 {
 public:
-    RigidOffsetOscillatorModel(
-        double pointMass, double rotaryInertia,
-        double stiffness, double offset, double initialAngle)
+    RigidOffsetOscillatorModel(double pointMass, double rotaryInertia, double stiffness, double offset,
+                               double initialAngle)
         : pointMass_(pointMass)
         , rotaryInertia_(rotaryInertia)
         , stiffness_(stiffness)
         , offset_(offset)
     {
-        state_ << initialAngle,
-            offset_ * std::cos(initialAngle),
-            offset_ * std::sin(initialAngle);
+        state_ << initialAngle, offset_ * std::cos(initialAngle), offset_ * std::sin(initialAngle);
         velocity_.setZero();
         const double angularAcceleration =
-            -stiffness_ * initialAngle
-            / (rotaryInertia_ + pointMass_ * offset_ * offset_);
-        acceleration_ << angularAcceleration,
-            -offset_ * std::sin(initialAngle) * angularAcceleration,
+            -stiffness_ * initialAngle / (rotaryInertia_ + pointMass_ * offset_ * offset_);
+        acceleration_ << angularAcceleration, -offset_ * std::sin(initialAngle) * angularAcceleration,
             offset_ * std::cos(initialAngle) * angularAcceleration;
         savedState_ = state_;
         savedVelocity_ = velocity_;
         savedAcceleration_ = acceleration_;
     }
 
-    int GetFreeDofs() const override { return 3; }
-    int GetFixedDofs() const override { return 0; }
+    int GetFreeDofs() const override
+    {
+        return 3;
+    }
+    int GetFixedDofs() const override
+    {
+        return 0;
+    }
     void ApplyIncrement(const SolverNameSpace::Vec& increment) override
     {
         state_ += increment;
@@ -266,16 +398,12 @@ public:
         savedState_ = state_;
         savedVelocity_ = velocity_;
         savedAcceleration_ = acceleration_;
-        state_ = savedState_ + dt * savedVelocity_
-            + dt * dt * (0.5 - beta) * savedAcceleration_;
-        velocity_ = savedVelocity_
-            + dt * (1.0 - gamma) * savedAcceleration_;
+        state_ = savedState_ + dt * savedVelocity_ + dt * dt * (0.5 - beta) * savedAcceleration_;
+        velocity_ = savedVelocity_ + dt * (1.0 - gamma) * savedAcceleration_;
         acceleration_.setZero();
     }
-    void ApplyDynamicCorrection(
-        const SolverNameSpace::Vec& correction,
-        double accelerationDerivative,
-        double velocityDerivative) override
+    void ApplyDynamicCorrection(const SolverNameSpace::Vec& correction, double accelerationDerivative,
+                                double velocityDerivative) override
     {
         state_ += correction;
         velocity_ += velocityDerivative * correction;
@@ -287,34 +415,27 @@ public:
         velocity_ = savedVelocity_;
         acceleration_ = savedAcceleration_;
     }
-    void SetTrialKinematics(
-        const SolverNameSpace::Vec& velocity,
-        const SolverNameSpace::Vec& acceleration) override
+    void SetTrialKinematics(const SolverNameSpace::Vec& velocity, const SolverNameSpace::Vec& acceleration) override
     {
         velocity_ = velocity;
         acceleration_ = acceleration;
     }
-    void GetState(
-        SolverNameSpace::Vec& displacement,
-        SolverNameSpace::Vec& velocity,
-        SolverNameSpace::Vec& acceleration) const override
+    void GetState(SolverNameSpace::Vec& displacement, SolverNameSpace::Vec& velocity,
+                  SolverNameSpace::Vec& acceleration) const override
     {
         displacement = state_;
         velocity = velocity_;
         acceleration = acceleration_;
     }
-    void Assemble_Matrix(
-        SolverNameSpace::SpMat& tangent, bool) override
+    void Assemble_Matrix(SolverNameSpace::SpMat& tangent, bool) override
     {
         tangent.resize(3, 3);
         tangent.setZero();
         tangent.insert(0, 0) = stiffness_;
         tangent.makeCompressed();
     }
-    void AssembleDynamicSystem(
-        SolverNameSpace::SpMat& mass,
-        SolverNameSpace::SpMat& velocityTangent,
-        SolverNameSpace::SpMat& configurationTangent) override
+    void AssembleDynamicSystem(SolverNameSpace::SpMat& mass, SolverNameSpace::SpMat& velocityTangent,
+                               SolverNameSpace::SpMat& configurationTangent) override
     {
         mass.resize(3, 3);
         mass.setZero();
@@ -327,16 +448,13 @@ public:
         configurationTangent.resize(3, 3);
         configurationTangent.setZero();
     }
-    bool AssembleNonlinearMPC(
-        SolverNameSpace::NonlinearMPCData& constraints) override
+    bool AssembleNonlinearMPC(SolverNameSpace::NonlinearMPCData& constraints) override
     {
         ++mpcAssemblyCount_;
         const double angle = state_[0];
         constraints.Clear();
         constraints.value.resize(2);
-        constraints.value <<
-            state_[1] - offset_ * std::cos(angle),
-            state_[2] - offset_ * std::sin(angle);
+        constraints.value << state_[1] - offset_ * std::cos(angle), state_[2] - offset_ * std::sin(angle);
         constraints.jacobian = Eigen::MatrixXd::Zero(2, 3);
         constraints.jacobian(0, 0) = offset_ * std::sin(angle);
         constraints.jacobian(0, 1) = 1.0;
@@ -345,43 +463,33 @@ public:
         constraints.hessians.resize(2);
         for (auto& hessian : constraints.hessians)
             hessian.resize(3, 3);
-        constraints.hessians[0].insert(0, 0) =
-            offset_ * std::cos(angle);
-        constraints.hessians[1].insert(0, 0) =
-            offset_ * std::sin(angle);
-        constraints.slaveDofs = { 1, 2 };
+        constraints.hessians[0].insert(0, 0) = offset_ * std::cos(angle);
+        constraints.hessians[1].insert(0, 0) = offset_ * std::sin(angle);
+        constraints.slaveDofs = {1, 2};
         return constraints.IsValid(3);
     }
-    void SetNonlinearMPCMultipliers(
-        const SolverNameSpace::Vec& multipliers) override
+    void SetNonlinearMPCMultipliers(const SolverNameSpace::Vec& multipliers) override
     {
         multipliers_ = multipliers;
     }
-    void ComputeExternalForce(
-        double, double, SolverNameSpace::Vec& constrained,
-        SolverNameSpace::Vec& free) override
+    void ComputeExternalForce(double, double, SolverNameSpace::Vec& constrained, SolverNameSpace::Vec& free) override
     {
         constrained.resize(0);
         free = SolverNameSpace::Vec::Zero(3);
     }
-    void Assemble_Constraint(
-        SolverNameSpace::Vec& constrained, double, double) override
+    void Assemble_Constraint(SolverNameSpace::Vec& constrained, double, double) override
     {
         constrained.resize(0);
     }
-    void ComputeResidual(
-        const SolverNameSpace::Vec& external,
-        SolverNameSpace::Vec& residual) override
+    void ComputeResidual(const SolverNameSpace::Vec& external, SolverNameSpace::Vec& residual) override
     {
         SolverNameSpace::Vec internal = SolverNameSpace::Vec::Zero(3);
         internal[0] = stiffness_ * state_[0];
         SolverNameSpace::Vec inertia(3);
-        inertia << rotaryInertia_ * acceleration_[0],
-            pointMass_ * acceleration_[1],
-            pointMass_ * acceleration_[2];
+        inertia << rotaryInertia_ * acceleration_[0], pointMass_ * acceleration_[1], pointMass_ * acceleration_[2];
         residual = external - internal - inertia;
     }
-    void CalculateReactions(SolverNameSpace::Vec& reactions) override
+    void CalculateReactions(_OUT SolverNameSpace::Vec& reactions) override
     {
         reactions.resize(0);
     }
@@ -389,43 +497,43 @@ public:
     {
         const double angle = state_[0];
         Eigen::Matrix<double, 2, 3> jacobian;
-        jacobian <<
-            offset_ * std::sin(angle), 1.0, 0.0,
-            -offset_ * std::cos(angle), 0.0, 1.0;
+        jacobian << offset_ * std::sin(angle), 1.0, 0.0, -offset_ * std::cos(angle), 0.0, 1.0;
         Eigen::Vector2d constraint;
-        constraint <<
-            state_[1] - offset_ * std::cos(angle),
-            state_[2] - offset_ * std::sin(angle);
+        constraint << state_[1] - offset_ * std::cos(angle), state_[2] - offset_ * std::sin(angle);
         const Eigen::Vector2d velocityResidual = jacobian * velocity_;
         Eigen::Vector2d accelerationResidual = jacobian * acceleration_;
-        accelerationResidual[0] +=
-            offset_ * std::cos(angle) * velocity_[0] * velocity_[0];
-        accelerationResidual[1] +=
-            offset_ * std::sin(angle) * velocity_[0] * velocity_[0];
-        maxConstraintError_ = std::max(
-            maxConstraintError_, constraint.norm());
-        maxVelocityConstraintError_ = std::max(
-            maxVelocityConstraintError_, velocityResidual.norm());
-        maxAccelerationConstraintError_ = std::max(
-            maxAccelerationConstraintError_,
-            accelerationResidual.norm());
+        accelerationResidual[0] += offset_ * std::cos(angle) * velocity_[0] * velocity_[0];
+        accelerationResidual[1] += offset_ * std::sin(angle) * velocity_[0] * velocity_[0];
+        maxConstraintError_ = std::max(maxConstraintError_, constraint.norm());
+        maxVelocityConstraintError_ = std::max(maxVelocityConstraintError_, velocityResidual.norm());
+        maxAccelerationConstraintError_ = std::max(maxAccelerationConstraintError_, accelerationResidual.norm());
     }
-    void CommitState() override {}
+    void CommitState() override
+    {
+    }
     void BackupStepState() override
     {
         savedState_ = state_;
         savedVelocity_ = velocity_;
         savedAcceleration_ = acceleration_;
     }
-    void GetStepIncrement(
-        SolverNameSpace::Vec& increment) const override
+    void GetStepIncrement(SolverNameSpace::Vec& increment) const override
     {
         increment = state_ - savedState_;
     }
 
-    int MpcAssemblyCount() const { return mpcAssemblyCount_; }
-    int MultiplierCount() const { return static_cast<int>(multipliers_.size()); }
-    double MaxConstraintError() const { return maxConstraintError_; }
+    int MpcAssemblyCount() const
+    {
+        return mpcAssemblyCount_;
+    }
+    int MultiplierCount() const
+    {
+        return static_cast<int>(multipliers_.size());
+    }
+    double MaxConstraintError() const
+    {
+        return maxConstraintError_;
+    }
     double MaxVelocityConstraintError() const
     {
         return maxVelocityConstraintError_;
@@ -453,21 +561,18 @@ private:
     double maxAccelerationConstraintError_ = 0.0;
 };
 
-class FixedLengthPendulumModel final
-    : public SolverNameSpace::IAnalysisModel
+class FixedLengthPendulumModel final : public SolverNameSpace::IAnalysisModel
 {
 public:
-    FixedLengthPendulumModel(
-        double mass, double length, double gravity, double initialAngle)
-        : mass_(mass), length_(length), gravity_(gravity)
+    FixedLengthPendulumModel(double mass, double length, double gravity, double initialAngle)
+        : mass_(mass)
+        , length_(length)
+        , gravity_(gravity)
     {
-        state_ << length_ * std::sin(initialAngle),
-            -length_ * std::cos(initialAngle);
+        state_ << length_ * std::sin(initialAngle), -length_ * std::cos(initialAngle);
         velocity_.setZero();
-        const double angularAcceleration =
-            -gravity_ / length_ * std::sin(initialAngle);
-        acceleration_ <<
-            length_ * std::cos(initialAngle) * angularAcceleration,
+        const double angularAcceleration = -gravity_ / length_ * std::sin(initialAngle);
+        acceleration_ << length_ * std::cos(initialAngle) * angularAcceleration,
             length_ * std::sin(initialAngle) * angularAcceleration;
         savedState_ = state_;
         savedVelocity_ = velocity_;
@@ -475,8 +580,14 @@ public:
         initialEnergy_ = Energy();
     }
 
-    int GetFreeDofs() const override { return 2; }
-    int GetFixedDofs() const override { return 0; }
+    int GetFreeDofs() const override
+    {
+        return 2;
+    }
+    int GetFixedDofs() const override
+    {
+        return 0;
+    }
     void ApplyIncrement(const SolverNameSpace::Vec& increment) override
     {
         state_ += increment;
@@ -486,16 +597,12 @@ public:
         savedState_ = state_;
         savedVelocity_ = velocity_;
         savedAcceleration_ = acceleration_;
-        state_ = savedState_ + dt * savedVelocity_
-            + dt * dt * (0.5 - beta) * savedAcceleration_;
-        velocity_ = savedVelocity_
-            + dt * (1.0 - gamma) * savedAcceleration_;
+        state_ = savedState_ + dt * savedVelocity_ + dt * dt * (0.5 - beta) * savedAcceleration_;
+        velocity_ = savedVelocity_ + dt * (1.0 - gamma) * savedAcceleration_;
         acceleration_.setZero();
     }
-    void ApplyDynamicCorrection(
-        const SolverNameSpace::Vec& correction,
-        double accelerationDerivative,
-        double velocityDerivative) override
+    void ApplyDynamicCorrection(const SolverNameSpace::Vec& correction, double accelerationDerivative,
+                                double velocityDerivative) override
     {
         state_ += correction;
         velocity_ += velocityDerivative * correction;
@@ -507,32 +614,25 @@ public:
         velocity_ = savedVelocity_;
         acceleration_ = savedAcceleration_;
     }
-    void SetTrialKinematics(
-        const SolverNameSpace::Vec& velocity,
-        const SolverNameSpace::Vec& acceleration) override
+    void SetTrialKinematics(const SolverNameSpace::Vec& velocity, const SolverNameSpace::Vec& acceleration) override
     {
         velocity_ = velocity;
         acceleration_ = acceleration;
     }
-    void GetState(
-        SolverNameSpace::Vec& displacement,
-        SolverNameSpace::Vec& velocity,
-        SolverNameSpace::Vec& acceleration) const override
+    void GetState(SolverNameSpace::Vec& displacement, SolverNameSpace::Vec& velocity,
+                  SolverNameSpace::Vec& acceleration) const override
     {
         displacement = state_;
         velocity = velocity_;
         acceleration = acceleration_;
     }
-    void Assemble_Matrix(
-        SolverNameSpace::SpMat& tangent, bool) override
+    void Assemble_Matrix(SolverNameSpace::SpMat& tangent, bool) override
     {
         tangent.resize(2, 2);
         tangent.setZero();
     }
-    void AssembleDynamicSystem(
-        SolverNameSpace::SpMat& mass,
-        SolverNameSpace::SpMat& velocityTangent,
-        SolverNameSpace::SpMat& configurationTangent) override
+    void AssembleDynamicSystem(SolverNameSpace::SpMat& mass, SolverNameSpace::SpMat& velocityTangent,
+                               SolverNameSpace::SpMat& configurationTangent) override
     {
         mass.resize(2, 2);
         mass.setZero();
@@ -544,84 +644,73 @@ public:
         configurationTangent.resize(2, 2);
         configurationTangent.setZero();
     }
-    bool AssembleNonlinearMPC(
-        SolverNameSpace::NonlinearMPCData& constraints) override
+    bool AssembleNonlinearMPC(SolverNameSpace::NonlinearMPCData& constraints) override
     {
         constraints.Clear();
         constraints.value.resize(1);
-        constraints.value[0] = 0.5
-            * (state_.squaredNorm() - length_ * length_);
+        constraints.value[0] = 0.5 * (state_.squaredNorm() - length_ * length_);
         constraints.jacobian.resize(1, 2);
         constraints.jacobian = state_.transpose();
         constraints.hessians.resize(1);
         constraints.hessians[0].resize(2, 2);
         constraints.hessians[0].setIdentity();
-        constraints.slaveDofs = { 1 };
+        constraints.slaveDofs = {1};
         return constraints.IsValid(2);
     }
-    void SetNonlinearMPCMultipliers(
-        const SolverNameSpace::Vec& multipliers) override
+    void SetNonlinearMPCMultipliers(const SolverNameSpace::Vec& multipliers) override
     {
         multipliers_ = multipliers;
     }
-    void ComputeExternalForce(
-        double, double, SolverNameSpace::Vec& constrained,
-        SolverNameSpace::Vec& free) override
+    void ComputeExternalForce(double, double, SolverNameSpace::Vec& constrained, SolverNameSpace::Vec& free) override
     {
         constrained.resize(0);
         free = SolverNameSpace::Vec::Zero(2);
     }
-    void Assemble_Constraint(
-        SolverNameSpace::Vec& constrained, double, double) override
+    void Assemble_Constraint(SolverNameSpace::Vec& constrained, double, double) override
     {
         constrained.resize(0);
     }
-    void ComputeResidual(
-        const SolverNameSpace::Vec& external,
-        SolverNameSpace::Vec& residual) override
+    void ComputeResidual(const SolverNameSpace::Vec& external, SolverNameSpace::Vec& residual) override
     {
         Eigen::Vector2d force;
-        force << mass_ * acceleration_[0],
-            mass_ * acceleration_[1] + mass_ * gravity_;
+        force << mass_ * acceleration_[0], mass_ * acceleration_[1] + mass_ * gravity_;
         residual = external - force;
     }
-    void CalculateReactions(SolverNameSpace::Vec& reactions) override
+    void CalculateReactions(_OUT SolverNameSpace::Vec& reactions) override
     {
         reactions.resize(0);
     }
     void OnStepCompleted(double) override
     {
-        maxConstraintError_ = std::max(
-            maxConstraintError_,
-            std::abs(state_.squaredNorm() - length_ * length_));
-        maxVelocityConstraintError_ = std::max(
-            maxVelocityConstraintError_,
-            std::abs(state_.dot(velocity_)));
-        const double accelerationGap = state_.dot(acceleration_)
-            + velocity_.squaredNorm();
-        maxAccelerationConstraintError_ = std::max(
-            maxAccelerationConstraintError_,
-            std::abs(accelerationGap));
-        maxRelativeEnergyError_ = std::max(
-            maxRelativeEnergyError_,
-            std::abs(Energy() - initialEnergy_)
-                / std::max(1.0, std::abs(initialEnergy_)));
+        maxConstraintError_ = std::max(maxConstraintError_, std::abs(state_.squaredNorm() - length_ * length_));
+        maxVelocityConstraintError_ = std::max(maxVelocityConstraintError_, std::abs(state_.dot(velocity_)));
+        const double accelerationGap = state_.dot(acceleration_) + velocity_.squaredNorm();
+        maxAccelerationConstraintError_ = std::max(maxAccelerationConstraintError_, std::abs(accelerationGap));
+        maxRelativeEnergyError_ = std::max(maxRelativeEnergyError_, std::abs(Energy() - initialEnergy_) /
+                                                                        std::max(1.0, std::abs(initialEnergy_)));
     }
-    void CommitState() override {}
+    void CommitState() override
+    {
+    }
     void BackupStepState() override
     {
         savedState_ = state_;
         savedVelocity_ = velocity_;
         savedAcceleration_ = acceleration_;
     }
-    void GetStepIncrement(
-        SolverNameSpace::Vec& increment) const override
+    void GetStepIncrement(SolverNameSpace::Vec& increment) const override
     {
         increment = state_ - savedState_;
     }
 
-    int MultiplierCount() const { return static_cast<int>(multipliers_.size()); }
-    double MaxConstraintError() const { return maxConstraintError_; }
+    int MultiplierCount() const
+    {
+        return static_cast<int>(multipliers_.size());
+    }
+    double MaxConstraintError() const
+    {
+        return maxConstraintError_;
+    }
     double MaxVelocityConstraintError() const
     {
         return maxVelocityConstraintError_;
@@ -638,8 +727,7 @@ public:
 private:
     double Energy() const
     {
-        return 0.5 * mass_ * velocity_.squaredNorm()
-            + mass_ * gravity_ * (state_[1] + length_);
+        return 0.5 * mass_ * velocity_.squaredNorm() + mass_ * gravity_ * (state_[1] + length_);
     }
 
     double mass_ = 0.0;
@@ -669,13 +757,11 @@ std::optional<int> verifyDynamicMpc(const QStringList& arguments)
     constexpr double stiffness = 9.0;
     constexpr double offset = 1.3;
     constexpr double initialAngle = 0.35;
-    const double effectiveInertia =
-        rotaryInertia + pointMass * offset * offset;
+    const double effectiveInertia = rotaryInertia + pointMass * offset * offset;
     const double angularFrequency = std::sqrt(stiffness / effectiveInertia);
     const double period = 2.0 * std::acos(-1.0) / angularFrequency;
 
-    RigidOffsetOscillatorModel model(
-        pointMass, rotaryInertia, stiffness, offset, initialAngle);
+    RigidOffsetOscillatorModel model(pointMass, rotaryInertia, stiffness, offset, initialAngle);
     SolverNameSpace::SolverNewmark::Params parameters;
     parameters.dt = period / 400.0;
     parameters.beta = 0.25;
@@ -690,89 +776,59 @@ std::optional<int> verifyDynamicMpc(const QStringList& arguments)
     SolverNameSpace::Vec velocity;
     SolverNameSpace::Vec acceleration;
     model.GetState(displacement, velocity, acceleration);
-    const double angleError =
-        std::abs(displacement[0] - initialAngle) / initialAngle;
-    const double angularVelocityError =
-        std::abs(velocity[0]) / (initialAngle * angularFrequency);
-    const bool rigidOffsetPassed = solved
-        && model.MpcAssemblyCount() > 0
-        && model.MultiplierCount() == 2
-        && model.MaxConstraintError() < 1.0e-10
-        && angleError < 5.0e-4
-        && angularVelocityError < 5.0e-4;
+    const double angleError = std::abs(displacement[0] - initialAngle) / initialAngle;
+    const double angularVelocityError = std::abs(velocity[0]) / (initialAngle * angularFrequency);
+    const bool rigidOffsetPassed = solved && model.MpcAssemblyCount() > 0 && model.MultiplierCount() == 2 &&
+                                   model.MaxConstraintError() < 1.0e-10 && angleError < 5.0e-4 &&
+                                   angularVelocityError < 5.0e-4;
 
-    QTextStream(stdout)
-        << "dynamic_mpc solved=" << solved
-        << " assemblies=" << model.MpcAssemblyCount()
-        << " multiplier_count=" << model.MultiplierCount()
-        << " max_position_constraint=" << model.MaxConstraintError()
-        << " max_velocity_constraint="
-        << model.MaxVelocityConstraintError()
-        << " max_acceleration_constraint="
-        << model.MaxAccelerationConstraintError()
-        << " angle_error=" << angleError
-        << " angular_velocity_error=" << angularVelocityError
-        << Qt::endl;
+    QTextStream(stdout) << "dynamic_mpc solved=" << solved << " assemblies=" << model.MpcAssemblyCount()
+                        << " multiplier_count=" << model.MultiplierCount()
+                        << " max_position_constraint=" << model.MaxConstraintError()
+                        << " max_velocity_constraint=" << model.MaxVelocityConstraintError()
+                        << " max_acceleration_constraint=" << model.MaxAccelerationConstraintError()
+                        << " angle_error=" << angleError << " angular_velocity_error=" << angularVelocityError
+                        << Qt::endl;
 
     constexpr double pendulumMass = 1.7;
     constexpr double pendulumLength = 1.25;
     constexpr double gravity = 9.81;
     constexpr double pendulumAngle = 0.8;
-    const double ellipticParameter =
-        std::sin(0.5 * pendulumAngle);
-    const double pendulumPeriod = 4.0
-        * std::sqrt(pendulumLength / gravity)
-        * std::comp_ellint_1(ellipticParameter);
-    FixedLengthPendulumModel pendulum(
-        pendulumMass, pendulumLength, gravity, pendulumAngle);
+    const double ellipticParameter = std::sin(0.5 * pendulumAngle);
+    const double pendulumPeriod = 4.0 * std::sqrt(pendulumLength / gravity) * std::comp_ellint_1(ellipticParameter);
+    FixedLengthPendulumModel pendulum(pendulumMass, pendulumLength, gravity, pendulumAngle);
     SolverNameSpace::SolverNewmark::Params pendulumParameters;
     pendulumParameters.dt = pendulumPeriod / 800.0;
     pendulumParameters.maxIter = 20;
     pendulumParameters.tol = 1.0e-9;
     pendulumParameters.constraintTolerance = 1.0e-11;
     SolverNameSpace::SolverNewmark pendulumSolver(pendulumParameters);
-    const bool pendulumSolved =
-        pendulumSolver.Solve(pendulum, pendulumPeriod);
+    const bool pendulumSolved = pendulumSolver.Solve(pendulum, pendulumPeriod);
     SolverNameSpace::Vec pendulumPosition;
     SolverNameSpace::Vec pendulumVelocity;
     SolverNameSpace::Vec pendulumAcceleration;
-    pendulum.GetState(
-        pendulumPosition, pendulumVelocity, pendulumAcceleration);
+    pendulum.GetState(pendulumPosition, pendulumVelocity, pendulumAcceleration);
     Eigen::Vector2d exactPosition;
-    exactPosition <<
-        pendulumLength * std::sin(pendulumAngle),
-        -pendulumLength * std::cos(pendulumAngle);
-    const double pendulumPositionError =
-        (pendulumPosition - exactPosition).norm() / pendulumLength;
-    const double pendulumVelocityError =
-        pendulumVelocity.norm()
-        / std::sqrt(gravity * pendulumLength);
-    const bool pendulumPassed = pendulumSolved
-        && pendulum.MultiplierCount() == 1
-        && pendulum.MaxConstraintError() < 1.0e-10
-        && pendulumPositionError < 2.0e-4
-        && pendulumVelocityError < 2.0e-4
-        && pendulum.MaxRelativeEnergyError() < 2.0e-4;
-    QTextStream(stdout)
-        << "dynamic_mpc_pendulum solved=" << pendulumSolved
-        << " multiplier_count=" << pendulum.MultiplierCount()
-        << " max_position_constraint=" << pendulum.MaxConstraintError()
-        << " max_velocity_constraint="
-        << pendulum.MaxVelocityConstraintError()
-        << " max_acceleration_constraint="
-        << pendulum.MaxAccelerationConstraintError()
-        << " max_relative_energy_error="
-        << pendulum.MaxRelativeEnergyError()
-        << " period_position_error=" << pendulumPositionError
-        << " period_velocity_error=" << pendulumVelocityError
-        << Qt::endl;
+    exactPosition << pendulumLength * std::sin(pendulumAngle), -pendulumLength * std::cos(pendulumAngle);
+    const double pendulumPositionError = (pendulumPosition - exactPosition).norm() / pendulumLength;
+    const double pendulumVelocityError = pendulumVelocity.norm() / std::sqrt(gravity * pendulumLength);
+    const bool pendulumPassed = pendulumSolved && pendulum.MultiplierCount() == 1 &&
+                                pendulum.MaxConstraintError() < 1.0e-10 && pendulumPositionError < 2.0e-4 &&
+                                pendulumVelocityError < 2.0e-4 && pendulum.MaxRelativeEnergyError() < 2.0e-4;
+    QTextStream(stdout) << "dynamic_mpc_pendulum solved=" << pendulumSolved
+                        << " multiplier_count=" << pendulum.MultiplierCount()
+                        << " max_position_constraint=" << pendulum.MaxConstraintError()
+                        << " max_velocity_constraint=" << pendulum.MaxVelocityConstraintError()
+                        << " max_acceleration_constraint=" << pendulum.MaxAccelerationConstraintError()
+                        << " max_relative_energy_error=" << pendulum.MaxRelativeEnergyError()
+                        << " period_position_error=" << pendulumPositionError
+                        << " period_velocity_error=" << pendulumVelocityError << Qt::endl;
     return rigidOffsetPassed && pendulumPassed ? 0 : 1;
 }
 
 std::optional<int> verifyDynamicMpcModel(const QStringList& arguments)
 {
-    const int index = arguments.indexOf(
-        QStringLiteral("--verify-dynamic-mpc-model"));
+    const int index = arguments.indexOf(QStringLiteral("--verify-dynamic-mpc-model"));
     if (index < 0)
         return std::nullopt;
     if (index + 1 >= arguments.size())
@@ -782,16 +838,20 @@ std::optional<int> verifyDynamicMpcModel(const QStringList& arguments)
     Input_Model importer;
     if (!importer.InputData(arguments.at(index + 1), structure))
     {
-        QTextStream(stderr)
-            << "dynamic MPC model import failed: "
-            << importer.LastError() << Qt::endl;
+        QTextStream(stderr) << "dynamic MPC model import failed: " << importer.LastError() << Qt::endl;
         return 2;
     }
     structure->m_OutputControl.m_StreamResult = false;
     AnalysisRunner runner;
     runner.SetStructure(structure);
     runner.SetRuntimeCallbacks(
-        [](double, const QString&) {}, []() { return false; });
+        [](double, const QString&)
+        {
+        },
+        []()
+        {
+            return false;
+        });
     if (!runner.RunAll())
         return 3;
 
@@ -801,28 +861,17 @@ std::optional<int> verifyDynamicMpcModel(const QStringList& arguments)
     if (!master || !slave || !tip)
         return 4;
     const Eigen::Vector3d referenceOffset(0.0, 0.2, 0.0);
-    const Eigen::Vector3d masterPosition(
-        master->m_X + master->m_Displacement[0],
-        master->m_Y + master->m_Displacement[1],
-        master->m_Z + master->m_Displacement[2]);
-    const Eigen::Vector3d slavePosition(
-        slave->m_X + slave->m_Displacement[0],
-        slave->m_Y + slave->m_Displacement[1],
-        slave->m_Z + slave->m_Displacement[2]);
-    const double constraintGap = (
-        slavePosition - masterPosition
-        - master->m_Rg * referenceOffset).norm();
-    const double tipMotion = std::hypot(
-        tip->m_Displacement[0], tip->m_Displacement[1]);
-    const bool passed = constraintGap < 1.0e-8
-        && std::isfinite(tipMotion) && tipMotion > 1.0e-8;
-    QTextStream(stdout)
-        << "dynamic_mpc_model constraint_gap=" << constraintGap
-        << " tip_motion=" << tipMotion
-        << " nodes=" << structure->m_Nodes.size()
-        << " elements=" << structure->m_Elements.size()
-        << " mpcs=" << structure->m_MPCConstraints.size()
-        << Qt::endl;
+    const Eigen::Vector3d masterPosition(master->m_X + master->m_Displacement[0],
+                                         master->m_Y + master->m_Displacement[1],
+                                         master->m_Z + master->m_Displacement[2]);
+    const Eigen::Vector3d slavePosition(slave->m_X + slave->m_Displacement[0], slave->m_Y + slave->m_Displacement[1],
+                                        slave->m_Z + slave->m_Displacement[2]);
+    const double constraintGap = (slavePosition - masterPosition - master->m_Rg * referenceOffset).norm();
+    const double tipMotion = std::hypot(tip->m_Displacement[0], tip->m_Displacement[1]);
+    const bool passed = constraintGap < 1.0e-8 && std::isfinite(tipMotion) && tipMotion > 1.0e-8;
+    QTextStream(stdout) << "dynamic_mpc_model constraint_gap=" << constraintGap << " tip_motion=" << tipMotion
+                        << " nodes=" << structure->m_Nodes.size() << " elements=" << structure->m_Elements.size()
+                        << " mpcs=" << structure->m_MPCConstraints.size() << Qt::endl;
     return passed ? 0 : 5;
 }
 
@@ -833,8 +882,7 @@ std::optional<int> verifyAdaptiveTssbn(const QStringList& arguments)
 
     AnalysisStep factoryStep;
     factoryStep.m_Type = EnumKeyword::StepType::DYNAMIC;
-    factoryStep.m_DynamicSolverType =
-        SolverNameSpace::SolverType::AdaptiveTSSBN;
+    factoryStep.m_DynamicSolverType = SolverNameSpace::SolverType::AdaptiveTSSBN;
     factoryStep.m_StepSize = 0.1;
     factoryStep.m_Tolerance = 1.0e-5;
     factoryStep.m_MaxIterations = 20;
@@ -844,50 +892,44 @@ std::optional<int> verifyAdaptiveTssbn(const QStringList& arguments)
     factoryStep.m_AdaptiveTssbn.relativeTolerance = 8.0e-4;
     factoryStep.m_AdaptiveTssbn.absoluteTolerance = 4.0e-7;
     factoryStep.m_AdaptiveTssbn.shrinkFactor = 0.74;
+    factoryStep.m_EnableGalloping = true;
+    factoryStep.m_GallopingAerodynamicTangentMode =
+        SolverNameSpace::AerodynamicTangentMode::OncePerTimeStepOrStage;
     factoryStep.m_AdaptiveTssbn.targetNewtonIterations = 9;
+    factoryStep.m_AdaptiveTssbn.maximumTotalNewtonIterations = 31;
     factoryStep.m_AdaptiveTssbn.derivativeGain = 0.12;
     factoryStep.m_AdaptiveTssbn.minimumDerivativeFactor = 0.43;
     factoryStep.m_AdaptiveTssbn.maximumDerivativeFactor = 1.61;
     factoryStep.m_AdaptiveTssbn.maximumRejectedAttempts = 17;
-    const auto factorySolver =
-        SolverNameSpace::SolverFactory::Create_StepForSlover(factoryStep);
-    const auto* adaptiveFactorySolver =
-        dynamic_cast<const SolverNameSpace::SolverAdaptiveTSSBN*>(
-            factorySolver.get());
-    const bool factoryConnected = adaptiveFactorySolver
-        && adaptiveFactorySolver->GetType()
-            == SolverNameSpace::SolverType::AdaptiveTSSBN
-        && std::abs(
-            adaptiveFactorySolver->GetParams().spectralRadiusInfinity
-                - 0.77) < 1.0e-12
-        && std::abs(
-            adaptiveFactorySolver->GetParams().minimumTimeStep
-                - 2.0e-6) < 1.0e-15
-        && std::abs(
-            adaptiveFactorySolver->GetParams().maximumTimeStep
-                - 0.42) < 1.0e-12
-        && std::abs(
-            adaptiveFactorySolver->GetParams().relativeTolerance
-                - 8.0e-4) < 1.0e-15
-        && std::abs(
-            adaptiveFactorySolver->GetParams().absoluteTolerance
-                - 4.0e-7) < 1.0e-15
-        && std::abs(
-            adaptiveFactorySolver->GetParams().shrinkFactor
-                - 0.74) < 1.0e-12
-        && adaptiveFactorySolver->GetParams().targetNewtonIterations
-            == 9
-        && std::abs(
-            adaptiveFactorySolver->GetParams().derivativeGain
-                - 0.12) < 1.0e-12
-        && std::abs(
-            adaptiveFactorySolver->GetParams().minimumDerivativeFactor
-                - 0.43) < 1.0e-12
-        && std::abs(
-            adaptiveFactorySolver->GetParams().maximumDerivativeFactor
-                - 1.61) < 1.0e-12
-        && adaptiveFactorySolver->GetParams().maximumRejectedAttempts
-            == 17;
+    const auto factorySolver = SolverNameSpace::SolverFactory::Create_StepForSlover(factoryStep);
+    const auto* adaptiveFactorySolver = dynamic_cast<const SolverNameSpace::SolverAdaptiveTSSBN*>(factorySolver.get());
+    AnalysisStep newmarkFactoryStep;
+    newmarkFactoryStep.m_Type = EnumKeyword::StepType::DYNAMIC;
+    newmarkFactoryStep.m_DynamicSolverType = SolverNameSpace::SolverType::Newmark;
+    newmarkFactoryStep.m_StepSize = 0.01;
+    newmarkFactoryStep.m_EnableGalloping = true;
+    newmarkFactoryStep.m_GallopingAerodynamicTangentMode = SolverNameSpace::AerodynamicTangentMode::Disabled;
+    const auto newmarkFactoryBase = SolverNameSpace::SolverFactory::Create_StepForSlover(newmarkFactoryStep);
+    const auto* newmarkFactorySolver =
+        dynamic_cast<const SolverNameSpace::SolverNewmark*>(newmarkFactoryBase.get());
+    const bool factoryConnected =
+        adaptiveFactorySolver && adaptiveFactorySolver->GetType() == SolverNameSpace::SolverType::AdaptiveTSSBN &&
+        std::abs(adaptiveFactorySolver->GetParams().spectralRadiusInfinity - 0.77) < 1.0e-12 &&
+        std::abs(adaptiveFactorySolver->GetParams().minimumTimeStep - 2.0e-6) < 1.0e-15 &&
+        std::abs(adaptiveFactorySolver->GetParams().maximumTimeStep - 0.42) < 1.0e-12 &&
+        std::abs(adaptiveFactorySolver->GetParams().relativeTolerance - 8.0e-4) < 1.0e-15 &&
+        std::abs(adaptiveFactorySolver->GetParams().absoluteTolerance - 4.0e-7) < 1.0e-15 &&
+        std::abs(adaptiveFactorySolver->GetParams().shrinkFactor - 0.74) < 1.0e-12 &&
+        adaptiveFactorySolver->GetParams().aerodynamicTangentMode ==
+            SolverNameSpace::AerodynamicTangentMode::OncePerTimeStepOrStage &&
+        adaptiveFactorySolver->GetParams().targetNewtonIterations == 9 &&
+        adaptiveFactorySolver->GetParams().maximumTotalNewtonIterations == 31 &&
+        std::abs(adaptiveFactorySolver->GetParams().derivativeGain - 0.12) < 1.0e-12 &&
+        std::abs(adaptiveFactorySolver->GetParams().minimumDerivativeFactor - 0.43) < 1.0e-12 &&
+        std::abs(adaptiveFactorySolver->GetParams().maximumDerivativeFactor - 1.61) < 1.0e-12 &&
+        adaptiveFactorySolver->GetParams().maximumRejectedAttempts == 17 && newmarkFactorySolver &&
+        newmarkFactorySolver->GetParams().aerodynamicTangentMode ==
+            SolverNameSpace::AerodynamicTangentMode::Disabled;
 
     constexpr double mass = 2.0;
     constexpr double stiffness = 8.0;
@@ -901,10 +943,8 @@ std::optional<int> verifyAdaptiveTssbn(const QStringList& arguments)
     parameters.maximumTimeStep = 0.3;
     parameters.relativeTolerance = 2.0e-6;
     parameters.absoluteTolerance = 1.0e-9;
-    // An absolute 1e-9 force residual is below the sparse solve round-off
-    // reached near the final period; 1e-5 is still about 1e-6 relative to the
-    // oscillator force scale and lets the time-integration error estimator,
-    // rather than algebraic noise, control the adaptive step.
+    // 末周期附近稀疏求解的舍入误差已超过 1e-9；1e-5 相对振子力尺度仍约为 1e-6，
+    // 可让时间积分误差估计器控制自适应步长，避免代数噪声主导。
     parameters.nonlinearTolerance = 1.0e-5;
     parameters.maximumNewtonIterations = 8;
     SolverNameSpace::SolverAdaptiveTSSBN solver(parameters);
@@ -914,67 +954,45 @@ std::optional<int> verifyAdaptiveTssbn(const QStringList& arguments)
     SolverNameSpace::Vec velocity;
     SolverNameSpace::Vec acceleration;
     model.GetState(displacement, velocity, acceleration);
-    const double exactDisplacement =
-        std::cos(angularFrequency * duration);
-    const double exactVelocity =
-        -angularFrequency * std::sin(angularFrequency * duration);
-    const double exactAcceleration =
-        -angularFrequency * angularFrequency * exactDisplacement;
-    const double displacementError =
-        std::abs(displacement[0] - exactDisplacement);
-    const double velocityError =
-        std::abs(velocity[0] - exactVelocity);
-    const double accelerationError =
-        std::abs(acceleration[0] - exactAcceleration);
-    const bool passed =
-        factoryConnected
-        && solved
-        && solver.GetAcceptedStepCount() == model.CompletedSteps()
-        && solver.GetAcceptedStepCount() > 0
-        && displacementError < 2.0e-3
-        && velocityError < 2.0e-3
-        && accelerationError < 2.0e-3;
+    const double exactDisplacement = std::cos(angularFrequency * duration);
+    const double exactVelocity = -angularFrequency * std::sin(angularFrequency * duration);
+    const double exactAcceleration = -angularFrequency * angularFrequency * exactDisplacement;
+    const double displacementError = std::abs(displacement[0] - exactDisplacement);
+    const double velocityError = std::abs(velocity[0] - exactVelocity);
+    const double accelerationError = std::abs(acceleration[0] - exactAcceleration);
+    const bool passed = factoryConnected && solved && solver.GetAcceptedStepCount() == model.CompletedSteps() &&
+                        solver.GetAcceptedStepCount() > 0 && displacementError < 2.0e-3 && velocityError < 2.0e-3 &&
+                        accelerationError < 2.0e-3;
 
-    QTextStream(stdout)
-        << "adaptive_tssbn factory=" << factoryConnected
-        << " solved=" << solved
-        << " accepted=" << solver.GetAcceptedStepCount()
-        << " rejected=" << solver.GetRejectedStepCount()
-        << " displacement_error=" << displacementError
-        << " velocity_error=" << velocityError
-        << " acceleration_error=" << accelerationError
-        << Qt::endl;
+    QTextStream(stdout) << "adaptive_tssbn factory=" << factoryConnected << " solved=" << solved
+                        << " accepted=" << solver.GetAcceptedStepCount()
+                        << " rejected=" << solver.GetRejectedStepCount() << " displacement_error=" << displacementError
+                        << " velocity_error=" << velocityError << " acceleration_error=" << accelerationError
+                        << Qt::endl;
     return passed ? 0 : 1;
 }
 
 std::optional<int> verifyLe2012Example1(const QStringList& arguments)
 {
-    if (arguments.contains(
-            QStringLiteral("--verify-le2012-example1-tssbn")))
+    if (arguments.contains(QStringLiteral("--verify-le2012-example1-tssbn")))
     {
         return PaperBeamDynamicsVerification::RunExample1Adaptive(
-            QStringLiteral(
-                "output/verification/le2012_example1_tssbn"));
+            QStringLiteral("output/verification/le2012_example1_tssbn"));
     }
     if (!arguments.contains(QStringLiteral("--verify-le2012-example1")))
         return std::nullopt;
-    return PaperBeamDynamicsVerification::RunExample1(
-        QStringLiteral("output/verification/le2012_example1"));
+    return PaperBeamDynamicsVerification::RunExample1(QStringLiteral("output/verification/le2012_example1"));
 }
 
 std::optional<int> verifyLe2012Example4(const QStringList& arguments)
 {
-    if (arguments.contains(
-            QStringLiteral("--verify-le2012-example4-tssbn")))
+    if (arguments.contains(QStringLiteral("--verify-le2012-example4-tssbn")))
     {
-        return PaperBeamDynamicsVerification::RunAdaptive(
-            QStringLiteral(
-                "output/verification/le2012_example4_tssbn"));
+        return PaperBeamDynamicsVerification::RunAdaptive(QStringLiteral("output/verification/le2012_example4_tssbn"));
     }
     if (!arguments.contains(QStringLiteral("--verify-le2012-example4")))
         return std::nullopt;
-    return PaperBeamDynamicsVerification::Run(
-        QStringLiteral("output/verification/le2012_example4"));
+    return PaperBeamDynamicsVerification::Run(QStringLiteral("output/verification/le2012_example4"));
 }
 
 std::optional<int> verifyBeamDynamics(const QStringList& arguments)
@@ -1017,10 +1035,8 @@ std::optional<int> verifyBeamDynamics(const QStringList& arguments)
     for (int a = 0; a < 2; ++a)
         for (int b = 0; b < 2; ++b)
             assembledMass += mass(6 * a, 6 * b);
-    const double symmetryError =
-        (mass - mass.transpose()).cwiseAbs().maxCoeff();
-    const double massError =
-        std::abs(assembledMass - expectedMass) / expectedMass;
+    const double symmetryError = (mass - mass.transpose()).cwiseAbs().maxCoeff();
+    const double massError = std::abs(assembledMass - expectedMass) / expectedMass;
 
     node0->m_Velocity[3] = 1.0;
     node0->m_Velocity[4] = 1.0;
@@ -1032,11 +1048,9 @@ std::optional<int> verifyBeamDynamics(const QStringList& arguments)
     double Iz = 0.0;
     double polar = 0.0;
     section->Calculate_I(Iy, Iz, polar);
-    const double expectedNodalGyroscopicMoment =
-        -0.5 * length * density * Iy;
-    const double gyroscopicError = std::abs(
-        inertiaForce(5) - expectedNodalGyroscopicMoment)
-        / std::abs(expectedNodalGyroscopicMoment);
+    const double expectedNodalGyroscopicMoment = -0.5 * length * density * Iy;
+    const double gyroscopicError =
+        std::abs(inertiaForce(5) - expectedNodalGyroscopicMoment) / std::abs(expectedNodalGyroscopicMoment);
 
     const double stiffness = young * area / length;
     const double effectiveMass = mass(6, 6);
@@ -1052,33 +1066,22 @@ std::optional<int> verifyBeamDynamics(const QStringList& arguments)
     double acceleration = -stiffness * displacement / effectiveMass;
     for (int step = 0; step < steps; ++step)
     {
-        const double predictedDisplacement = displacement
-            + dt * velocity + dt * dt * (0.5 - beta) * acceleration;
-        const double predictedVelocity =
-            velocity + dt * (1.0 - gamma) * acceleration;
+        const double predictedDisplacement = displacement + dt * velocity + dt * dt * (0.5 - beta) * acceleration;
+        const double predictedVelocity = velocity + dt * (1.0 - gamma) * acceleration;
         const double newAcceleration =
-            -stiffness * predictedDisplacement
-            / (effectiveMass + beta * dt * dt * stiffness);
-        displacement =
-            predictedDisplacement + beta * dt * dt * newAcceleration;
+            -stiffness * predictedDisplacement / (effectiveMass + beta * dt * dt * stiffness);
+        displacement = predictedDisplacement + beta * dt * dt * newAcceleration;
         velocity = predictedVelocity + gamma * dt * newAcceleration;
         acceleration = newAcceleration;
     }
-    const double responseError =
-        std::abs(displacement - initialDisplacement)
-        / initialDisplacement;
+    const double responseError = std::abs(displacement - initialDisplacement) / initialDisplacement;
 
-    QTextStream(stdout)
-        << "beam dynamics mass_error=" << massError
-        << " symmetry_error=" << symmetryError
-        << " gyroscopic_error=" << gyroscopicError
-        << " period=" << period
-        << " one_period_response_error=" << responseError
-        << Qt::endl;
-    return massError <= 1.0e-12
-        && symmetryError <= 1.0e-12
-        && gyroscopicError <= 1.0e-12
-        && responseError <= 2.0e-3 ? 0 : 1;
+    QTextStream(stdout) << "beam dynamics mass_error=" << massError << " symmetry_error=" << symmetryError
+                        << " gyroscopic_error=" << gyroscopicError << " period=" << period
+                        << " one_period_response_error=" << responseError << Qt::endl;
+    return massError <= 1.0e-12 && symmetryError <= 1.0e-12 && gyroscopicError <= 1.0e-12 && responseError <= 2.0e-3
+               ? 0
+               : 1;
 }
 
 std::optional<int> verifyExactAerodynamicAngle(const QStringList& arguments)
@@ -1106,15 +1109,10 @@ std::optional<int> verifyExactAerodynamicAngle(const QStringList& arguments)
 
     AerodynamicLoadCalculator::ComputeLineLoad(result, 1.225, 1.0, 1.0, 2.0, 0.1);
     const bool finiteLoads = result.lineForce.allFinite() && result.lineMoment.allFinite();
-    QTextStream(stdout)
-        << "exact aero relative_speed=" << result.relativeSpeed
-        << " flow_angle=" << result.flowAngle
-        << " attack_angle=" << result.attackAngle
-        << " speed_error=" << speedError
-        << " flow_error=" << flowError
-        << " attack_error=" << attackError << Qt::endl;
-    return speedError <= 1.0e-12 && flowError <= 1.0e-12
-        && attackError <= 1.0e-12 && finiteLoads ? 0 : 1;
+    QTextStream(stdout) << "exact aero relative_speed=" << result.relativeSpeed << " flow_angle=" << result.flowAngle
+                        << " attack_angle=" << result.attackAngle << " speed_error=" << speedError
+                        << " flow_error=" << flowError << " attack_error=" << attackError << Qt::endl;
+    return speedError <= 1.0e-12 && flowError <= 1.0e-12 && attackError <= 1.0e-12 && finiteLoads ? 0 : 1;
 }
 
 std::optional<int> verifyGallopingCaseSelection(const QStringList& arguments)
@@ -1141,88 +1139,68 @@ std::optional<int> verifyGallopingCaseSelection(const QStringList& arguments)
     structure.AddAnalysisStep(config);
     const bool staticRejected = !structure.m_AnalysisStep.at(2)->ShouldAssembleGalloping(4, wind);
     AeroManager manager;
-    const bool loaded = manager.loadCase(
-        std::filesystem::path("YQY/Import/Aero_Data/Input_Data"), key);
+    const bool loaded = manager.loadCase(std::filesystem::path("YQY/Import/Aero_Data/Input_Data"), key);
     AeroManager completeCatalog;
-    const bool allCasesLoaded = completeCatalog.loadAllCases(
-        std::filesystem::path("YQY/Import/Aero_Data/Input_Data"));
-    bool catalogShapeValid =
-        completeCatalog.getLoadedCaseCount() == 40;
+    const bool allCasesLoaded = completeCatalog.loadAllCases(std::filesystem::path("YQY/Import/Aero_Data/Input_Data"));
+    bool catalogShapeValid = completeCatalog.getLoadedCaseCount() == 40;
     double maximumEndpointGap = 0.0;
     double maximumSymmetryError = 0.0;
     for (const auto& [caseKey, models] : completeCatalog.getCaseModels())
     {
-        catalogShapeValid = catalogShapeValid
-            && static_cast<int>(models.size()) == caseKey.bundleCount;
+        catalogShapeValid = catalogShapeValid && static_cast<int>(models.size()) == caseKey.bundleCount;
         for (const BladeModel& model : models)
         {
-            catalogShapeValid = catalogShapeValid
-                && model.lift.size() == 73
-                && model.drag.size() == 73
-                && model.moment.size() == 73;
+            catalogShapeValid =
+                catalogShapeValid && model.lift.size() == 73 && model.drag.size() == 73 && model.moment.size() == 73;
             if (model.lift.size() == 73)
             {
-                maximumEndpointGap = std::max(maximumEndpointGap,
-                    std::abs(model.lift.front() - model.lift.back()));
-                maximumEndpointGap = std::max(maximumEndpointGap,
-                    std::abs(model.drag.front() - model.drag.back()));
-                maximumEndpointGap = std::max(maximumEndpointGap,
-                    std::abs(model.moment.front() - model.moment.back()));
+                maximumEndpointGap = std::max(maximumEndpointGap, std::abs(model.lift.front() - model.lift.back()));
+                maximumEndpointGap = std::max(maximumEndpointGap, std::abs(model.drag.front() - model.drag.back()));
+                maximumEndpointGap = std::max(maximumEndpointGap, std::abs(model.moment.front() - model.moment.back()));
             }
         }
         if (models.size() == 1 || models.size() == 4)
         {
             const std::vector<int> reflectedProfile =
-                models.size() == 1 ? std::vector<int>{ 0 }
-                                   : std::vector<int>{ 0, 3, 2, 1 };
-            for (int sourceProfile = 0;
-                sourceProfile < static_cast<int>(models.size());
-                ++sourceProfile)
+                models.size() == 1 ? std::vector<int>{0} : std::vector<int>{0, 3, 2, 1};
+            for (int sourceProfile = 0; sourceProfile < static_cast<int>(models.size()); ++sourceProfile)
             {
-                const int targetProfile =
-                    reflectedProfile[static_cast<size_t>(sourceProfile)];
+                const int targetProfile = reflectedProfile[static_cast<size_t>(sourceProfile)];
                 for (int sourceIndex = 1; sourceIndex < 36; ++sourceIndex)
                 {
                     const int targetIndex = 72 - sourceIndex;
-                    maximumSymmetryError = std::max(
-                        maximumSymmetryError,
-                        std::abs(models[sourceProfile].lift[sourceIndex]
-                            + models[targetProfile].lift[targetIndex]));
-                    maximumSymmetryError = std::max(
-                        maximumSymmetryError,
-                        std::abs(models[sourceProfile].drag[sourceIndex]
-                            - models[targetProfile].drag[targetIndex]));
-                    maximumSymmetryError = std::max(
-                        maximumSymmetryError,
-                        std::abs(models[sourceProfile].moment[sourceIndex]
-                            + models[targetProfile].moment[targetIndex]));
+                    maximumSymmetryError =
+                        std::max(maximumSymmetryError, std::abs(models[sourceProfile].lift[sourceIndex] +
+                                                                models[targetProfile].lift[targetIndex]));
+                    maximumSymmetryError =
+                        std::max(maximumSymmetryError, std::abs(models[sourceProfile].drag[sourceIndex] -
+                                                                models[targetProfile].drag[targetIndex]));
+                    maximumSymmetryError =
+                        std::max(maximumSymmetryError, std::abs(models[sourceProfile].moment[sourceIndex] +
+                                                                models[targetProfile].moment[targetIndex]));
                 }
             }
         }
     }
     const auto* boundCase = manager.findCaseModels(key);
-    const AeroCoefficients coefficients = boundCase
-        ? manager.getCoefficients(*boundCase, 0, 17.5) : AeroCoefficients{};
-    const bool combinedLookupMatches = boundCase
-        && std::abs(coefficients.lift - manager.getData(key, 0, LIFT, 17.5)) <= 1.0e-12
-        && std::abs(coefficients.drag - manager.getData(key, 0, DRAG, 17.5)) <= 1.0e-12
-        && std::abs(coefficients.moment - manager.getData(key, 0, MOMENT, 17.5)) <= 1.0e-12;
-    const double expected357 = boundCase && !boundCase->empty()
-        ? boundCase->front().lift[71]
-            + 0.4 * (boundCase->front().lift[72] - boundCase->front().lift[71])
-        : 0.0;
+    const AeroCoefficients coefficients = boundCase ? manager.getCoefficients(*boundCase, 0, 17.5) : AeroCoefficients{};
+    const bool combinedLookupMatches = boundCase &&
+                                       std::abs(coefficients.lift - manager.getData(key, 0, LIFT, 17.5)) <= 1.0e-12 &&
+                                       std::abs(coefficients.drag - manager.getData(key, 0, DRAG, 17.5)) <= 1.0e-12 &&
+                                       std::abs(coefficients.moment - manager.getData(key, 0, MOMENT, 17.5)) <= 1.0e-12;
+    const double expected357 =
+        boundCase && !boundCase->empty()
+            ? boundCase->front().lift[71] + 0.4 * (boundCase->front().lift[72] - boundCase->front().lift[71])
+            : 0.0;
     const bool periodicAngles =
-        std::abs(AeroManager::normalizeAngleDegrees(357.0) - 357.0) <= 1.0e-12
-        && std::abs(AeroManager::normalizeAngleDegrees(1000.0) - 280.0) <= 1.0e-12
-        && std::abs(manager.getData(key, 0, LIFT, 357.0) - expected357) <= 1.0e-12
-        && std::abs(manager.getData(key, 0, LIFT, 1000.0)
-            - manager.getData(key, 0, LIFT, 280.0)) <= 1.0e-12;
+        std::abs(AeroManager::normalizeAngleDegrees(357.0) - 357.0) <= 1.0e-12 &&
+        std::abs(AeroManager::normalizeAngleDegrees(1000.0) - 280.0) <= 1.0e-12 &&
+        std::abs(manager.getData(key, 0, LIFT, 357.0) - expected357) <= 1.0e-12 &&
+        std::abs(manager.getData(key, 0, LIFT, 1000.0) - manager.getData(key, 0, LIFT, 280.0)) <= 1.0e-12;
     const Eigen::Vector3d axis = Eigen::Vector3d::UnitX();
     const Eigen::Vector3d up = Eigen::Vector3d::UnitZ();
-    const int referenceProfile = BundleAeroMapper::ResolveProfile(
-        4, 0, axis, up, -Eigen::Vector3d::UnitY());
-    const int reversedProfile = BundleAeroMapper::ResolveProfile(
-        4, 0, axis, up, Eigen::Vector3d::UnitY());
+    const int referenceProfile = BundleAeroMapper::ResolveProfile(4, 0, axis, up, -Eigen::Vector3d::UnitY());
+    const int reversedProfile = BundleAeroMapper::ResolveProfile(4, 0, axis, up, Eigen::Vector3d::UnitY());
     const bool profileMapping = referenceProfile == 0 && reversedProfile == 2;
 
     auto firstNode = std::make_shared<Node>();
@@ -1252,53 +1230,39 @@ std::optional<int> verifyGallopingCaseSelection(const QStringList& arguments)
     wind.m_direction = -Eigen::Vector3d::UnitY();
     Eigen::VectorXd fixed = Eigen::VectorXd::Zero(4);
     Eigen::VectorXd free = Eigen::VectorXd::Zero(4);
-    const std::map<int, int> profileBindings{ { 1, referenceProfile } };
-    LoadAssembler::AssembleGalloping(
-        wind, structure, profileBindings, 25, 45.0, up, 4, 1.0,
-        fixed, free);
-    const bool aerodynamicAssembly =
-        fixed.allFinite() && free.allFinite()
-        && fixed.norm() > 0.0 && free.norm() > 0.0;
+    const std::map<int, int> profileBindings{{1, referenceProfile}};
+    LoadAssembler::AssembleGalloping(wind, structure, profileBindings, 25, 45.0, up, 4, 1.0, fixed, free);
+    const bool aerodynamicAssembly = fixed.allFinite() && free.allFinite() && fixed.norm() > 0.0 && free.norm() > 0.0;
     Eigen::VectorXd angle1000Fixed = Eigen::VectorXd::Zero(4);
     Eigen::VectorXd angle1000Free = Eigen::VectorXd::Zero(4);
-    LoadAssembler::AssembleGalloping(
-        wind, structure, profileBindings, 25, 1000.0, up, 4, 1.0,
-        angle1000Fixed, angle1000Free);
+    LoadAssembler::AssembleGalloping(wind, structure, profileBindings, 25, 1000.0, up, 4, 1.0, angle1000Fixed,
+                                     angle1000Free);
     Eigen::VectorXd angle280Fixed = Eigen::VectorXd::Zero(4);
     Eigen::VectorXd angle280Free = Eigen::VectorXd::Zero(4);
-    LoadAssembler::AssembleGalloping(
-        wind, structure, profileBindings, 25, 280.0, up, 4, 1.0,
-        angle280Fixed, angle280Free);
-    const double periodicAssemblyError = std::max(
-        (angle1000Fixed - angle280Fixed).norm(),
-        (angle1000Free - angle280Free).norm());
+    LoadAssembler::AssembleGalloping(wind, structure, profileBindings, 25, 280.0, up, 4, 1.0, angle280Fixed,
+                                     angle280Free);
+    const double periodicAssemblyError =
+        std::max((angle1000Fixed - angle280Fixed).norm(), (angle1000Free - angle280Free).norm());
 
-    QTextStream(stdout)
-        << "galloping case bundle=" << key.bundleCount
-        << " wind=" << key.windSpeed
-        << " ice=" << key.iceThickness
-        << " supported=" << supported
-        << " unsupported_bundle_rejected=" << unsupportedBundleRejected
-        << " static_rejected=" << staticRejected
-        << " case_loaded=" << loaded
-        << " all_cases_loaded=" << allCasesLoaded
-        << " catalog_cases=" << completeCatalog.getLoadedCaseCount()
-        << " max_0_360_gap=" << maximumEndpointGap
-        << " max_symmetry_error=" << maximumSymmetryError
-        << " combined_lookup_matches=" << combinedLookupMatches
-        << " angle_357_cl=" << manager.getData(key, 0, LIFT, 357.0)
-        << " angle_1000=" << AeroManager::normalizeAngleDegrees(1000.0)
-        << " reference_profile=" << referenceProfile
-        << " reversed_profile=" << reversedProfile
-        << " aero_force_norm=" << free.norm()
-        << " periodic_force_error=" << periodicAssemblyError << Qt::endl;
-    return supported && unsupportedBundleRejected && staticRejected
-        && loaded && allCasesLoaded && catalogShapeValid
-        && maximumEndpointGap <= 1.0e-12
-        && maximumSymmetryError <= 1.0e-12
-        && combinedLookupMatches && periodicAngles && profileMapping
-        && aerodynamicAssembly && periodicAssemblyError <= 1.0e-12
-        && key == AeroCaseKey{ 4, 14, 25 } ? 0 : 1;
+    QTextStream(stdout) << "galloping case bundle=" << key.bundleCount << " wind=" << key.windSpeed
+                        << " ice=" << key.iceThickness << " supported=" << supported
+                        << " unsupported_bundle_rejected=" << unsupportedBundleRejected
+                        << " static_rejected=" << staticRejected << " case_loaded=" << loaded
+                        << " all_cases_loaded=" << allCasesLoaded
+                        << " catalog_cases=" << completeCatalog.getLoadedCaseCount()
+                        << " max_0_360_gap=" << maximumEndpointGap << " max_symmetry_error=" << maximumSymmetryError
+                        << " combined_lookup_matches=" << combinedLookupMatches
+                        << " angle_357_cl=" << manager.getData(key, 0, LIFT, 357.0)
+                        << " angle_1000=" << AeroManager::normalizeAngleDegrees(1000.0)
+                        << " reference_profile=" << referenceProfile << " reversed_profile=" << reversedProfile
+                        << " aero_force_norm=" << free.norm() << " periodic_force_error=" << periodicAssemblyError
+                        << Qt::endl;
+    return supported && unsupportedBundleRejected && staticRejected && loaded && allCasesLoaded && catalogShapeValid &&
+                   maximumEndpointGap <= 1.0e-12 && maximumSymmetryError <= 1.0e-12 && combinedLookupMatches &&
+                   periodicAngles && profileMapping && aerodynamicAssembly && periodicAssemblyError <= 1.0e-12 &&
+                   key == AeroCaseKey{4, 14, 25}
+               ? 0
+               : 1;
 }
 
 std::optional<int> verifyCableTorsion(const QStringList& arguments)
@@ -1306,9 +1270,8 @@ std::optional<int> verifyCableTorsion(const QStringList& arguments)
     if (!arguments.contains(QStringLiteral("--verify-cable-torsion")))
         return std::nullopt;
 
-    // Uniform circular cable: fixed at x=0, torque applied at x=L.
-    // Saint-Venant solution: T = GJ*theta/L, and the fixed-free first
-    // torsional frequency is omega_1 = pi/(2L)*sqrt(G/rho).
+    // 均匀圆截面索在 x=0 固定、x=L 施加扭矩。Saint-Venant 解为 T = GJ*theta/L，
+    // 固支—自由边界的一阶扭转频率为 omega_1 = pi/(2L)*sqrt(G/rho)。
     constexpr double length = 10.0;
     constexpr double radius = 0.02;
     constexpr double young = 200.0e9;
@@ -1345,21 +1308,17 @@ std::optional<int> verifyCableTorsion(const QStringList& arguments)
     Eigen::MatrixXd staticStiffness;
     staticCable.Get_ke(staticStiffness);
     const double expectedTorque = shearModulus * polarMoment / length * appliedTwist;
-    const double staticError = std::abs(staticCable.m_inforce(7) - expectedTorque)
-        / expectedTorque;
-    const double torsionalStiffnessError = std::abs(
-        staticStiffness(7, 7) - shearModulus * polarMoment / length)
-        / (shearModulus * polarMoment / length);
+    const double staticError = std::abs(staticCable.m_inforce(7) - expectedTorque) / expectedTorque;
+    const double torsionalStiffnessError =
+        std::abs(staticStiffness(7, 7) - shearModulus * polarMoment / length) / (shearModulus * polarMoment / length);
 
-    // A compressed, initially unstressed cable must go slack: axial terms
-    // disappear, whereas the explicitly modelled torsional DOF remains valid.
+    // 初始无应力的受压索必须松弛：轴向项消失，但显式建模的扭转自由度仍然有效。
     node1->m_Displacement[0] = -1.0e-3;
     node1->m_Displacement[3] = 0.0;
     staticCable.m_InitStress = 0.0;
     Eigen::MatrixXd slackStiffness;
     staticCable.Get_ke(slackStiffness);
-    const double slackAxialForce = staticCable.m_inforce.head<3>().norm()
-        + staticCable.m_inforce.segment<3>(4).norm();
+    const double slackAxialForce = staticCable.m_inforce.head<3>().norm() + staticCable.m_inforce.segment<3>(4).norm();
     const double slackTorsionalStiffness = slackStiffness(7, 7);
 
     std::vector<std::shared_ptr<Node>> nodes(elementCount + 1);
@@ -1395,12 +1354,10 @@ std::optional<int> verifyCableTorsion(const QStringList& arguments)
     if (modes.info() != Eigen::Success)
         return 2;
     const double computedOmega = std::sqrt(modes.eigenvalues()(0));
-    const double expectedOmega = std::acos(-1.0) / (2.0 * length)
-        * std::sqrt(shearModulus / density);
+    const double expectedOmega = std::acos(-1.0) / (2.0 * length) * std::sqrt(shearModulus / density);
     const double frequencyError = std::abs(computedOmega - expectedOmega) / expectedOmega;
 
-    // Newmark average-acceleration integration of that FEM first torsional
-    // mode. One calculated period must recover its initial amplitude.
+    // 使用 Newmark 平均加速度法积分有限元一阶扭转模态，一个计算周期后应恢复初始振幅。
     const double period = 2.0 * std::acos(-1.0) / computedOmega;
     constexpr int steps = 400;
     const double dt = period / steps;
@@ -1409,32 +1366,26 @@ std::optional<int> verifyCableTorsion(const QStringList& arguments)
     double acceleration = -computedOmega * computedOmega * displacement;
     for (int step = 0; step < steps; ++step)
     {
-        const double predictedDisplacement = displacement + dt * velocity
-            + 0.25 * dt * dt * acceleration;
+        const double predictedDisplacement = displacement + dt * velocity + 0.25 * dt * dt * acceleration;
         const double predictedVelocity = velocity + 0.5 * dt * acceleration;
-        const double newAcceleration = -computedOmega * computedOmega
-            * predictedDisplacement / (1.0 + 0.25 * dt * dt * computedOmega * computedOmega);
+        const double newAcceleration = -computedOmega * computedOmega * predictedDisplacement /
+                                       (1.0 + 0.25 * dt * dt * computedOmega * computedOmega);
         displacement = predictedDisplacement + 0.25 * dt * dt * newAcceleration;
         velocity = predictedVelocity + 0.5 * dt * newAcceleration;
         acceleration = newAcceleration;
     }
     const double transientError = std::abs(displacement - appliedTwist) / appliedTwist;
 
-    QTextStream(stdout)
-        << "cable torsion static_torque_error=" << staticError
-        << " static_stiffness_error=" << torsionalStiffnessError
-        << " slack_axial_force=" << slackAxialForce
-        << " slack_torsional_stiffness=" << slackTorsionalStiffness
-        << " omega=" << computedOmega
-        << " omega_reference=" << expectedOmega
-        << " frequency_error=" << frequencyError
-        << " one_period_response_error=" << transientError << Qt::endl;
-    return staticError <= 1.0e-12
-        && torsionalStiffnessError <= 1.0e-12
-        && slackAxialForce <= 1.0e-8
-        && slackTorsionalStiffness > 0.0
-        && frequencyError <= 2.0e-3
-        && transientError <= 2.0e-3 ? 0 : 3;
+    QTextStream(stdout) << "cable torsion static_torque_error=" << staticError
+                        << " static_stiffness_error=" << torsionalStiffnessError
+                        << " slack_axial_force=" << slackAxialForce
+                        << " slack_torsional_stiffness=" << slackTorsionalStiffness << " omega=" << computedOmega
+                        << " omega_reference=" << expectedOmega << " frequency_error=" << frequencyError
+                        << " one_period_response_error=" << transientError << Qt::endl;
+    return staticError <= 1.0e-12 && torsionalStiffnessError <= 1.0e-12 && slackAxialForce <= 1.0e-8 &&
+                   slackTorsionalStiffness > 0.0 && frequencyError <= 2.0e-3 && transientError <= 2.0e-3
+               ? 0
+               : 3;
 }
 
 std::optional<int> verifyCableReference(const QStringList& arguments)
@@ -1442,8 +1393,8 @@ std::optional<int> verifyCableReference(const QStringList& arguments)
     if (!arguments.contains(QStringLiteral("--verify-cable-reference")))
         return std::nullopt;
 
-    // Reference formulation: D:\VS\TSSBN\Wind_method\Element_Cable_CR.cpp,
-    // Element_Cable_CR::Calculate_ke_TSSBN and Calculate_me.
+    // 参考公式位于 D:\VS\TSSBN\Wind_method\Element_Cable_CR.cpp 的
+    // Element_Cable_CR::Calculate_ke_TSSBN 与 Calculate_me。
     constexpr double initialLength = 4.0;
     constexpr double radius = 0.012;
     constexpr double young = 70.0e9;
@@ -1489,27 +1440,20 @@ std::optional<int> verifyCableReference(const QStringList& arguments)
     const Eigen::VectorXd actualForce = cable.m_inforce;
     cable.Get_me_Consistent(actualMass);
 
-    const Eigen::Vector3d firstPosition(
-        first->m_X + first->m_Displacement[0],
-        first->m_Y + first->m_Displacement[1],
-        first->m_Z + first->m_Displacement[2]);
-    const Eigen::Vector3d secondPosition(
-        second->m_X + second->m_Displacement[0],
-        second->m_Y + second->m_Displacement[1],
-        second->m_Z + second->m_Displacement[2]);
+    const Eigen::Vector3d firstPosition(first->m_X + first->m_Displacement[0], first->m_Y + first->m_Displacement[1],
+                                        first->m_Z + first->m_Displacement[2]);
+    const Eigen::Vector3d secondPosition(second->m_X + second->m_Displacement[0],
+                                         second->m_Y + second->m_Displacement[1],
+                                         second->m_Z + second->m_Displacement[2]);
     const Eigen::Vector3d chord = secondPosition - firstPosition;
     const double currentLength = chord.norm();
     const Eigen::Vector3d axis = chord / currentLength;
     const double axialStiffness = young * area / initialLength;
-    const double torsionalStiffness =
-        shearModulus * polarMoment / initialLength;
+    const double torsionalStiffness = shearModulus * polarMoment / initialLength;
     Eigen::Vector2d generalizedForce;
-    generalizedForce[0] = initialStress * area
-        + axialStiffness * (currentLength - initialLength);
-    generalizedForce[1] = torsionalStiffness
-        * (second->m_Displacement[3] - first->m_Displacement[3]);
-    Eigen::Matrix<double, 2, 8> strainDisplacement =
-        Eigen::Matrix<double, 2, 8>::Zero();
+    generalizedForce[0] = initialStress * area + axialStiffness * (currentLength - initialLength);
+    generalizedForce[1] = torsionalStiffness * (second->m_Displacement[3] - first->m_Displacement[3]);
+    Eigen::Matrix<double, 2, 8> strainDisplacement = Eigen::Matrix<double, 2, 8>::Zero();
     strainDisplacement.block<1, 3>(0, 0) = -axis.transpose();
     strainDisplacement.block<1, 3>(0, 4) = axis.transpose();
     strainDisplacement(1, 3) = -1.0;
@@ -1517,22 +1461,17 @@ std::optional<int> verifyCableReference(const QStringList& arguments)
     Eigen::Matrix2d materialTangent = Eigen::Matrix2d::Zero();
     materialTangent(0, 0) = axialStiffness;
     materialTangent(1, 1) = torsionalStiffness;
-    Eigen::MatrixXd referenceStiffness =
-        strainDisplacement.transpose() * materialTangent
-        * strainDisplacement;
-    const Eigen::Matrix3d geometricBlock = generalizedForce[0]
-        / currentLength
-        * (Eigen::Matrix3d::Identity() - axis * axis.transpose());
+    Eigen::MatrixXd referenceStiffness = strainDisplacement.transpose() * materialTangent * strainDisplacement;
+    const Eigen::Matrix3d geometricBlock =
+        generalizedForce[0] / currentLength * (Eigen::Matrix3d::Identity() - axis * axis.transpose());
     referenceStiffness.block<3, 3>(0, 0) += geometricBlock;
     referenceStiffness.block<3, 3>(4, 4) += geometricBlock;
     referenceStiffness.block<3, 3>(0, 4) -= geometricBlock;
     referenceStiffness.block<3, 3>(4, 0) -= geometricBlock;
-    const Eigen::VectorXd referenceForce =
-        strainDisplacement.transpose() * generalizedForce;
+    const Eigen::VectorXd referenceForce = strainDisplacement.transpose() * generalizedForce;
 
     Eigen::Matrix4d sectionMass = Eigen::Matrix4d::Zero();
-    sectionMass(0, 0) = sectionMass(1, 1) =
-        sectionMass(2, 2) = density * area;
+    sectionMass(0, 0) = sectionMass(1, 1) = sectionMass(2, 2) = density * area;
     sectionMass(3, 3) = density * polarMoment;
     Eigen::MatrixXd referenceMass = Eigen::MatrixXd::Zero(8, 8);
     referenceMass.block<4, 4>(0, 0) = 2.0 * sectionMass;
@@ -1542,18 +1481,11 @@ std::optional<int> verifyCableReference(const QStringList& arguments)
     referenceMass *= initialLength / 6.0;
 
     const double stiffnessReferenceError =
-        (actualStiffness - referenceStiffness).norm()
-        / std::max(1.0, referenceStiffness.norm());
-    const double forceReferenceError =
-        (actualForce - referenceForce).norm()
-        / std::max(1.0, referenceForce.norm());
-    const double massReferenceError =
-        (actualMass - referenceMass).norm()
-        / std::max(1.0, referenceMass.norm());
+        (actualStiffness - referenceStiffness).norm() / std::max(1.0, referenceStiffness.norm());
+    const double forceReferenceError = (actualForce - referenceForce).norm() / std::max(1.0, referenceForce.norm());
+    const double massReferenceError = (actualMass - referenceMass).norm() / std::max(1.0, referenceMass.norm());
 
-    // Numerical differentiation proves that the returned matrix is the
-    // consistent derivative of the returned internal force, not only a matrix
-    // that happens to reproduce the TSSBN source code.
+    // 数值微分用于证明返回矩阵是内力的一致导数，而不是仅能复现 TSSBN 源代码结果的矩阵。
     Eigen::MatrixXd numericalTangent = Eigen::MatrixXd::Zero(8, 8);
     constexpr double perturbation = 1.0e-7;
     const auto displacementEntry = [&](int localDof) -> double&
@@ -1574,15 +1506,13 @@ std::optional<int> verifyCableReference(const QStringList& arguments)
         cable.Get_ke(ignored);
         const Eigen::VectorXd negativeForce = cable.m_inforce;
         value = original;
-        numericalTangent.col(column) =
-            (positiveForce - negativeForce) / (2.0 * perturbation);
+        numericalTangent.col(column) = (positiveForce - negativeForce) / (2.0 * perturbation);
     }
     cable.Get_ke(actualStiffness);
     const double tangentConsistencyError =
-        (actualStiffness - numericalTangent).norm()
-        / std::max(1.0, numericalTangent.norm());
+        (actualStiffness - numericalTangent).norm() / std::max(1.0, numericalTangent.norm());
 
-    // Static axial equilibrium solved by Newton using the production element.
+    // 使用正式单元和 Newton 方法求解静力轴向平衡。
     std::fill(first->m_Displacement.begin(), first->m_Displacement.end(), 0.0);
     std::fill(second->m_Displacement.begin(), second->m_Displacement.end(), 0.0);
     const double initialForce = initialStress * area;
@@ -1596,17 +1526,13 @@ std::optional<int> verifyCableReference(const QStringList& arguments)
         second->m_Displacement[0] += residual / actualStiffness(4, 4);
     }
     cable.Get_ke(actualStiffness);
-    const double exactStaticDisplacement =
-        (appliedForce - initialForce) / axialStiffness;
-    const double staticDisplacementError = std::abs(
-        second->m_Displacement[0] - exactStaticDisplacement)
-        / exactStaticDisplacement;
-    const double staticResidualError = std::abs(
-        appliedForce - cable.m_inforce[4]) / appliedForce;
+    const double exactStaticDisplacement = (appliedForce - initialForce) / axialStiffness;
+    const double staticDisplacementError =
+        std::abs(second->m_Displacement[0] - exactStaticDisplacement) / exactStaticDisplacement;
+    const double staticResidualError = std::abs(appliedForce - cable.m_inforce[4]) / appliedForce;
 
-    // Transverse vibration of a taut fixed-fixed cable. K and M are assembled
-    // exclusively from ElementCable; the continuum reference is
-    // omega_1 = pi/L*sqrt(N0/(rho*A)).
+    // 张紧固支索的横向振动，K 与 M 完全由 ElementCable 组装；连续体参考解为
+    // omega_1 = pi/L*sqrt(N0/(rho*A))。
     constexpr int elementCount = 32;
     constexpr double span = 30.0;
     constexpr double pretension = 60.0e3;
@@ -1618,10 +1544,8 @@ std::optional<int> verifyCableReference(const QStringList& arguments)
         nodes[index]->m_X = span * index / elementCount;
     }
     const int freeCount = elementCount - 1;
-    Eigen::MatrixXd transverseStiffness =
-        Eigen::MatrixXd::Zero(freeCount, freeCount);
-    Eigen::MatrixXd transverseMass =
-        Eigen::MatrixXd::Zero(freeCount, freeCount);
+    Eigen::MatrixXd transverseStiffness = Eigen::MatrixXd::Zero(freeCount, freeCount);
+    Eigen::MatrixXd transverseMass = Eigen::MatrixXd::Zero(freeCount, freeCount);
     for (int index = 0; index < elementCount; ++index)
     {
         ElementCable segment;
@@ -1636,25 +1560,18 @@ std::optional<int> verifyCableReference(const QStringList& arguments)
         const int equation[2] = {index - 1, index};
         for (int a = 0; a < 2; ++a)
             for (int b = 0; b < 2; ++b)
-                if (equation[a] >= 0 && equation[a] < freeCount
-                    && equation[b] >= 0 && equation[b] < freeCount)
+                if (equation[a] >= 0 && equation[a] < freeCount && equation[b] >= 0 && equation[b] < freeCount)
                 {
-                    transverseStiffness(equation[a], equation[b]) +=
-                        elementStiffness(4 * a + 1, 4 * b + 1);
-                    transverseMass(equation[a], equation[b]) +=
-                        elementMass(4 * a + 1, 4 * b + 1);
+                    transverseStiffness(equation[a], equation[b]) += elementStiffness(4 * a + 1, 4 * b + 1);
+                    transverseMass(equation[a], equation[b]) += elementMass(4 * a + 1, 4 * b + 1);
                 }
     }
 
-    // Classical static benchmark: a fixed-fixed taut cable under a small
-    // uniform transverse line load has the parabolic midspan sag
-    // f = q*L^2/(8*H). Use a small sag/span ratio so the constant-horizontal-
-    // tension reference remains the appropriate continuum limit, while the
-    // production element still solves the full nonlinear geometry.
+    // 经典静力基准：固支张紧索在小均布横向线荷载下的跨中抛物线垂度为 f = q*L^2/(8*H)。
+    // 采用较小垂跨比，使恒定水平张力解仍可作为连续体极限，同时正式单元仍求解完整非线性几何。
     constexpr double transverseLineLoad = 1.6;
     const double elementLength = span / elementCount;
-    Eigen::VectorXd staticLoad = Eigen::VectorXd::Constant(
-        freeCount, transverseLineLoad * elementLength);
+    Eigen::VectorXd staticLoad = Eigen::VectorXd::Constant(freeCount, transverseLineLoad * elementLength);
     Eigen::VectorXd staticDisplacement = Eigen::VectorXd::Zero(freeCount);
     double staticCableResidual = std::numeric_limits<double>::infinity();
     int staticCableIterations = 0;
@@ -1662,13 +1579,10 @@ std::optional<int> verifyCableReference(const QStringList& arguments)
     {
         staticCableIterations = iteration + 1;
         for (int nodeIndex = 1; nodeIndex < elementCount; ++nodeIndex)
-            nodes[nodeIndex]->m_Displacement[1] =
-                staticDisplacement[nodeIndex - 1];
+            nodes[nodeIndex]->m_Displacement[1] = staticDisplacement[nodeIndex - 1];
 
-        Eigen::MatrixXd tangent =
-            Eigen::MatrixXd::Zero(freeCount, freeCount);
-        Eigen::VectorXd internalForce =
-            Eigen::VectorXd::Zero(freeCount);
+        Eigen::MatrixXd tangent = Eigen::MatrixXd::Zero(freeCount, freeCount);
+        Eigen::VectorXd internalForce = Eigen::VectorXd::Zero(freeCount);
         for (int index = 0; index < elementCount; ++index)
         {
             ElementCable segment;
@@ -1688,14 +1602,12 @@ std::optional<int> verifyCableReference(const QStringList& arguments)
                 {
                     if (equation[b] < 0 || equation[b] >= freeCount)
                         continue;
-                    tangent(equation[a], equation[b]) +=
-                        elementStiffness(4 * a + 1, 4 * b + 1);
+                    tangent(equation[a], equation[b]) += elementStiffness(4 * a + 1, 4 * b + 1);
                 }
             }
         }
         const Eigen::VectorXd residual = staticLoad - internalForce;
-        staticCableResidual = residual.norm()
-            / std::max(1.0, staticLoad.norm());
+        staticCableResidual = residual.norm() / std::max(1.0, staticLoad.norm());
         if (staticCableResidual <= 1.0e-11)
             break;
         const Eigen::VectorXd correction = tangent.ldlt().solve(residual);
@@ -1703,29 +1615,22 @@ std::optional<int> verifyCableReference(const QStringList& arguments)
             return 4;
         staticDisplacement += correction;
     }
-    const double computedMidspanSag =
-        staticDisplacement[elementCount / 2 - 1];
-    const double referenceMidspanSag = transverseLineLoad * span * span
-        / (8.0 * pretension);
-    const double midspanSagError = std::abs(
-        computedMidspanSag - referenceMidspanSag) / referenceMidspanSag;
+    const double computedMidspanSag = staticDisplacement[elementCount / 2 - 1];
+    const double referenceMidspanSag = transverseLineLoad * span * span / (8.0 * pretension);
+    const double midspanSagError = std::abs(computedMidspanSag - referenceMidspanSag) / referenceMidspanSag;
 
-    // Restore the straight equilibrium state before the modal calculation.
+    // 模态计算前恢复直线平衡状态。
     for (int nodeIndex = 1; nodeIndex < elementCount; ++nodeIndex)
         nodes[nodeIndex]->m_Displacement[1] = 0.0;
 
-    Eigen::GeneralizedSelfAdjointEigenSolver<Eigen::MatrixXd> modes(
-        transverseStiffness, transverseMass);
+    Eigen::GeneralizedSelfAdjointEigenSolver<Eigen::MatrixXd> modes(transverseStiffness, transverseMass);
     if (modes.info() != Eigen::Success)
         return 2;
     const double computedOmega = std::sqrt(modes.eigenvalues()[0]);
-    const double referenceOmega = std::acos(-1.0) / span
-        * std::sqrt(pretension / (density * area));
-    const double frequencyError =
-        std::abs(computedOmega - referenceOmega) / referenceOmega;
+    const double referenceOmega = std::acos(-1.0) / span * std::sqrt(pretension / (density * area));
+    const double frequencyError = std::abs(computedOmega - referenceOmega) / referenceOmega;
 
-    // Feed the cable FEM first mode into the production adaptive TSSBN
-    // integrator and compare five periods with the exact undamped solution.
+    // 将索有限元一阶模态输入正式自适应 TSSBN 积分器，与五个周期的无阻尼精确解比较。
     const double period = 2.0 * std::acos(-1.0) / computedOmega;
     LinearOscillatorModel oscillator(1.0, computedOmega * computedOmega);
     SolverNameSpace::SolverAdaptiveTSSBN::Params parameters;
@@ -1742,44 +1647,28 @@ std::optional<int> verifyCableReference(const QStringList& arguments)
     SolverNameSpace::Vec velocity;
     SolverNameSpace::Vec acceleration;
     oscillator.GetState(displacement, velocity, acceleration);
-    const double dynamicDisplacementError =
-        std::abs(displacement[0] - 1.0);
-    const double dynamicVelocityError =
-        std::abs(velocity[0]) / computedOmega;
+    const double dynamicDisplacementError = std::abs(displacement[0] - 1.0);
+    const double dynamicVelocityError = std::abs(velocity[0]) / computedOmega;
 
-    QTextStream(stdout)
-        << "cable_reference stiffness_error=" << stiffnessReferenceError
-        << " force_error=" << forceReferenceError
-        << " mass_error=" << massReferenceError
-        << " tangent_error=" << tangentConsistencyError
-        << " static_displacement_error=" << staticDisplacementError
-        << " static_residual_error=" << staticResidualError
-        << " midspan_sag=" << computedMidspanSag
-        << " midspan_sag_reference=" << referenceMidspanSag
-        << " midspan_sag_error=" << midspanSagError
-        << " static_cable_iterations=" << staticCableIterations
-        << " static_cable_residual=" << staticCableResidual
-        << " omega=" << computedOmega
-        << " omega_reference=" << referenceOmega
-        << " frequency_error=" << frequencyError
-        << " tssbn_solved=" << dynamicSolved
-        << " tssbn_displacement_error=" << dynamicDisplacementError
-        << " tssbn_velocity_error=" << dynamicVelocityError
-        << " accepted=" << tssbn.GetAcceptedStepCount()
-        << " rejected=" << tssbn.GetRejectedStepCount() << Qt::endl;
+    QTextStream(stdout) << "cable_reference stiffness_error=" << stiffnessReferenceError
+                        << " force_error=" << forceReferenceError << " mass_error=" << massReferenceError
+                        << " tangent_error=" << tangentConsistencyError
+                        << " static_displacement_error=" << staticDisplacementError
+                        << " static_residual_error=" << staticResidualError << " midspan_sag=" << computedMidspanSag
+                        << " midspan_sag_reference=" << referenceMidspanSag << " midspan_sag_error=" << midspanSagError
+                        << " static_cable_iterations=" << staticCableIterations
+                        << " static_cable_residual=" << staticCableResidual << " omega=" << computedOmega
+                        << " omega_reference=" << referenceOmega << " frequency_error=" << frequencyError
+                        << " tssbn_solved=" << dynamicSolved << " tssbn_displacement_error=" << dynamicDisplacementError
+                        << " tssbn_velocity_error=" << dynamicVelocityError
+                        << " accepted=" << tssbn.GetAcceptedStepCount() << " rejected=" << tssbn.GetRejectedStepCount()
+                        << Qt::endl;
 
-    const bool passed = stiffnessReferenceError <= 1.0e-13
-        && forceReferenceError <= 1.0e-13
-        && massReferenceError <= 1.0e-13
-        && tangentConsistencyError <= 2.0e-8
-        && staticDisplacementError <= 1.0e-12
-        && staticResidualError <= 1.0e-12
-        && midspanSagError <= 5.0e-4
-        && staticCableResidual <= 1.0e-11
-        && frequencyError <= 5.0e-4
-        && dynamicSolved
-        && dynamicDisplacementError <= 2.0e-4
-        && dynamicVelocityError <= 5.0e-4;
+    const bool passed = stiffnessReferenceError <= 1.0e-13 && forceReferenceError <= 1.0e-13 &&
+                        massReferenceError <= 1.0e-13 && tangentConsistencyError <= 2.0e-8 &&
+                        staticDisplacementError <= 1.0e-12 && staticResidualError <= 1.0e-12 &&
+                        midspanSagError <= 5.0e-4 && staticCableResidual <= 1.0e-11 && frequencyError <= 5.0e-4 &&
+                        dynamicSolved && dynamicDisplacementError <= 2.0e-4 && dynamicVelocityError <= 5.0e-4;
     return passed ? 0 : 3;
 }
 
@@ -1829,46 +1718,32 @@ std::optional<int> verifySpatialWindLoad(const QStringList& arguments)
     Eigen::VectorXd fixed = Eigen::VectorXd::Zero(4);
     Eigen::VectorXd free = Eigen::VectorXd::Zero(4);
     LoadAssembler::Assemble(wind, structure, 4, 1.0, fixed, free);
-    const double forceError = std::max(
-        std::abs(fixed[1] - q * initialLength / 2.0),
-        std::abs(free[1] - q * initialLength / 2.0));
+    const double forceError =
+        std::max(std::abs(fixed[1] - q * initialLength / 2.0), std::abs(free[1] - q * initialLength / 2.0));
 
-    // Rotate the current cable chord to prove that the spatial wind direction
-    // stays global while equivalent nodal loads use the current configuration.
+    // 旋转当前索弦，验证空间风向保持全局不变，而等效节点荷载采用当前构形。
     node1->m_Displacement[0] = -2.0;
     node1->m_Displacement[1] = 4.0;
     fixed.setZero();
     free.setZero();
     LoadAssembler::Assemble(wind, structure, 4, 1.0, fixed, free);
-    const double rotatedForceError = std::max(
-        std::abs(fixed[1] - q * 5.0 / 2.0),
-        std::abs(free[1] - q * 5.0 / 2.0));
+    const double rotatedForceError = std::max(std::abs(fixed[1] - q * 5.0 / 2.0), std::abs(free[1] - q * 5.0 / 2.0));
 
-    // An arbitrary global direction must be assembled component-by-component
-    // without reducing it to one of the coordinate axes.
-    std::fill(
-        node1->m_Displacement.begin(),
-        node1->m_Displacement.end(),
-        0.0);
+    // 任意全局方向必须逐分量组装，不能简化为某个坐标轴方向。
+    std::fill(node1->m_Displacement.begin(), node1->m_Displacement.end(), 0.0);
     wind.m_direction = Eigen::Vector3d(1.0, 2.0, -2.0);
     fixed.setZero();
     free.setZero();
     LoadAssembler::Assemble(wind, structure, 4, 1.0, fixed, free);
-    const Eigen::Vector3d expectedVector =
-        q * initialLength / 2.0 * wind.m_direction.normalized();
-    const double vectorDirectionError = std::max(
-        (fixed.head<3>() - expectedVector).norm(),
-        (free.head<3>() - expectedVector).norm());
+    const Eigen::Vector3d expectedVector = q * initialLength / 2.0 * wind.m_direction.normalized();
+    const double vectorDirectionError =
+        std::max((fixed.head<3>() - expectedVector).norm(), (free.head<3>() - expectedVector).norm());
 
-    QTextStream(stdout)
-        << "spatial wind q=" << q
-        << " initial_node_force=" << q * initialLength / 2.0
-        << " rotated_node_force=" << q * 5.0 / 2.0
-        << " error=" << forceError
-        << " rotated_error=" << rotatedForceError
-        << " vector_error=" << vectorDirectionError << Qt::endl;
-    return forceError <= 1.0e-12 && rotatedForceError <= 1.0e-12
-        && vectorDirectionError <= 1.0e-12 ? 0 : 1;
+    QTextStream(stdout) << "spatial wind q=" << q << " initial_node_force=" << q * initialLength / 2.0
+                        << " rotated_node_force=" << q * 5.0 / 2.0 << " error=" << forceError
+                        << " rotated_error=" << rotatedForceError << " vector_error=" << vectorDirectionError
+                        << Qt::endl;
+    return forceError <= 1.0e-12 && rotatedForceError <= 1.0e-12 && vectorDirectionError <= 1.0e-12 ? 0 : 1;
 }
 
 std::optional<int> verifyNodeExport(const QStringList& arguments)
@@ -1909,17 +1784,28 @@ std::optional<int> verifyResultRead(const QStringList& arguments)
     {
         return 3;
     }
+    if (arguments.contains(QStringLiteral("--verify-result-read-all")))
+    {
+        Hdf5ResultFrame scanned;
+        for (int frameIndex = 0; frameIndex < static_cast<int>(frames.size()); ++frameIndex)
+        {
+            if (!reader.ReadResultFrame(frameIndex, scanned))
+            {
+                QTextStream(stderr) << "result frame read failed index=" << frameIndex
+                                    << " domain=" << frames[static_cast<size_t>(frameIndex)].domainId << Qt::endl;
+                return 5;
+            }
+        }
+    }
     QTextStream(stdout) << "result frames=" << frames.size() << " first_step=" << first.info.stepId
                         << " first_nodes=" << first.nodes.size() << " first_elements=" << first.elements.size()
                         << " last_time=" << last.info.time << Qt::endl;
     return first.nodes.empty() || first.elements.empty() ? 4 : 0;
 }
 
-std::optional<int> verifyShearReleaseResult(
-    const QStringList& arguments)
+std::optional<int> verifyShearReleaseResult(const QStringList& arguments)
 {
-    const int index = arguments.indexOf(
-        QStringLiteral("--verify-shear-release-result"));
+    const int index = arguments.indexOf(QStringLiteral("--verify-shear-release-result"));
     if (index < 0)
         return std::nullopt;
     if (index + 1 >= arguments.size())
@@ -1927,29 +1813,24 @@ std::optional<int> verifyShearReleaseResult(
 
     Hdf5ModelIO reader;
     std::vector<Hdf5ResultFrameInfo> frames;
-    if (!reader.OpenResultFile(arguments.at(index + 1), frames)
-        || frames.empty())
+    if (!reader.OpenResultFile(arguments.at(index + 1), frames) || frames.empty())
         return 2;
 
     double maximumConstraintGap = 0.0;
     double maximumNormalizedError = 0.0;
     double finalValues[4] = {};
-    for (int frameIndex = 0;
-         frameIndex < static_cast<int>(frames.size());
-         ++frameIndex)
+    for (int frameIndex = 0; frameIndex < static_cast<int>(frames.size()); ++frameIndex)
     {
         Hdf5ResultFrame frame;
         if (!reader.ReadResultFrame(frameIndex, frame))
             return 3;
-        const auto findNode = [&frame](int id)
-            -> const Hdf5NodalResult*
+        const auto findNode = [&frame](int id) -> const Hdf5NodalResult*
         {
-            const auto found = std::find_if(
-                frame.nodes.cbegin(), frame.nodes.cend(),
-                [id](const Hdf5NodalResult& node)
-                {
-                    return node.id == id;
-                });
+            const auto found = std::find_if(frame.nodes.cbegin(), frame.nodes.cend(),
+                                            [id](const Hdf5NodalResult& node)
+                                            {
+                                                return node.id == id;
+                                            });
             return found == frame.nodes.cend() ? nullptr : &*found;
         };
         const Hdf5NodalResult* node2 = findNode(2);
@@ -1957,68 +1838,49 @@ std::optional<int> verifyShearReleaseResult(
         if (!node2 || !node3)
             return 4;
 
-        const double phi =
-            2.0 * std::acos(-1.0) * frame.info.time;
+        const double phi = 2.0 * std::acos(-1.0) * frame.info.time;
         if (std::abs(phi) < 1.0e-12)
             continue;
         const double sinPhi = std::sin(phi);
         const double cosPhi = std::cos(phi);
         const double u2Expected = sinPhi / phi - 1.0;
         const double w2Expected = (1.0 - cosPhi) / phi;
-        const double u3Expected =
-            u2Expected
-            + 2.0 * std::tan(phi) * (1.0 - cosPhi) / phi;
+        const double u3Expected = u2Expected + 2.0 * std::tan(phi) * (1.0 - cosPhi) / phi;
         const double w3Expected = -w2Expected;
-        const double calculated[4] = {
-            node2->displacement[0], node2->displacement[1],
-            node3->displacement[0], node3->displacement[1]
-        };
-        const double expected[4] = {
-            u2Expected, w2Expected, u3Expected, w3Expected
-        };
+        const double calculated[4] = {node2->displacement[0], node2->displacement[1], node3->displacement[0],
+                                      node3->displacement[1]};
+        const double expected[4] = {u2Expected, w2Expected, u3Expected, w3Expected};
         for (int component = 0; component < 4; ++component)
         {
             if (!std::isfinite(calculated[component]))
                 return 5;
-            // The paper also reports visibly larger discretization errors in
-            // the load steps close to M=pi and 3*pi, where u3 is singular.
+            // 论文指出 M 接近 pi 和 3*pi 时 u3 存在奇异性，离散误差会明显增大。
             if (std::abs(cosPhi) >= 0.10)
             {
-                maximumNormalizedError = std::max(
-                    maximumNormalizedError,
-                    std::abs(calculated[component] - expected[component])
-                        / std::max(1.0, std::abs(expected[component])));
+                maximumNormalizedError =
+                    std::max(maximumNormalizedError, std::abs(calculated[component] - expected[component]) /
+                                                         std::max(1.0, std::abs(expected[component])));
             }
             if (frameIndex + 1 == static_cast<int>(frames.size()))
                 finalValues[component] = calculated[component];
         }
 
         const double constraintGap =
-            cosPhi * (calculated[0] - calculated[2])
-            + sinPhi * (calculated[1] - calculated[3]);
-        maximumConstraintGap =
-            std::max(maximumConstraintGap, std::abs(constraintGap));
+            cosPhi * (calculated[0] - calculated[2]) + sinPhi * (calculated[1] - calculated[3]);
+        maximumConstraintGap = std::max(maximumConstraintGap, std::abs(constraintGap));
     }
     reader.CloseResultFile();
 
-    QTextStream(stdout)
-        << "shear-release frames=" << frames.size()
-        << " max_constraint_gap=" << maximumConstraintGap
-        << " max_normalized_analytical_error="
-        << maximumNormalizedError
-        << " final_u2=" << finalValues[0]
-        << " final_w2=" << finalValues[1]
-        << " final_u3=" << finalValues[2]
-        << " final_w3=" << finalValues[3] << Qt::endl;
-    return maximumConstraintGap <= 1.0e-8
-        && maximumNormalizedError <= 0.25 ? 0 : 6;
+    QTextStream(stdout) << "shear-release frames=" << frames.size() << " max_constraint_gap=" << maximumConstraintGap
+                        << " max_normalized_analytical_error=" << maximumNormalizedError
+                        << " final_u2=" << finalValues[0] << " final_w2=" << finalValues[1]
+                        << " final_u3=" << finalValues[2] << " final_w3=" << finalValues[3] << Qt::endl;
+    return maximumConstraintGap <= 1.0e-8 && maximumNormalizedError <= 0.25 ? 0 : 6;
 }
 
-std::optional<int> verifyShearReleaseModel(
-    const QStringList& arguments)
+std::optional<int> verifyShearReleaseModel(const QStringList& arguments)
 {
-    const int index = arguments.indexOf(
-        QStringLiteral("--verify-shear-release-model"));
+    const int index = arguments.indexOf(QStringLiteral("--verify-shear-release-model"));
     if (index < 0)
         return std::nullopt;
     if (index + 1 >= arguments.size())
@@ -2034,16 +1896,16 @@ std::optional<int> verifyShearReleaseModel(
     runner.SetRuntimeCallbacks(
         [](double progress, const QString& message)
         {
-            if (message.contains(QStringLiteral("失败"))
-                || message.contains(QStringLiteral("未收敛"))
-                || message.contains(QStringLiteral("奇异")))
+            if (message.contains(QStringLiteral("失败")) || message.contains(QStringLiteral("未收敛")) ||
+                message.contains(QStringLiteral("奇异")))
             {
-                QTextStream(stdout)
-                    << "progress=" << progress
-                    << " message=" << message << Qt::endl;
+                QTextStream(stdout) << "progress=" << progress << " message=" << message << Qt::endl;
             }
         },
-        []() { return false; });
+        []()
+        {
+            return false;
+        });
     if (!runner.RunAll())
         return 3;
 
@@ -2059,30 +1921,18 @@ std::optional<int> verifyShearReleaseModel(
     int worstComponent = -1;
     for (const DataFrame& frame : frames)
     {
-        const double u2 = frame.GetNodeData(
-            2, EnumKeyword::NodeResultType::U1);
-        const double w2 = frame.GetNodeData(
-            2, EnumKeyword::NodeResultType::U2);
-        const double u3 = frame.GetNodeData(
-            3, EnumKeyword::NodeResultType::U1);
-        const double w3 = frame.GetNodeData(
-            3, EnumKeyword::NodeResultType::U2);
-        const double phi2Output = frame.GetNodeData(
-            2, EnumKeyword::NodeResultType::UR3);
-        const double phi3 = frame.GetNodeData(
-            3, EnumKeyword::NodeResultType::UR3);
-        const double phi2 =
-            2.0 * std::acos(-1.0) * frame.GetTime();
+        const double u2 = frame.GetNodeData(2, EnumKeyword::NodeResultType::U1);
+        const double w2 = frame.GetNodeData(2, EnumKeyword::NodeResultType::U2);
+        const double u3 = frame.GetNodeData(3, EnumKeyword::NodeResultType::U1);
+        const double w3 = frame.GetNodeData(3, EnumKeyword::NodeResultType::U2);
+        const double phi2Output = frame.GetNodeData(2, EnumKeyword::NodeResultType::UR3);
+        const double phi3 = frame.GetNodeData(3, EnumKeyword::NodeResultType::UR3);
+        const double phi2 = 2.0 * std::acos(-1.0) * frame.GetTime();
         const double sinPhi = std::sin(phi2);
         const double cosPhi = std::cos(phi2);
-        const double expected[4] = {
-            sinPhi / phi2 - 1.0,
-            (1.0 - cosPhi) / phi2,
-            sinPhi / phi2 - 1.0
-                + 2.0 * std::tan(phi2)
-                    * (1.0 - cosPhi) / phi2,
-            -(1.0 - cosPhi) / phi2
-        };
+        const double expected[4] = {sinPhi / phi2 - 1.0, (1.0 - cosPhi) / phi2,
+                                    sinPhi / phi2 - 1.0 + 2.0 * std::tan(phi2) * (1.0 - cosPhi) / phi2,
+                                    -(1.0 - cosPhi) / phi2};
         const double calculated[4] = {u2, w2, u3, w3};
         for (int component = 0; component < 4; ++component)
         {
@@ -2090,9 +1940,8 @@ std::optional<int> verifyShearReleaseModel(
                 return 5;
             if (std::abs(cosPhi) >= 0.10)
             {
-                const double error =
-                    std::abs(calculated[component] - expected[component])
-                    / std::max(1.0, std::abs(expected[component]));
+                const double error = std::abs(calculated[component] - expected[component]) /
+                                     std::max(1.0, std::abs(expected[component]));
                 if (error > maximumNormalizedError)
                 {
                     maximumNormalizedError = error;
@@ -2103,39 +1952,22 @@ std::optional<int> verifyShearReleaseModel(
                 }
             }
         }
-        maximumConstraintGap = std::max(
-            maximumConstraintGap,
-            std::abs(cosPhi * (u2 - u3)
-                + sinPhi * (w2 - w3)));
-        maximumRotationGap = std::max(
-            maximumRotationGap,
-            std::abs(std::remainder(
-                phi2Output - phi3, 2.0 * std::acos(-1.0))));
+        maximumConstraintGap = std::max(maximumConstraintGap, std::abs(cosPhi * (u2 - u3) + sinPhi * (w2 - w3)));
+        maximumRotationGap =
+            std::max(maximumRotationGap, std::abs(std::remainder(phi2Output - phi3, 2.0 * std::acos(-1.0))));
     }
 
     const DataFrame& last = frames.back();
-    QTextStream(stdout)
-        << "shear-release direct frames=" << frames.size()
-        << " max_constraint_gap=" << maximumConstraintGap
-        << " max_rotation_gap=" << maximumRotationGap
-        << " max_normalized_analytical_error="
-        << maximumNormalizedError
-        << " worst_phi=" << worstPhi
-        << " worst_component=" << worstComponent
-        << " worst_calculated=" << worstCalculated
-        << " worst_expected=" << worstExpected
-        << " final_u2=" << last.GetNodeData(
-            2, EnumKeyword::NodeResultType::U1)
-        << " final_w2=" << last.GetNodeData(
-            2, EnumKeyword::NodeResultType::U2)
-        << " final_u3=" << last.GetNodeData(
-            3, EnumKeyword::NodeResultType::U1)
-        << " final_w3=" << last.GetNodeData(
-            3, EnumKeyword::NodeResultType::U2)
-        << Qt::endl;
-    return maximumConstraintGap <= 1.0e-8
-        && maximumRotationGap <= 1.0e-8
-        && maximumNormalizedError <= 0.25 ? 0 : 6;
+    QTextStream(stdout) << "shear-release direct frames=" << frames.size()
+                        << " max_constraint_gap=" << maximumConstraintGap << " max_rotation_gap=" << maximumRotationGap
+                        << " max_normalized_analytical_error=" << maximumNormalizedError << " worst_phi=" << worstPhi
+                        << " worst_component=" << worstComponent << " worst_calculated=" << worstCalculated
+                        << " worst_expected=" << worstExpected
+                        << " final_u2=" << last.GetNodeData(2, EnumKeyword::NodeResultType::U1)
+                        << " final_w2=" << last.GetNodeData(2, EnumKeyword::NodeResultType::U2)
+                        << " final_u3=" << last.GetNodeData(3, EnumKeyword::NodeResultType::U1)
+                        << " final_w3=" << last.GetNodeData(3, EnumKeyword::NodeResultType::U2) << Qt::endl;
+    return maximumConstraintGap <= 1.0e-8 && maximumRotationGap <= 1.0e-8 && maximumNormalizedError <= 0.25 ? 0 : 6;
 }
 
 std::optional<int> verifyHdf5Model(const QStringList& arguments)
@@ -2152,16 +1984,14 @@ std::optional<int> verifyHdf5Model(const QStringList& arguments)
         return 2;
     for (const auto& [elementId, element] : structure->m_Elements)
     {
-        if (!element || element->m_pNode.size() != 2 || element->m_pNode[0].expired()
-            || element->m_pNode[1].expired())
+        if (!element || element->m_pNode.size() != 2 || element->m_pNode[0].expired() || element->m_pNode[1].expired())
         {
             QTextStream(stderr) << "invalid element=" << elementId << Qt::endl;
             return 3;
         }
     }
     QTextStream(stdout) << "hdf5 model nodes=" << structure->m_Nodes.size()
-                        << " elements=" << structure->m_Elements.size()
-                        << " materials=" << structure->m_Material.size()
+                        << " elements=" << structure->m_Elements.size() << " materials=" << structure->m_Material.size()
                         << " sections=" << structure->m_Section.size() << Qt::endl;
     return structure->m_Nodes.empty() || structure->m_Elements.empty() ? 4 : 0;
 }
@@ -2181,16 +2011,12 @@ std::optional<int> verifyHdf5ModelContract(const QStringList& arguments)
     source->m_ModelSets.clear();
     source->m_ComputeRegions.clear();
     QString error;
-    const int secondElementId = source->m_Elements.size() > 2
-        ? source->m_Elements.crbegin()->first : 2;
+    const int secondElementId = source->m_Elements.size() > 2 ? source->m_Elements.crbegin()->first : 2;
     const int firstSetId = source->AddModelSet(QStringLiteral("区域A单元"), ModelSetType::Element, {1}, &error);
-    const int secondSetId = source->AddModelSet(
-        QStringLiteral("区域B单元"), ModelSetType::Element,
-        {secondElementId}, &error);
-    const int firstRegionId = source->AddComputeRegionFromSets(
-        QStringLiteral("区域A"), {firstSetId}, true, &error);
-    const int secondRegionId = source->AddComputeRegionFromSets(
-        QStringLiteral("区域B"), {secondSetId}, true, &error);
+    const int secondSetId =
+        source->AddModelSet(QStringLiteral("区域B单元"), ModelSetType::Element, {secondElementId}, &error);
+    const int firstRegionId = source->AddComputeRegionFromSets(QStringLiteral("区域A"), {firstSetId}, true, &error);
+    const int secondRegionId = source->AddComputeRegionFromSets(QStringLiteral("区域B"), {secondSetId}, true, &error);
     if (firstSetId <= 0 || secondSetId <= 0 || firstRegionId <= 0 || secondRegionId <= 0)
         return 3;
 
@@ -2214,8 +2040,7 @@ std::optional<int> verifyHdf5ModelContract(const QStringList& arguments)
     dynamicConfig.initialStaticStepId = equilibriumStepId;
     source->AddAnalysisStep(dynamicConfig);
     auto sourceStep = source->m_AnalysisStep.at(dynamicConfig.id);
-    sourceStep->m_DynamicSolverType =
-        SolverNameSpace::SolverType::AdaptiveTSSBN;
+    sourceStep->m_DynamicSolverType = SolverNameSpace::SolverType::AdaptiveTSSBN;
     sourceStep->m_AdaptiveTssbn.spectralRadiusInfinity = 0.73;
     sourceStep->m_AdaptiveTssbn.minimumTimeStep = 2.5e-6;
     sourceStep->m_AdaptiveTssbn.maximumTimeStep = 0.37;
@@ -2224,7 +2049,10 @@ std::optional<int> verifyHdf5ModelContract(const QStringList& arguments)
     sourceStep->m_AdaptiveTssbn.safetyFactor = 0.82;
     sourceStep->m_AdaptiveTssbn.shrinkFactor = 0.76;
     sourceStep->m_AdaptiveTssbn.maximumGrowthFactor = 2.4;
+    sourceStep->m_GallopingAerodynamicTangentMode =
+        SolverNameSpace::AerodynamicTangentMode::OncePerTimeStepOrStage;
     sourceStep->m_AdaptiveTssbn.targetNewtonIterations = 11;
+    sourceStep->m_AdaptiveTssbn.maximumTotalNewtonIterations = 37;
     sourceStep->m_AdaptiveTssbn.derivativeGain = 0.13;
     sourceStep->m_AdaptiveTssbn.minimumDerivativeFactor = 0.44;
     sourceStep->m_AdaptiveTssbn.maximumDerivativeFactor = 1.72;
@@ -2234,12 +2062,10 @@ std::optional<int> verifyHdf5ModelContract(const QStringList& arguments)
     sourceStep->m_GallopingInitialAttackDegrees = 357.0;
     sourceStep->m_RegionScope = AnalysisRegionScope::SelectedRegions;
     sourceStep->m_ComputeRegionIds = {firstRegionId, secondRegionId};
-    const AeroCaseKey sourceAeroKey{ 1, 18, 28 };
-    if (!source->m_AeroManager.loadCase(
-        std::filesystem::path("YQY/Import/Aero_Data/Input_Data"), sourceAeroKey))
+    const AeroCaseKey sourceAeroKey{1, 18, 28};
+    if (!source->m_AeroManager.loadCase(std::filesystem::path("YQY/Import/Aero_Data/Input_Data"), sourceAeroKey))
         return 5;
-    const int windLoadId = source->m_Load.empty()
-        ? 1 : source->m_Load.crbegin()->first + 1;
+    const int windLoadId = source->m_Load.empty() ? 1 : source->m_Load.crbegin()->first + 1;
     auto sourceWind = std::make_shared<Force_Wind>();
     sourceWind->m_Id = windLoadId;
     sourceWind->m_Name = QStringLiteral("任意方向风");
@@ -2261,85 +2087,54 @@ std::optional<int> verifyHdf5ModelContract(const QStringList& arguments)
     const auto restoredStep = restored->m_AnalysisStep.find(sourceStep->m_Id);
     const auto restoredWindEntry = restored->m_Load.find(windLoadId);
     const auto restoredWind = restoredWindEntry != restored->m_Load.cend()
-        ? std::dynamic_pointer_cast<Force_Wind>(restoredWindEntry->second) : nullptr;
-    const double windDirectionError = restoredWind
-        ? (restoredWind->m_direction - sourceWind->m_direction).norm()
-        : std::numeric_limits<double>::infinity();
-    if (restored->m_ModelSets.size() != 2 || restored->m_ComputeRegions.size() != 2
-        || restored->m_MPCConstraints.size() != source->m_MPCConstraints.size()
-        || restoredStep == restored->m_AnalysisStep.cend() || !restoredStep->second
-        || restoredStep->second->m_Name != sourceStep->m_Name
-        || restoredStep->second->m_InitialStaticStepId != equilibriumStepId
-        || !restoredStep->second->m_EnableGalloping
-        || restoredStep->second->m_GallopingIceThickness != 28
-        || restoredStep->second->m_DynamicSolverType
-            != SolverNameSpace::SolverType::AdaptiveTSSBN
-        || std::abs(
-            restoredStep->second->m_AdaptiveTssbn.spectralRadiusInfinity
-                - 0.73) > 1.0e-12
-        || std::abs(
-            restoredStep->second->m_AdaptiveTssbn.minimumTimeStep
-                - 2.5e-6) > 1.0e-15
-        || std::abs(
-            restoredStep->second->m_AdaptiveTssbn.maximumTimeStep
-                - 0.37) > 1.0e-12
-        || std::abs(
-            restoredStep->second->m_AdaptiveTssbn.relativeTolerance
-                - 7.5e-4) > 1.0e-15
-        || std::abs(
-            restoredStep->second->m_AdaptiveTssbn.absoluteTolerance
-                - 3.5e-7) > 1.0e-15
-        || std::abs(
-            restoredStep->second->m_AdaptiveTssbn.safetyFactor
-                - 0.82) > 1.0e-12
-        || std::abs(
-            restoredStep->second->m_AdaptiveTssbn.shrinkFactor
-                - 0.76) > 1.0e-12
-        || std::abs(
-            restoredStep->second->m_AdaptiveTssbn.maximumGrowthFactor
-                - 2.4) > 1.0e-12
-        || restoredStep->second->m_AdaptiveTssbn.targetNewtonIterations
-            != 11
-        || std::abs(
-            restoredStep->second->m_AdaptiveTssbn.derivativeGain
-                - 0.13) > 1.0e-12
-        || std::abs(
-            restoredStep->second->m_AdaptiveTssbn.minimumDerivativeFactor
-                - 0.44) > 1.0e-12
-        || std::abs(
-            restoredStep->second->m_AdaptiveTssbn.maximumDerivativeFactor
-                - 1.72) > 1.0e-12
-        || restoredStep->second->m_AdaptiveTssbn.maximumRejectedAttempts
-            != 19
-        || std::abs(
-            restoredStep->second->m_GallopingInitialAttackDegrees - 357.0)
-            > 1.0e-12
-        || !restored->m_AeroManager.hasCase(sourceAeroKey)
-        || std::abs(restored->m_AeroManager.getData(sourceAeroKey, 0, LIFT, 17.5)
-            - source->m_AeroManager.getData(sourceAeroKey, 0, LIFT, 17.5)) > 1.0e-12
-        || restoredStep->second->m_RegionScope != AnalysisRegionScope::SelectedRegions
-        || restoredStep->second->m_ComputeRegionIds.size() != 2
-        || !restoredWind
-        || std::abs(restoredWind->m_velocity - 18.0) > 1.0e-12
-        || windDirectionError > 1.0e-12)
+                                  ? std::dynamic_pointer_cast<Force_Wind>(restoredWindEntry->second)
+                                  : nullptr;
+    const double windDirectionError = restoredWind ? (restoredWind->m_direction - sourceWind->m_direction).norm()
+                                                   : std::numeric_limits<double>::infinity();
+    if (restored->m_ModelSets.size() != 2 || restored->m_ComputeRegions.size() != 2 ||
+        restored->m_MPCConstraints.size() != source->m_MPCConstraints.size() ||
+        restoredStep == restored->m_AnalysisStep.cend() || !restoredStep->second ||
+        restoredStep->second->m_Name != sourceStep->m_Name ||
+        restoredStep->second->m_InitialStaticStepId != equilibriumStepId || !restoredStep->second->m_EnableGalloping ||
+        restoredStep->second->m_GallopingIceThickness != 28 ||
+        restoredStep->second->m_DynamicSolverType != SolverNameSpace::SolverType::AdaptiveTSSBN ||
+        std::abs(restoredStep->second->m_AdaptiveTssbn.spectralRadiusInfinity - 0.73) > 1.0e-12 ||
+        std::abs(restoredStep->second->m_AdaptiveTssbn.minimumTimeStep - 2.5e-6) > 1.0e-15 ||
+        std::abs(restoredStep->second->m_AdaptiveTssbn.maximumTimeStep - 0.37) > 1.0e-12 ||
+        std::abs(restoredStep->second->m_AdaptiveTssbn.relativeTolerance - 7.5e-4) > 1.0e-15 ||
+        std::abs(restoredStep->second->m_AdaptiveTssbn.absoluteTolerance - 3.5e-7) > 1.0e-15 ||
+        std::abs(restoredStep->second->m_AdaptiveTssbn.safetyFactor - 0.82) > 1.0e-12 ||
+        std::abs(restoredStep->second->m_AdaptiveTssbn.shrinkFactor - 0.76) > 1.0e-12 ||
+        std::abs(restoredStep->second->m_AdaptiveTssbn.maximumGrowthFactor - 2.4) > 1.0e-12 ||
+        restoredStep->second->m_GallopingAerodynamicTangentMode !=
+            SolverNameSpace::AerodynamicTangentMode::OncePerTimeStepOrStage ||
+        restoredStep->second->m_AdaptiveTssbn.targetNewtonIterations != 11 ||
+        std::abs(restoredStep->second->m_AdaptiveTssbn.derivativeGain - 0.13) > 1.0e-12 ||
+        std::abs(restoredStep->second->m_AdaptiveTssbn.minimumDerivativeFactor - 0.44) > 1.0e-12 ||
+        std::abs(restoredStep->second->m_AdaptiveTssbn.maximumDerivativeFactor - 1.72) > 1.0e-12 ||
+        restoredStep->second->m_AdaptiveTssbn.maximumRejectedAttempts != 19 ||
+        restoredStep->second->m_AdaptiveTssbn.maximumTotalNewtonIterations != 37 ||
+        std::abs(restoredStep->second->m_GallopingInitialAttackDegrees - 357.0) > 1.0e-12 ||
+        !restored->m_AeroManager.hasCase(sourceAeroKey) ||
+        std::abs(restored->m_AeroManager.getData(sourceAeroKey, 0, LIFT, 17.5) -
+                 source->m_AeroManager.getData(sourceAeroKey, 0, LIFT, 17.5)) > 1.0e-12 ||
+        restoredStep->second->m_RegionScope != AnalysisRegionScope::SelectedRegions ||
+        restoredStep->second->m_ComputeRegionIds.size() != 2 || !restoredWind ||
+        std::abs(restoredWind->m_velocity - 18.0) > 1.0e-12 || windDirectionError > 1.0e-12)
     {
         return 8;
     }
     QTextStream(stdout) << "hdf5 contract sets=" << restored->m_ModelSets.size()
-        << " regions=" << restored->m_ComputeRegions.size()
-        << " mpcs=" << restored->m_MPCConstraints.size()
-        << " steps=" << restored->m_AnalysisStep.size()
-        << " galloping=" << (restoredStep->second->m_EnableGalloping ? 1 : 0)
-        << " ice=" << restoredStep->second->m_GallopingIceThickness
-        << " initial_attack="
-        << restoredStep->second->m_GallopingInitialAttackDegrees
-        << " tssbn_rel_tol="
-        << restoredStep->second->m_AdaptiveTssbn.relativeTolerance
-        << " tssbn_max_reject="
-        << restoredStep->second->m_AdaptiveTssbn.maximumRejectedAttempts
-        << " aero_cases=" << restored->m_AeroManager.getLoadedCaseCount()
-        << " wind_direction_error=" << windDirectionError
-        << " result=" << (summary.hasResult ? 1 : 0) << Qt::endl;
+                        << " regions=" << restored->m_ComputeRegions.size()
+                        << " mpcs=" << restored->m_MPCConstraints.size() << " steps=" << restored->m_AnalysisStep.size()
+                        << " galloping=" << (restoredStep->second->m_EnableGalloping ? 1 : 0)
+                        << " ice=" << restoredStep->second->m_GallopingIceThickness
+                        << " initial_attack=" << restoredStep->second->m_GallopingInitialAttackDegrees
+                        << " tssbn_rel_tol=" << restoredStep->second->m_AdaptiveTssbn.relativeTolerance
+                        << " tssbn_max_reject=" << restoredStep->second->m_AdaptiveTssbn.maximumRejectedAttempts
+                        << " aero_cases=" << restored->m_AeroManager.getLoadedCaseCount()
+                        << " wind_direction_error=" << windDirectionError << " result=" << (summary.hasResult ? 1 : 0)
+                        << Qt::endl;
     return 0;
 }
 
@@ -2357,17 +2152,15 @@ std::optional<int> verifyComputeRegions(const QStringList& arguments)
         return 2;
     structure->m_ComputeRegions.clear();
     QString error;
-    const int firstRegionId = structure->AddComputeRegion(
-        QStringLiteral("区域 A"), {}, {1}, {}, true, &error);
-    const int secondRegionId = structure->AddComputeRegion(
-        QStringLiteral("区域 B"), {}, {2}, {}, true, &error);
+    const int firstRegionId = structure->AddComputeRegion(QStringLiteral("区域 A"), {}, {1}, {}, true, &error);
+    const int secondRegionId = structure->AddComputeRegion(QStringLiteral("区域 B"), {}, {2}, {}, true, &error);
     if (firstRegionId <= 0 || secondRegionId <= 0 || structure->m_ComputeRegions.size() != 2)
     {
         QTextStream(stderr) << "region setup failed: " << error << Qt::endl;
         return 3;
     }
-    const int mergedRegionId = structure->AddComputeRegion(
-        QStringLiteral("区域 A 重叠候选"), {}, {1}, {}, true, &error);
+    const int mergedRegionId =
+        structure->AddComputeRegion(QStringLiteral("区域 A 重叠候选"), {}, {1}, {}, true, &error);
     if (mergedRegionId != firstRegionId || structure->m_ComputeRegions.size() != 2)
     {
         QTextStream(stderr) << "overlap merge failed: " << error << Qt::endl;
@@ -2380,10 +2173,9 @@ std::optional<int> verifyComputeRegions(const QStringList& arguments)
     if (!runner.RunAll() || structure->GetOutputter().GetDataSet().empty())
         return 5;
     const auto& frame = structure->GetOutputter().GetDataSet().back();
-    QTextStream(stdout) << "compute regions=" << structure->m_ComputeRegions.size()
-        << " merged_id=" << mergedRegionId
-        << " result_nodes=" << frame.GetNodeDatas().size()
-        << " result_elements=" << frame.GetElementDatas().size() << Qt::endl;
+    QTextStream(stdout) << "compute regions=" << structure->m_ComputeRegions.size() << " merged_id=" << mergedRegionId
+                        << " result_nodes=" << frame.GetNodeDatas().size()
+                        << " result_elements=" << frame.GetElementDatas().size() << Qt::endl;
     return frame.GetNodeDatas().size() == 4 && frame.GetElementDatas().size() == 2 ? 0 : 6;
 }
 
@@ -2397,14 +2189,12 @@ std::optional<int> verifyMPCRegions(const QStringList& arguments)
 
     auto structure = std::make_shared<StructureData>();
     Input_Model importer;
-    if (!importer.InputData(arguments.at(index + 1), structure)
-        || structure->m_MPCConstraints.empty())
+    if (!importer.InputData(arguments.at(index + 1), structure) || structure->m_MPCConstraints.empty())
     {
         return 2;
     }
     const auto sourceMPC = structure->m_MPCConstraints.cbegin()->second;
-    const std::vector<int> nodeIds = sourceMPC ? sourceMPC->GetNodeIds()
-                                               : std::vector<int>();
+    const std::vector<int> nodeIds = sourceMPC ? sourceMPC->GetNodeIds() : std::vector<int>();
     if (nodeIds.size() != 2)
         return 3;
     const int masterNodeId = nodeIds[0];
@@ -2419,8 +2209,7 @@ std::optional<int> verifyMPCRegions(const QStringList& arguments)
             for (const auto& nodeRef : element->m_pNode)
             {
                 const auto node = nodeRef.lock();
-                containsSlave = containsSlave
-                    || (node && node->m_Id == slaveNodeId);
+                containsSlave = containsSlave || (node && node->m_Id == slaveNodeId);
             }
         }
         if (element && !containsSlave)
@@ -2434,42 +2223,31 @@ std::optional<int> verifyMPCRegions(const QStringList& arguments)
 
     structure->m_ComputeRegions.clear();
     QString error;
-    const int regionId = structure->AddComputeRegion(
-        QStringLiteral("MPC 主节点区域"), {masterNodeId},
-        {detachedElementId}, {}, true, &error);
+    const int regionId = structure->AddComputeRegion(QStringLiteral("MPC 主节点区域"), {masterNodeId},
+                                                     {detachedElementId}, {}, true, &error);
     const auto region = structure->m_ComputeRegions.find(regionId);
-    if (regionId <= 0 || region == structure->m_ComputeRegions.cend()
-        || !region->second || !region->second->ContainsNode(masterNodeId)
-        || !region->second->ContainsNode(slaveNodeId)
-        || structure->m_MPCConstraints.size() != 1)
+    if (regionId <= 0 || region == structure->m_ComputeRegions.cend() || !region->second ||
+        !region->second->ContainsNode(masterNodeId) || !region->second->ContainsNode(slaveNodeId) ||
+        structure->m_MPCConstraints.size() != 1)
     {
-        QTextStream(stderr) << "MPC region expansion failed: "
-                            << error << Qt::endl;
+        QTextStream(stderr) << "MPC region expansion failed: " << error << Qt::endl;
         return 5;
     }
 
-    const int stepId = structure->m_AnalysisStep.empty()
-        ? 0 : structure->m_AnalysisStep.cbegin()->first;
+    const int stepId = structure->m_AnalysisStep.empty() ? 0 : structure->m_AnalysisStep.cbegin()->first;
     if (stepId <= 0)
         return 6;
     auto clone = structure->CloneRegionForAnalysis(regionId, stepId, &error);
-    if (!clone || clone->m_MPCConstraints.size() != 1
-        || clone->m_Nodes.find(masterNodeId) == clone->m_Nodes.cend()
-        || clone->m_Nodes.find(slaveNodeId) == clone->m_Nodes.cend()
-        || structure->m_MPCConstraints.size() != 1)
+    if (!clone || clone->m_MPCConstraints.size() != 1 || clone->m_Nodes.find(masterNodeId) == clone->m_Nodes.cend() ||
+        clone->m_Nodes.find(slaveNodeId) == clone->m_Nodes.cend() || structure->m_MPCConstraints.size() != 1)
     {
-        QTextStream(stderr) << "MPC regional clone failed: "
-                            << error << Qt::endl;
+        QTextStream(stderr) << "MPC regional clone failed: " << error << Qt::endl;
         return 7;
     }
 
-    QTextStream(stdout)
-        << "mpc regions=" << structure->m_ComputeRegions.size()
-        << " master=" << masterNodeId
-        << " slave=" << slaveNodeId
-        << " source_mpcs=" << structure->m_MPCConstraints.size()
-        << " clone_mpcs=" << clone->m_MPCConstraints.size()
-        << Qt::endl;
+    QTextStream(stdout) << "mpc regions=" << structure->m_ComputeRegions.size() << " master=" << masterNodeId
+                        << " slave=" << slaveNodeId << " source_mpcs=" << structure->m_MPCConstraints.size()
+                        << " clone_mpcs=" << clone->m_MPCConstraints.size() << Qt::endl;
     return 0;
 }
 
@@ -2521,33 +2299,25 @@ std::optional<int> verifyConductorBundle(const QStringList& arguments)
         return 3;
     }
 
-    if (result.subConductors.size() != 4
-        || result.leftSupportNodeId <= 0
-        || result.rightSupportNodeId <= 0
-        || result.leftTensionEnd.groupNodeIds.size() != 2
-        || result.rightTensionEnd.groupNodeIds.size() != 2
-        || result.leftTensionEnd.yokeElementIds.size() != 2
-        || result.rightTensionEnd.yokeElementIds.size() != 2
-        || result.leftTensionEnd.stabilizerElementId <= 0
-        || result.rightTensionEnd.stabilizerElementId <= 0
-        || result.innerSpacers.empty()
-        || structure->m_ModelSets.size() != 8)
+    if (result.subConductors.size() != 4 || result.leftSupportNodeId <= 0 || result.rightSupportNodeId <= 0 ||
+        result.leftTensionEnd.groupNodeIds.size() != 2 || result.rightTensionEnd.groupNodeIds.size() != 2 ||
+        result.leftTensionEnd.yokeElementIds.size() != 2 || result.rightTensionEnd.yokeElementIds.size() != 2 ||
+        result.leftTensionEnd.stabilizerElementId <= 0 || result.rightTensionEnd.stabilizerElementId <= 0 ||
+        result.innerSpacers.empty() || structure->m_ModelSets.size() != 8)
     {
         return 4;
     }
 
     for (const auto& [wireId, sub] : result.subConductors)
     {
-        if (sub.nodeIds.empty()
-            || sub.nodeSetId <= 0
-            || sub.elementSetId <= 0)
+        if (sub.nodeIds.empty() || sub.nodeSetId <= 0 || sub.elementSetId <= 0)
         {
             return 5;
         }
     }
-    if (result.subConductors.at(0).nodeIds.front() != result.subConductors.at(1).nodeIds.front()
-        || result.subConductors.at(2).nodeIds.front() != result.subConductors.at(3).nodeIds.front()
-        || result.subConductors.at(0).nodeIds.front() == result.subConductors.at(2).nodeIds.front())
+    if (result.subConductors.at(0).nodeIds.front() != result.subConductors.at(1).nodeIds.front() ||
+        result.subConductors.at(2).nodeIds.front() != result.subConductors.at(3).nodeIds.front() ||
+        result.subConductors.at(0).nodeIds.front() == result.subConductors.at(2).nodeIds.front())
         return 10;
 
     int expectedConductorNodeId = 1;
@@ -2572,8 +2342,7 @@ std::optional<int> verifyConductorBundle(const QStringList& arguments)
         if (rightGroupId != expectedConductorNodeId++)
             return 15;
     }
-    if (result.leftSupportNodeId != expectedConductorNodeId++
-        || result.rightSupportNodeId != expectedConductorNodeId++)
+    if (result.leftSupportNodeId != expectedConductorNodeId++ || result.rightSupportNodeId != expectedConductorNodeId++)
         return 16;
 
     int expectedId = 1;
@@ -2595,13 +2364,9 @@ std::optional<int> verifyConductorBundle(const QStringList& arguments)
         for (int elementId : sub.elementIds)
         {
             const auto element = structure->FindElement(elementId);
-            if (elementId != expectedConductorElementId++
-                || !element
-                || element->m_Role != ElementRole::Conductor
-                || element->m_WireId != wireId
-                || element->m_AeroBundleCount != 4
-                || element->m_AeroProfileId != wireId
-                || !element->HasAerodynamicLoad())
+            if (elementId != expectedConductorElementId++ || !element || element->m_Role != ElementRole::Conductor ||
+                element->m_WireId != wireId || element->m_AeroBundleCount != 4 || element->m_AeroProfileId != wireId ||
+                !element->HasAerodynamicLoad())
                 return 17;
         }
     }
@@ -2613,10 +2378,9 @@ std::optional<int> verifyConductorBundle(const QStringList& arguments)
         for (int elementId : hardwareIds)
         {
             const auto element = structure->FindElement(elementId);
-            if (!element
-                || element->m_Role != ElementRole::TensionHardware
-                || std::abs(element->m_InitStress - config.conductor.initialStress) > 1.0e-6
-                || element->HasAerodynamicLoad())
+            if (!element || element->m_Role != ElementRole::TensionHardware ||
+                std::abs(element->m_InitStress - config.conductor.initialStress) > 1.0e-6 ||
+                element->HasAerodynamicLoad())
                 return 18;
         }
     }
@@ -2625,10 +2389,8 @@ std::optional<int> verifyConductorBundle(const QStringList& arguments)
         for (int elementId : spacer.elementIds)
         {
             const auto element = structure->FindElement(elementId);
-            if (!element
-                || element->m_Role != ElementRole::IntraPhaseSpacer
-                || std::abs(element->m_InitStress) > 1.0e-12
-                || element->HasAerodynamicLoad())
+            if (!element || element->m_Role != ElementRole::IntraPhaseSpacer ||
+                std::abs(element->m_InitStress) > 1.0e-12 || element->HasAerodynamicLoad())
                 return 19;
         }
     }
@@ -2657,20 +2419,16 @@ std::optional<int> verifyConductorBundle(const QStringList& arguments)
     Conductor::LineBuildResult directResult;
     if (!directBuilder.BuildLine(directConfig, directResult, buildError))
         return 23;
-    if (directResult.leftTensionEnd.supportNodeIds.size() != 4
-        || directResult.rightTensionEnd.supportNodeIds.size() != 4
-        || !directResult.leftTensionEnd.groupNodeIds.empty()
-        || !directResult.rightTensionEnd.groupNodeIds.empty()
-        || !directResult.leftTensionEnd.yokeElementIds.empty()
-        || !directResult.rightTensionEnd.yokeElementIds.empty()
-        || directResult.leftTensionEnd.stabilizerElementId > 0
-        || directResult.rightTensionEnd.stabilizerElementId > 0)
+    if (directResult.leftTensionEnd.supportNodeIds.size() != 4 ||
+        directResult.rightTensionEnd.supportNodeIds.size() != 4 || !directResult.leftTensionEnd.groupNodeIds.empty() ||
+        !directResult.rightTensionEnd.groupNodeIds.empty() || !directResult.leftTensionEnd.yokeElementIds.empty() ||
+        !directResult.rightTensionEnd.yokeElementIds.empty() || directResult.leftTensionEnd.stabilizerElementId > 0 ||
+        directResult.rightTensionEnd.stabilizerElementId > 0)
         return 24;
     for (const auto& [wireId, sub] : directResult.subConductors)
     {
-        if (sub.nodeIds.empty()
-            || sub.nodeIds.front() != directResult.leftTensionEnd.supportNodeIds[wireId]
-            || sub.nodeIds.back() != directResult.rightTensionEnd.supportNodeIds[wireId])
+        if (sub.nodeIds.empty() || sub.nodeIds.front() != directResult.leftTensionEnd.supportNodeIds[wireId] ||
+            sub.nodeIds.back() != directResult.rightTensionEnd.supportNodeIds[wireId])
             return 25;
         for (int elementId : sub.elementIds)
         {
@@ -2684,28 +2442,22 @@ std::optional<int> verifyConductorBundle(const QStringList& arguments)
     const QString h5Path = temporaryDirectory.filePath(QStringLiteral("conductor_tags.h5"));
     Hdf5ModelIO hdf5;
     StructureData restored;
-    if (!temporaryDirectory.isValid()
-        || !hdf5.ExportModelHdf5(h5Path, structure.get(), QStringLiteral("verification"))
-        || !hdf5.ImportHdf5(h5Path, &restored)
-        || restored.m_Elements.size() != structure->m_Elements.size())
+    if (!temporaryDirectory.isValid() ||
+        !hdf5.ExportModelHdf5(h5Path, structure.get(), QStringLiteral("verification")) ||
+        !hdf5.ImportHdf5(h5Path, &restored) || restored.m_Elements.size() != structure->m_Elements.size())
         return 20;
     for (const auto& [elementId, source] : structure->m_Elements)
     {
         const auto target = restored.FindElement(elementId);
-        if (!source || !target
-            || target->m_Role != source->m_Role
-            || target->m_WireId != source->m_WireId
-            || target->m_AeroBundleCount != source->m_AeroBundleCount
-            || target->m_AeroProfileId != source->m_AeroProfileId)
+        if (!source || !target || target->m_Role != source->m_Role || target->m_WireId != source->m_WireId ||
+            target->m_AeroBundleCount != source->m_AeroBundleCount ||
+            target->m_AeroProfileId != source->m_AeroProfileId)
             return 21;
     }
 
-    QTextStream(stdout)
-        << "conductor bundle nodes=" << structure->m_Nodes.size()
-        << " elements=" << structure->m_Elements.size()
-        << " sets=" << structure->m_ModelSets.size()
-        << " supports=" << result.leftSupportNodeId << "," << result.rightSupportNodeId
-        << Qt::endl;
+    QTextStream(stdout) << "conductor bundle nodes=" << structure->m_Nodes.size()
+                        << " elements=" << structure->m_Elements.size() << " sets=" << structure->m_ModelSets.size()
+                        << " supports=" << result.leftSupportNodeId << "," << result.rightSupportNodeId << Qt::endl;
     return 0;
 }
 
@@ -2736,11 +2488,7 @@ std::optional<int> verifyConductorMultiSpan(const QStringList& arguments)
 
     Conductor::MultiSpanConductorBuildConfig config;
     config.span.line = line;
-    config.stationCenters = {
-        Vector3d(0.0, 0.0, 0.0),
-        Vector3d(100.0, 0.0, 0.0),
-        Vector3d(220.0, 0.0, 0.0)
-    };
+    config.stationCenters = {Vector3d(0.0, 0.0, 0.0), Vector3d(100.0, 0.0, 0.0), Vector3d(220.0, 0.0, 0.0)};
     config.suspensionStringLength = 1.0;
     config.suspensionElementType = EnumKeyword::ElementType::T3D2;
     config.suspensionProperty = property;
@@ -2756,32 +2504,23 @@ std::optional<int> verifyConductorMultiSpan(const QStringList& arguments)
     std::string buildError;
     if (!builder.BuildMultiSpanConductor(config, result, buildError))
     {
-        QTextStream(stderr) << "multispan conductor build failed: "
-                            << QString::fromStdString(buildError) << Qt::endl;
+        QTextStream(stderr) << "multispan conductor build failed: " << QString::fromStdString(buildError) << Qt::endl;
         return 3;
     }
-    if (result.spanCount != 2 ||
-        result.subConductors.size() != 4 ||
-        result.suspensionPoints.size() != 1 ||
-        result.leftTensionEnd.groupNodeIds.size() != 2 ||
-        result.rightTensionEnd.groupNodeIds.size() != 2)
+    if (result.spanCount != 2 || result.subConductors.size() != 4 || result.suspensionPoints.size() != 1 ||
+        result.leftTensionEnd.groupNodeIds.size() != 2 || result.rightTensionEnd.groupNodeIds.size() != 2)
         return 4;
 
     const auto& suspension = result.suspensionPoints.front();
-    if (suspension.wireNodeIds.size() != 4 ||
-        suspension.yokeElementIds.size() != 2 ||
-        suspension.spacerElementIds.size() != 4 ||
-        suspension.stringElementId <= 0 ||
-        suspension.supportNodeId <= 0 ||
+    if (suspension.wireNodeIds.size() != 4 || suspension.yokeElementIds.size() != 2 ||
+        suspension.spacerElementIds.size() != 4 || suspension.stringElementId <= 0 || suspension.supportNodeId <= 0 ||
         suspension.junctionNodeId <= 0)
         return 5;
 
     const auto junctionIt = structure->m_Nodes.find(suspension.junctionNodeId);
     const auto supportIt = structure->m_Nodes.find(suspension.supportNodeId);
-    if (junctionIt == structure->m_Nodes.end() ||
-        supportIt == structure->m_Nodes.end() ||
-        std::abs(junctionIt->second->m_X - 100.0) > 1.0e-9 ||
-        std::abs(junctionIt->second->m_Z - 0.45) > 1.0e-9 ||
+    if (junctionIt == structure->m_Nodes.end() || supportIt == structure->m_Nodes.end() ||
+        std::abs(junctionIt->second->m_X - 100.0) > 1.0e-9 || std::abs(junctionIt->second->m_Z - 0.45) > 1.0e-9 ||
         std::abs(supportIt->second->m_Z - 1.45) > 1.0e-9)
         return 6;
 
@@ -2794,22 +2533,19 @@ std::optional<int> verifyConductorMultiSpan(const QStringList& arguments)
     for (int elementId : suspension.yokeElementIds)
     {
         const auto found = structure->m_Elements.find(elementId);
-        if (found == structure->m_Elements.end() ||
-            found->second->m_Role != ElementRole::SuspensionHardware ||
+        if (found == structure->m_Elements.end() || found->second->m_Role != ElementRole::SuspensionHardware ||
             !std::dynamic_pointer_cast<ElementTruss>(found->second))
             return 8;
     }
     for (int elementId : suspension.spacerElementIds)
     {
         const auto found = structure->m_Elements.find(elementId);
-        if (found == structure->m_Elements.end() ||
-            found->second->m_Role != ElementRole::IntraPhaseSpacer ||
+        if (found == structure->m_Elements.end() || found->second->m_Role != ElementRole::IntraPhaseSpacer ||
             found->second->HasAerodynamicLoad())
             return 8;
     }
     const auto stringIt = structure->m_Elements.find(suspension.stringElementId);
-    if (stringIt == structure->m_Elements.end() ||
-        stringIt->second->m_Role != ElementRole::SuspensionHardware ||
+    if (stringIt == structure->m_Elements.end() || stringIt->second->m_Role != ElementRole::SuspensionHardware ||
         stringIt->second->HasAerodynamicLoad())
         return 9;
 
@@ -2828,19 +2564,15 @@ std::optional<int> verifyConductorMultiSpan(const QStringList& arguments)
     Conductor::LineBuildResult directResult;
     if (!directBuilder.BuildMultiSpanConductor(directConfig, directResult, buildError))
         return 15;
-    if (directResult.suspensionPoints.size() != 1 ||
-        directResult.leftTensionEnd.supportNodeIds.size() != 4 ||
-        directResult.rightTensionEnd.supportNodeIds.size() != 4 ||
-        !directResult.leftTensionEnd.groupNodeIds.empty() ||
-        !directResult.rightTensionEnd.groupNodeIds.empty() ||
-        !directResult.leftTensionEnd.yokeElementIds.empty() ||
+    if (directResult.suspensionPoints.size() != 1 || directResult.leftTensionEnd.supportNodeIds.size() != 4 ||
+        directResult.rightTensionEnd.supportNodeIds.size() != 4 || !directResult.leftTensionEnd.groupNodeIds.empty() ||
+        !directResult.rightTensionEnd.groupNodeIds.empty() || !directResult.leftTensionEnd.yokeElementIds.empty() ||
         !directResult.rightTensionEnd.yokeElementIds.empty())
         return 16;
     for (int wireId = 0; wireId < 4; ++wireId)
     {
         const auto& nodes = directResult.subConductors.at(wireId).nodeIds;
-        if (nodes.empty() ||
-            nodes.front() != directResult.leftTensionEnd.supportNodeIds[wireId] ||
+        if (nodes.empty() || nodes.front() != directResult.leftTensionEnd.supportNodeIds[wireId] ||
             nodes.back() != directResult.rightTensionEnd.supportNodeIds[wireId])
             return 17;
     }
@@ -2854,8 +2586,7 @@ std::optional<int> verifyConductorMultiSpan(const QStringList& arguments)
         !hdf5.ImportHdf5(h5Path, &restored))
         return 10;
     const auto restoredString = restored.FindElement(suspension.stringElementId);
-    if (!restoredString ||
-        restoredString->m_Role != ElementRole::SuspensionHardware ||
+    if (!restoredString || restoredString->m_Role != ElementRole::SuspensionHardware ||
         restoredString->HasAerodynamicLoad())
         return 11;
 
@@ -2867,25 +2598,18 @@ std::optional<int> verifyConductorMultiSpan(const QStringList& arguments)
         return 12;
     modeCombo->setCurrentIndex(1);
     const auto uiBuild = module.buildModel(library, uiOutputDirectory.path());
-    if (!uiBuild.succeeded() ||
-        uiBuild.structure->m_Constraint.size() != 36)
+    if (!uiBuild.succeeded() || uiBuild.structure->m_Constraint.size() != 36)
     {
-        QTextStream(stderr) << "multispan conductor UI build failed: "
-                            << uiBuild.error
-                            << " constraints="
-                            << (uiBuild.structure ? uiBuild.structure->m_Constraint.size() : 0)
+        QTextStream(stderr) << "multispan conductor UI build failed: " << uiBuild.error
+                            << " constraints=" << (uiBuild.structure ? uiBuild.structure->m_Constraint.size() : 0)
                             << Qt::endl;
         return 13;
     }
 
-    QTextStream(stdout)
-        << "conductor multispan spans=" << result.spanCount
-        << " nodes=" << result.NodeCount()
-        << " elements=" << result.ElementCount()
-        << " suspension_center_z=" << suspension.center.z()
-        << " junction_z=" << junctionIt->second->m_Z
-        << " support_z=" << supportIt->second->m_Z
-        << Qt::endl;
+    QTextStream(stdout) << "conductor multispan spans=" << result.spanCount << " nodes=" << result.NodeCount()
+                        << " elements=" << result.ElementCount() << " suspension_center_z=" << suspension.center.z()
+                        << " junction_z=" << junctionIt->second->m_Z << " support_z=" << supportIt->second->m_Z
+                        << Qt::endl;
     return 0;
 }
 
@@ -2894,14 +2618,61 @@ std::optional<int> verifyConductorSpacerMPC(const QStringList& arguments)
     if (!arguments.contains(QStringLiteral("--verify-conductor-spacer-mpc")))
         return std::nullopt;
 
+    auto inertiaNode = std::make_shared<Node>();
+    inertiaNode->SetNumDOFs(6);
+    inertiaNode->m_Velocity = {0.0, 0.0, 0.0, 0.3, -0.2, 0.4};
+    inertiaNode->m_Acceleration = {1.0, -2.0, 3.0, -0.5, 0.7, 0.2};
+    RigidBodyInertia inertiaVerification;
+    inertiaVerification.m_pNode = inertiaNode;
+    inertiaVerification.m_Mass = 2.5;
+    inertiaVerification.m_RotaryInertia = Vector3d(0.8, 1.1, 1.4).asDiagonal();
+    MatrixXd massMatrix;
+    VectorXd inertiaForce;
+    MatrixXd gyroscopicMatrix;
+    MatrixXd configurationTangent;
+    inertiaVerification.GetDynamicContributions(massMatrix, inertiaForce, gyroscopicMatrix,
+                                                configurationTangent);
+    const Vector3d angularVelocity(0.3, -0.2, 0.4);
+    const Vector3d angularAcceleration(-0.5, 0.7, 0.2);
+    const Vector3d expectedMoment = inertiaVerification.m_RotaryInertia * angularAcceleration +
+                                    angularVelocity.cross(inertiaVerification.m_RotaryInertia * angularVelocity);
+    if (!inertiaVerification.IsValid() ||
+        !massMatrix.block<3, 3>(0, 0).isApprox(2.5 * Matrix3d::Identity(), 1.0e-12) ||
+        !massMatrix.block<3, 3>(3, 3).isApprox(inertiaVerification.m_RotaryInertia, 1.0e-12) ||
+        !inertiaForce.head<3>().isApprox(2.5 * Vector3d(1.0, -2.0, 3.0), 1.0e-12) ||
+        !inertiaForce.tail<3>().isApprox(expectedMoment, 1.0e-12))
+        return 8;
+
     Conductor::PropertyLibrary library;
     QString libraryError;
     if (!library.load(libraryError) || !library.isReady())
     {
-        QTextStream(stderr) << "spacer MPC property library failed: "
-                            << libraryError << Qt::endl;
+        QTextStream(stderr) << "spacer MPC property library failed: " << libraryError << Qt::endl;
         return 1;
     }
+
+    const Vector3d verificationAxis = Vector3d(2.0, -3.0, 4.0).normalized();
+    auto twistMaster = std::make_shared<Node>();
+    auto twistSlave = std::make_shared<Node>();
+    twistMaster->SetNumDOFs(6);
+    twistSlave->SetNumDOFs(4);
+    for (int direction = 0; direction < 6; ++direction)
+        twistMaster->m_DOF[direction] = direction;
+    for (int direction = 0; direction < 4; ++direction)
+        twistSlave->m_DOF[direction] = direction + 6;
+    constexpr double verificationTwist = 0.17;
+    twistMaster->m_Rg = Eigen::AngleAxisd(verificationTwist, verificationAxis).toRotationMatrix();
+    twistSlave->m_Displacement[3] = verificationTwist;
+    AxialTwistTieMPCConstraint twistVerification;
+    twistVerification.m_pMasterNode = twistMaster;
+    twistVerification.m_pSlaveNode = twistSlave;
+    twistVerification.m_Axis = -verificationAxis;
+    twistVerification.m_SlaveDirections = {3};
+    SolverNameSpace::NonlinearMPCData twistData;
+    if (!twistVerification.Evaluate(0, 10, twistData) || std::abs(twistData.value[0]) > 1.0e-12 ||
+        (twistData.jacobian.block<1, 3>(0, 3).transpose() + verificationAxis).norm() > 1.0e-12 ||
+        std::abs(twistData.jacobian(0, 9) - 1.0) > 1.0e-12)
+        return 7;
 
     struct CaseResult
     {
@@ -2910,29 +2681,33 @@ std::optional<int> verifyConductorSpacerMPC(const QStringList& arguments)
         int rawDofs = 0;
         int reducedDofs = 0;
         int spacerElements = 0;
+        int spacerInertias = 0;
+        double spacerMass = 0.0;
         double maximumMpcGap = 0.0;
+        double maximumTwistGap = 0.0;
     };
     constexpr int verificationSegments = 50;
     constexpr int verificationSpacers = 4;
-    const auto runCase = [&](Conductor::InnerSpacerStyle style,
-                             CaseResult& result) -> bool
+    const auto runCase = [&](Conductor::InnerSpacerStyle style, CaseResult& result) -> bool
     {
         QTemporaryDir outputDirectory;
         ConductorModule module;
         module.setPropertyLibrary(&library);
-        auto* styleCombo =
-            module.findChild<QComboBox*>(QStringLiteral("spacerStyleCombo"));
-        const int cableIndex = module.elementCombo()->findData(
-            static_cast<int>(EnumKeyword::ElementType::CABLE));
+        auto* styleCombo = module.findChild<QComboBox*>(QStringLiteral("spacerStyleCombo"));
+        const int cableIndex = module.elementCombo()->findData(static_cast<int>(EnumKeyword::ElementType::CABLE));
         const int bundleIndex = module.bundleCombo()->findData(4);
-        const int styleIndex = styleCombo ? styleCombo->findData(
-            static_cast<int>(style)) : -1;
-        if (!outputDirectory.isValid() || cableIndex < 0 ||
-            bundleIndex < 0 || styleIndex < 0)
+        const int styleIndex = styleCombo ? styleCombo->findData(static_cast<int>(style)) : -1;
+        if (!outputDirectory.isValid() || cableIndex < 0 || bundleIndex < 0 || styleIndex < 0)
             return false;
 
         module.elementCombo()->setCurrentIndex(cableIndex);
         module.bundleCombo()->setCurrentIndex(bundleIndex);
+        module.startX()->setValue(12.0);
+        module.startY()->setValue(-35.0);
+        module.startZ()->setValue(18.0);
+        module.endX()->setValue(312.0);
+        module.endY()->setValue(125.0);
+        module.endZ()->setValue(58.0);
         module.segmentsSpin()->setValue(verificationSegments);
         module.innerSpacerCheck()->setChecked(true);
         module.spacerLayoutCombo()->setCurrentIndex(1);
@@ -2950,6 +2725,14 @@ std::optional<int> verifyConductorSpacerMPC(const QStringList& arguments)
             if (element && element->m_Role == ElementRole::IntraPhaseSpacer)
                 ++result.spacerElements;
         }
+        for (const auto& [inertiaId, inertia] : result.structure->m_RigidBodyInertias)
+        {
+            Q_UNUSED(inertiaId);
+            if (!inertia || !inertia->IsValid())
+                return false;
+            ++result.spacerInertias;
+            result.spacerMass += inertia->m_Mass;
+        }
 
         const auto step = result.structure->m_AnalysisStep.begin()->second;
         step->SetStructure(result.structure);
@@ -2964,15 +2747,22 @@ std::optional<int> verifyConductorSpacerMPC(const QStringList& arguments)
             if (node)
                 result.rawDofs += node->m_DOF.size();
         }
-        result.reducedDofs = result.rawDofs -
-            3 * static_cast<int>(result.structure->m_MPCConstraints.size());
+        result.reducedDofs = result.rawDofs;
 
-        for (const auto& [mpcId, constraint] :
-             result.structure->m_MPCConstraints)
+        for (const auto& [mpcId, constraint] : result.structure->m_MPCConstraints)
         {
             Q_UNUSED(mpcId);
-            const auto rigid =
-                std::dynamic_pointer_cast<RigidOffsetMPCConstraint>(constraint);
+            const auto rigid = std::dynamic_pointer_cast<RigidOffsetMPCConstraint>(constraint);
+            const auto twist = std::dynamic_pointer_cast<AxialTwistTieMPCConstraint>(constraint);
+            if (twist)
+            {
+                SolverNameSpace::NonlinearMPCData data;
+                if (!twist->Evaluate(0, result.rawDofs, data))
+                    return false;
+                result.maximumTwistGap = std::max(result.maximumTwistGap, std::abs(data.value[0]));
+                --result.reducedDofs;
+                continue;
+            }
             if (!rigid)
                 return false;
             const auto master = rigid->m_pMasterNode.lock();
@@ -2980,17 +2770,17 @@ std::optional<int> verifyConductorSpacerMPC(const QStringList& arguments)
             if (!master || !slave)
                 return false;
             auto currentPosition = [](const Node& node)
-                {
-                    Vector3d position(node.m_X, node.m_Y, node.m_Z);
-                    for (int direction = 0; direction < 3 &&
-                         direction < static_cast<int>(node.m_Displacement.size());
-                         ++direction)
-                        position[direction] += node.m_Displacement[direction];
-                    return position;
-                };
-            const double gap = (currentPosition(*slave) -
-                currentPosition(*master) - master->m_Rg * rigid->m_Offset).norm();
+            {
+                Vector3d position(node.m_X, node.m_Y, node.m_Z);
+                for (int direction = 0; direction < 3 && direction < static_cast<int>(node.m_Displacement.size());
+                     ++direction)
+                    position[direction] += node.m_Displacement[direction];
+                return position;
+            };
+            const double gap =
+                (currentPosition(*slave) - currentPosition(*master) - master->m_Rg * rigid->m_Offset).norm();
             result.maximumMpcGap = std::max(result.maximumMpcGap, gap);
+            result.reducedDofs -= 3;
         }
         return true;
     };
@@ -3001,40 +2791,43 @@ std::optional<int> verifyConductorSpacerMPC(const QStringList& arguments)
         return 2;
     if (!runCase(Conductor::InnerSpacerStyle::RigidCenterMPC, mpcCase))
         return 3;
-    if (beamCase.spacerElements != 8 * verificationSpacers ||
+    if (beamCase.spacerElements != 8 * verificationSpacers || beamCase.spacerInertias != 0 ||
         !beamCase.structure->m_MPCConstraints.empty())
         return 4;
-    if (mpcCase.spacerElements != 0 ||
-        mpcCase.structure->m_MPCConstraints.size() !=
-            4 * verificationSpacers ||
-        mpcCase.maximumMpcGap > 1.0e-7)
+    if (mpcCase.spacerElements != 0 || mpcCase.structure->m_MPCConstraints.size() != 8 * verificationSpacers ||
+        mpcCase.spacerInertias != verificationSpacers || mpcCase.spacerMass <= 0.0 ||
+        mpcCase.maximumMpcGap > 1.0e-7 || mpcCase.maximumTwistGap > 1.0e-7)
         return 5;
 
     QTemporaryDir hdf5Directory;
-    const QString hdf5Path =
-        hdf5Directory.filePath(QStringLiteral("rigid_center_spacer.h5"));
+    const QString hdf5Path = hdf5Directory.filePath(QStringLiteral("rigid_center_spacer.h5"));
     Hdf5ModelIO hdf5;
     StructureData restored;
-    if (!hdf5Directory.isValid() ||
-        !hdf5.ExportModelHdf5(hdf5Path, mpcCase.structure.get(),
-            QStringLiteral("rigid center spacer verification")) ||
-        !hdf5.ImportHdf5(hdf5Path, &restored) ||
-        restored.m_MPCConstraints.size() != 4 * verificationSpacers)
+    const bool directoryValid = hdf5Directory.isValid();
+    const bool exported = directoryValid && hdf5.ExportModelHdf5(
+                                                       hdf5Path, mpcCase.structure.get(),
+                                                       QStringLiteral("rigid center spacer verification"));
+    const bool imported = exported && hdf5.ImportHdf5(hdf5Path, &restored);
+    if (!directoryValid || !exported || !imported || restored.m_MPCConstraints.size() != 8 * verificationSpacers ||
+        restored.m_RigidBodyInertias.size() != verificationSpacers)
+    {
+        QTextStream(stderr) << "spacer MPC HDF5 roundtrip failed: directory=" << directoryValid
+                            << " exported=" << exported << " imported=" << imported
+                            << " source_inertias=" << mpcCase.structure->m_RigidBodyInertias.size()
+                            << " restored_mpcs=" << restored.m_MPCConstraints.size()
+                            << " restored_inertias=" << restored.m_RigidBodyInertias.size() << Qt::endl;
         return 6;
+    }
 
-    QTextStream(stdout)
-        << "conductor spacer comparison beam_elements="
-        << beamCase.spacerElements
-        << " beam_raw_dofs=" << beamCase.rawDofs
-        << " beam_reduced_dofs=" << beamCase.reducedDofs
-        << " beam_solve_ms=" << beamCase.solveMilliseconds
-        << " mpc_elements=" << mpcCase.spacerElements
-        << " mpc_constraints=" << mpcCase.structure->m_MPCConstraints.size()
-        << " mpc_raw_dofs=" << mpcCase.rawDofs
-        << " mpc_reduced_dofs=" << mpcCase.reducedDofs
-        << " mpc_solve_ms=" << mpcCase.solveMilliseconds
-        << " max_gap=" << mpcCase.maximumMpcGap
-        << Qt::endl;
+    QTextStream(stdout) << "conductor spacer comparison beam_elements=" << beamCase.spacerElements
+                        << " beam_raw_dofs=" << beamCase.rawDofs << " beam_reduced_dofs=" << beamCase.reducedDofs
+                        << " beam_solve_ms=" << beamCase.solveMilliseconds << " mpc_elements=" << mpcCase.spacerElements
+                        << " mpc_constraints=" << mpcCase.structure->m_MPCConstraints.size()
+                        << " mpc_inertias=" << mpcCase.spacerInertias << " spacer_mass=" << mpcCase.spacerMass
+                        << " mpc_raw_dofs=" << mpcCase.rawDofs << " mpc_reduced_dofs=" << mpcCase.reducedDofs
+                        << " mpc_solve_ms=" << mpcCase.solveMilliseconds << " max_gap=" << mpcCase.maximumMpcGap
+                        << " max_twist_gap=" << mpcCase.maximumTwistGap
+                        << Qt::endl;
     return 0;
 }
 
@@ -3047,52 +2840,40 @@ std::optional<int> verifyConductorStatic(const QStringList& arguments)
     QString libraryError;
     if (!library.load(libraryError) || !library.isReady())
     {
-        QTextStream(stderr) << "conductor property library failed: "
-                            << libraryError << Qt::endl;
+        QTextStream(stderr) << "conductor property library failed: " << libraryError << Qt::endl;
         return 1;
     }
 
-    const EnumKeyword::ElementType elementTypes[] = {
-        EnumKeyword::ElementType::T3D2,
-        EnumKeyword::ElementType::CABLE,
-        EnumKeyword::ElementType::CR3D
-    };
+    const EnumKeyword::ElementType elementTypes[] = {EnumKeyword::ElementType::T3D2, EnumKeyword::ElementType::CABLE,
+                                                     EnumKeyword::ElementType::CR3D};
     for (EnumKeyword::ElementType elementType : elementTypes)
     {
         QTemporaryDir outputDirectory;
         ConductorModule module;
         module.setPropertyLibrary(&library);
-        const int elementIndex = module.elementCombo()->findData(
-            static_cast<int>(elementType));
+        const int elementIndex = module.elementCombo()->findData(static_cast<int>(elementType));
         const int bundleIndex = module.bundleCombo()->findData(4);
-        const int beamSpacerIndex = module.spacerElementCombo()->findData(
-            static_cast<int>(EnumKeyword::ElementType::CR3D));
-        if (!outputDirectory.isValid() || elementIndex < 0 ||
-            bundleIndex < 0 || beamSpacerIndex < 0)
+        const int beamSpacerIndex =
+            module.spacerElementCombo()->findData(static_cast<int>(EnumKeyword::ElementType::CR3D));
+        if (!outputDirectory.isValid() || elementIndex < 0 || bundleIndex < 0 || beamSpacerIndex < 0)
         {
             return 2;
         }
 
         module.elementCombo()->setCurrentIndex(elementIndex);
         module.bundleCombo()->setCurrentIndex(bundleIndex);
-        // Regression case for the default UI combination that previously
-        // exposed a singular static tangent: truss conductors with four
-        // beam-type spacers and the full 50 subdivisions.
-        module.segmentsSpin()->setValue(
-            elementType == EnumKeyword::ElementType::T3D2 ? 50 : 10);
+        // 回归算例覆盖曾出现静力切线奇异的默认界面组合：桁架导线、四个梁式间隔棒和完整 50 等分。
+        module.segmentsSpin()->setValue(elementType == EnumKeyword::ElementType::T3D2 ? 50 : 10);
         module.innerSpacerCheck()->setChecked(true);
-        module.spacerCountSpin()->setValue(
-            elementType == EnumKeyword::ElementType::T3D2 ? 4 : 2);
+        module.spacerCountSpin()->setValue(elementType == EnumKeyword::ElementType::T3D2 ? 4 : 2);
         module.spacerElementCombo()->setCurrentIndex(beamSpacerIndex);
         module.analysisCheck()->setChecked(true);
 
         const auto build = module.buildModel(library, outputDirectory.path());
         if (!build.succeeded() || build.structure->m_AnalysisStep.empty())
         {
-            QTextStream(stderr)
-                << "conductor static build failed type="
-                << static_cast<int>(elementType)
-                << " error=" << build.error << Qt::endl;
+            QTextStream(stderr) << "conductor static build failed type=" << static_cast<int>(elementType)
+                                << " error=" << build.error << Qt::endl;
             return 3;
         }
 
@@ -3100,8 +2881,7 @@ std::optional<int> verifyConductorStatic(const QStringList& arguments)
         int beamSpacerElementCount = 0;
         int conductorElementCount = 0;
         int matchingConductorElementCount = 0;
-        for (const auto& [elementId, element] :
-             build.structure->m_Elements)
+        for (const auto& [elementId, element] : build.structure->m_Elements)
         {
             Q_UNUSED(elementId);
             if (!element)
@@ -3109,13 +2889,12 @@ std::optional<int> verifyConductorStatic(const QStringList& arguments)
             if (element->m_Role == ElementRole::Conductor)
             {
                 ++conductorElementCount;
-                const bool matches =
-                    (elementType == EnumKeyword::ElementType::T3D2
-                        && std::dynamic_pointer_cast<ElementTruss>(element))
-                    || (elementType == EnumKeyword::ElementType::CABLE
-                        && std::dynamic_pointer_cast<ElementCable>(element))
-                    || (elementType == EnumKeyword::ElementType::CR3D
-                        && std::dynamic_pointer_cast<ElementBeam_CR>(element));
+                const bool matches = (elementType == EnumKeyword::ElementType::T3D2 &&
+                                      std::dynamic_pointer_cast<ElementTruss>(element)) ||
+                                     (elementType == EnumKeyword::ElementType::CABLE &&
+                                      std::dynamic_pointer_cast<ElementCable>(element)) ||
+                                     (elementType == EnumKeyword::ElementType::CR3D &&
+                                      std::dynamic_pointer_cast<ElementBeam_CR>(element));
                 if (matches)
                     ++matchingConductorElementCount;
             }
@@ -3126,57 +2905,41 @@ std::optional<int> verifyConductorStatic(const QStringList& arguments)
                     ++beamSpacerElementCount;
             }
         }
-        if (conductorElementCount == 0
-            || matchingConductorElementCount != conductorElementCount
-            || spacerElementCount == 0
-            || beamSpacerElementCount != spacerElementCount
-            || !build.structure->m_MPCConstraints.empty())
+        if (conductorElementCount == 0 || matchingConductorElementCount != conductorElementCount ||
+            spacerElementCount == 0 || beamSpacerElementCount != spacerElementCount ||
+            !build.structure->m_MPCConstraints.empty())
         {
-            QTextStream(stderr)
-                << "conductor mixed topology invalid type="
-                << static_cast<int>(elementType)
-                << " conductor_elements=" << conductorElementCount
-                << " matching_conductor_elements="
-                << matchingConductorElementCount
-                << " spacers=" << spacerElementCount
-                << " beam_spacers=" << beamSpacerElementCount
-                << " mpcs=" << build.structure->m_MPCConstraints.size()
-                << Qt::endl;
+            QTextStream(stderr) << "conductor mixed topology invalid type=" << static_cast<int>(elementType)
+                                << " conductor_elements=" << conductorElementCount
+                                << " matching_conductor_elements=" << matchingConductorElementCount
+                                << " spacers=" << spacerElementCount << " beam_spacers=" << beamSpacerElementCount
+                                << " mpcs=" << build.structure->m_MPCConstraints.size() << Qt::endl;
             return 5;
         }
 
         std::shared_ptr<StructureData> solveStructure = build.structure;
-        const auto step =
-            solveStructure->m_AnalysisStep.begin()->second;
+        const auto step = solveStructure->m_AnalysisStep.begin()->second;
         step->SetStructure(solveStructure);
         if (!step->Solve(false))
         {
-            QTextStream(stderr)
-                << "conductor static solve failed type="
-                << static_cast<int>(elementType)
-                << " nodes=" << solveStructure->m_Nodes.size()
-                << " elements=" << solveStructure->m_Elements.size()
-                << " constraints=" << solveStructure->m_Constraint.size()
-                << Qt::endl;
+            QTextStream(stderr) << "conductor static solve failed type=" << static_cast<int>(elementType)
+                                << " nodes=" << solveStructure->m_Nodes.size()
+                                << " elements=" << solveStructure->m_Elements.size()
+                                << " constraints=" << solveStructure->m_Constraint.size() << Qt::endl;
             return 4;
         }
-        QTextStream(stdout)
-            << "conductor static solved type="
-            << static_cast<int>(elementType)
-            << " nodes=" << solveStructure->m_Nodes.size()
-            << " elements=" << solveStructure->m_Elements.size()
-            << " conductor_elements=" << conductorElementCount
-            << " matching_conductor_elements="
-            << matchingConductorElementCount
-            << " constraints=" << solveStructure->m_Constraint.size()
-            << " mpcs=" << solveStructure->m_MPCConstraints.size()
-            << Qt::endl;
+        QTextStream(stdout) << "conductor static solved type=" << static_cast<int>(elementType)
+                            << " nodes=" << solveStructure->m_Nodes.size()
+                            << " elements=" << solveStructure->m_Elements.size()
+                            << " conductor_elements=" << conductorElementCount
+                            << " matching_conductor_elements=" << matchingConductorElementCount
+                            << " constraints=" << solveStructure->m_Constraint.size()
+                            << " mpcs=" << solveStructure->m_MPCConstraints.size() << Qt::endl;
     }
     return 0;
 }
 
-std::optional<int> verifyConductorGallopingDynamics(
-    const QStringList& arguments)
+std::optional<int> verifyConductorGallopingDynamics(const QStringList& arguments)
 {
     const int exportIndex = arguments.indexOf(QStringLiteral("--export-conductor-galloping"));
     const bool verifyRequested = arguments.contains(QStringLiteral("--verify-conductor-galloping"));
@@ -3186,9 +2949,8 @@ std::optional<int> verifyConductorGallopingDynamics(
         return 1;
 
     const QString exportPath = exportIndex >= 0 ? arguments.at(exportIndex + 1) : QString();
-    const auto readDoubleOption = [&arguments](
-        const QString& option, double defaultValue, bool requirePositive,
-        double& value) -> bool
+    const auto readDoubleOption = [&arguments](const QString& option, double defaultValue, bool requirePositive,
+                                               double& value) -> bool
     {
         value = defaultValue;
         const int index = arguments.indexOf(option);
@@ -3198,8 +2960,7 @@ std::optional<int> verifyConductorGallopingDynamics(
             return false;
         bool converted = false;
         const double parsed = arguments.at(index + 1).toDouble(&converted);
-        if (!converted || !std::isfinite(parsed)
-            || (requirePositive && parsed <= 0.0))
+        if (!converted || !std::isfinite(parsed) || (requirePositive && parsed <= 0.0))
         {
             return false;
         }
@@ -3209,34 +2970,33 @@ std::optional<int> verifyConductorGallopingDynamics(
     double gallopingDuration = 0.02;
     double initialAttackDegrees = 45.0;
     double gallopingIceThicknessValue = 25.0;
-    if (!readDoubleOption(
-            QStringLiteral("--galloping-duration"), 0.02, true,
-            gallopingDuration)
-        || !readDoubleOption(
-            QStringLiteral("--galloping-attack"), 45.0, false,
-            initialAttackDegrees)
-        || !readDoubleOption(
-            QStringLiteral("--galloping-ice"), 25.0, true,
-            gallopingIceThicknessValue))
+    double gallopingBundleValue = 4.0;
+    double gallopingMaximumTimeStep = 0.005;
+    if (!readDoubleOption(QStringLiteral("--galloping-duration"), 0.02, true, gallopingDuration) ||
+        !readDoubleOption(QStringLiteral("--galloping-attack"), 45.0, false, initialAttackDegrees) ||
+        !readDoubleOption(QStringLiteral("--galloping-ice"), 25.0, true, gallopingIceThicknessValue) ||
+        !readDoubleOption(QStringLiteral("--galloping-bundle"), 4.0, true, gallopingBundleValue) ||
+        !readDoubleOption(QStringLiteral("--galloping-max-step"), 0.005, true, gallopingMaximumTimeStep))
     {
-        QTextStream(stderr)
-            << "invalid --galloping-duration, --galloping-attack, or --galloping-ice"
-            << Qt::endl;
+        QTextStream(stderr) << "invalid galloping duration, attack, ice, bundle, or maximum step" << Qt::endl;
         return 1;
     }
-    const int gallopingIceThickness = static_cast<int>(
-        std::llround(gallopingIceThicknessValue));
-    if (std::abs(gallopingIceThicknessValue - gallopingIceThickness) > 1.0e-9
-        || !AeroManager::isSupportedIceThickness(gallopingIceThickness))
+    const int gallopingBundleCount = static_cast<int>(std::llround(gallopingBundleValue));
+    if (std::abs(gallopingBundleValue - gallopingBundleCount) > 1.0e-9 ||
+        !AeroManager::isSupportedCase(AeroCaseKey{gallopingBundleCount, 14, 25}))
     {
-        QTextStream(stderr)
-            << "unsupported --galloping-ice thickness: "
-            << gallopingIceThicknessValue << Qt::endl;
+        QTextStream(stderr) << "unsupported --galloping-bundle: " << gallopingBundleValue << Qt::endl;
+        return 1;
+    }
+    const int gallopingIceThickness = static_cast<int>(std::llround(gallopingIceThicknessValue));
+    if (std::abs(gallopingIceThicknessValue - gallopingIceThickness) > 1.0e-9 ||
+        !AeroManager::isSupportedIceThickness(gallopingIceThickness))
+    {
+        QTextStream(stderr) << "unsupported --galloping-ice thickness: " << gallopingIceThicknessValue << Qt::endl;
         return 1;
     }
     QString historyPath;
-    const int historyIndex = arguments.indexOf(
-        QStringLiteral("--galloping-history"));
+    const int historyIndex = arguments.indexOf(QStringLiteral("--galloping-history"));
     if (historyIndex >= 0)
     {
         if (historyIndex + 1 >= arguments.size())
@@ -3244,20 +3004,37 @@ std::optional<int> verifyConductorGallopingDynamics(
         historyPath = arguments.at(historyIndex + 1);
     }
     double historyInterval = 0.1;
-    if (!readDoubleOption(QStringLiteral("--galloping-history-interval"),
-                          0.1, true, historyInterval))
+    if (!readDoubleOption(QStringLiteral("--galloping-history-interval"), 0.1, true, historyInterval))
     {
-        QTextStream(stderr)
-            << "invalid --galloping-history-interval" << Qt::endl;
+        QTextStream(stderr) << "invalid --galloping-history-interval" << Qt::endl;
         return 1;
     }
     double tssbnSpectralRadius = 0.0;
-    if (!readDoubleOption(QStringLiteral("--galloping-tssbn-rho"),
-                          0.0, false, tssbnSpectralRadius)
-        || tssbnSpectralRadius < 0.0 || tssbnSpectralRadius > 1.0)
+    if (!readDoubleOption(QStringLiteral("--galloping-tssbn-rho"), 0.0, false, tssbnSpectralRadius) ||
+        tssbnSpectralRadius < 0.0 || tssbnSpectralRadius > 1.0)
     {
-        QTextStream(stderr)
-            << "invalid --galloping-tssbn-rho (must be in [0, 1])" << Qt::endl;
+        QTextStream(stderr) << "invalid --galloping-tssbn-rho (must be in [0, 1])" << Qt::endl;
+        return 1;
+    }
+    QString aerodynamicTangentModeText = QStringLiteral("every-newton");
+    int tangentModeIndex = arguments.indexOf(QStringLiteral("--galloping-aero-tangent"));
+    if (tangentModeIndex >= 0)
+    {
+        if (tangentModeIndex + 1 >= arguments.size())
+            return 1;
+        aerodynamicTangentModeText = arguments.at(tangentModeIndex + 1).trimmed().toLower();
+    }
+    SolverNameSpace::AerodynamicTangentMode aerodynamicTangentMode;
+    if (aerodynamicTangentModeText == QStringLiteral("off"))
+        aerodynamicTangentMode = SolverNameSpace::AerodynamicTangentMode::Disabled;
+    else if (aerodynamicTangentModeText == QStringLiteral("step") ||
+             aerodynamicTangentModeText == QStringLiteral("stage"))
+        aerodynamicTangentMode = SolverNameSpace::AerodynamicTangentMode::OncePerTimeStepOrStage;
+    else if (aerodynamicTangentModeText == QStringLiteral("every-newton"))
+        aerodynamicTangentMode = SolverNameSpace::AerodynamicTangentMode::EveryNewtonIteration;
+    else
+    {
+        QTextStream(stderr) << "invalid --galloping-aero-tangent (off|step|every-newton)" << Qt::endl;
         return 1;
     }
     QString gallopingSolver = QStringLiteral("both");
@@ -3268,26 +3045,25 @@ std::optional<int> verifyConductorGallopingDynamics(
             return 1;
         gallopingSolver = arguments.at(solverOptionIndex + 1).trimmed().toLower();
     }
-    const bool runNewmark = gallopingSolver == QStringLiteral("both")
-        || gallopingSolver == QStringLiteral("newmark");
-    const bool runTssbn = gallopingSolver == QStringLiteral("both")
-        || gallopingSolver == QStringLiteral("tssbn");
+    const bool runNewmark = gallopingSolver == QStringLiteral("both") || gallopingSolver == QStringLiteral("newmark");
+    const bool runTssbn = gallopingSolver == QStringLiteral("both") || gallopingSolver == QStringLiteral("tssbn");
+    const bool disableAerodynamicLoad = arguments.contains(QStringLiteral("--galloping-disable-aero"));
+    const bool enableStructuralDamping = arguments.contains(QStringLiteral("--galloping-structural-damping"));
+    const bool streamResult = arguments.contains(QStringLiteral("--galloping-stream-result"));
+    const bool exportOnly = arguments.contains(QStringLiteral("--galloping-export-only"));
     if (!runNewmark && !runTssbn)
     {
-        QTextStream(stderr) << "invalid --galloping-solver (both|newmark|tssbn)"
-                            << Qt::endl;
+        QTextStream(stderr) << "invalid --galloping-solver (both|newmark|tssbn)" << Qt::endl;
         return 1;
     }
 
     QString gallopingWindDirection = QStringLiteral("-y");
-    const int windDirectionIndex = arguments.indexOf(
-        QStringLiteral("--galloping-wind-direction"));
+    const int windDirectionIndex = arguments.indexOf(QStringLiteral("--galloping-wind-direction"));
     if (windDirectionIndex >= 0)
     {
         if (windDirectionIndex + 1 >= arguments.size())
             return 1;
-        gallopingWindDirection =
-            arguments.at(windDirectionIndex + 1).trimmed().toLower();
+        gallopingWindDirection = arguments.at(windDirectionIndex + 1).trimmed().toLower();
     }
     Eigen::Vector3d windDirection = Eigen::Vector3d::Zero();
     if (gallopingWindDirection == QStringLiteral("+y"))
@@ -3300,15 +3076,12 @@ std::optional<int> verifyConductorGallopingDynamics(
         windDirection = -Eigen::Vector3d::UnitZ();
     else
     {
-        QTextStream(stderr)
-            << "invalid --galloping-wind-direction (+y|-y|+z|-z)"
-            << Qt::endl;
+        QTextStream(stderr) << "invalid --galloping-wind-direction (+y|-y|+z|-z)" << Qt::endl;
         return 1;
     }
 
     QString spacerMode = QStringLiteral("beam");
-    const int spacerModeIndex = arguments.indexOf(
-        QStringLiteral("--galloping-spacer-mode"));
+    const int spacerModeIndex = arguments.indexOf(QStringLiteral("--galloping-spacer-mode"));
     if (spacerModeIndex >= 0)
     {
         if (spacerModeIndex + 1 >= arguments.size())
@@ -3316,34 +3089,25 @@ std::optional<int> verifyConductorGallopingDynamics(
         spacerMode = arguments.at(spacerModeIndex + 1).trimmed().toLower();
     }
     const Conductor::InnerSpacerStyle spacerStyle =
-        spacerMode == QStringLiteral("beam")
-        ? Conductor::InnerSpacerStyle::CenterBraced
-        : spacerMode == QStringLiteral("outer")
-        ? Conductor::InnerSpacerStyle::OuterPolygon
-        : spacerMode == QStringLiteral("mpc")
-        ? Conductor::InnerSpacerStyle::RigidCenterMPC
-        : Conductor::InnerSpacerStyle::OuterPolygon;
-    if (spacerMode != QStringLiteral("beam")
-        && spacerMode != QStringLiteral("outer")
-        && spacerMode != QStringLiteral("mpc"))
+        spacerMode == QStringLiteral("beam")    ? Conductor::InnerSpacerStyle::CenterBraced
+        : spacerMode == QStringLiteral("outer") ? Conductor::InnerSpacerStyle::OuterPolygon
+        : spacerMode == QStringLiteral("mpc")   ? Conductor::InnerSpacerStyle::RigidCenterMPC
+                                                : Conductor::InnerSpacerStyle::OuterPolygon;
+    if (spacerMode != QStringLiteral("beam") && spacerMode != QStringLiteral("outer") &&
+        spacerMode != QStringLiteral("mpc"))
     {
-        QTextStream(stderr)
-            << "invalid --galloping-spacer-mode (beam|outer|mpc)" << Qt::endl;
+        QTextStream(stderr) << "invalid --galloping-spacer-mode (beam|outer|mpc)" << Qt::endl;
         return 1;
     }
 
-    // A dependent dynamic branch inherits its static source and its own
-    // definitions, but never an earlier sibling dynamic merely because that
-    // sibling has a smaller ID.
+    // 关联动力分支继承其静力来源和自身定义，不能仅因其他同级动力分支编号较小就继承其定义。
     AnalysisStep branchScopeProbe;
     branchScopeProbe.m_Id = 3;
     branchScopeProbe.m_Type = EnumKeyword::StepType::DYNAMIC;
     branchScopeProbe.m_InitialStaticStepId = 1;
-    if (!branchScopeProbe.IsStepScopedDataActive(0)
-        || !branchScopeProbe.IsStepScopedDataActive(1)
-        || branchScopeProbe.IsStepScopedDataActive(2)
-        || !branchScopeProbe.IsStepScopedDataActive(3)
-        || branchScopeProbe.IsStepScopedDataActive(4))
+    if (!branchScopeProbe.IsStepScopedDataActive(0) || !branchScopeProbe.IsStepScopedDataActive(1) ||
+        branchScopeProbe.IsStepScopedDataActive(2) || !branchScopeProbe.IsStepScopedDataActive(3) ||
+        branchScopeProbe.IsStepScopedDataActive(4))
     {
         QTextStream(stderr) << "dynamic branch step scope isolation failed" << Qt::endl;
         return 2;
@@ -3353,38 +3117,33 @@ std::optional<int> verifyConductorGallopingDynamics(
     QString libraryError;
     if (!library.load(libraryError) || !library.isReady())
     {
-        QTextStream(stderr) << "conductor property library failed: "
-                            << libraryError << Qt::endl;
+        QTextStream(stderr) << "conductor property library failed: " << libraryError << Qt::endl;
         return 1;
     }
 
-    const auto solve = [
-        &library, &exportPath, gallopingDuration, initialAttackDegrees,
-        gallopingIceThickness, runNewmark, runTssbn, spacerStyle,
-        windDirection, &historyPath, historyInterval, tssbnSpectralRadius](
-                                                SolverNameSpace::SolverType solverType,
-                                                double& maximumDisplacement,
-                                                double& inheritanceGap,
-                                                double& dynamicMilliseconds,
-                                                double& maximumMpcGap)
+    const auto solve = [&library, &exportPath, gallopingDuration, initialAttackDegrees, gallopingIceThickness,
+                        gallopingBundleCount, gallopingMaximumTimeStep, runNewmark, runTssbn, spacerStyle,
+                        windDirection, &historyPath, historyInterval,
+                         tssbnSpectralRadius, aerodynamicTangentMode, disableAerodynamicLoad,
+                         enableStructuralDamping, streamResult, exportOnly](SolverNameSpace::SolverType solverType,
+                                              double& maximumDisplacement,
+                                             double& inheritanceGap, double& dynamicMilliseconds, double& maximumMpcGap,
+                                             int& acceptedSteps, double& averageAcceptedStep, int& maximumIterations)
     {
         QTemporaryDir outputDirectory;
         ConductorModule module;
         module.setPropertyLibrary(&library);
-        const int cableIndex = module.elementCombo()->findData(
-            static_cast<int>(EnumKeyword::ElementType::CABLE));
-        const int bundleIndex = module.bundleCombo()->findData(4);
-        auto* spacerStyleCombo = module.findChild<QComboBox*>(
-            QStringLiteral("spacerStyleCombo"));
-        auto* endTopologyCombo = module.findChild<QComboBox*>(
-            QStringLiteral("endTopologyCombo"));
-        const int spacerStyleIndex = spacerStyleCombo
-            ? spacerStyleCombo->findData(static_cast<int>(spacerStyle)) : -1;
-        const int directEndIndex = endTopologyCombo
-            ? endTopologyCombo->findData(static_cast<int>(
-                Conductor::BundleEndTopology::DirectWireSupports)) : -1;
-        if (!outputDirectory.isValid() || cableIndex < 0 || bundleIndex < 0
-            || spacerStyleIndex < 0 || directEndIndex < 0)
+        const int cableIndex = module.elementCombo()->findData(static_cast<int>(EnumKeyword::ElementType::CABLE));
+        const int bundleIndex = module.bundleCombo()->findData(gallopingBundleCount);
+        auto* spacerStyleCombo = module.findChild<QComboBox*>(QStringLiteral("spacerStyleCombo"));
+        auto* endTopologyCombo = module.findChild<QComboBox*>(QStringLiteral("endTopologyCombo"));
+        const int spacerStyleIndex = spacerStyleCombo ? spacerStyleCombo->findData(static_cast<int>(spacerStyle)) : -1;
+        const int directEndIndex =
+            endTopologyCombo
+                ? endTopologyCombo->findData(static_cast<int>(Conductor::BundleEndTopology::DirectWireSupports))
+                : -1;
+        if (!outputDirectory.isValid() || cableIndex < 0 || bundleIndex < 0 || spacerStyleIndex < 0 ||
+            directEndIndex < 0)
         {
             QTextStream(stderr) << "conductor galloping setup failed" << Qt::endl;
             return false;
@@ -3393,8 +3152,7 @@ std::optional<int> verifyConductorGallopingDynamics(
         module.elementCombo()->setCurrentIndex(cableIndex);
         module.bundleCombo()->setCurrentIndex(bundleIndex);
         module.segmentsSpin()->setValue(50);
-        // Use four distinct equal-spacing stations for the dynamic topology
-        // comparison, so both modes use identical spacer stations.
+        // 动力拓扑比较采用四个不同的等距位置，保证两种模式使用相同间隔棒位置。
         module.spacerLayoutCombo()->setCurrentIndex(1);
         module.spacerCountSpin()->setValue(4);
         spacerStyleCombo->setCurrentIndex(spacerStyleIndex);
@@ -3403,16 +3161,14 @@ std::optional<int> verifyConductorGallopingDynamics(
         const auto build = module.buildModel(library, outputDirectory.path());
         if (!build.succeeded() || build.structure->m_AnalysisStep.empty())
         {
-            QTextStream(stderr) << "conductor galloping build failed: "
-                                << build.error << Qt::endl;
+            QTextStream(stderr) << "conductor galloping build failed: " << build.error << Qt::endl;
             return false;
         }
 
         const auto structure = build.structure;
         const int staticStepId = structure->m_AnalysisStep.begin()->first;
-        // Keep the generated 0.01 static load increment.  The rigid MPC
-        // variant has the same equilibrium path but is less tolerant of the
-        // coarse 0.05 increment previously used by this short verification.
+        // 保留生成的 0.01 静力荷载增量。刚性 MPC 方案具有相同平衡路径，但对旧版短验证采用的
+        // 0.05 粗增量更敏感。
         AnalysisStepConfig dynamicConfig;
         dynamicConfig.id = structure->m_AnalysisStep.rbegin()->first + 1;
         dynamicConfig.name = QStringLiteral("verification dynamics");
@@ -3423,35 +3179,39 @@ std::optional<int> verifyConductorGallopingDynamics(
         dynamicConfig.maxIterations = 48;
         dynamicConfig.dynamicSolverType = solverType;
         dynamicConfig.initialStaticStepId = staticStepId;
-        dynamicConfig.enableGalloping = true;
+        dynamicConfig.enableGalloping = !disableAerodynamicLoad;
+        dynamicConfig.structuralDamping.enabled = enableStructuralDamping;
+        dynamicConfig.structuralDamping.translationDampingRatio = 0.005;
+        dynamicConfig.structuralDamping.torsionDampingRatio = 0.038;
+        dynamicConfig.structuralDamping.maximumFrequencyHz = 3.0;
         dynamicConfig.gallopingIceThickness = gallopingIceThickness;
         dynamicConfig.gallopingInitialAttackDegrees = initialAttackDegrees;
         dynamicConfig.adaptiveTssbn.minimumTimeStep = 1.0e-5;
-        dynamicConfig.adaptiveTssbn.maximumTimeStep = 0.005;
-        // Match D:\VS\TSSBN\Wind_method\AnalysisStep.h (SaTSSBNParams)
-        // so the galloping comparison changes the controller parameters only.
+        dynamicConfig.adaptiveTssbn.maximumTimeStep = gallopingMaximumTimeStep;
+        // 与 D:\VS\TSSBN\Wind_method\AnalysisStep.h（SaTSSBNParams）保持一致，
+        // 使舞动比较只改变控制器参数。
         dynamicConfig.adaptiveTssbn.relativeTolerance = 5.0e-4;
         dynamicConfig.adaptiveTssbn.absoluteTolerance = 1.0e-6;
         dynamicConfig.adaptiveTssbn.targetNewtonIterations = 8;
         dynamicConfig.adaptiveTssbn.spectralRadiusInfinity = tssbnSpectralRadius;
+        dynamicConfig.gallopingAerodynamicTangentMode = aerodynamicTangentMode;
         structure->AddAnalysisStep(dynamicConfig);
 
         auto wind = std::make_shared<Force_Wind>();
-        wind->m_Id = structure->m_Load.empty()
-            ? 1 : structure->m_Load.rbegin()->first + 1;
+        wind->m_Id = structure->m_Load.empty() ? 1 : structure->m_Load.rbegin()->first + 1;
         wind->m_Name = QStringLiteral("verification galloping wind");
         wind->m_StepId = dynamicConfig.id;
         wind->m_velocity = 14.0;
         wind->m_direction = windDirection;
         wind->m_windDensity = 1.225;
-        structure->m_Load.emplace(wind->m_Id, wind);
+        if (!disableAerodynamicLoad)
+            structure->m_Load.emplace(wind->m_Id, wind);
 
-        // BDF does not have fields for conductor aerodynamic tags or adaptive
-        // TSSBN settings.  Export the configured model in HDF5 before solving
-        // so it can be re-opened without losing the galloping definition.
-        const bool exportThisSolver = !exportPath.isEmpty()
-            && ((runNewmark != runTssbn)
-                || solverType == SolverNameSpace::SolverType::AdaptiveTSSBN);
+        // BDF 不含导线气动标签和自适应 TSSBN 设置字段，因此求解前先导出 HDF5 配置模型，
+        // 保证重新打开时不丢失舞动定义。
+        const bool exportThisSolver =
+            !exportPath.isEmpty() &&
+            ((runNewmark != runTssbn) || solverType == SolverNameSpace::SolverType::AdaptiveTSSBN);
         if (exportThisSolver)
         {
             Hdf5ModelIO hdf5;
@@ -3459,76 +3219,72 @@ std::optional<int> verifyConductorGallopingDynamics(
                                       QStringLiteral("ice galloping conductor - adaptive TSSBN")))
                 return false;
         }
+        if (exportOnly)
+        {
+            maximumDisplacement = 1.0;
+            inheritanceGap = 0.0;
+            return true;
+        }
 
-        QString dynamicResultPath = outputDirectory.filePath(
-            QStringLiteral("verification_chain.h5"));
+        QString dynamicResultPath = outputDirectory.filePath(QStringLiteral("verification_chain.h5"));
         if (exportThisSolver)
         {
             const QFileInfo modelFile(exportPath);
-            dynamicResultPath = modelFile.dir().filePath(
-                modelFile.completeBaseName() + QStringLiteral("_result.h5"));
+            dynamicResultPath = modelFile.dir().filePath(modelFile.completeBaseName() + QStringLiteral("_result.h5"));
         }
         structure->m_OutputControl.m_Hdf5FileName = dynamicResultPath;
-        structure->m_OutputControl.m_StreamResult = false;
+        structure->m_OutputControl.m_StreamResult = streamResult;
 
-        // Solve an independent reference copy of the equilibrium step.  The
-        // actual dynamic task below must reproduce this accepted state in its
-        // t=0 frame without publishing the static frames into the dynamic H5.
+        // 独立求解平衡分析步的参考副本。后续实际动力任务必须在 t=0 帧复现该收敛状态，
+        // 但不能把静力帧写入动力 H5。
         QString referenceCloneError;
         auto equilibriumReference = structure->CloneForAnalysis(&referenceCloneError);
         if (!equilibriumReference)
         {
-            QTextStream(stderr) << "conductor equilibrium clone failed: "
-                                << referenceCloneError << Qt::endl;
+            QTextStream(stderr) << "conductor equilibrium clone failed: " << referenceCloneError << Qt::endl;
             return false;
         }
-        equilibriumReference->m_OutputControl.m_Hdf5FileName = outputDirectory.filePath(
-            QStringLiteral("verification_static_reference.h5"));
-        const auto equilibriumStep =
-            equilibriumReference->m_AnalysisStep.at(staticStepId);
+        equilibriumReference->m_OutputControl.m_Hdf5FileName =
+            outputDirectory.filePath(QStringLiteral("verification_static_reference.h5"));
+        const auto equilibriumStep = equilibriumReference->m_AnalysisStep.at(staticStepId);
         equilibriumStep->SetStructure(equilibriumReference);
         if (!equilibriumStep->Solve(false))
         {
-            QTextStream(stderr) << "conductor equilibrium reference solve failed"
-                                << Qt::endl;
+            QTextStream(stderr) << "conductor equilibrium reference solve failed" << Qt::endl;
             return false;
         }
         const DataFrame* finalStaticFrame = nullptr;
         for (const DataFrame& frame : equilibriumReference->GetOutputter().GetFrames())
         {
-            if (frame.GetStepId() == staticStepId
-                && (!finalStaticFrame || frame.GetTime() > finalStaticFrame->GetTime()))
+            if (frame.GetStepId() == staticStepId &&
+                (!finalStaticFrame || frame.GetTime() > finalStaticFrame->GetTime()))
             {
                 finalStaticFrame = &frame;
             }
         }
         if (!finalStaticFrame)
         {
-            QTextStream(stderr) << "conductor equilibrium reference has no frame"
-                                << Qt::endl;
+            QTextStream(stderr) << "conductor equilibrium reference has no frame" << Qt::endl;
             return false;
         }
 
-        // Keep the standalone equilibrium output away from the requested
-        // dynamic result file.  Otherwise the static writer creates the H5
-        // first and the subsequent dynamic clone may leave a file containing
-        // only step 1, which is misleading for long-duration galloping checks.
-        structure->m_OutputControl.m_Hdf5FileName = outputDirectory.filePath(
-            QStringLiteral("verification_standalone_static.h5"));
+        // 独立平衡结果不能写入指定的动力结果文件，否则静力写入器会先创建 H5，后续动力副本可能
+        // 留下仅含分析步 1 的文件，误导长时间舞动检查。
+        structure->m_OutputControl.m_Hdf5FileName =
+            outputDirectory.filePath(QStringLiteral("verification_standalone_static.h5"));
         const auto staticStep = structure->m_AnalysisStep.at(staticStepId);
         staticStep->SetStructure(structure);
         if (!staticStep->Solve(false))
         {
             QTextStream(stderr) << "conductor standalone equilibrium task failed"
-                << " solver=" << static_cast<int>(solverType) << Qt::endl;
+                                << " solver=" << static_cast<int>(solverType) << Qt::endl;
             return false;
         }
         QString inheritedCloneError;
         auto dynamicStructure = structure->CloneForAnalysis(&inheritedCloneError);
         if (!dynamicStructure)
         {
-            QTextStream(stderr) << "conductor dynamic clone failed: "
-                                << inheritedCloneError << Qt::endl;
+            QTextStream(stderr) << "conductor dynamic clone failed: " << inheritedCloneError << Qt::endl;
             return false;
         }
         dynamicStructure->GetOutputter().Clear();
@@ -3537,13 +3293,11 @@ std::optional<int> verifyConductorGallopingDynamics(
         if (!historyPath.isEmpty() && runNewmark && runTssbn)
         {
             const QFileInfo historyInfo(historyPath);
-            const QString suffix = solverType == SolverNameSpace::SolverType::Newmark
-                ? QStringLiteral("_newmark") : QStringLiteral("_tssbn");
+            const QString suffix = solverType == SolverNameSpace::SolverType::Newmark ? QStringLiteral("_newmark")
+                                                                                      : QStringLiteral("_tssbn");
             solverHistoryPath = historyInfo.dir().filePath(
-                historyInfo.completeBaseName() + suffix
-                + (historyInfo.suffix().isEmpty()
-                    ? QStringLiteral(".csv")
-                    : QStringLiteral(".") + historyInfo.suffix()));
+                historyInfo.completeBaseName() + suffix +
+                (historyInfo.suffix().isEmpty() ? QStringLiteral(".csv") : QStringLiteral(".") + historyInfo.suffix()));
         }
 
         std::shared_ptr<Node> historyNode;
@@ -3584,15 +3338,17 @@ std::optional<int> verifyConductorGallopingDynamics(
             if (!historyFile.open(QIODevice::WriteOnly | QIODevice::Text))
                 return false;
             historyStream = std::make_unique<QTextStream>(&historyFile);
-            *historyStream << "time,node_id,ux,uy,uz\n";
+            *historyStream << "time,node_id,ux,uy,uz,twist,twist_rate\n";
             const auto displacement = [&historyNode](int component)
             {
                 return component < static_cast<int>(historyNode->m_Displacement.size())
-                    ? historyNode->m_Displacement[component] : 0.0;
+                           ? historyNode->m_Displacement[component]
+                           : 0.0;
             };
-            *historyStream << 0.0 << ',' << historyNode->m_Id << ','
-                           << displacement(0) << ',' << displacement(1) << ','
-                           << displacement(2) << '\n';
+            const double twist = historyNode->m_Displacement.size() > 3 ? historyNode->m_Displacement[3] : 0.0;
+            const double twistRate = historyNode->m_Velocity.size() > 3 ? historyNode->m_Velocity[3] : 0.0;
+            *historyStream << 0.0 << ',' << historyNode->m_Id << ',' << displacement(0) << ',' << displacement(1) << ','
+                           << displacement(2) << ',' << twist << ',' << twistRate << '\n';
             nextHistoryTime = historyInterval;
         }
 
@@ -3607,14 +3363,14 @@ std::optional<int> verifyConductorGallopingDynamics(
                     continue;
                 for (int component = 0; component < 3; ++component)
                 {
-                    const double current = component < static_cast<int>(
-                        nodeIt->second->m_Displacement.size())
-                        ? nodeIt->second->m_Displacement[component] : 0.0;
+                    const double current = component < static_cast<int>(nodeIt->second->m_Displacement.size())
+                                               ? nodeIt->second->m_Displacement[component]
+                                               : 0.0;
                     const auto resultType = static_cast<EnumKeyword::NodeResultType>(
                         static_cast<int>(EnumKeyword::NodeResultType::U1) + component);
-                    lightweightInheritanceGap = std::max(
-                        lightweightInheritanceGap, std::abs(
-                            finalStaticFrame->GetNodeData(nodeId, resultType) - current));
+                    lightweightInheritanceGap =
+                        std::max(lightweightInheritanceGap,
+                                 std::abs(finalStaticFrame->GetNodeData(nodeId, resultType) - current));
                 }
             }
         }
@@ -3624,38 +3380,43 @@ std::optional<int> verifyConductorGallopingDynamics(
         dynamicTimer.start();
         if (historyNode)
         {
-            // Long verification histories retain the original integration
-            // time step but sample only one mid-span node.  No production
-            // solver, element, load, or model-output behavior is changed.
+            // 长时间验证保留原积分时间步，但只采样一个跨中节点，不改变正式求解器、单元、荷载或模型输出行为。
             dynamicStructure->m_OutputControl.m_StreamResult = true;
-            const auto dynamicStep =
-                dynamicStructure->m_AnalysisStep.at(dynamicConfig.id);
+            const auto dynamicStep = dynamicStructure->m_AnalysisStep.at(dynamicConfig.id);
             dynamicStep->SetStructure(dynamicStructure);
             dynamicStep->SetInitializeFromCurrentState(true);
             dynamicStep->SetRuntimeCallbacks(
-                [&](double progress, const QString&)
+                [&](double progress, const QString& status)
                 {
                     const double currentTime = progress * gallopingDuration;
                     const auto displacement = [&historyNode](int component)
                     {
                         return component < static_cast<int>(historyNode->m_Displacement.size())
-                            ? historyNode->m_Displacement[component] : 0.0;
+                                   ? historyNode->m_Displacement[component]
+                                   : 0.0;
                     };
-                    maximumDisplacement = std::max(maximumDisplacement,
-                        std::sqrt(displacement(0) * displacement(0)
-                                  + displacement(1) * displacement(1)
-                                  + displacement(2) * displacement(2)));
+                    maximumDisplacement = std::max(maximumDisplacement, std::sqrt(displacement(0) * displacement(0) +
+                                                                                  displacement(1) * displacement(1) +
+                                                                                  displacement(2) * displacement(2)));
                     if (currentTime + 1.0e-10 >= nextHistoryTime)
                     {
-                        *historyStream << currentTime << ',' << historyNode->m_Id
-                                       << ',' << displacement(0)
-                                       << ',' << displacement(1)
-                                       << ',' << displacement(2) << '\n';
+                        const double twist =
+                            historyNode->m_Displacement.size() > 3 ? historyNode->m_Displacement[3] : 0.0;
+                        const double twistRate = historyNode->m_Velocity.size() > 3 ? historyNode->m_Velocity[3] : 0.0;
+                        *historyStream << currentTime << ',' << historyNode->m_Id << ',' << displacement(0) << ','
+                                       << displacement(1) << ',' << displacement(2) << ',' << twist << ',' << twistRate
+                                       << '\n';
                         nextHistoryTime += historyInterval;
                     }
+                    if (!status.isEmpty() && status.contains(QStringLiteral("失败")))
+                        QTextStream(stderr) << status << Qt::endl;
                 },
-                []() { return false; });
-            dynamicSolved = dynamicStep->Solve(false);
+                []()
+                {
+                    return false;
+                });
+            // 导出验证模型时，在采样轻量 CSV 历程的同时生成对应动力 H5，覆盖与界面相同的流式写入和结束路径。
+            dynamicSolved = dynamicStep->Solve(exportThisSolver);
             dynamicStep->ClearRuntimeCallbacks();
             historyStream->flush();
         }
@@ -3663,26 +3424,126 @@ std::optional<int> verifyConductorGallopingDynamics(
         {
             AnalysisRunner dynamicRunner;
             dynamicRunner.SetStructure(dynamicStructure);
-            dynamicRunner.SetRuntimeCallbacks({}, []() { return false; });
+            dynamicRunner.SetRuntimeCallbacks({},
+                                              []()
+                                              {
+                                                  return false;
+                                              });
             dynamicSolved = dynamicRunner.RunStepFromCurrentState(dynamicConfig.id);
         }
         if (!dynamicSolved)
         {
+            double maximumTwistResidual = 0.0;
+            double minimumRelativeQuaternionScalar = 1.0;
+            double maximumStepRotation = 0.0;
+            double minimumAeroKnotDistance = 180.0;
+            double minimumAttackAngle = 360.0;
+            double maximumAttackAngle = 0.0;
+            for (const auto& [mpcId, constraint] : dynamicStructure->m_MPCConstraints)
+            {
+                Q_UNUSED(mpcId);
+                const auto twist = std::dynamic_pointer_cast<AxialTwistTieMPCConstraint>(constraint);
+                if (!twist)
+                    continue;
+                const auto master = twist->m_pMasterNode.lock();
+                const auto slave = twist->m_pSlaveNode.lock();
+                if (!master || !slave || twist->m_SlaveDirection >= static_cast<int>(slave->m_Displacement.size()))
+                    continue;
+                const double previousSlaveTwist =
+                    twist->m_SlaveDirection < static_cast<int>(slave->m_Displacement_n.size())
+                        ? slave->m_Displacement_n[twist->m_SlaveDirection]
+                        : 0.0;
+                const Eigen::Matrix3d relativeRotation = master->m_Rg * master->m_Rg_n.transpose();
+                const double twistResidual = slave->m_Displacement[twist->m_SlaveDirection] - previousSlaveTwist -
+                                             Utility::CR::ExtractAxialTwist(relativeRotation, twist->m_Axis);
+                maximumTwistResidual = std::max(maximumTwistResidual, std::abs(twistResidual));
+                const Eigen::Quaterniond quaternion(relativeRotation);
+                minimumRelativeQuaternionScalar =
+                    std::min(minimumRelativeQuaternionScalar, std::abs(quaternion.w()));
+                Vector3d rotation;
+                Utility::CR::Extract_RotationVector(relativeRotation, rotation);
+                maximumStepRotation = std::max(maximumStepRotation, rotation.norm());
+            }
+            const Force_Wind* dynamicWind = nullptr;
+            for (const auto& [loadId, load] : dynamicStructure->m_Load)
+            {
+                Q_UNUSED(loadId);
+                const auto wind = std::dynamic_pointer_cast<Force_Wind>(load);
+                if (wind && wind->m_StepId == dynamicConfig.id)
+                {
+                    dynamicWind = wind.get();
+                    break;
+                }
+            }
+            if (dynamicWind)
+            {
+                for (const auto& [elementId, element] : dynamicStructure->m_Elements)
+                {
+                    Q_UNUSED(elementId);
+                    const auto cable = std::dynamic_pointer_cast<ElementCable>(element);
+                    if (!cable || !cable->HasAerodynamicLoad() || cable->m_pNode.size() != 2)
+                        continue;
+                    const auto first = cable->m_pNode[0].lock();
+                    const auto second = cable->m_pNode[1].lock();
+                    const auto property = cable->m_pProperty.lock();
+                    const auto section = property ? property->m_pSection.lock() : nullptr;
+                    if (!first || !second || !section)
+                        continue;
+                    AerodynamicSectionState state;
+                    state.firstPosition = Vector3d(first->m_X + first->m_Displacement[0],
+                                                   first->m_Y + first->m_Displacement[1],
+                                                   first->m_Z + first->m_Displacement[2]);
+                    state.secondPosition = Vector3d(second->m_X + second->m_Displacement[0],
+                                                    second->m_Y + second->m_Displacement[1],
+                                                    second->m_Z + second->m_Displacement[2]);
+                    state.firstVelocity = Vector3d(first->m_Velocity[0], first->m_Velocity[1], first->m_Velocity[2]);
+                    state.secondVelocity =
+                        Vector3d(second->m_Velocity[0], second->m_Velocity[1], second->m_Velocity[2]);
+                    state.windVelocity = dynamicWind->GetWindVelocityGlobal();
+                    state.radius = section->m_Radius;
+                    state.initialAttack = initialAttackDegrees * std::acos(-1.0) / 180.0;
+                    state.firstTwist = cable->GetNodalTwist(0);
+                    state.secondTwist = cable->GetNodalTwist(1);
+                    state.firstTwistRate = cable->GetNodalTwistRate(0);
+                    state.secondTwistRate = cable->GetNodalTwistRate(1);
+                    const AerodynamicSectionResult aero = AerodynamicLoadCalculator::ComputeKinematics(state);
+                    const double attackDegrees = AeroManager::normalizeAngleDegrees(
+                        aero.attackAngle * 180.0 / std::acos(-1.0));
+                    minimumAttackAngle = std::min(minimumAttackAngle, attackDegrees);
+                    maximumAttackAngle = std::max(maximumAttackAngle, attackDegrees);
+                    const double knotDistance = std::abs(attackDegrees - 5.0 * std::round(attackDegrees / 5.0));
+                    minimumAeroKnotDistance = std::min(minimumAeroKnotDistance, knotDistance);
+                }
+            }
             QTextStream(stderr) << "conductor dynamic task failed after equilibrium inheritance"
-                << " solver=" << static_cast<int>(solverType)
-                << " regions=" << dynamicStructure->m_ComputeRegions.size()
-                << " nodes=" << dynamicStructure->m_Nodes.size()
-                << " elements=" << dynamicStructure->m_Elements.size() << Qt::endl;
+                                << " solver=" << static_cast<int>(solverType)
+                                << " regions=" << dynamicStructure->m_ComputeRegions.size()
+                                << " nodes=" << dynamicStructure->m_Nodes.size()
+                                << " elements=" << dynamicStructure->m_Elements.size()
+                                << " max_twist_residual=" << maximumTwistResidual
+                                << " min_relative_quaternion_scalar=" << minimumRelativeQuaternionScalar
+                                << " max_step_rotation=" << maximumStepRotation
+                                << " min_aero_knot_distance_deg=" << minimumAeroKnotDistance
+                                << " attack_range_deg=[" << minimumAttackAngle << ',' << maximumAttackAngle << ']'
+                                << Qt::endl;
             return false;
         }
         dynamicMilliseconds = dynamicTimer.elapsed();
+        acceptedSteps = 0;
+        maximumIterations = 0;
+        for (const SolverIterationRecord& record : dynamicStructure->GetOutputter().GetSolverIterationRecords())
+        {
+            if (record.stepId != dynamicConfig.id)
+                continue;
+            ++acceptedSteps;
+            maximumIterations = std::max(maximumIterations, record.iterations);
+        }
+        averageAcceptedStep = acceptedSteps > 0 ? gallopingDuration / static_cast<double>(acceptedSteps) : 0.0;
         maximumMpcGap = 0.0;
-        for (const auto& [mpcId, constraint] :
-             dynamicStructure->m_MPCConstraints)
+        for (const auto& [mpcId, constraint] : dynamicStructure->m_MPCConstraints)
         {
             Q_UNUSED(mpcId);
-            const auto rigid =
-                std::dynamic_pointer_cast<RigidOffsetMPCConstraint>(constraint);
+            const auto rigid = std::dynamic_pointer_cast<RigidOffsetMPCConstraint>(constraint);
             if (!rigid)
                 continue;
             const auto master = rigid->m_pMasterNode.lock();
@@ -3690,17 +3551,16 @@ std::optional<int> verifyConductorGallopingDynamics(
             if (!master || !slave)
                 return false;
             const auto currentPosition = [](const Node& node)
-                {
-                    Vector3d position(node.m_X, node.m_Y, node.m_Z);
-                    for (int direction = 0; direction < 3 &&
-                         direction < static_cast<int>(node.m_Displacement.size());
-                         ++direction)
-                        position[direction] += node.m_Displacement[direction];
-                    return position;
-                };
-            maximumMpcGap = std::max(maximumMpcGap,
-                (currentPosition(*slave) - currentPosition(*master)
-                    - master->m_Rg * rigid->m_Offset).norm());
+            {
+                Vector3d position(node.m_X, node.m_Y, node.m_Z);
+                for (int direction = 0; direction < 3 && direction < static_cast<int>(node.m_Displacement.size());
+                     ++direction)
+                    position[direction] += node.m_Displacement[direction];
+                return position;
+            };
+            maximumMpcGap =
+                std::max(maximumMpcGap,
+                         (currentPosition(*slave) - currentPosition(*master) - master->m_Rg * rigid->m_Offset).norm());
         }
         if (!historyNode)
             maximumDisplacement = 0.0;
@@ -3709,8 +3569,7 @@ std::optional<int> verifyConductorGallopingDynamics(
         bool publishedStaticFrame = false;
         for (const DataFrame& frame : dynamicStructure->GetOutputter().GetFrames())
         {
-            publishedStaticFrame = publishedStaticFrame
-                || frame.GetStepId() == staticStepId;
+            publishedStaticFrame = publishedStaticFrame || frame.GetStepId() == staticStepId;
             if (frame.GetStepId() != dynamicConfig.id)
                 continue;
             if (!initialDynamicFrame || frame.GetTime() < initialDynamicFrame->GetTime())
@@ -3721,8 +3580,7 @@ std::optional<int> verifyConductorGallopingDynamics(
                 const double u1 = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::U1);
                 const double u2 = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::U2);
                 const double u3 = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::U3);
-                maximumDisplacement = std::max(
-                    maximumDisplacement, std::sqrt(u1 * u1 + u2 * u2 + u3 * u3));
+                maximumDisplacement = std::max(maximumDisplacement, std::sqrt(u1 * u1 + u2 * u2 + u3 * u3));
             }
         }
         if (historyNode)
@@ -3735,21 +3593,18 @@ std::optional<int> verifyConductorGallopingDynamics(
             for (const auto& [nodeId, nodeData] : finalStaticFrame->GetNodeDatas())
             {
                 Q_UNUSED(nodeData);
-                if (initialDynamicFrame->GetNodeDatas().find(nodeId)
-                    == initialDynamicFrame->GetNodeDatas().cend())
+                if (initialDynamicFrame->GetNodeDatas().find(nodeId) == initialDynamicFrame->GetNodeDatas().cend())
                     continue;
-                for (const auto component : {EnumKeyword::NodeResultType::U1,
-                                             EnumKeyword::NodeResultType::U2,
+                for (const auto component : {EnumKeyword::NodeResultType::U1, EnumKeyword::NodeResultType::U2,
                                              EnumKeyword::NodeResultType::U3})
                 {
-                    inheritanceGap = std::max(inheritanceGap, std::abs(
-                        finalStaticFrame->GetNodeData(nodeId, component)
-                        - initialDynamicFrame->GetNodeData(nodeId, component)));
+                    inheritanceGap =
+                        std::max(inheritanceGap, std::abs(finalStaticFrame->GetNodeData(nodeId, component) -
+                                                          initialDynamicFrame->GetNodeData(nodeId, component)));
                 }
             }
         }
-        return std::isfinite(maximumDisplacement)
-            && std::isfinite(inheritanceGap) && inheritanceGap <= 1.0e-10;
+        return std::isfinite(maximumDisplacement) && std::isfinite(inheritanceGap) && inheritanceGap <= 1.0e-10;
     };
 
     double newmarkMaximumDisplacement = 0.0;
@@ -3760,35 +3615,40 @@ std::optional<int> verifyConductorGallopingDynamics(
     double tssbnDynamicMilliseconds = 0.0;
     double newmarkMpcGap = 0.0;
     double tssbnMpcGap = 0.0;
-    const bool newmarkSolved = !runNewmark || solve(
-        SolverNameSpace::SolverType::Newmark, newmarkMaximumDisplacement,
-        newmarkInheritanceGap, newmarkDynamicMilliseconds, newmarkMpcGap);
-    const bool tssbnSolved = !runTssbn || solve(
-        SolverNameSpace::SolverType::AdaptiveTSSBN,
-        tssbnMaximumDisplacement, tssbnInheritanceGap,
-        tssbnDynamicMilliseconds, tssbnMpcGap);
+    int newmarkAcceptedSteps = 0;
+    int tssbnAcceptedSteps = 0;
+    double newmarkAverageStep = 0.0;
+    double tssbnAverageStep = 0.0;
+    int newmarkMaximumIterations = 0;
+    int tssbnMaximumIterations = 0;
+    const bool newmarkSolved = !runNewmark || solve(SolverNameSpace::SolverType::Newmark, newmarkMaximumDisplacement,
+                                                    newmarkInheritanceGap, newmarkDynamicMilliseconds, newmarkMpcGap,
+                                                    newmarkAcceptedSteps, newmarkAverageStep, newmarkMaximumIterations);
+    const bool tssbnSolved = !runTssbn || solve(SolverNameSpace::SolverType::AdaptiveTSSBN, tssbnMaximumDisplacement,
+                                                tssbnInheritanceGap, tssbnDynamicMilliseconds, tssbnMpcGap,
+                                                tssbnAcceptedSteps, tssbnAverageStep, tssbnMaximumIterations);
     const double relativeDifference = runNewmark && runTssbn
-        ? std::abs(tssbnMaximumDisplacement - newmarkMaximumDisplacement)
-            / std::max(1.0e-12, newmarkMaximumDisplacement)
-        : 0.0;
-    QTextStream(stdout)
-        << "conductor galloping duration=" << gallopingDuration
-        << " attack=" << initialAttackDegrees
-        << " ice=" << gallopingIceThickness
-        << " wind_direction=" << gallopingWindDirection
-        << " spacer_mode=" << spacerMode
-        << " solver=" << gallopingSolver
-        << " newmark_solved=" << newmarkSolved
-        << " tssbn_solved=" << tssbnSolved
-        << " newmark_max_displacement=" << newmarkMaximumDisplacement
-        << " newmark_dynamic_ms=" << newmarkDynamicMilliseconds
-        << " newmark_mpc_gap=" << newmarkMpcGap
-        << " tssbn_max_displacement=" << tssbnMaximumDisplacement
-        << " tssbn_dynamic_ms=" << tssbnDynamicMilliseconds
-        << " tssbn_mpc_gap=" << tssbnMpcGap
-        << " newmark_inheritance_gap=" << newmarkInheritanceGap
-        << " tssbn_inheritance_gap=" << tssbnInheritanceGap
-        << " relative_difference=" << relativeDifference << Qt::endl;
+                                          ? std::abs(tssbnMaximumDisplacement - newmarkMaximumDisplacement) /
+                                                std::max(1.0e-12, newmarkMaximumDisplacement)
+                                          : 0.0;
+    QTextStream(stdout) << "conductor galloping duration=" << gallopingDuration << " attack=" << initialAttackDegrees
+                        << " ice=" << gallopingIceThickness << " bundle=" << gallopingBundleCount
+                        << " maximum_step=" << gallopingMaximumTimeStep << " wind_direction=" << gallopingWindDirection
+                        << " spacer_mode=" << spacerMode << " solver=" << gallopingSolver
+                        << " aero_tangent=" << aerodynamicTangentModeText
+                        << " newmark_solved=" << newmarkSolved << " tssbn_solved=" << tssbnSolved
+                        << " newmark_max_displacement=" << newmarkMaximumDisplacement
+                        << " newmark_dynamic_ms=" << newmarkDynamicMilliseconds
+                        << " newmark_steps=" << newmarkAcceptedSteps << " newmark_average_step=" << newmarkAverageStep
+                        << " newmark_max_iterations=" << newmarkMaximumIterations
+                        << " newmark_mpc_gap=" << newmarkMpcGap
+                        << " tssbn_max_displacement=" << tssbnMaximumDisplacement
+                        << " tssbn_dynamic_ms=" << tssbnDynamicMilliseconds << " tssbn_steps=" << tssbnAcceptedSteps
+                        << " tssbn_average_step=" << tssbnAverageStep
+                        << " tssbn_max_iterations=" << tssbnMaximumIterations << " tssbn_mpc_gap=" << tssbnMpcGap
+                        << " newmark_inheritance_gap=" << newmarkInheritanceGap
+                        << " tssbn_inheritance_gap=" << tssbnInheritanceGap
+                        << " relative_difference=" << relativeDifference << Qt::endl;
 
     if (!exportPath.isEmpty())
     {
@@ -3801,6 +3661,7 @@ std::optional<int> verifyConductorGallopingDynamics(
                          << "ice=" << gallopingIceThickness << '\n'
                          << "wind_direction=" << gallopingWindDirection << '\n'
                          << "solver=" << gallopingSolver << '\n'
+                         << "aero_tangent=" << aerodynamicTangentModeText << '\n'
                          << "newmark_solved=" << newmarkSolved << '\n'
                          << "tssbn_solved=" << tssbnSolved << '\n'
                          << "newmark_max_displacement=" << newmarkMaximumDisplacement << '\n'
@@ -3811,10 +3672,11 @@ std::optional<int> verifyConductorGallopingDynamics(
         }
     }
 
-    return newmarkSolved && tssbnSolved
-        && (!runNewmark || newmarkMaximumDisplacement > 0.0)
-        && (!runTssbn || tssbnMaximumDisplacement > 0.0)
-        && (!(runNewmark && runTssbn) || relativeDifference <= 0.05) ? 0 : 2;
+    return newmarkSolved && tssbnSolved && (!runNewmark || newmarkMaximumDisplacement > 0.0) &&
+                   (!runTssbn || tssbnMaximumDisplacement > 0.0) &&
+                   (!(runNewmark && runTssbn) || relativeDifference <= 0.05)
+               ? 0
+               : 2;
 }
 
 std::optional<int> verifySolveTask(QApplication& application, const QStringList& arguments)
@@ -3838,7 +3700,10 @@ std::optional<int> verifySolveTask(QApplication& application, const QStringList&
                 application.exit(2);
         });
     QObject::connect(&modelController, &ModelController::loadFailed,
-                     [&application](const QString&, const QString&) { application.exit(3); });
+                     [&application](const QString&, const QString&)
+                     {
+                         application.exit(3);
+                     });
     QObject::connect(&taskController, &SolveTaskController::taskUpdated,
                      [&taskController, &taskId, &application](int updatedTaskId)
                      {
@@ -3856,7 +3721,11 @@ std::optional<int> verifySolveTask(QApplication& application, const QStringList&
                              << " elapsed_ms=" << info.elapsedMs << " message=" << info.message << Qt::endl;
                          application.exit(info.status == SolveTaskController::Status::Completed ? 0 : 4);
                      });
-    QTimer::singleShot(120000, &application, [&application]() { application.exit(5); });
+    QTimer::singleShot(120000, &application,
+                       [&application]()
+                       {
+                           application.exit(5);
+                       });
     if (!modelController.loadModel(filePath))
         return 1;
     return application.exec();
@@ -3902,33 +3771,36 @@ std::optional<int> verifyStaticDynamicTaskChain(QApplication& application, const
 
     bool staticCompleted = false;
     bool dynamicStartedBeforeStatic = false;
-    QObject::connect(&taskController, &SolveTaskController::taskUpdated,
-        [&taskController, staticTaskId, dynamicTaskId, &staticCompleted,
-            &dynamicStartedBeforeStatic, &application](int taskId)
+    QObject::connect(
+        &taskController, &SolveTaskController::taskUpdated,
+        [&taskController, staticTaskId, dynamicTaskId, &staticCompleted, &dynamicStartedBeforeStatic,
+         &application](int taskId)
         {
             const auto info = taskController.taskInfo(taskId);
             if (taskId == staticTaskId && info.status == SolveTaskController::Status::Completed)
                 staticCompleted = true;
-            if (taskId == dynamicTaskId && info.status == SolveTaskController::Status::Running
-                && !staticCompleted)
+            if (taskId == dynamicTaskId && info.status == SolveTaskController::Status::Running && !staticCompleted)
                 dynamicStartedBeforeStatic = true;
-            if (taskId != dynamicTaskId || (info.status != SolveTaskController::Status::Completed
-                && info.status != SolveTaskController::Status::Failed
-                && info.status != SolveTaskController::Status::Cancelled))
+            if (taskId != dynamicTaskId || (info.status != SolveTaskController::Status::Completed &&
+                                            info.status != SolveTaskController::Status::Failed &&
+                                            info.status != SolveTaskController::Status::Cancelled))
                 return;
 
             const auto staticInfo = taskController.taskInfo(staticTaskId);
-            const bool passed = info.status == SolveTaskController::Status::Completed
-                && staticInfo.status == SolveTaskController::Status::Completed
-                && !dynamicStartedBeforeStatic;
-            QTextStream(stdout) << "task chain static="
-                                << SolveTaskController::statusText(staticInfo.status)
+            const bool passed = info.status == SolveTaskController::Status::Completed &&
+                                staticInfo.status == SolveTaskController::Status::Completed &&
+                                !dynamicStartedBeforeStatic;
+            QTextStream(stdout) << "task chain static=" << SolveTaskController::statusText(staticInfo.status)
                                 << " dynamic=" << SolveTaskController::statusText(info.status)
-                                << " dynamic_started_before_static="
-                                << (dynamicStartedBeforeStatic ? "true" : "false") << Qt::endl;
+                                << " dynamic_started_before_static=" << (dynamicStartedBeforeStatic ? "true" : "false")
+                                << Qt::endl;
             application.exit(passed ? 0 : 5);
         });
-    QTimer::singleShot(120000, &application, [&application]() { application.exit(6); });
+    QTimer::singleShot(120000, &application,
+                       [&application]()
+                       {
+                           application.exit(6);
+                       });
     if (!taskController.start(dynamicTaskId))
         return 7;
     return application.exec();
@@ -3956,7 +3828,10 @@ std::optional<int> verifyPartialResult(QApplication& application, const QStringL
                 application.exit(2);
         });
     QObject::connect(&modelController, &ModelController::loadFailed,
-                     [&application](const QString&, const QString&) { application.exit(3); });
+                     [&application](const QString&, const QString&)
+                     {
+                         application.exit(3);
+                     });
     QObject::connect(
         &taskController, &SolveTaskController::taskUpdated,
         [&taskController, &taskId, &cancellationRequested, &application](int updatedTaskId)
@@ -3982,7 +3857,11 @@ std::optional<int> verifyPartialResult(QApplication& application, const QStringL
                                 << " file=" << info.outputFile << Qt::endl;
             application.exit(info.hasUsableResult && info.partialResult && info.resultFrameCount > 0 ? 0 : 4);
         });
-    QTimer::singleShot(120000, &application, [&application]() { application.exit(5); });
+    QTimer::singleShot(120000, &application,
+                       [&application]()
+                       {
+                           application.exit(5);
+                       });
     if (!modelController.loadModel(filePath))
         return 1;
     return application.exec();
@@ -4046,16 +3925,128 @@ std::optional<int> verifyModelImport(QApplication& application, const QStringLis
                                 << " isolated=" << (isolated ? "true" : "false") << Qt::endl;
             application.exit(loadedCount == expected && failedCount == 0 && cloneFailedCount == 0 && isolated ? 0 : 1);
         });
-    QTimer::singleShot(30000, &application, [&application]() { application.exit(2); });
+    QTimer::singleShot(30000, &application,
+                       [&application]()
+                       {
+                           application.exit(2);
+                       });
     if (files.isEmpty() || controller.loadModels(files) != files.size())
         return 1;
     return application.exec();
 }
+
+std::optional<int> verifyGpuSparseSolver(const QStringList& arguments)
+{
+    if (!arguments.contains(QStringLiteral("--verify-gpu-solver")))
+        return std::nullopt;
+
+    constexpr int dimension = 20000;
+    std::vector<Eigen::Triplet<double>> triplets;
+    triplets.reserve(static_cast<std::size_t>(dimension) * 3);
+    for (int row = 0; row < dimension; ++row)
+    {
+        triplets.emplace_back(row, row, 5.0);
+        if (row > 0)
+            triplets.emplace_back(row, row - 1, -1.0);
+        if (row + 1 < dimension)
+            triplets.emplace_back(row, row + 1, -0.5);
+    }
+    SolverNameSpace::SpMat matrix(dimension, dimension);
+    matrix.setFromTriplets(triplets.begin(), triplets.end());
+    matrix.makeCompressed();
+    const SolverNameSpace::Vec expected = SolverNameSpace::Vec::Ones(dimension);
+    const SolverNameSpace::Vec rhs = matrix * expected;
+
+    const auto solveAndMeasure = [&](SolverNameSpace::CudaSparseSolver& solver, _OUT double& milliseconds)
+    {
+        SolverNameSpace::Vec solution;
+        QElapsedTimer timer;
+        timer.start();
+        const bool solved = solver.Solve(matrix, rhs, solution, 1.0e-11, 500);
+        milliseconds = static_cast<double>(timer.nsecsElapsed()) / 1.0e6;
+        if (!solved)
+            return false;
+        const double relativeResidual = (matrix * solution - rhs).norm() / rhs.norm();
+        const double relativeError = (solution - expected).norm() / expected.norm();
+        return relativeResidual <= 1.0e-9 && relativeError <= 1.0e-8;
+    };
+
+    // 先完成 CUDA 上下文初始化，避免把驱动冷启动时间计入资源复用对比。
+    SolverNameSpace::CudaSparseSolver warmupSolver;
+    double warmupMilliseconds = 0.0;
+    if (!solveAndMeasure(warmupSolver, warmupMilliseconds))
+        return 2;
+
+    constexpr int repetitions = 5;
+    double recreatedTotal = 0.0;
+    for (int repetition = 0; repetition < repetitions; ++repetition)
+    {
+        SolverNameSpace::CudaSparseSolver solver;
+        double milliseconds = 0.0;
+        if (!solveAndMeasure(solver, milliseconds))
+            return 3;
+        recreatedTotal += milliseconds;
+    }
+
+    SolverNameSpace::CudaSparseSolver reusedSolver;
+    double reusedTotal = 0.0;
+    for (int repetition = 0; repetition < repetitions; ++repetition)
+    {
+        double milliseconds = 0.0;
+        if (!solveAndMeasure(reusedSolver, milliseconds))
+            return 4;
+        reusedTotal += milliseconds;
+    }
+
+    const double recreatedAverage = recreatedTotal / repetitions;
+    const double reusedAverage = reusedTotal / repetitions;
+    QTextStream(stdout) << "gpu sparse dimension=" << dimension << " recreated_average_ms=" << recreatedAverage
+                        << " reused_average_ms=" << reusedAverage << " speedup=" << recreatedAverage / reusedAverage
+                        << Qt::endl;
+
+    const auto verifyDirectSolution = [&](const SolverNameSpace::Vec& solution)
+    {
+        if (solution.size() != expected.size())
+            return false;
+        const double relativeResidual = (matrix * solution - rhs).norm() / rhs.norm();
+        const double relativeError = (solution - expected).norm() / expected.norm();
+        return relativeResidual <= 1.0e-10 && relativeError <= 1.0e-9;
+    };
+
+    SolverNameSpace::PardisoSolver pardisoSolver;
+    SolverNameSpace::Vec pardisoSolution;
+    QElapsedTimer pardisoTimer;
+    pardisoTimer.start();
+    if (!pardisoSolver.Solve(matrix, rhs, false, 1, pardisoSolution) || !verifyDirectSolution(pardisoSolution))
+        return 5;
+    const double pardisoMilliseconds = static_cast<double>(pardisoTimer.nsecsElapsed()) / 1.0e6;
+
+    SolverNameSpace::CudssSolver cudssSolver;
+    SolverNameSpace::Vec cudssSolution;
+    QElapsedTimer cudssTimer;
+    cudssTimer.start();
+    if (!cudssSolver.Solve(matrix, rhs, cudssSolution) || !verifyDirectSolution(cudssSolution))
+        return 6;
+    const double cudssFirstMilliseconds = static_cast<double>(cudssTimer.nsecsElapsed()) / 1.0e6;
+    cudssTimer.restart();
+    if (!cudssSolver.Solve(matrix, rhs, cudssSolution) || !verifyDirectSolution(cudssSolution))
+        return 7;
+    const double cudssReusedMilliseconds = static_cast<double>(cudssTimer.nsecsElapsed()) / 1.0e6;
+    QTextStream(stdout) << "direct sparse pardiso_ms=" << pardisoMilliseconds
+                        << " cudss_first_ms=" << cudssFirstMilliseconds
+                        << " cudss_reused_ms=" << cudssReusedMilliseconds << Qt::endl;
+    return 0;
+}
 } // namespace
 
-std::optional<int> VerificationRunner::runHeadless(
-    const QStringList& arguments)
+std::optional<int> VerificationRunner::runHeadless(const QStringList& arguments)
 {
+    if (const auto result = verifyLowRankDampingSolver(arguments))
+        return result;
+    if (const auto result = verifyStructuralDamping(arguments))
+        return result;
+    if (const auto result = verifyGpuSparseSolver(arguments))
+        return result;
     if (const auto result = verifyDynamicMpc(arguments))
         return result;
     if (const auto result = verifyDynamicMpcModel(arguments))

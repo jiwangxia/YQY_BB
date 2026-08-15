@@ -1,6 +1,7 @@
 #include "Outputter.h"
 #include "DataStructure/Structure/StructureData.h"
 #include "Export/Hdf5ModelIO.h"
+#include "Export/ResultOutputSettings.h"
 #include <QDebug>
 #include <QFile>
 #include <QTextStream>
@@ -18,18 +19,19 @@ Outputter::~Outputter()
 
 void Outputter::MergeFramesFrom(const Outputter& source)
 {
-    m_solverIterationRecords.insert(m_solverIterationRecords.end(),
-        source.m_solverIterationRecords.cbegin(), source.m_solverIterationRecords.cend());
+    m_solverIterationRecords.insert(m_solverIterationRecords.end(), source.m_solverIterationRecords.cbegin(),
+                                    source.m_solverIterationRecords.cend());
     for (const DataFrame& sourceFrame : source.m_DataSet)
     {
-        auto targetIt = std::find_if(m_DataSet.begin(), m_DataSet.end(),
-            [&sourceFrame](const DataFrame& targetFrame)
-        {
-            return targetFrame.m_stepId == sourceFrame.m_stepId
-                && targetFrame.m_increment == sourceFrame.m_increment
-                && targetFrame.m_analysisType == sourceFrame.m_analysisType
-                && std::abs(targetFrame.m_currentTime - sourceFrame.m_currentTime) <= 1.0e-12;
-        });
+        auto targetIt =
+            std::find_if(m_DataSet.begin(), m_DataSet.end(),
+                         [&sourceFrame](const DataFrame& targetFrame)
+                         {
+                             return targetFrame.m_stepId == sourceFrame.m_stepId &&
+                                    targetFrame.m_increment == sourceFrame.m_increment &&
+                                    targetFrame.m_analysisType == sourceFrame.m_analysisType &&
+                                    std::abs(targetFrame.m_currentTime - sourceFrame.m_currentTime) <= 1.0e-12;
+                         });
         if (targetIt == m_DataSet.end())
         {
             m_DataSet.push_back(sourceFrame);
@@ -38,21 +40,21 @@ void Outputter::MergeFramesFrom(const Outputter& source)
         targetIt->m_nodeDatas.insert(sourceFrame.m_nodeDatas.cbegin(), sourceFrame.m_nodeDatas.cend());
         targetIt->m_elementDatas.insert(sourceFrame.m_elementDatas.cbegin(), sourceFrame.m_elementDatas.cend());
     }
-    std::sort(m_DataSet.begin(), m_DataSet.end(), [](const DataFrame& lhs, const DataFrame& rhs)
-    {
-        if (lhs.m_stepId != rhs.m_stepId)
-            return lhs.m_stepId < rhs.m_stepId;
-        if (lhs.m_currentTime != rhs.m_currentTime)
-            return lhs.m_currentTime < rhs.m_currentTime;
-        return lhs.m_increment < rhs.m_increment;
-    });
+    std::sort(m_DataSet.begin(), m_DataSet.end(),
+              [](const DataFrame& lhs, const DataFrame& rhs)
+              {
+                  if (lhs.m_stepId != rhs.m_stepId)
+                      return lhs.m_stepId < rhs.m_stepId;
+                  if (lhs.m_currentTime != rhs.m_currentTime)
+                      return lhs.m_currentTime < rhs.m_currentTime;
+                  return lhs.m_increment < rhs.m_increment;
+              });
 }
 
 void Outputter::RecordSolverIteration(double time, int iterations)
 {
     if (iterations > 0)
-        m_solverIterationRecords.push_back(
-            {m_currentStepId, m_currentAnalysisType, time, iterations});
+        m_solverIterationRecords.push_back({m_currentStepId, m_currentAnalysisType, time, iterations});
 }
 
 bool Outputter::ExportSolverIterationHistory(const QString& fileName) const
@@ -62,15 +64,15 @@ bool Outputter::ExportSolverIterationHistory(const QString& fileName) const
         return false;
 
     std::vector<SolverIterationRecord> records = m_solverIterationRecords;
-    std::sort(records.begin(), records.end(), [](const SolverIterationRecord& lhs,
-        const SolverIterationRecord& rhs)
-    {
-        if (lhs.analysisType != rhs.analysisType)
-            return lhs.analysisType < rhs.analysisType;
-        if (lhs.stepId != rhs.stepId)
-            return lhs.stepId < rhs.stepId;
-        return lhs.time < rhs.time;
-    });
+    std::sort(records.begin(), records.end(),
+              [](const SolverIterationRecord& lhs, const SolverIterationRecord& rhs)
+              {
+                  if (lhs.analysisType != rhs.analysisType)
+                      return lhs.analysisType < rhs.analysisType;
+                  if (lhs.stepId != rhs.stepId)
+                      return lhs.stepId < rhs.stepId;
+                  return lhs.time < rhs.time;
+              });
 
     QTextStream stream(&file);
     stream.setRealNumberNotation(QTextStream::SmartNotation);
@@ -83,8 +85,9 @@ bool Outputter::ExportSolverIterationHistory(const QString& fileName) const
         {
             if (previousAnalysisType != -1)
                 stream << Qt::endl;
-            stream << (record.analysisType == static_cast<int>(EnumKeyword::StepType::STATIC)
-                ? "*Static Step" : "*Dynamic Step") << Qt::endl;
+            stream << (record.analysisType == static_cast<int>(EnumKeyword::StepType::STATIC) ? "*Static Step"
+                                                                                              : "*Dynamic Step")
+                   << Qt::endl;
             previousAnalysisType = record.analysisType;
             previousStepId = record.stepId;
         }
@@ -95,47 +98,72 @@ bool Outputter::ExportSolverIterationHistory(const QString& fileName) const
 
 void NodeData::ExtractFromNode(const Node* pNode)
 {
-    if (!pNode) return;
+    if (!pNode)
+        return;
 
     // 直接从节点读取位移
-    if (pNode->m_Displacement.size() >= 1) m_u1 = pNode->m_Displacement[0];
-    if (pNode->m_Displacement.size() >= 2) m_u2 = pNode->m_Displacement[1];
-    if (pNode->m_Displacement.size() >= 3) m_u3 = pNode->m_Displacement[2];
+    if (pNode->m_Displacement.size() >= 1)
+        m_u1 = pNode->m_Displacement[0];
+    if (pNode->m_Displacement.size() >= 2)
+        m_u2 = pNode->m_Displacement[1];
+    if (pNode->m_Displacement.size() >= 3)
+        m_u3 = pNode->m_Displacement[2];
     m_magnitudeU = std::sqrt(m_u1 * m_u1 + m_u2 * m_u2 + m_u3 * m_u3);
     m_cx = pNode->m_X + m_u1;
     m_cy = pNode->m_Y + m_u2;
     m_cz = pNode->m_Z + m_u3;
 
     // 直接从节点读取速度
-    if (pNode->m_Velocity.size() >= 1) m_v1 = pNode->m_Velocity[0];
-    if (pNode->m_Velocity.size() >= 2) m_v2 = pNode->m_Velocity[1];
-    if (pNode->m_Velocity.size() >= 3) m_v3 = pNode->m_Velocity[2];
-    if (pNode->m_Velocity.size() >= 4) m_vr1 = pNode->m_Velocity[3];
-    if (pNode->m_Velocity.size() >= 5) m_vr2 = pNode->m_Velocity[4];
-    if (pNode->m_Velocity.size() >= 6) m_vr3 = pNode->m_Velocity[5];
+    if (pNode->m_Velocity.size() >= 1)
+        m_v1 = pNode->m_Velocity[0];
+    if (pNode->m_Velocity.size() >= 2)
+        m_v2 = pNode->m_Velocity[1];
+    if (pNode->m_Velocity.size() >= 3)
+        m_v3 = pNode->m_Velocity[2];
+    if (pNode->m_Velocity.size() >= 4)
+        m_vr1 = pNode->m_Velocity[3];
+    if (pNode->m_Velocity.size() >= 5)
+        m_vr2 = pNode->m_Velocity[4];
+    if (pNode->m_Velocity.size() >= 6)
+        m_vr3 = pNode->m_Velocity[5];
 
     // 直接从节点读取加速度
-    if (pNode->m_Acceleration.size() >= 1) m_a1 = pNode->m_Acceleration[0];
-    if (pNode->m_Acceleration.size() >= 2) m_a2 = pNode->m_Acceleration[1];
-    if (pNode->m_Acceleration.size() >= 3) m_a3 = pNode->m_Acceleration[2];
-    if (pNode->m_Acceleration.size() >= 4) m_ar1 = pNode->m_Acceleration[3];
-    if (pNode->m_Acceleration.size() >= 5) m_ar2 = pNode->m_Acceleration[4];
-    if (pNode->m_Acceleration.size() >= 6) m_ar3 = pNode->m_Acceleration[5];
+    if (pNode->m_Acceleration.size() >= 1)
+        m_a1 = pNode->m_Acceleration[0];
+    if (pNode->m_Acceleration.size() >= 2)
+        m_a2 = pNode->m_Acceleration[1];
+    if (pNode->m_Acceleration.size() >= 3)
+        m_a3 = pNode->m_Acceleration[2];
+    if (pNode->m_Acceleration.size() >= 4)
+        m_ar1 = pNode->m_Acceleration[3];
+    if (pNode->m_Acceleration.size() >= 5)
+        m_ar2 = pNode->m_Acceleration[4];
+    if (pNode->m_Acceleration.size() >= 6)
+        m_ar3 = pNode->m_Acceleration[5];
 
     // 直接从节点读取内力
-    if (pNode->m_Force.size() >= 1) m_f1 = pNode->m_Force[0];
-    if (pNode->m_Force.size() >= 2) m_f2 = pNode->m_Force[1];
-    if (pNode->m_Force.size() >= 3) m_f3 = pNode->m_Force[2];
+    if (pNode->m_Force.size() >= 1)
+        m_f1 = pNode->m_Force[0];
+    if (pNode->m_Force.size() >= 2)
+        m_f2 = pNode->m_Force[1];
+    if (pNode->m_Force.size() >= 3)
+        m_f3 = pNode->m_Force[2];
 
     // 读取转角 (DOF 3-5)
-    if (pNode->m_Displacement.size() >= 4) m_ur1 = pNode->m_Displacement[3];
-    if (pNode->m_Displacement.size() >= 5) m_ur2 = pNode->m_Displacement[4];
-    if (pNode->m_Displacement.size() >= 6) m_ur3 = pNode->m_Displacement[5];
+    if (pNode->m_Displacement.size() >= 4)
+        m_ur1 = pNode->m_Displacement[3];
+    if (pNode->m_Displacement.size() >= 5)
+        m_ur2 = pNode->m_Displacement[4];
+    if (pNode->m_Displacement.size() >= 6)
+        m_ur3 = pNode->m_Displacement[5];
 
     // 读取反力
-    if (pNode->m_ReactionForce.size() >= 1) m_r1 = pNode->m_ReactionForce[0];
-    if (pNode->m_ReactionForce.size() >= 2) m_r2 = pNode->m_ReactionForce[1];
-    if (pNode->m_ReactionForce.size() >= 3) m_r3 = pNode->m_ReactionForce[2];
+    if (pNode->m_ReactionForce.size() >= 1)
+        m_r1 = pNode->m_ReactionForce[0];
+    if (pNode->m_ReactionForce.size() >= 2)
+        m_r2 = pNode->m_ReactionForce[1];
+    if (pNode->m_ReactionForce.size() >= 3)
+        m_r3 = pNode->m_ReactionForce[2];
 }
 
 double NodeData::GetVelocityComponent(int component) const
@@ -154,45 +182,73 @@ double NodeData::GetValue(EnumKeyword::NodeResultType type) const
 {
     switch (type)
     {
-    case EnumKeyword::NodeResultType::U1:         return m_u1;
-    case EnumKeyword::NodeResultType::U2:         return m_u2;
-    case EnumKeyword::NodeResultType::U3:         return m_u3;
-    case EnumKeyword::NodeResultType::MagnitudeU: return m_magnitudeU;
-    case EnumKeyword::NodeResultType::CX:         return m_cx;
-    case EnumKeyword::NodeResultType::CY:         return m_cy;
-    case EnumKeyword::NodeResultType::CZ:         return m_cz;
-    case EnumKeyword::NodeResultType::V1:         return m_v1;
-    case EnumKeyword::NodeResultType::V2:         return m_v2;
-    case EnumKeyword::NodeResultType::V3:         return m_v3;
-    case EnumKeyword::NodeResultType::A1:         return m_a1;
-    case EnumKeyword::NodeResultType::A2:         return m_a2;
-    case EnumKeyword::NodeResultType::A3:         return m_a3;
-    case EnumKeyword::NodeResultType::UR1:        return m_ur1;
-    case EnumKeyword::NodeResultType::UR2:        return m_ur2;
-    case EnumKeyword::NodeResultType::UR3:        return m_ur3;
-    case EnumKeyword::NodeResultType::F1:         return m_f1;
-    case EnumKeyword::NodeResultType::F2:         return m_f2;
-    case EnumKeyword::NodeResultType::F3:         return m_f3;
-    case EnumKeyword::NodeResultType::M1:         return m_m1;
-    case EnumKeyword::NodeResultType::M2:         return m_m2;
-    case EnumKeyword::NodeResultType::M3:         return m_m3;
-    case EnumKeyword::NodeResultType::R1:         return m_r1;
-    case EnumKeyword::NodeResultType::R2:         return m_r2;
-    case EnumKeyword::NodeResultType::R3:         return m_r3;
-    default:                   return 0.0;
+        case EnumKeyword::NodeResultType::U1:
+            return m_u1;
+        case EnumKeyword::NodeResultType::U2:
+            return m_u2;
+        case EnumKeyword::NodeResultType::U3:
+            return m_u3;
+        case EnumKeyword::NodeResultType::MagnitudeU:
+            return m_magnitudeU;
+        case EnumKeyword::NodeResultType::CX:
+            return m_cx;
+        case EnumKeyword::NodeResultType::CY:
+            return m_cy;
+        case EnumKeyword::NodeResultType::CZ:
+            return m_cz;
+        case EnumKeyword::NodeResultType::V1:
+            return m_v1;
+        case EnumKeyword::NodeResultType::V2:
+            return m_v2;
+        case EnumKeyword::NodeResultType::V3:
+            return m_v3;
+        case EnumKeyword::NodeResultType::A1:
+            return m_a1;
+        case EnumKeyword::NodeResultType::A2:
+            return m_a2;
+        case EnumKeyword::NodeResultType::A3:
+            return m_a3;
+        case EnumKeyword::NodeResultType::UR1:
+            return m_ur1;
+        case EnumKeyword::NodeResultType::UR2:
+            return m_ur2;
+        case EnumKeyword::NodeResultType::UR3:
+            return m_ur3;
+        case EnumKeyword::NodeResultType::F1:
+            return m_f1;
+        case EnumKeyword::NodeResultType::F2:
+            return m_f2;
+        case EnumKeyword::NodeResultType::F3:
+            return m_f3;
+        case EnumKeyword::NodeResultType::M1:
+            return m_m1;
+        case EnumKeyword::NodeResultType::M2:
+            return m_m2;
+        case EnumKeyword::NodeResultType::M3:
+            return m_m3;
+        case EnumKeyword::NodeResultType::R1:
+            return m_r1;
+        case EnumKeyword::NodeResultType::R2:
+            return m_r2;
+        case EnumKeyword::NodeResultType::R3:
+            return m_r3;
+        default:
+            return 0.0;
     }
 }
 
 void ElementData::ExtractFromElement(const ElementBase* pElement)
 {
-    if (!pElement) return;
+    if (!pElement)
+        return;
 
     m_initStress = pElement->m_InitStress;
     m_currentStress = pElement->m_Stress;
     m_deltaStress = m_currentStress - m_initStress;
 
     auto pProperty = pElement->m_pProperty.lock();
-    if (!pProperty) return;
+    if (!pProperty)
+        return;
 
     auto pSection = pProperty->m_pSection.lock();
     auto pMaterial = pProperty->m_pMaterial.lock();
@@ -215,17 +271,28 @@ double ElementData::GetValue(EnumKeyword::ElementResultType type) const
 {
     switch (type)
     {
-    case EnumKeyword::ElementResultType::AxialForce:    return m_axialForce;
-    case EnumKeyword::ElementResultType::ShearY:        return m_shearY;
-    case EnumKeyword::ElementResultType::ShearZ:        return m_shearZ;
-    case EnumKeyword::ElementResultType::Torque:        return m_torque;
-    case EnumKeyword::ElementResultType::MomentY:       return m_momentY;
-    case EnumKeyword::ElementResultType::MomentZ:       return m_momentZ;
-    case EnumKeyword::ElementResultType::Strain:        return m_strain;
-    case EnumKeyword::ElementResultType::InitStress:    return m_initStress;
-    case EnumKeyword::ElementResultType::CurrentStress: return m_currentStress;
-    case EnumKeyword::ElementResultType::DeltaStress:   return m_deltaStress;
-    default:                             return 0.0;
+        case EnumKeyword::ElementResultType::AxialForce:
+            return m_axialForce;
+        case EnumKeyword::ElementResultType::ShearY:
+            return m_shearY;
+        case EnumKeyword::ElementResultType::ShearZ:
+            return m_shearZ;
+        case EnumKeyword::ElementResultType::Torque:
+            return m_torque;
+        case EnumKeyword::ElementResultType::MomentY:
+            return m_momentY;
+        case EnumKeyword::ElementResultType::MomentZ:
+            return m_momentZ;
+        case EnumKeyword::ElementResultType::Strain:
+            return m_strain;
+        case EnumKeyword::ElementResultType::InitStress:
+            return m_initStress;
+        case EnumKeyword::ElementResultType::CurrentStress:
+            return m_currentStress;
+        case EnumKeyword::ElementResultType::DeltaStress:
+            return m_deltaStress;
+        default:
+            return 0.0;
     }
 }
 
@@ -251,7 +318,8 @@ double DataFrame::GetElementData(int idElement, EnumKeyword::ElementResultType t
 
 void Outputter::SaveDataFromNodes(double time, StructureData* pData)
 {
-    if (!pData) return;
+    if (!pData)
+        return;
 
     // 创建新帧
     DataFrame frame;
@@ -263,36 +331,45 @@ void Outputter::SaveDataFromNodes(double time, StructureData* pData)
     for (auto& nodePair : pData->m_Nodes)
     {
         auto pNode = nodePair.second;
-        if (!pNode) continue;
+        if (!pNode)
+            continue;
 
         NodeData data;
-        data.ExtractFromNode(pNode.get());  // 直接从节点读取
-        frame.m_nodeDatas[pNode->m_Id] = data;
+        data.ExtractFromNode(pNode.get()); // 直接从节点读取
+        frame.m_nodeDatas.emplace(pNode->m_Id, std::move(data));
     }
 
     for (auto& elementPair : pData->m_Elements)
     {
         auto pElement = elementPair.second;
-        if (!pElement) continue;
+        if (!pElement)
+            continue;
 
         ElementData data;
         data.ExtractFromElement(pElement.get());
-        frame.m_elementDatas[pElement->m_Id] = data;
+        frame.m_elementDatas.emplace(pElement->m_Id, std::move(data));
     }
 
     if (m_stream)
     {
-        WriteResultFrame(*m_stream, frame,
-            m_streamNodeIds, m_streamNodeTypes,
-            m_streamElementIds, m_streamElementTypes);
+        WriteResultFrame(*m_stream, frame, m_streamNodeIds, m_streamNodeTypes, m_streamElementIds,
+                         m_streamElementTypes);
         m_stream->flush();
     }
 
     if (m_hdf5Stream)
     {
-        m_hdf5Stream->WriteResultFrame(m_hdf5NextDomainId, frame.GetStepId(),
-            frame.GetIncrement(), frame.GetAnalysisType(), time, frame);
-        ++m_hdf5NextDomainId;
+        bool writeOk = true;
+        {
+            std::lock_guard<std::mutex> lock(m_hdf5QueueMutex);
+            writeOk = m_hdf5StreamWriteOk;
+        }
+        if (writeOk)
+        {
+            m_hdf5PendingFrames.push_back(frame);
+            if (m_hdf5PendingFrames.size() >= static_cast<std::size_t>(m_hdf5FrameBatchSize))
+                FlushHdf5ResultFrames();
+        }
     }
 
     if (m_keepFramesInMemory)
@@ -315,10 +392,10 @@ class OutputFormatter
 public:
     enum FormatStyle
     {
-        Scientific,      // 科学计数法
-        FixedDecimal,    // 固定小数
-        SmartFormat,     // 智能选择
-        modelering      // 工程计数法
+        Scientific,   // 科学计数法
+        FixedDecimal, // 固定小数
+        SmartFormat,  // 智能选择
+        modelering    // 工程计数法
     };
 
     static QString Format(double value, FormatStyle style = SmartFormat, int width = 16, int precision = 6)
@@ -334,51 +411,51 @@ public:
 
         switch (style)
         {
-        case Scientific:
-            // 科学计数法，保留正号对齐
-            snprintf(buffer, sizeof(buffer), "%+*.*E", width, precision, value);
-            break;
-
-        case FixedDecimal:
-            // 固定小数格式
-            if (value >= 0)
-            {
-                // 正数前加空格对齐负号
-                snprintf(buffer, sizeof(buffer), " %*.*f", width - 1, precision, value);
-            }
-            else
-            {
-                snprintf(buffer, sizeof(buffer), "%*.*f", width, precision, value);
-            }
-            break;
-
-        case modelering:
-            // 工程计数法（指数为3的倍数）
-            // 这里简化为科学计数法，实际工程计数法需要更复杂的处理
-            snprintf(buffer, sizeof(buffer), "%+*.*E", width, precision, value);
-            break;
-
-        case SmartFormat:
-        default:
-            // 智能选择：当数值绝对值在 [1e-4, 1e6] 范围内用固定小数，否则用科学计数法
-            if (fabs(value) >= 1e6 || (fabs(value) <= 1e-4 && value != 0.0))
-            {
-                // 太大或太小时用科学计数法
+            case Scientific:
+                // 科学计数法，保留正号对齐
                 snprintf(buffer, sizeof(buffer), "%+*.*E", width, precision, value);
-            }
-            else
-            {
-                // 正常范围内用固定小数
+                break;
+
+            case FixedDecimal:
+                // 固定小数格式
                 if (value >= 0)
                 {
+                    // 正数前加空格对齐负号
                     snprintf(buffer, sizeof(buffer), " %*.*f", width - 1, precision, value);
                 }
                 else
                 {
                     snprintf(buffer, sizeof(buffer), "%*.*f", width, precision, value);
                 }
-            }
-            break;
+                break;
+
+            case modelering:
+                // 工程计数法（指数为3的倍数）
+                // 这里简化为科学计数法，实际工程计数法需要更复杂的处理
+                snprintf(buffer, sizeof(buffer), "%+*.*E", width, precision, value);
+                break;
+
+            case SmartFormat:
+            default:
+                // 智能选择：当数值绝对值在 [1e-4, 1e6] 范围内用固定小数，否则用科学计数法
+                if (fabs(value) >= 1e6 || (fabs(value) <= 1e-4 && value != 0.0))
+                {
+                    // 太大或太小时用科学计数法
+                    snprintf(buffer, sizeof(buffer), "%+*.*E", width, precision, value);
+                }
+                else
+                {
+                    // 正常范围内用固定小数
+                    if (value >= 0)
+                    {
+                        snprintf(buffer, sizeof(buffer), " %*.*f", width - 1, precision, value);
+                    }
+                    else
+                    {
+                        snprintf(buffer, sizeof(buffer), "%*.*f", width, precision, value);
+                    }
+                }
+                break;
         }
 
         // 如果字符串长度小于width，右对齐
@@ -397,9 +474,18 @@ static QString FormatValue(double val, int width = 16)
     return OutputFormatter::Format(val, OutputFormatter::SmartFormat, width, 8);
 }
 
-void Outputter::ExportNodes(const QString& fileName,
-    const std::vector<int>& nodeIds,
-    const std::vector<EnumKeyword::NodeResultType>& types) const
+static QString FormatTimeValue(double time, int width = 16)
+{
+    QString value = QString::number(time, 'f', 12);
+    while (value.contains('.') && value.endsWith('0'))
+        value.chop(1);
+    if (value.endsWith('.'))
+        value.chop(1);
+    return value.rightJustified(width, ' ');
+}
+
+void Outputter::ExportNodes(const QString& fileName, const std::vector<int>& nodeIds,
+                            const std::vector<EnumKeyword::NodeResultType>& types) const
 {
     QFile file(fileName);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
@@ -422,7 +508,8 @@ void Outputter::ExportNodes(const QString& fileName,
         {
             QString header = QString("N%1-%2").arg(nodeId).arg(GetTypeName(type));
             // 确保表头不超长
-            if (header.length() > colWidth) header = header.right(colWidth);
+            if (header.length() > colWidth)
+                header = header.right(colWidth);
             stream << header.rightJustified(colWidth, padChar);
         }
     }
@@ -439,7 +526,7 @@ void Outputter::ExportNodes(const QString& fileName,
     for (const auto& frame : m_DataSet)
     {
         // 时间列
-        stream << FormatValue(frame.m_currentTime, colWidth);
+        stream << FormatTimeValue(frame.m_currentTime, colWidth);
 
         // 数据列
         for (int nodeId : nodeIds)
@@ -461,9 +548,8 @@ void Outputter::ExportNodes(const QString& fileName,
     file.close();
 }
 
-void Outputter::ExportElements(const QString& fileName,
-    const std::vector<int>& elementIds,
-    const std::vector<EnumKeyword::ElementResultType>& types) const
+void Outputter::ExportElements(const QString& fileName, const std::vector<int>& elementIds,
+                               const std::vector<EnumKeyword::ElementResultType>& types) const
 {
     QFile file(fileName);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
@@ -484,11 +570,10 @@ void Outputter::ExportElements(const QString& fileName,
     file.close();
 }
 
-bool Outputter::BeginBdfResultStream(const QString& fileName,
-    const std::vector<int>& nodeIds,
-    const std::vector<EnumKeyword::NodeResultType>& nodeTypes,
-    const std::vector<int>& elementIds,
-    const std::vector<EnumKeyword::ElementResultType>& elementTypes)
+bool Outputter::BeginBdfResultStream(const QString& fileName, const std::vector<int>& nodeIds,
+                                     const std::vector<EnumKeyword::NodeResultType>& nodeTypes,
+                                     const std::vector<int>& elementIds,
+                                     const std::vector<EnumKeyword::ElementResultType>& elementTypes)
 {
     EndBdfResultStream();
 
@@ -507,9 +592,7 @@ bool Outputter::BeginBdfResultStream(const QString& fileName,
     m_streamElementIds = elementIds;
     m_streamElementTypes = elementTypes;
 
-    WriteResultTableHeader(*m_stream,
-        m_streamNodeIds, m_streamNodeTypes,
-        m_streamElementIds, m_streamElementTypes);
+    WriteResultTableHeader(*m_stream, m_streamNodeIds, m_streamNodeTypes, m_streamElementIds, m_streamElementTypes);
     m_stream->flush();
     return true;
 }
@@ -547,16 +630,138 @@ bool Outputter::BeginHdf5ResultStream(const QString& fileName, StructureData* pD
 
     m_hdf5NextDomainId = 1;
     m_hdf5NextIncrement = 0;
-    return true;
+    m_hdf5FrameBatchSize = ResultOutputSettings::FrameBatchSize();
+    m_hdf5PendingFrames.clear();
+    m_hdf5PendingFrames.reserve(static_cast<std::size_t>(m_hdf5FrameBatchSize));
+    {
+        std::lock_guard<std::mutex> lock(m_hdf5QueueMutex);
+        m_hdf5StreamWriteOk = true;
+        m_hdf5WriterStopping = false;
+        m_hdf5WriteQueue.clear();
+    }
+    m_hdf5BackgroundWrite = ResultOutputSettings::IsBackgroundWriteEnabled();
+    return !m_hdf5BackgroundWrite || StartHdf5Writer();
 }
 
-void Outputter::EndHdf5ResultStream(bool resultComplete)
+bool Outputter::EndHdf5ResultStream(bool resultComplete)
 {
     if (m_hdf5Stream)
     {
-        m_hdf5Stream->WriteSolverIterationHistory(m_solverIterationRecords);
-        m_hdf5Stream->EndResultStream(resultComplete);
+        const bool pendingFramesSubmitted = FlushHdf5ResultFrames();
+        const bool writerStopped = StopHdf5Writer();
+        const bool framesWritten = pendingFramesSubmitted && writerStopped;
+        const bool iterationsWritten = m_hdf5Stream->WriteSolverIterationHistory(m_solverIterationRecords);
+        const bool streamComplete = resultComplete && framesWritten && iterationsWritten;
+        const bool finalized = m_hdf5Stream->EndResultStream(streamComplete);
         m_hdf5Stream.reset();
+        m_hdf5PendingFrames.clear();
+        m_hdf5BackgroundWrite = false;
+        return framesWritten && iterationsWritten && finalized;
+    }
+    StopHdf5Writer();
+    m_hdf5PendingFrames.clear();
+    m_hdf5BackgroundWrite = false;
+    return true;
+}
+
+bool Outputter::FlushHdf5ResultFrames()
+{
+    if (!m_hdf5Stream || m_hdf5PendingFrames.empty())
+        return true;
+
+    Hdf5FrameBatch batch;
+    batch.firstDomainId = m_hdf5NextDomainId;
+    batch.frames = std::move(m_hdf5PendingFrames);
+    m_hdf5PendingFrames.clear();
+    m_hdf5PendingFrames.reserve(static_cast<std::size_t>(m_hdf5FrameBatchSize));
+    m_hdf5NextDomainId += static_cast<int>(batch.frames.size());
+
+    if (!m_hdf5BackgroundWrite)
+    {
+        const bool written = m_hdf5Stream->WriteResultFrames(batch.firstDomainId, batch.frames);
+        std::lock_guard<std::mutex> lock(m_hdf5QueueMutex);
+        m_hdf5StreamWriteOk = m_hdf5StreamWriteOk && written;
+        return written;
+    }
+
+    constexpr std::size_t maximumQueuedBatches = 2;
+    std::unique_lock<std::mutex> lock(m_hdf5QueueMutex);
+    m_hdf5QueueCondition.wait(lock,
+                              [this]()
+                              {
+                                  return m_hdf5WriteQueue.size() < maximumQueuedBatches || !m_hdf5StreamWriteOk;
+                              });
+    if (!m_hdf5StreamWriteOk)
+        return false;
+    m_hdf5WriteQueue.push_back(std::move(batch));
+    lock.unlock();
+    m_hdf5QueueCondition.notify_all();
+    return true;
+}
+
+bool Outputter::StartHdf5Writer()
+{
+    try
+    {
+        m_hdf5WriterThread = std::thread(&Outputter::RunHdf5Writer, this);
+        return true;
+    }
+    catch (const std::system_error& error)
+    {
+        qDebug().noquote()
+            << QStringLiteral("H5/HDF5 后台写入线程启动失败，改用同步写入：%1").arg(QString::fromLocal8Bit(error.what()));
+        m_hdf5BackgroundWrite = false;
+        return true;
+    }
+}
+
+bool Outputter::StopHdf5Writer()
+{
+    if (!m_hdf5WriterThread.joinable())
+    {
+        std::lock_guard<std::mutex> lock(m_hdf5QueueMutex);
+        return m_hdf5StreamWriteOk;
+    }
+    {
+        std::lock_guard<std::mutex> lock(m_hdf5QueueMutex);
+        m_hdf5WriterStopping = true;
+    }
+    m_hdf5QueueCondition.notify_all();
+    m_hdf5WriterThread.join();
+    std::lock_guard<std::mutex> lock(m_hdf5QueueMutex);
+    return m_hdf5StreamWriteOk;
+}
+
+void Outputter::RunHdf5Writer()
+{
+    while (true)
+    {
+        Hdf5FrameBatch batch;
+        {
+            std::unique_lock<std::mutex> lock(m_hdf5QueueMutex);
+            m_hdf5QueueCondition.wait(lock,
+                                      [this]()
+                                      {
+                                          return m_hdf5WriterStopping || !m_hdf5WriteQueue.empty();
+                                      });
+            if (m_hdf5WriteQueue.empty())
+                return;
+            batch = std::move(m_hdf5WriteQueue.front());
+            m_hdf5WriteQueue.pop_front();
+        }
+        m_hdf5QueueCondition.notify_all();
+
+        const bool written = m_hdf5Stream->WriteResultFrames(batch.firstDomainId, batch.frames);
+        if (written)
+            continue;
+
+        {
+            std::lock_guard<std::mutex> lock(m_hdf5QueueMutex);
+            m_hdf5StreamWriteOk = false;
+            m_hdf5WriteQueue.clear();
+        }
+        m_hdf5QueueCondition.notify_all();
+        return;
     }
 }
 
@@ -568,11 +773,10 @@ void Outputter::Clear()
     m_solverIterationRecords.clear();
 }
 
-void Outputter::WriteResultTableHeader(QTextStream& stream,
-    const std::vector<int>& nodeIds,
-    const std::vector<EnumKeyword::NodeResultType>& nodeTypes,
-    const std::vector<int>& elementIds,
-    const std::vector<EnumKeyword::ElementResultType>& elementTypes) const
+void Outputter::WriteResultTableHeader(_OUT QTextStream& stream, const std::vector<int>& nodeIds,
+                                       const std::vector<EnumKeyword::NodeResultType>& nodeTypes,
+                                       const std::vector<int>& elementIds,
+                                       const std::vector<EnumKeyword::ElementResultType>& elementTypes) const
 {
     const int colWidth = 16;
     const QChar padChar = ' ';
@@ -584,7 +788,8 @@ void Outputter::WriteResultTableHeader(QTextStream& stream,
         for (EnumKeyword::NodeResultType type : nodeTypes)
         {
             QString header = QString("N%1-%2").arg(nodeId).arg(GetTypeName(type));
-            if (header.length() > colWidth) header = header.right(colWidth);
+            if (header.length() > colWidth)
+                header = header.right(colWidth);
             stream << header.rightJustified(colWidth, padChar);
         }
     }
@@ -594,30 +799,29 @@ void Outputter::WriteResultTableHeader(QTextStream& stream,
         for (EnumKeyword::ElementResultType type : elementTypes)
         {
             QString header = QString("E%1-%2").arg(elementId).arg(GetTypeName(type));
-            if (header.length() > colWidth) header = header.right(colWidth);
+            if (header.length() > colWidth)
+                header = header.right(colWidth);
             stream << header.rightJustified(colWidth, padChar);
         }
     }
 
     stream << "\n";
 
-    size_t totalWidth = colWidth
-        + nodeIds.size() * nodeTypes.size() * colWidth
-        + elementIds.size() * elementTypes.size() * colWidth;
+    size_t totalWidth =
+        colWidth + nodeIds.size() * nodeTypes.size() * colWidth + elementIds.size() * elementTypes.size() * colWidth;
     QString line;
     line.fill('-', totalWidth);
     stream << line << "\n";
 }
 
-void Outputter::WriteResultFrame(QTextStream& stream, const DataFrame& frame,
-    const std::vector<int>& nodeIds,
-    const std::vector<EnumKeyword::NodeResultType>& nodeTypes,
-    const std::vector<int>& elementIds,
-    const std::vector<EnumKeyword::ElementResultType>& elementTypes) const
+void Outputter::WriteResultFrame(_OUT QTextStream& stream, const DataFrame& frame, const std::vector<int>& nodeIds,
+                                 const std::vector<EnumKeyword::NodeResultType>& nodeTypes,
+                                 const std::vector<int>& elementIds,
+                                 const std::vector<EnumKeyword::ElementResultType>& elementTypes) const
 {
     const int colWidth = 16;
 
-    stream << FormatValue(frame.m_currentTime, colWidth);
+    stream << FormatTimeValue(frame.m_currentTime, colWidth);
 
     for (int nodeId : nodeIds)
     {
@@ -642,32 +846,58 @@ QString Outputter::GetTypeName(EnumKeyword::NodeResultType type)
 {
     switch (type)
     {
-    case EnumKeyword::NodeResultType::U1:         return "U1";
-    case EnumKeyword::NodeResultType::U2:         return "U2";
-    case EnumKeyword::NodeResultType::U3:         return "U3";
-    case EnumKeyword::NodeResultType::CX:         return "CX";
-    case EnumKeyword::NodeResultType::CY:         return "CY";
-    case EnumKeyword::NodeResultType::CZ:         return "CZ";
-    case EnumKeyword::NodeResultType::UR1:        return "UR1";
-    case EnumKeyword::NodeResultType::UR2:        return "UR2";
-    case EnumKeyword::NodeResultType::UR3:        return "UR3";
-    case EnumKeyword::NodeResultType::MagnitudeU: return "MAG";
-    case EnumKeyword::NodeResultType::V1:         return "V1";
-    case EnumKeyword::NodeResultType::V2:         return "V2";
-    case EnumKeyword::NodeResultType::V3:         return "V3";
-    case EnumKeyword::NodeResultType::A1:         return "A1";
-    case EnumKeyword::NodeResultType::A2:         return "A2";
-    case EnumKeyword::NodeResultType::A3:         return "A3";
-    case EnumKeyword::NodeResultType::F1:         return "F1";
-    case EnumKeyword::NodeResultType::F2:         return "F2";
-    case EnumKeyword::NodeResultType::F3:         return "F3";
-    case EnumKeyword::NodeResultType::M1:         return "M1";
-    case EnumKeyword::NodeResultType::M2:         return "M2";
-    case EnumKeyword::NodeResultType::M3:         return "M3";
-    case EnumKeyword::NodeResultType::R1:         return "R1";
-    case EnumKeyword::NodeResultType::R2:         return "R2";
-    case EnumKeyword::NodeResultType::R3:         return "R3";
-    default:                   return "UNKNOWN";
+        case EnumKeyword::NodeResultType::U1:
+            return "U1";
+        case EnumKeyword::NodeResultType::U2:
+            return "U2";
+        case EnumKeyword::NodeResultType::U3:
+            return "U3";
+        case EnumKeyword::NodeResultType::CX:
+            return "CX";
+        case EnumKeyword::NodeResultType::CY:
+            return "CY";
+        case EnumKeyword::NodeResultType::CZ:
+            return "CZ";
+        case EnumKeyword::NodeResultType::UR1:
+            return "UR1";
+        case EnumKeyword::NodeResultType::UR2:
+            return "UR2";
+        case EnumKeyword::NodeResultType::UR3:
+            return "UR3";
+        case EnumKeyword::NodeResultType::MagnitudeU:
+            return "MAG";
+        case EnumKeyword::NodeResultType::V1:
+            return "V1";
+        case EnumKeyword::NodeResultType::V2:
+            return "V2";
+        case EnumKeyword::NodeResultType::V3:
+            return "V3";
+        case EnumKeyword::NodeResultType::A1:
+            return "A1";
+        case EnumKeyword::NodeResultType::A2:
+            return "A2";
+        case EnumKeyword::NodeResultType::A3:
+            return "A3";
+        case EnumKeyword::NodeResultType::F1:
+            return "F1";
+        case EnumKeyword::NodeResultType::F2:
+            return "F2";
+        case EnumKeyword::NodeResultType::F3:
+            return "F3";
+        case EnumKeyword::NodeResultType::M1:
+            return "M1";
+        case EnumKeyword::NodeResultType::M2:
+            return "M2";
+        case EnumKeyword::NodeResultType::M3:
+            return "M3";
+        case EnumKeyword::NodeResultType::R1:
+            return "R1";
+        case EnumKeyword::NodeResultType::R2:
+            return "R2";
+        case EnumKeyword::NodeResultType::R3:
+            return "R3";
+        default:
+            return "UNKNOWN";
     }
 }
 
@@ -675,17 +905,28 @@ QString Outputter::GetTypeName(EnumKeyword::ElementResultType type)
 {
     switch (type)
     {
-    case EnumKeyword::ElementResultType::AxialForce:    return "AXIAL";
-    case EnumKeyword::ElementResultType::ShearY:        return "SHEARY";
-    case EnumKeyword::ElementResultType::ShearZ:        return "SHEARZ";
-    case EnumKeyword::ElementResultType::Torque:        return "TORQUE";
-    case EnumKeyword::ElementResultType::MomentY:       return "MY";
-    case EnumKeyword::ElementResultType::MomentZ:       return "MZ";
-    case EnumKeyword::ElementResultType::Strain:        return "STRAIN";
-    case EnumKeyword::ElementResultType::InitStress:    return "S0";
-    case EnumKeyword::ElementResultType::CurrentStress: return "S";
-    case EnumKeyword::ElementResultType::DeltaStress:   return "DS";
-    default:                             return "UNKNOWN";
+        case EnumKeyword::ElementResultType::AxialForce:
+            return "AXIAL";
+        case EnumKeyword::ElementResultType::ShearY:
+            return "SHEARY";
+        case EnumKeyword::ElementResultType::ShearZ:
+            return "SHEARZ";
+        case EnumKeyword::ElementResultType::Torque:
+            return "TORQUE";
+        case EnumKeyword::ElementResultType::MomentY:
+            return "MY";
+        case EnumKeyword::ElementResultType::MomentZ:
+            return "MZ";
+        case EnumKeyword::ElementResultType::Strain:
+            return "STRAIN";
+        case EnumKeyword::ElementResultType::InitStress:
+            return "S0";
+        case EnumKeyword::ElementResultType::CurrentStress:
+            return "S";
+        case EnumKeyword::ElementResultType::DeltaStress:
+            return "DS";
+        default:
+            return "UNKNOWN";
     }
 }
 
@@ -710,7 +951,8 @@ static QString FmtStr(const QString& str, int width = 10, bool leftAlign = false
 
 bool Outputter::SaveBdfModel(const QString& fileName, StructureData* pData)
 {
-    if (!pData) return false;
+    if (!pData)
+        return false;
 
     QFile file(fileName);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
@@ -731,19 +973,19 @@ bool Outputter::SaveBdfModel(const QString& fileName, StructureData* pData)
     std::map<int, int> stepIdMap;
 
     auto buildIdMap = [](const auto& source, std::map<int, int>& target)
+    {
+        int id = 1;
+        for (const auto& pair : source)
         {
-            int id = 1;
-            for (const auto& pair : source)
-            {
-                target[pair.first] = id++;
-            }
-        };
+            target[pair.first] = id++;
+        }
+    };
 
     auto mapId = [](const std::map<int, int>& idMap, int id)
-        {
-            auto iter = idMap.find(id);
-            return iter != idMap.end() ? iter->second : 0;
-        };
+    {
+        auto iter = idMap.find(id);
+        return iter != idMap.end() ? iter->second : 0;
+    };
 
     buildIdMap(pData->m_Material, materialIdMap);
     buildIdMap(pData->m_Section, sectionIdMap);
@@ -762,12 +1004,9 @@ bool Outputter::SaveBdfModel(const QString& fileName, StructureData* pData)
         {
             auto pMat = pair.second;
             // ID, E, v, Density, MaxStress, Expansion
-            stream << FmtInt(mapId(materialIdMap, pair.first), 10, true) << " "
-                << FmtDouble(pMat->m_Young) << " "
-                << FmtDouble(pMat->m_Poisson) << " "
-                << FmtDouble(pMat->m_Density) << " "
-                << FmtDouble(pMat->m_MaxStress) << " "
-                << FmtDouble(pMat->m_Expansion);
+            stream << FmtInt(mapId(materialIdMap, pair.first), 10, true) << " " << FmtDouble(pMat->m_Young) << " "
+                   << FmtDouble(pMat->m_Poisson) << " " << FmtDouble(pMat->m_Density) << " "
+                   << FmtDouble(pMat->m_MaxStress) << " " << FmtDouble(pMat->m_Expansion);
             stream << "\n";
         }
     }
@@ -801,10 +1040,8 @@ bool Outputter::SaveBdfModel(const QString& fileName, StructureData* pData)
         {
             auto pNode = pair.second;
             // ID, X, Y, Z
-            stream << FmtInt(mapId(nodeIdMap, pair.first), 10, true) << " "
-                << FmtDouble(pNode->m_X) << " "
-                << FmtDouble(pNode->m_Y) << " "
-                << FmtDouble(pNode->m_Z) << "\n";
+            stream << FmtInt(mapId(nodeIdMap, pair.first), 10, true) << " " << FmtDouble(pNode->m_X) << " "
+                   << FmtDouble(pNode->m_Y) << " " << FmtDouble(pNode->m_Z) << "\n";
         }
     }
 
@@ -814,15 +1051,19 @@ bool Outputter::SaveBdfModel(const QString& fileName, StructureData* pData)
     {
         auto pElem = pair.second;
         QString typeName = "UNKNOWN";
-        if (std::dynamic_pointer_cast<ElementTruss>(pElem)) typeName = "T3D2";
-        else if (std::dynamic_pointer_cast<ElementCable>(pElem)) typeName = "CABLE";
-        else if (std::dynamic_pointer_cast<ElementBeam_CR>(pElem)) typeName = "CR3D";
+        if (std::dynamic_pointer_cast<ElementTruss>(pElem))
+            typeName = "T3D2";
+        else if (std::dynamic_pointer_cast<ElementCable>(pElem))
+            typeName = "CABLE";
+        else if (std::dynamic_pointer_cast<ElementBeam_CR>(pElem))
+            typeName = "CR3D";
         elemGroups[typeName].push_back(pElem);
     }
 
     for (const auto& group : elemGroups)
     {
-        if (group.first == "UNKNOWN" || group.second.empty()) continue;
+        if (group.first == "UNKNOWN" || group.second.empty())
+            continue;
 
         stream << "\n*ELEMENT, " << group.first << ", " << group.second.size() << "\n";
         if (group.first == "CR3D")
@@ -845,22 +1086,19 @@ bool Outputter::SaveBdfModel(const QString& fileName, StructureData* pData)
             auto pProp = pElem->m_pProperty.lock();
             if (pProp)
             {
-                if (auto pMat = pProp->m_pMaterial.lock()) matId = mapId(materialIdMap, pMat->m_Id);
-                if (auto pSec = pProp->m_pSection.lock())  secId = mapId(sectionIdMap, pSec->m_Id);
+                if (auto pMat = pProp->m_pMaterial.lock())
+                    matId = mapId(materialIdMap, pMat->m_Id);
+                if (auto pSec = pProp->m_pSection.lock())
+                    secId = mapId(sectionIdMap, pSec->m_Id);
             }
 
-            stream << FmtInt(mapId(elementIdMap, pElem->m_Id), 10, true) << " "
-                << FmtInt(nodeId1) << " "
-                << FmtInt(nodeId2) << " "
-                << FmtInt(matId) << " "
-                << FmtInt(secId);
+            stream << FmtInt(mapId(elementIdMap, pElem->m_Id), 10, true) << " " << FmtInt(nodeId1) << " "
+                   << FmtInt(nodeId2) << " " << FmtInt(matId) << " " << FmtInt(secId);
 
             if (auto pBeam = std::dynamic_pointer_cast<ElementBeam_CR>(pElem))
             {
-                stream << " "
-                    << FmtDouble(pBeam->q0.x()) << " "
-                    << FmtDouble(pBeam->q0.y()) << " "
-                    << FmtDouble(pBeam->q0.z());
+                stream << " " << FmtDouble(pBeam->q0.x()) << " " << FmtDouble(pBeam->q0.y()) << " "
+                       << FmtDouble(pBeam->q0.z());
             }
             stream << "\n";
         }
@@ -877,9 +1115,8 @@ bool Outputter::SaveBdfModel(const QString& fileName, StructureData* pData)
             auto constraintNode = pCon->m_pNode.lock();
             // ID, NodeID, Dir, Value
             stream << FmtInt(mapId(constraintIdMap, pair.first), 10, true) << " "
-                << FmtInt(constraintNode ? mapId(nodeIdMap, constraintNode->m_Id) : 0) << " "
-                << FmtInt(static_cast<int>(pCon->m_Direction)) << " "
-                << FmtDouble(pCon->m_Value) << "\n";
+                   << FmtInt(constraintNode ? mapId(nodeIdMap, constraintNode->m_Id) : 0) << " "
+                   << FmtInt(static_cast<int>(pCon->m_Direction)) << " " << FmtDouble(pCon->m_Value) << "\n";
         }
     }
 
@@ -889,16 +1126,21 @@ bool Outputter::SaveBdfModel(const QString& fileName, StructureData* pData)
     {
         auto pLoad = pair.second;
         QString typeName = "UNKNOWN";
-        if (std::dynamic_pointer_cast<Force_Node>(pLoad)) typeName = "FORCE_NODE";
-        else if (std::dynamic_pointer_cast<Force_Element>(pLoad)) typeName = "FORCE_ELEMENT";
-        else if (std::dynamic_pointer_cast<Force_Gravity>(pLoad)) typeName = "FORCE_GRAVITY";
-        else if (std::dynamic_pointer_cast<Force_Wind>(pLoad)) typeName = "FORCE_WIND";
+        if (std::dynamic_pointer_cast<Force_Node>(pLoad))
+            typeName = "FORCE_NODE";
+        else if (std::dynamic_pointer_cast<Force_Element>(pLoad))
+            typeName = "FORCE_ELEMENT";
+        else if (std::dynamic_pointer_cast<Force_Gravity>(pLoad))
+            typeName = "FORCE_GRAVITY";
+        else if (std::dynamic_pointer_cast<Force_Wind>(pLoad))
+            typeName = "FORCE_WIND";
         loadGroups[typeName].push_back(pLoad);
     }
 
     for (const auto& group : loadGroups)
     {
-        if (group.first == "UNKNOWN" || group.second.empty()) continue;
+        if (group.first == "UNKNOWN" || group.second.empty())
+            continue;
 
         stream << "\n*LOAD, " << group.first << ", " << group.second.size() << "\n";
         stream << "** ID  NodeID/ElementID  Direction  Value\n";
@@ -909,37 +1151,32 @@ bool Outputter::SaveBdfModel(const QString& fileName, StructureData* pData)
                 auto pL = std::dynamic_pointer_cast<Force_Node>(pLoad);
                 auto loadNode = pL->m_pNode.lock();
                 stream << FmtInt(mapId(loadIdMap, pL->m_Id), 10, true) << " "
-                    << FmtInt(loadNode ? mapId(nodeIdMap, loadNode->m_Id) : 0) << " "
-                    << FmtInt(static_cast<int>(pL->m_Direction)) << " "
-                    << FmtDouble(pL->m_Value) << " "
-                    << FmtInt(mapId(stepIdMap, pL->m_StepId)) << " "
-                    << FmtDouble(pL->m_StartTime) << " "
-                    << FmtDouble(pL->m_EndTime) << "\n";
+                       << FmtInt(loadNode ? mapId(nodeIdMap, loadNode->m_Id) : 0) << " "
+                       << FmtInt(static_cast<int>(pL->m_Direction)) << " " << FmtDouble(pL->m_Value) << " "
+                       << FmtInt(mapId(stepIdMap, pL->m_StepId)) << " " << FmtDouble(pL->m_StartTime) << " "
+                       << FmtDouble(pL->m_EndTime) << "\n";
             }
             else if (group.first == "FORCE_ELEMENT")
             {
                 auto pL = std::dynamic_pointer_cast<Force_Element>(pLoad);
                 auto loadElement = pL->m_pElement.lock();
                 stream << FmtInt(mapId(loadIdMap, pL->m_Id), 10, true) << " "
-                    << FmtInt(loadElement ? mapId(elementIdMap, loadElement->m_Id) : 0) << " "
-                    << FmtInt(static_cast<int>(pL->m_Direction)) << " "
-                    << FmtDouble(pL->m_Value) << "\n";
+                       << FmtInt(loadElement ? mapId(elementIdMap, loadElement->m_Id) : 0) << " "
+                       << FmtInt(static_cast<int>(pL->m_Direction)) << " " << FmtDouble(pL->m_Value) << "\n";
             }
             else if (group.first == "FORCE_GRAVITY")
             {
                 auto pL = std::dynamic_pointer_cast<Force_Gravity>(pLoad);
                 stream << FmtInt(mapId(loadIdMap, pL->m_Id), 10, true) << " "
-                    << FmtInt(static_cast<int>(pL->m_Direction)) << " "
-                    << FmtDouble(pL->m_g) << " "
-                    << FmtInt(mapId(stepIdMap, pL->m_StepId)) << "\n";
+                       << FmtInt(static_cast<int>(pL->m_Direction)) << " " << FmtDouble(pL->m_g) << " "
+                       << FmtInt(mapId(stepIdMap, pL->m_StepId)) << "\n";
             }
             else if (group.first == "FORCE_WIND")
             {
                 auto pL = std::dynamic_pointer_cast<Force_Wind>(pLoad);
                 stream << FmtInt(mapId(loadIdMap, pL->m_Id), 10, true) << " "
-                    << FmtInt(static_cast<int>(pL->m_Direction)) << " "
-                    << FmtDouble(pL->m_velocity) << " "
-                    << FmtInt(mapId(stepIdMap, pL->m_StepId)) << "\n";
+                       << FmtInt(static_cast<int>(pL->m_Direction)) << " " << FmtDouble(pL->m_velocity) << " "
+                       << FmtInt(mapId(stepIdMap, pL->m_StepId)) << "\n";
             }
         }
     }
@@ -954,7 +1191,8 @@ bool Outputter::SaveBdfModel(const QString& fileName, StructureData* pData)
         {
             auto pElem = pair.second;
             // 仅输出有初始应力的单元？目前全部输出
-            stream << FmtInt(mapId(elementIdMap, pair.first), 10, true) << " " << FmtDouble(pElem->m_InitStress) << "\n";
+            stream << FmtInt(mapId(elementIdMap, pair.first), 10, true) << " " << FmtDouble(pElem->m_InitStress)
+                   << "\n";
         }
     }
 
@@ -966,12 +1204,9 @@ bool Outputter::SaveBdfModel(const QString& fileName, StructureData* pData)
         for (const auto& pair : pData->m_AnalysisStep)
         {
             auto pStep = pair.second;
-            stream << FmtInt(mapId(stepIdMap, pair.first), 10, true) << " "
-                << FmtStr(pStep->GetTypeName()) << " "
-                << FmtDouble(pStep->m_Time) << " "
-                << FmtDouble(pStep->m_StepSize) << " "
-                << FmtDouble(pStep->m_Tolerance) << " "
-                << FmtInt(pStep->m_MaxIterations) << "\n";
+            stream << FmtInt(mapId(stepIdMap, pair.first), 10, true) << " " << FmtStr(pStep->GetTypeName()) << " "
+                   << FmtDouble(pStep->m_Time) << " " << FmtDouble(pStep->m_StepSize) << " "
+                   << FmtDouble(pStep->m_Tolerance) << " " << FmtInt(pStep->m_MaxIterations) << "\n";
         }
     }
 
@@ -980,23 +1215,22 @@ bool Outputter::SaveBdfModel(const QString& fileName, StructureData* pData)
     return true;
 }
 
-bool Outputter::SaveHdf5File(const QString& fileName, StructureData* pData,
-    const QString& sourceModelName, bool resultComplete)
+bool Outputter::SaveHdf5File(const QString& fileName, StructureData* pData, const QString& sourceModelName,
+                             bool resultComplete)
 {
     Hdf5ModelIO hdf5ResultIO;
     return hdf5ResultIO.ExportHdf5(fileName, pData, sourceModelName, resultComplete);
 }
 
-bool Outputter::ExportBdfResultFromHdf5(const QString& hdf5FileName,
-    const QString& bdfFileName,
-    const std::vector<int>& nodeIds,
-    const std::vector<EnumKeyword::NodeResultType>& nodeTypes,
-    const std::vector<int>& elementIds,
-    const std::vector<EnumKeyword::ElementResultType>& elementTypes) const
+bool Outputter::ExportBdfResultFromHdf5(const QString& hdf5FileName, const QString& bdfFileName,
+                                        const std::vector<int>& nodeIds,
+                                        const std::vector<EnumKeyword::NodeResultType>& nodeTypes,
+                                        const std::vector<int>& elementIds,
+                                        const std::vector<EnumKeyword::ElementResultType>& elementTypes) const
 {
     Hdf5ModelIO hdf5ResultIO;
-    return hdf5ResultIO.ExportBdfResultFromHdf5(hdf5FileName, bdfFileName,
-        nodeIds, nodeTypes, elementIds, elementTypes);
+    return hdf5ResultIO.ExportBdfResultFromHdf5(hdf5FileName, bdfFileName, nodeIds, nodeTypes, elementIds,
+                                                elementTypes);
 }
 
 void Outputter::SaveModel(const QString& fileName, StructureData* pData)

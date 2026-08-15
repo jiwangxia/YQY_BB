@@ -6,9 +6,8 @@ AnalysisSummaryPanel::AnalysisSummaryPanel(QWidget* p)
     , m_ui(new Ui::AnalysisSummaryPanelClass)
 {
     m_ui->setupUi(this);
-    const QList<QPushButton*> bs = {
-        m_ui->stepsButton, m_ui->loadsButton, m_ui->constraintsButton,
-        m_ui->mpcsButton, m_ui->regionsButton};
+    const QList<QPushButton*> bs = {m_ui->stepsButton, m_ui->loadsButton, m_ui->constraintsButton, m_ui->mpcsButton,
+                                    m_ui->regionsButton};
     for (auto* b : bs)
     {
         b->setIconSize(QSize(22, 22));

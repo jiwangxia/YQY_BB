@@ -4,7 +4,8 @@
 class CompactDoubleSpinBox final : public QDoubleSpinBox
 {
 public:
-    explicit CompactDoubleSpinBox(QWidget* parent = nullptr) : QDoubleSpinBox(parent)
+    explicit CompactDoubleSpinBox(QWidget* parent = nullptr)
+        : QDoubleSpinBox(parent)
     {
         setDecimals(15);
         setGroupSeparatorShown(false);

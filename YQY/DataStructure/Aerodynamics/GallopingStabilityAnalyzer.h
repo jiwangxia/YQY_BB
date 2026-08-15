@@ -4,10 +4,8 @@
 
 #include <vector>
 
-// For the force convention used by this program, H = Cd + dCl/d(alpha).
-// H < 0 is negative aerodynamic damping in the cross-wind translation mode.
-// This is a fast aerodynamic pre-screen, not a substitute for a coupled
-// structural stability calculation.
+// 本程序的力方向约定为 H = Cd + dCl/d(alpha)。H < 0 表示横风向平移模态存在负气动阻尼。
+// 该判据仅用于快速气动预筛选，不能替代气动与结构耦合稳定性计算。
 struct GallopingInstabilityInterval
 {
     int profileId = 0;
@@ -19,8 +17,7 @@ struct GallopingInstabilityInterval
 class GallopingStabilityAnalyzer final
 {
 public:
-    // Uses the same piecewise-linear coefficients as AeroManager. Boundaries
-    // are analytical zero crossings of H, without angular sampling error.
-    static std::vector<GallopingInstabilityInterval> FindNegativeDampingIntervals(
-        const std::vector<BladeModel>& models, double angleStepDegrees = 5.0);
+    // 使用与 AeroManager 相同的分段线性系数，通过 H 的解析零点确定边界，不引入角度采样误差。
+    static std::vector<GallopingInstabilityInterval> FindNegativeDampingIntervals(const std::vector<BladeModel>& models,
+                                                                                  double angleStepDegrees = 5.0);
 };

@@ -26,7 +26,7 @@ void WriteCsv(const std::filesystem::path& path)
 int main()
 {
     const auto dir = MakeTempDir();
-    const AeroCaseKey key{ 1, 14, 12 };
+    const AeroCaseKey key{1, 14, 12};
 
     const auto legacyPath = dir / "1-14ms-12mm.csv";
     WriteCsv(legacyPath);
@@ -53,7 +53,7 @@ int main()
     AeroManager repositoryData;
     assert(repositoryData.loadAllCases(std::filesystem::path("YQY/Import/Aero_Data/Input_Data")));
     assert(repositoryData.getLoadedCaseCount() == 40);
-    assert(repositoryData.hasCase(AeroCaseKey{ 4, 18, 28 }));
+    assert(repositoryData.hasCase(AeroCaseKey{4, 18, 28}));
 
     return 0;
 }

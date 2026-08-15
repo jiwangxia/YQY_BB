@@ -2,15 +2,18 @@
 #include "Utility/CR.h"
 #include <algorithm>
 
-Node::Node() : m_X(0.0), m_Y(0.0), m_Z(0.0)
+Node::Node()
+    : m_X(0.0)
+    , m_Y(0.0)
+    , m_Z(0.0)
 {
-    m_DOF.resize(3, -1);    //默认3个自由度，均未约束
+    m_DOF.resize(3, -1); //默认3个自由度，均未约束
     m_Displacement.resize(3, 0.0);
 }
 
 void Node::SetNumDOFs(int num_dofs)
 {
-    if (num_dofs > m_DOF.size()) 
+    if (num_dofs > m_DOF.size())
     {
         m_DOF.resize(num_dofs, -1);
         m_Displacement.resize(num_dofs, 0.0);
@@ -22,14 +25,16 @@ void Node::SetNumDOFs(int num_dofs)
     }
 }
 
-void Node::BeginNewmarkStep(double dt, double beta, double gamma,
-    const std::array<bool, 3>& translationActive,
-    const std::array<bool, 3>& rotationActive)
+void Node::BeginNewmarkStep(double dt, double beta, double gamma, const std::array<bool, 3>& translationActive,
+                            const std::array<bool, 3>& rotationActive)
 {
     const int numDOF = static_cast<int>(m_DOF.size());
-    if (m_Displacement.size() < numDOF) m_Displacement.resize(numDOF, 0.0);
-    if (m_Velocity.size() < numDOF) m_Velocity.resize(numDOF, 0.0);
-    if (m_Acceleration.size() < numDOF) m_Acceleration.resize(numDOF, 0.0);
+    if (m_Displacement.size() < numDOF)
+        m_Displacement.resize(numDOF, 0.0);
+    if (m_Velocity.size() < numDOF)
+        m_Velocity.resize(numDOF, 0.0);
+    if (m_Acceleration.size() < numDOF)
+        m_Acceleration.resize(numDOF, 0.0);
 
     m_Displacement_n = m_Displacement;
     m_Velocity_n = m_Velocity;
@@ -38,12 +43,10 @@ void Node::BeginNewmarkStep(double dt, double beta, double gamma,
 
     for (int i = 0; i < std::min(3, numDOF); ++i)
     {
-        if (!translationActive[i]) continue;
-        m_Displacement[i] = m_Displacement_n[i]
-            + dt * m_Velocity_n[i]
-            + dt * dt * (0.5 - beta) * m_Acceleration_n[i];
-        m_Velocity[i] = m_Velocity_n[i]
-            + dt * (1.0 - gamma) * m_Acceleration_n[i];
+        if (!translationActive[i])
+            continue;
+        m_Displacement[i] = m_Displacement_n[i] + dt * m_Velocity_n[i] + dt * dt * (0.5 - beta) * m_Acceleration_n[i];
+        m_Velocity[i] = m_Velocity_n[i] + dt * (1.0 - gamma) * m_Acceleration_n[i];
         m_Acceleration[i] = 0.0;
     }
 
@@ -52,17 +55,16 @@ void Node::BeginNewmarkStep(double dt, double beta, double gamma,
     {
         if (rotationActive[0])
         {
-            m_Displacement[3] = m_Displacement_n[3]
-                + dt * m_Velocity_n[3]
-                + dt * dt * (0.5 - beta) * m_Acceleration_n[3];
-            m_Velocity[3] = m_Velocity_n[3]
-                + dt * (1.0 - gamma) * m_Acceleration_n[3];
+            m_Displacement[3] =
+                m_Displacement_n[3] + dt * m_Velocity_n[3] + dt * dt * (0.5 - beta) * m_Acceleration_n[3];
+            m_Velocity[3] = m_Velocity_n[3] + dt * (1.0 - gamma) * m_Acceleration_n[3];
             m_Acceleration[3] = 0.0;
         }
         return;
     }
 
-    if (numDOF < 6) return;
+    if (numDOF < 6)
+        return;
 
     Eigen::Vector3d omegaSpatial_n;
     Eigen::Vector3d alphaSpatial_n;
@@ -75,19 +77,18 @@ void Node::BeginNewmarkStep(double dt, double beta, double gamma,
     m_AlphaMaterial_n = m_Rg_n.transpose() * alphaSpatial_n;
 
     // Newmark 预测在材料增量转角 H 上进行，再转为空间转角更新姿态。
-    const Eigen::Vector3d Hpred = dt * m_OmegaMaterial_n
-        + dt * dt * (0.5 - beta) * m_AlphaMaterial_n;
+    const Eigen::Vector3d Hpred = dt * m_OmegaMaterial_n + dt * dt * (0.5 - beta) * m_AlphaMaterial_n;
     Eigen::Vector3d thetaPred = m_Rg_n * Hpred;
     for (int i = 0; i < 3; ++i)
     {
-        if (!rotationActive[i]) thetaPred(i) = 0.0;
+        if (!rotationActive[i])
+            thetaPred(i) = 0.0;
     }
 
     Utility::CR::Update_NodalRotation(thetaPred, m_Rg_n, m_Rg);
     Utility::CR::Extract_RotationVector(m_Rg * m_Rg_n.transpose(), m_StepRotation);
 
-    m_OmegaMaterial = m_OmegaMaterial_n
-        + dt * (1.0 - gamma) * m_AlphaMaterial_n;
+    m_OmegaMaterial = m_OmegaMaterial_n + dt * (1.0 - gamma) * m_AlphaMaterial_n;
     m_AlphaMaterial.setZero();
 
     Eigen::Vector3d omegaSpatial = m_Rg * m_OmegaMaterial;
@@ -113,8 +114,8 @@ void Node::BeginNewmarkStep(double dt, double beta, double gamma,
     }
 }
 
-void Node::ApplyNewmarkCorrection(const Eigen::Vector3d& deltaTranslation,
-    const Eigen::Vector3d& deltaRotation, double a0, double a1)
+void Node::ApplyNewmarkCorrection(const Eigen::Vector3d& deltaTranslation, const Eigen::Vector3d& deltaRotation,
+                                  double a0, double a1)
 {
     const int numDOF = static_cast<int>(m_DOF.size());
     for (int i = 0; i < std::min(3, numDOF); ++i)
@@ -132,7 +133,8 @@ void Node::ApplyNewmarkCorrection(const Eigen::Vector3d& deltaTranslation,
         return;
     }
 
-    if (numDOF < 6) return;
+    if (numDOF < 6)
+        return;
 
     Eigen::Matrix3d updatedRotation;
     Utility::CR::Update_NodalRotation(deltaRotation, m_Rg, updatedRotation);
@@ -143,8 +145,7 @@ void Node::ApplyNewmarkCorrection(const Eigen::Vector3d& deltaTranslation,
     // 需先经 Ts^{-1} 转为空间增量转角，再转到步初材料坐标系。
     Eigen::Matrix3d spatialSpinInverse;
     Utility::CR::Calculate_Ts_Inv(m_StepRotation, spatialSpinInverse);
-    const Eigen::Vector3d deltaH = m_Rg_n.transpose()
-        * spatialSpinInverse * deltaRotation;
+    const Eigen::Vector3d deltaH = m_Rg_n.transpose() * spatialSpinInverse * deltaRotation;
     m_OmegaMaterial += a1 * deltaH;
     m_AlphaMaterial += a0 * deltaH;
 
@@ -162,58 +163,43 @@ void Node::ApplyNewmarkCorrection(const Eigen::Vector3d& deltaTranslation,
 
 void Node::RollbackNewmarkStep()
 {
-    if (!m_Displacement_n.empty()) m_Displacement = m_Displacement_n;
-    if (!m_Velocity_n.empty()) m_Velocity = m_Velocity_n;
-    if (!m_Acceleration_n.empty()) m_Acceleration = m_Acceleration_n;
+    if (!m_Displacement_n.empty())
+        m_Displacement = m_Displacement_n;
+    if (!m_Velocity_n.empty())
+        m_Velocity = m_Velocity_n;
+    if (!m_Acceleration_n.empty())
+        m_Acceleration = m_Acceleration_n;
     m_Rg = m_Rg_n;
     m_OmegaMaterial = m_OmegaMaterial_n;
     m_AlphaMaterial = m_AlphaMaterial_n;
     m_StepRotation.setZero();
 }
 
-void Node::SetTssbnStageKinematics(
-    int stageIndex,
-    double timeStep,
-    double firstStageTime,
-    double secondStageTime,
-    double secondStageDiagonalFraction,
-    Eigen::Vector3d& spatialAngularVelocity,
-    Eigen::Vector3d& spatialAngularAcceleration)
+void Node::SetTssbnStageKinematics(int stageIndex, double timeStep, double firstStageTime, double secondStageTime,
+                                   double secondStageDiagonalFraction, Eigen::Vector3d& spatialAngularVelocity,
+                                   Eigen::Vector3d& spatialAngularAcceleration)
 {
-    Utility::CR::Extract_RotationVector(
-        m_Rg * m_Rg_n.transpose(), m_StepRotation);
-    const Eigen::Vector3d materialRotationIncrement =
-        m_Rg_n.transpose() * m_StepRotation;
+    Utility::CR::Extract_RotationVector(m_Rg * m_Rg_n.transpose(), m_StepRotation);
+    const Eigen::Vector3d materialRotationIncrement = m_Rg_n.transpose() * m_StepRotation;
 
     if (stageIndex == 1)
     {
         const double diagonalTime = firstStageTime * timeStep;
-        m_TssbnOmegaMaterial1 =
-            materialRotationIncrement / diagonalTime;
-        m_TssbnAlphaMaterial1 =
-            (m_TssbnOmegaMaterial1 - m_OmegaMaterial_n)
-            / diagonalTime;
+        m_TssbnOmegaMaterial1 = materialRotationIncrement / diagonalTime;
+        m_TssbnAlphaMaterial1 = (m_TssbnOmegaMaterial1 - m_OmegaMaterial_n) / diagonalTime;
         m_OmegaMaterial = m_TssbnOmegaMaterial1;
         m_AlphaMaterial = m_TssbnAlphaMaterial1;
     }
     else
     {
-        const double previousCoefficient =
-            secondStageTime
-            * (1.0 - secondStageDiagonalFraction);
-        const double diagonalCoefficient =
-            secondStageTime * secondStageDiagonalFraction;
+        const double previousCoefficient = secondStageTime * (1.0 - secondStageDiagonalFraction);
+        const double diagonalCoefficient = secondStageTime * secondStageDiagonalFraction;
         const double diagonalTime = diagonalCoefficient * timeStep;
         m_TssbnOmegaMaterial2 =
-            (materialRotationIncrement
-                - timeStep * previousCoefficient
-                    * m_TssbnOmegaMaterial1)
-            / diagonalTime;
+            (materialRotationIncrement - timeStep * previousCoefficient * m_TssbnOmegaMaterial1) / diagonalTime;
         m_TssbnAlphaMaterial2 =
-            (m_TssbnOmegaMaterial2 - m_OmegaMaterial_n
-                - timeStep * previousCoefficient
-                    * m_TssbnAlphaMaterial1)
-            / diagonalTime;
+            (m_TssbnOmegaMaterial2 - m_OmegaMaterial_n - timeStep * previousCoefficient * m_TssbnAlphaMaterial1) /
+            diagonalTime;
         m_OmegaMaterial = m_TssbnOmegaMaterial2;
         m_AlphaMaterial = m_TssbnAlphaMaterial2;
     }
@@ -222,70 +208,47 @@ void Node::SetTssbnStageKinematics(
     spatialAngularAcceleration = m_Rg * m_AlphaMaterial;
     for (int component = 0; component < 3; ++component)
     {
-        m_Velocity[component + 3] =
-            spatialAngularVelocity[component];
-        m_Acceleration[component + 3] =
-            spatialAngularAcceleration[component];
+        m_Velocity[component + 3] = spatialAngularVelocity[component];
+        m_Acceleration[component + 3] = spatialAngularAcceleration[component];
     }
 }
 
-Node::TssbnRotationState Node::IntegrateTssbnRotation(
-    double timeStep,
-    double stageAccelerationExtrapolation,
-    double baseFirstWeight,
-    double embeddedFirstWeight,
-    double embeddedSecondWeight,
-    double embeddedLastWeight,
-    double lastStageFirstCoefficient,
-    double lastStageSecondCoefficient) const
+Node::TssbnRotationState Node::IntegrateTssbnRotation(double timeStep, double stageAccelerationExtrapolation,
+                                                      double baseFirstWeight, double embeddedFirstWeight,
+                                                      double embeddedSecondWeight, double embeddedLastWeight,
+                                                      double lastStageFirstCoefficient,
+                                                      double lastStageSecondCoefficient) const
 {
     const Eigen::Vector3d lastOmegaMaterial =
-        m_OmegaMaterial_n
-        + timeStep
-            * (lastStageFirstCoefficient * m_TssbnAlphaMaterial1
-                + lastStageSecondCoefficient * m_TssbnAlphaMaterial2);
+        m_OmegaMaterial_n + timeStep * (lastStageFirstCoefficient * m_TssbnAlphaMaterial1 +
+                                        lastStageSecondCoefficient * m_TssbnAlphaMaterial2);
     const Eigen::Vector3d lastAlphaMaterial =
-        m_TssbnAlphaMaterial2
-        + stageAccelerationExtrapolation
-            * (m_TssbnAlphaMaterial2 - m_TssbnAlphaMaterial1);
+        m_TssbnAlphaMaterial2 + stageAccelerationExtrapolation * (m_TssbnAlphaMaterial2 - m_TssbnAlphaMaterial1);
 
     const Eigen::Vector3d baseMaterialIncrement =
-        timeStep
-        * (baseFirstWeight * m_TssbnOmegaMaterial1
-            + (1.0 - baseFirstWeight) * m_TssbnOmegaMaterial2);
+        timeStep * (baseFirstWeight * m_TssbnOmegaMaterial1 + (1.0 - baseFirstWeight) * m_TssbnOmegaMaterial2);
     const Eigen::Vector3d embeddedMaterialIncrement =
-        timeStep
-        * (embeddedFirstWeight * m_TssbnOmegaMaterial1
-            + embeddedSecondWeight * m_TssbnOmegaMaterial2
-            + embeddedLastWeight * lastOmegaMaterial);
+        timeStep * (embeddedFirstWeight * m_TssbnOmegaMaterial1 + embeddedSecondWeight * m_TssbnOmegaMaterial2 +
+                    embeddedLastWeight * lastOmegaMaterial);
 
     TssbnRotationState result;
     result.baseSpatialIncrement = m_Rg_n * baseMaterialIncrement;
-    result.embeddedSpatialIncrement =
-        m_Rg_n * embeddedMaterialIncrement;
+    result.embeddedSpatialIncrement = m_Rg_n * embeddedMaterialIncrement;
 
     Eigen::Matrix3d baseRotation;
     Eigen::Matrix3d embeddedRotation;
-    Utility::CR::Update_NodalRotation(
-        result.baseSpatialIncrement, m_Rg_n, baseRotation);
-    Utility::CR::Update_NodalRotation(
-        result.embeddedSpatialIncrement, m_Rg_n, embeddedRotation);
+    Utility::CR::Update_NodalRotation(result.baseSpatialIncrement, m_Rg_n, baseRotation);
+    Utility::CR::Update_NodalRotation(result.embeddedSpatialIncrement, m_Rg_n, embeddedRotation);
 
     const Eigen::Vector3d baseOmegaMaterial =
-        m_OmegaMaterial_n
-        + timeStep
-            * (baseFirstWeight * m_TssbnAlphaMaterial1
-                + (1.0 - baseFirstWeight) * m_TssbnAlphaMaterial2);
+        m_OmegaMaterial_n +
+        timeStep * (baseFirstWeight * m_TssbnAlphaMaterial1 + (1.0 - baseFirstWeight) * m_TssbnAlphaMaterial2);
     const Eigen::Vector3d embeddedOmegaMaterial =
-        m_OmegaMaterial_n
-        + timeStep
-            * (embeddedFirstWeight * m_TssbnAlphaMaterial1
-                + embeddedSecondWeight * m_TssbnAlphaMaterial2
-                + embeddedLastWeight * lastAlphaMaterial);
+        m_OmegaMaterial_n +
+        timeStep * (embeddedFirstWeight * m_TssbnAlphaMaterial1 + embeddedSecondWeight * m_TssbnAlphaMaterial2 +
+                    embeddedLastWeight * lastAlphaMaterial);
     result.baseSpatialVelocity = baseRotation * baseOmegaMaterial;
-    result.embeddedSpatialVelocity =
-        embeddedRotation * embeddedOmegaMaterial;
-    result.acceptedSpatialAcceleration =
-        baseRotation * lastAlphaMaterial;
+    result.embeddedSpatialVelocity = embeddedRotation * embeddedOmegaMaterial;
+    result.acceptedSpatialAcceleration = baseRotation * lastAlphaMaterial;
     return result;
 }

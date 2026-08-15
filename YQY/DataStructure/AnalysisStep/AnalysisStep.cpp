@@ -1,11 +1,12 @@
 #include "AnalysisStep.h"
 #include "Application/ApplicationPaths.h"
 #include <algorithm>
-#include <future>
 #include <iterator>
 #include <thread>
+#include <QtConcurrentRun>
 #include "DataStructure/Structure/StructureData.h"
 #include "DataStructure/Element/ElementBase.h"
+#include "DataStructure/Element/ElementCable.h"
 #include "DataStructure/Aerodynamics/AeroManager.h"
 #include "DataStructure/Aerodynamics/BundleAeroMapper.h"
 #include "DataStructure/Load/LoadAssembler.h"
@@ -14,44 +15,36 @@
 #include "Solver/Interface/ISolver.h"
 #include "Solver/SolverFactory.h"
 #include "Solver/AssemblySettings.h"
+#include "Solver/Constraint/NonlinearMPC.h"
 #include <Eigen/SparseCholesky>
 
-AeroCaseKey AnalysisStep::GetGallopingAeroCase(
-    int bundleCount, const Force_Wind& wind) const
+AeroCaseKey AnalysisStep::GetGallopingAeroCase(int bundleCount, const Force_Wind& wind) const
 {
-    return AeroCaseKey{ bundleCount, static_cast<int>(std::llround(wind.m_velocity)),
-        m_GallopingIceThickness };
+    return AeroCaseKey{bundleCount, static_cast<int>(std::llround(wind.m_velocity)), m_GallopingIceThickness};
 }
 
-bool AnalysisStep::ShouldAssembleGalloping(
-    int bundleCount, const Force_Wind& wind) const
+bool AnalysisStep::ShouldAssembleGalloping(int bundleCount, const Force_Wind& wind) const
 {
-    return isDynamic && m_EnableGalloping
-        && std::abs(wind.m_velocity - std::llround(wind.m_velocity)) <= 1.0e-9
-        && AeroManager::isSupportedCase(GetGallopingAeroCase(bundleCount, wind));
+    return isDynamic && m_EnableGalloping && std::abs(wind.m_velocity - std::llround(wind.m_velocity)) <= 1.0e-9 &&
+           AeroManager::isSupportedCase(GetGallopingAeroCase(bundleCount, wind));
 }
 
 bool AnalysisStep::IsStepScopedDataActive(int sourceStepId) const
 {
-    // Step 0 is the legacy/global scope and is active in every branch.
+    // 分析步 0 表示旧版全局作用域，在所有分析分支中生效。
     if (sourceStepId <= 0)
         return true;
     if (sourceStepId == m_Id)
         return true;
 
-    if (m_Type == EnumKeyword::StepType::DYNAMIC
-        && m_InitialStaticStepId > 0)
+    if (m_Type == EnumKeyword::StepType::DYNAMIC && m_InitialStaticStepId > 0)
     {
-        // A dependent dynamic analysis starts from the selected static
-        // equilibrium.  Only definitions that were already active in that
-        // equilibrium are inherited.  Definitions from earlier sibling
-        // dynamics must not leak into this branch merely because their IDs
-        // are smaller.
+        // 关联动力分析从选定的静力平衡状态开始，只继承该平衡状态中已经生效的定义。
+        // 不能仅因其他动力分析步编号较小，就把同级分支的定义带入当前分支。
         return sourceStepId <= m_InitialStaticStepId;
     }
 
-    // Preserve the existing sequential semantics for static analyses and
-    // standalone dynamics that do not reference an equilibrium step.
+    // 静力分析以及未指定平衡分析步的独立动力分析继续采用既有顺序语义。
     return sourceStepId < m_Id;
 }
 
@@ -79,13 +72,15 @@ bool AnalysisStep::PrepareData()
 
 void AnalysisStep::Init()
 {
-    if (!PrepareData()) return;
+    if (!PrepareData())
+        return;
     Init_DOF();
     Init_Nodevector();
 }
 
 void AnalysisStep::Init_DOF()
 {
+    m_assemblyPattern = {};
     // m_pData 已由 PrepareData() 准备好
 
     // 重置所有节点的DOF标记，确保重新计算
@@ -117,12 +112,15 @@ void AnalysisStep::Init_DOF()
     for (auto& constraints : m_pData->m_Constraint)
     {
         auto pConstrain = constraints.second;
-        if (!pConstrain || !IsStepScopedDataActive(pConstrain->m_StepId)) continue;
+        if (!pConstrain || !IsStepScopedDataActive(pConstrain->m_StepId))
+            continue;
         auto pNode = pConstrain->m_pNode.lock();
-        if (!pNode) continue;
+        if (!pNode)
+            continue;
 
         int iDirection = static_cast<int>(pConstrain->m_Direction);
-        if (iDirection < 0 || iDirection >= pNode->m_DOF.size()) continue;
+        if (iDirection < 0 || iDirection >= pNode->m_DOF.size())
+            continue;
 
         if (-1 == pNode->m_DOF[iDirection])
         {
@@ -138,7 +136,8 @@ void AnalysisStep::Init_DOF()
         auto pNode = nodes.second;
         for (auto& dofValue : pNode->m_DOF)
         {
-            if (-1 == dofValue) dofValue = iStart++;
+            if (-1 == dofValue)
+                dofValue = iStart++;
         }
     }
 
@@ -188,7 +187,8 @@ bool AnalysisStep::ValidateGallopingConfiguration(QString* errorMessage) const
         return true;
     if (!isDynamic)
     {
-        if (errorMessage) *errorMessage = QStringLiteral("舞动气动力只能用于动力分析步。");
+        if (errorMessage)
+            *errorMessage = QStringLiteral("舞动气动力只能用于动力分析步。");
         return false;
     }
 
@@ -208,13 +208,14 @@ bool AnalysisStep::ValidateGallopingConfiguration(QString* errorMessage) const
     }
     if (!selectedWind)
     {
-        if (errorMessage) *errorMessage = QStringLiteral("启用舞动前必须给分析步配置风荷载。");
+        if (errorMessage)
+            *errorMessage = QStringLiteral("启用舞动前必须给分析步配置风荷载。");
         return false;
     }
-    if (!selectedWind->m_direction.allFinite()
-        || selectedWind->m_direction.norm() <= 1.0e-12)
+    if (!selectedWind->m_direction.allFinite() || selectedWind->m_direction.norm() <= 1.0e-12)
     {
-        if (errorMessage) *errorMessage = QStringLiteral("舞动风荷载必须提供非零的全局风向向量。");
+        if (errorMessage)
+            *errorMessage = QStringLiteral("舞动风荷载必须提供非零的全局风向向量。");
         return false;
     }
     if (!std::isfinite(m_GallopingInitialAttackDegrees))
@@ -230,8 +231,8 @@ bool AnalysisStep::ValidateGallopingConfiguration(QString* errorMessage) const
         return false;
     }
     const double roundedSpeed = std::llround(selectedWind->m_velocity);
-    if (std::abs(selectedWind->m_velocity - roundedSpeed) > 1.0e-9
-        || !AeroManager::isSupportedWindSpeed(static_cast<int>(roundedSpeed)))
+    if (std::abs(selectedWind->m_velocity - roundedSpeed) > 1.0e-9 ||
+        !AeroManager::isSupportedWindSpeed(static_cast<int>(roundedSpeed)))
     {
         if (errorMessage)
             *errorMessage = QStringLiteral("风速必须为 10、12、14 或 18 m/s。");
@@ -266,26 +267,21 @@ bool AnalysisStep::PrepareGallopingData(QString* errorMessage)
             continue;
         if (element->m_AeroBundleCount > 0)
             bundleCounts.insert(element->m_AeroBundleCount);
-        legacyBundleCount = std::max(
-            legacyBundleCount, element->m_AeroProfileId + 1);
+        legacyBundleCount = std::max(legacyBundleCount, element->m_AeroProfileId + 1);
     }
     if (bundleCounts.empty())
         bundleCounts.insert(legacyBundleCount > 1 ? 4 : 1);
 
     const std::filesystem::path dataDirectories[] = {
         std::filesystem::path(ApplicationPaths::aerodynamicDataDirectory().toStdWString()),
-        std::filesystem::path("YQY/Import/Aero_Data/Input_Data"),
-        std::filesystem::path("Import/Aero_Data/Input_Data")
-    };
+        std::filesystem::path("YQY/Import/Aero_Data/Input_Data"), std::filesystem::path("Import/Aero_Data/Input_Data")};
     for (int bundleCount : bundleCounts)
     {
         const AeroCaseKey key = GetGallopingAeroCase(bundleCount, *wind);
         if (!AeroManager::isSupportedCase(key))
         {
             if (errorMessage)
-                *errorMessage = QStringLiteral(
-                    "当前模型包含 %1 分裂导线，但没有对应的气动参数工况。")
-                    .arg(bundleCount);
+                *errorMessage = QStringLiteral("当前模型包含 %1 分裂导线，但没有对应的气动参数工况。").arg(bundleCount);
             return false;
         }
         if (m_pData->m_AeroManager.hasCase(key))
@@ -303,10 +299,10 @@ bool AnalysisStep::PrepareGallopingData(QString* errorMessage)
         if (!loaded)
         {
             if (errorMessage)
-                *errorMessage = QStringLiteral(
-                    "无法加载气动参数：%1 分裂，%2 m/s，覆冰 %3 mm。")
-                    .arg(key.bundleCount).arg(key.windSpeed)
-                    .arg(key.iceThickness);
+                *errorMessage = QStringLiteral("无法加载气动参数：%1 分裂，%2 m/s，覆冰 %3 mm。")
+                                    .arg(key.bundleCount)
+                                    .arg(key.windSpeed)
+                                    .arg(key.iceThickness);
             return false;
         }
     }
@@ -333,8 +329,7 @@ bool AnalysisStep::BindGallopingProfiles(QString* errorMessage)
     if (!wind)
     {
         if (errorMessage)
-            *errorMessage = QStringLiteral(
-                "Galloping profile binding requires a wind load.");
+            *errorMessage = QStringLiteral("Galloping profile binding requires a wind load.");
         return false;
     }
 
@@ -343,8 +338,7 @@ bool AnalysisStep::BindGallopingProfiles(QString* errorMessage)
     {
         Q_UNUSED(elementId);
         if (element && element->HasAerodynamicLoad())
-            legacyBundleCount = std::max(
-                legacyBundleCount, element->m_AeroProfileId + 1);
+            legacyBundleCount = std::max(legacyBundleCount, element->m_AeroProfileId + 1);
     }
     if (legacyBundleCount > 1)
         legacyBundleCount = 4;
@@ -354,49 +348,39 @@ bool AnalysisStep::BindGallopingProfiles(QString* errorMessage)
     const auto currentPosition = [](const Node& node)
     {
         Eigen::Vector3d position(node.m_X, node.m_Y, node.m_Z);
-        for (int component = 0; component < 3
-            && component < static_cast<int>(node.m_Displacement.size());
-            ++component)
+        for (int component = 0; component < 3 && component < static_cast<int>(node.m_Displacement.size()); ++component)
             position[component] += node.m_Displacement[component];
         return position;
     };
 
     for (const auto& [elementId, element] : m_pData->m_Elements)
     {
-        if (!element || !element->HasAerodynamicLoad()
-            || element->m_pNode.size() != 2)
+        if (!element || !element->HasAerodynamicLoad() || element->m_pNode.size() != 2)
             continue;
         const auto first = element->m_pNode[0].lock();
         const auto second = element->m_pNode[1].lock();
         if (!first || !second)
         {
             if (errorMessage)
-                *errorMessage = QStringLiteral(
-                    "Aerodynamic element %1 has invalid end nodes.")
-                    .arg(elementId);
+                *errorMessage = QStringLiteral("Aerodynamic element %1 has invalid end nodes.").arg(elementId);
             return false;
         }
 
-        const int bundleCount = element->m_AeroBundleCount > 0
-            ? element->m_AeroBundleCount : legacyBundleCount;
-        const int wireId = element->m_WireId >= 0
-            ? element->m_WireId : element->m_AeroProfileId;
+        const int bundleCount = element->m_AeroBundleCount > 0 ? element->m_AeroBundleCount : legacyBundleCount;
+        const int wireId = element->m_WireId >= 0 ? element->m_WireId : element->m_AeroProfileId;
         try
         {
             m_gallopingProfileBindings.emplace(
-                elementId,
-                BundleAeroMapper::ResolveProfile(
-                    bundleCount, wireId,
-                    currentPosition(*second) - currentPosition(*first),
-                    modelUp, windVelocity));
+                elementId, BundleAeroMapper::ResolveProfile(bundleCount, wireId,
+                                                            currentPosition(*second) - currentPosition(*first), modelUp,
+                                                            windVelocity));
         }
         catch (const std::exception& exception)
         {
             if (errorMessage)
-                *errorMessage = QStringLiteral(
-                    "Cannot bind aerodynamic profile for element %1: %2")
-                    .arg(elementId)
-                    .arg(QString::fromUtf8(exception.what()));
+                *errorMessage = QStringLiteral("Cannot bind aerodynamic profile for element %1: %2")
+                                    .arg(elementId)
+                                    .arg(QString::fromUtf8(exception.what()));
             return false;
         }
     }
@@ -404,8 +388,7 @@ bool AnalysisStep::BindGallopingProfiles(QString* errorMessage)
     if (m_gallopingProfileBindings.empty())
     {
         if (errorMessage)
-            *errorMessage = QStringLiteral(
-                "Galloping is enabled but no aerodynamic conductor elements were found.");
+            *errorMessage = QStringLiteral("Galloping is enabled but no aerodynamic conductor elements were found.");
         return false;
     }
     return true;
@@ -421,8 +404,7 @@ Eigen::Vector3d AnalysisStep::GetModelUpDirection() const
         if (!gravity || !IsStepScopedDataActive(gravity->m_StepId))
             continue;
         const int component = static_cast<int>(gravity->m_Direction);
-        if (component >= 0 && component < 3
-            && std::abs(gravity->m_g) > 1.0e-12)
+        if (component >= 0 && component < 3 && std::abs(gravity->m_g) > 1.0e-12)
         {
             Eigen::Vector3d gravityVector = Eigen::Vector3d::Zero();
             gravityVector[component] = gravity->m_g;
@@ -441,86 +423,196 @@ void AnalysisStep::Get_ElementLength()
     }
 }
 
-//void AnalysisStep::Assemble_Matrix()
-//{
-//    std::list<Tri> m11, m21, m22;
-//    std::list<Tri> k11, k21, k22;
-//    std::list<Tri> c11, c21, c22;
-//
-//    m_M11.resize(m_nFixed, m_nFixed);
-//    m_M21.resize(m_nFree, m_nFixed);
-//    m_M22.resize(m_nFree, m_nFree);
-//
-//    m_K11.resize(m_nFixed, m_nFixed);
-//    m_K21.resize(m_nFree, m_nFixed);
-//    m_K22.resize(m_nFree, m_nFree);
-//
-//    m_C11.resize(m_nFixed, m_nFixed);
-//    m_C21.resize(m_nFree, m_nFixed);
-//    m_C22.resize(m_nFree, m_nFree);
-//
-//    std::vector<int> DOFs;
-//    std::vector<double> damping{ 0.0 ,0.0 ,0.0 ,0.0 };
-//
-//    MatrixXd me, ke, ce;
-//    for (auto& element : m_pData->m_Elements)
-//    {
-//        auto pelement = element.second;
-//        pelement->Get_ke_non(ke);
-//        pelement->Get_me_Consistent(me);
-//        //pelement->Get_me_Lumped(me);//杆单元用集中质量矩阵求解动力学与abaqus一致
-//        pelement->Assemble(damping, ce);
-//
-//        pelement->GetDOFs(DOFs);
-//        Assemble(DOFs, me, m11, m21, m22);
-//        Assemble(DOFs, ke, k11, k21, k22);
-//        Assemble(DOFs, ce, c11, c21, c22);
-//    }
-//
-//    m_M11.setFromTriplets(m11.begin(), m11.end());
-//    m_M21.setFromTriplets(m21.begin(), m21.end());
-//    m_M22.setFromTriplets(m22.begin(), m22.end());
-//
-//    m_K11.setFromTriplets(k11.begin(), k11.end());
-//    m_K21.setFromTriplets(k21.begin(), k21.end());
-//    m_K22.setFromTriplets(k22.begin(), k22.end());
-//
-//    m_C11.setFromTriplets(c11.begin(), c11.end());
-//    m_C21.setFromTriplets(c21.begin(), c21.end());
-//    m_C22.setFromTriplets(c22.begin(), c22.end());
-//}
-
-void AnalysisStep::AssembleFreeFree(
-    const std::vector<int>& dofs,
-    const Eigen::MatrixXd& elementMatrix,
-    std::vector<Tri>& freeFree)
+void AnalysisStep::AssembleFreeFree(const std::vector<int>& dofs, const Eigen::MatrixXd& elementMatrix,
+                                    _OUT std::vector<Tri>& freeFree)
 {
     const int elementDofCount = static_cast<int>(dofs.size());
 
     for (int i = 0; i < elementDofCount; ++i)
     {
         const int globalRow = dofs[i];
-        if (globalRow < m_nFixed
-            || globalRow >= m_nFixed + m_nFree)
+        if (globalRow < m_nFixed || globalRow >= m_nFixed + m_nFree)
         {
             continue;
         }
         for (int j = 0; j < elementDofCount; ++j)
         {
             const int globalColumn = dofs[j];
-            if (globalColumn >= m_nFixed
-                && globalColumn < m_nFixed + m_nFree)
+            if (globalColumn >= m_nFixed && globalColumn < m_nFixed + m_nFree)
             {
-                freeFree.emplace_back(
-                    globalRow - m_nFixed,
-                    globalColumn - m_nFixed,
-                    elementMatrix(i, j));
+                freeFree.emplace_back(globalRow - m_nFixed, globalColumn - m_nFixed, elementMatrix(i, j));
             }
         }
     }
 }
 
-void AnalysisStep::Assemble_AllLoads(VectorXd& F1, VectorXd& F2, double& Factor, double currentTime)
+void AnalysisStep::EnsureAssemblyPattern()
+{
+    if (m_assemblyPattern.valid)
+        return;
+
+    m_assemblyPattern = {};
+    std::vector<Tri> patternEntries;
+    patternEntries.reserve((m_pData->m_Elements.size() + m_pData->m_RigidBodyInertias.size()) * 36);
+    for (const auto& [elementId, element] : m_pData->m_Elements)
+    {
+        Q_UNUSED(elementId);
+        if (!element)
+            continue;
+        ElementAssemblyMap assemblyMap;
+        assemblyMap.element = element;
+        element->GetDOFs(assemblyMap.dofs);
+        const int dofCount = static_cast<int>(assemblyMap.dofs.size());
+        assemblyMap.valueIndices.assign(static_cast<std::size_t>(dofCount * dofCount), -1);
+        for (int localColumn = 0; localColumn < dofCount; ++localColumn)
+        {
+            const int globalColumn = assemblyMap.dofs[localColumn] - m_nFixed;
+            if (globalColumn < 0 || globalColumn >= m_nFree)
+                continue;
+            for (int localRow = 0; localRow < dofCount; ++localRow)
+            {
+                const int globalRow = assemblyMap.dofs[localRow] - m_nFixed;
+                if (globalRow >= 0 && globalRow < m_nFree)
+                    patternEntries.emplace_back(globalRow, globalColumn, 1.0);
+            }
+        }
+        m_assemblyPattern.elements.push_back(std::move(assemblyMap));
+    }
+    for (const auto& [inertiaId, inertia] : m_pData->m_RigidBodyInertias)
+    {
+        Q_UNUSED(inertiaId);
+        if (!inertia)
+            continue;
+        RigidBodyInertiaAssemblyMap assemblyMap;
+        assemblyMap.inertia = inertia;
+        inertia->GetDOFs(assemblyMap.dofs);
+        const int dofCount = static_cast<int>(assemblyMap.dofs.size());
+        assemblyMap.valueIndices.assign(static_cast<std::size_t>(dofCount * dofCount), -1);
+        for (int localColumn = 0; localColumn < dofCount; ++localColumn)
+        {
+            const int globalColumn = assemblyMap.dofs[localColumn] - m_nFixed;
+            if (globalColumn < 0 || globalColumn >= m_nFree)
+                continue;
+            for (int localRow = 0; localRow < dofCount; ++localRow)
+            {
+                const int globalRow = assemblyMap.dofs[localRow] - m_nFixed;
+                if (globalRow >= 0 && globalRow < m_nFree)
+                    patternEntries.emplace_back(globalRow, globalColumn, 1.0);
+            }
+        }
+        m_assemblyPattern.rigidBodyInertias.push_back(std::move(assemblyMap));
+    }
+
+    m_assemblyPattern.matrix.resize(m_nFree, m_nFree);
+    m_assemblyPattern.matrix.setFromTriplets(patternEntries.begin(), patternEntries.end());
+    m_assemblyPattern.matrix.makeCompressed();
+
+    const auto* outer = m_assemblyPattern.matrix.outerIndexPtr();
+    const auto* inner = m_assemblyPattern.matrix.innerIndexPtr();
+    for (ElementAssemblyMap& assemblyMap : m_assemblyPattern.elements)
+    {
+        const int dofCount = static_cast<int>(assemblyMap.dofs.size());
+        for (int localColumn = 0; localColumn < dofCount; ++localColumn)
+        {
+            const int globalColumn = assemblyMap.dofs[localColumn] - m_nFixed;
+            if (globalColumn < 0 || globalColumn >= m_nFree)
+                continue;
+            const auto* first = inner + outer[globalColumn];
+            const auto* last = inner + outer[globalColumn + 1];
+            for (int localRow = 0; localRow < dofCount; ++localRow)
+            {
+                const int globalRow = assemblyMap.dofs[localRow] - m_nFixed;
+                if (globalRow < 0 || globalRow >= m_nFree)
+                    continue;
+                const auto* position = std::lower_bound(first, last, globalRow);
+                if (position != last && *position == globalRow)
+                {
+                    const std::size_t localIndex = static_cast<std::size_t>(localRow * dofCount + localColumn);
+                    assemblyMap.valueIndices[localIndex] = position - inner;
+                }
+            }
+        }
+    }
+    for (RigidBodyInertiaAssemblyMap& assemblyMap : m_assemblyPattern.rigidBodyInertias)
+    {
+        const int dofCount = static_cast<int>(assemblyMap.dofs.size());
+        for (int localColumn = 0; localColumn < dofCount; ++localColumn)
+        {
+            const int globalColumn = assemblyMap.dofs[localColumn] - m_nFixed;
+            if (globalColumn < 0 || globalColumn >= m_nFree)
+                continue;
+            const auto* first = inner + outer[globalColumn];
+            const auto* last = inner + outer[globalColumn + 1];
+            for (int localRow = 0; localRow < dofCount; ++localRow)
+            {
+                const int globalRow = assemblyMap.dofs[localRow] - m_nFixed;
+                if (globalRow < 0 || globalRow >= m_nFree)
+                    continue;
+                const auto* position = std::lower_bound(first, last, globalRow);
+                if (position != last && *position == globalRow)
+                {
+                    const std::size_t localIndex = static_cast<std::size_t>(localRow * dofCount + localColumn);
+                    assemblyMap.valueIndices[localIndex] = position - inner;
+                }
+            }
+        }
+    }
+    std::fill(m_assemblyPattern.matrix.valuePtr(),
+              m_assemblyPattern.matrix.valuePtr() + m_assemblyPattern.matrix.nonZeros(), 0.0);
+    m_assemblyPattern.valid = true;
+}
+
+void AnalysisStep::PreparePatternMatrix(_OUT SpMat& matrix) const
+{
+    const SpMat& pattern = m_assemblyPattern.matrix;
+    bool samePattern = matrix.rows() == pattern.rows() && matrix.cols() == pattern.cols() &&
+                       matrix.nonZeros() == pattern.nonZeros() && matrix.isCompressed();
+    if (samePattern)
+    {
+        samePattern =
+            std::equal(pattern.outerIndexPtr(), pattern.outerIndexPtr() + pattern.outerSize() + 1,
+                       matrix.outerIndexPtr()) &&
+            std::equal(pattern.innerIndexPtr(), pattern.innerIndexPtr() + pattern.nonZeros(), matrix.innerIndexPtr());
+    }
+    if (!samePattern)
+        matrix = pattern;
+    std::fill(matrix.valuePtr(), matrix.valuePtr() + matrix.nonZeros(), 0.0);
+}
+
+void AnalysisStep::AccumulateElementMatrix(const ElementAssemblyMap& assemblyMap, const Eigen::MatrixXd& elementMatrix,
+                                           _OUT double* values) const
+{
+    const int dofCount = static_cast<int>(assemblyMap.dofs.size());
+    for (int localRow = 0; localRow < dofCount; ++localRow)
+    {
+        for (int localColumn = 0; localColumn < dofCount; ++localColumn)
+        {
+            const Eigen::Index valueIndex =
+                assemblyMap.valueIndices[static_cast<std::size_t>(localRow * dofCount + localColumn)];
+            if (valueIndex >= 0)
+                values[valueIndex] += elementMatrix(localRow, localColumn);
+        }
+    }
+}
+
+void AnalysisStep::AccumulateRigidBodyInertiaMatrix(const RigidBodyInertiaAssemblyMap& assemblyMap,
+                                                     const Eigen::MatrixXd& inertiaMatrix,
+                                                     _OUT double* values) const
+{
+    const int dofCount = static_cast<int>(assemblyMap.dofs.size());
+    for (int localRow = 0; localRow < dofCount; ++localRow)
+    {
+        for (int localColumn = 0; localColumn < dofCount; ++localColumn)
+        {
+            const Eigen::Index valueIndex =
+                assemblyMap.valueIndices[static_cast<std::size_t>(localRow * dofCount + localColumn)];
+            if (valueIndex >= 0)
+                values[valueIndex] += inertiaMatrix(localRow, localColumn);
+        }
+    }
+}
+
+void AnalysisStep::Assemble_AllLoads(_OUT VectorXd& F1, _OUT VectorXd& F2, _OUT double& Factor, double currentTime)
 {
     F1.resize(m_nFixed);
     F1.setZero();
@@ -535,7 +627,7 @@ void AnalysisStep::Assemble_AllLoads(VectorXd& F1, VectorXd& F2, double& Factor,
         if (!pLoadBase)
             continue;
 
-        double loadScale = 0.0;  // 每个荷载独立的缩放系数
+        double loadScale = 0.0; // 每个荷载独立的缩放系数
 
         if (!IsStepScopedDataActive(pLoadBase->m_StepId))
         {
@@ -555,30 +647,25 @@ void AnalysisStep::Assemble_AllLoads(VectorXd& F1, VectorXd& F2, double& Factor,
             }
             loadScale = Factor * pLoadBase->GetScaleFactor(currentTime);
         }
-        const bool isGallopingWind = m_EnableGalloping
-            && pLoadBase->m_LoadType == EnumKeyword::LoadType::FORCE_WIND;
+        const bool isGallopingWind = m_EnableGalloping && pLoadBase->m_LoadType == EnumKeyword::LoadType::FORCE_WIND;
         if (isGallopingWind)
         {
             gallopingWind = static_cast<const Force_Wind*>(pLoadBase.get());
             gallopingScale = loadScale;
-            // AssembleGalloping already contains the complete mean drag,
-            // lift and moment.  Adding AssembleWind here as well applies an
-            // extra qD force in the wind direction and shifts the dynamic
-            // equilibrium twice.
+            // AssembleGalloping 已包含完整平均阻力、升力和力矩；此处再调用 AssembleWind 会沿风向重复施加
+            // qD 力，并使动力平衡发生两次偏移。
             continue;
         }
         LoadAssembler::Assemble(*pLoadBase, *m_pData, m_nFixed, loadScale, F1, F2);
     }
     if (gallopingWind && gallopingScale != 0.0)
-        LoadAssembler::AssembleGalloping(
-            *gallopingWind, *m_pData, m_gallopingProfileBindings,
-            m_GallopingIceThickness,
-            m_GallopingInitialAttackDegrees,
-            GetModelUpDirection(), m_nFixed, gallopingScale, F1, F2);
-    //std::cout << "\nF2:" << F2[56] << "\n";
+        LoadAssembler::AssembleGalloping(*gallopingWind, *m_pData, m_gallopingProfileBindings, m_GallopingIceThickness,
+                                         m_GallopingInitialAttackDegrees, GetModelUpDirection(), m_nFixed,
+                                         gallopingScale, F1, F2);
 }
 
-void AnalysisStep::Updata_NodeData(VectorXd& x1, VectorXd& x2, VectorXd& F1, VectorXd* v2, VectorXd* a2)
+void AnalysisStep::Updata_NodeData(const VectorXd& x1, const VectorXd& x2, const VectorXd& F1, const VectorXd* v2,
+                                   const VectorXd* a2)
 {
     for (auto& nodePair : m_pData->m_Nodes)
     {
@@ -624,7 +711,7 @@ void AnalysisStep::Updata_NodeData(VectorXd& x1, VectorXd& x2, VectorXd& F1, Vec
 
     // 输出特定节点的位移（用于调试和监控）
     // 可以根据需要修改节点 ID
-    int monitorNodeId = 11;  // 监控节点 11
+    int monitorNodeId = 11; // 监控节点 11
     auto it = m_pData->m_Nodes.find(monitorNodeId);
     if (it != m_pData->m_Nodes.end())
     {
@@ -632,18 +719,18 @@ void AnalysisStep::Updata_NodeData(VectorXd& x1, VectorXd& x2, VectorXd& F1, Vec
         if (pNode->m_Displacement.size() >= 6)
         {
             qDebug().noquote() << QStringLiteral("      节点 %1: u1=%2, u2=%3, u3=%4, θ1=%5, θ2=%6, θ3=%7")
-                .arg(monitorNodeId)
-                .arg(pNode->m_Displacement[0], 8, 'e', 2)
-                .arg(pNode->m_Displacement[1], 8, 'e', 2)
-                .arg(pNode->m_Displacement[2], 8, 'e', 2)
-                .arg(pNode->m_Displacement[3], 8, 'e', 2)
-                .arg(pNode->m_Displacement[4], 8, 'e', 2)
-                .arg(pNode->m_Displacement[5], 8, 'e', 2);
+                                      .arg(monitorNodeId)
+                                      .arg(pNode->m_Displacement[0], 8, 'e', 2)
+                                      .arg(pNode->m_Displacement[1], 8, 'e', 2)
+                                      .arg(pNode->m_Displacement[2], 8, 'e', 2)
+                                      .arg(pNode->m_Displacement[3], 8, 'e', 2)
+                                      .arg(pNode->m_Displacement[4], 8, 'e', 2)
+                                      .arg(pNode->m_Displacement[5], 8, 'e', 2);
         }
     }
 }
 
-void AnalysisStep::Get_CurrentInforce(VectorXd& Inforce)
+void AnalysisStep::Get_CurrentInforce(_OUT VectorXd& Inforce)
 {
     for (auto& elementPair : m_pData->m_Elements)
     {
@@ -653,21 +740,29 @@ void AnalysisStep::Get_CurrentInforce(VectorXd& Inforce)
 
         // 将单元内力累加到节点
         auto& nodeWeakPtrs = pElement->m_pNode;
-        int nodeDOF = pElement->Get_NodeDOF();
+        std::vector<int> localDofCounts;
+        pElement->GetNodeLocalDOFCounts(localDofCounts);
+        int localOffset = 0;
 
         for (auto nodeIdx = 0; nodeIdx < nodeWeakPtrs.size(); ++nodeIdx)
         {
+            const int localDofs = localDofCounts[static_cast<std::size_t>(nodeIdx)];
             auto pNode = nodeWeakPtrs[nodeIdx].lock();
-            if (!pNode) continue;
-
-            for (auto dofIdx = 0; dofIdx < nodeDOF; ++dofIdx)
+            if (!pNode)
             {
-                auto localIdx = nodeIdx * nodeDOF + dofIdx;
+                localOffset += localDofs;
+                continue;
+            }
+
+            for (int dofIdx = 0; dofIdx < localDofs; ++dofIdx)
+            {
+                const int localIdx = localOffset + dofIdx;
                 if ((localIdx < pElement->m_inforce.size()) && (dofIdx < pNode->m_Force.size()))
                 {
                     pNode->m_Force[dofIdx] += pElement->m_inforce[localIdx];
                 }
             }
+            localOffset += localDofs;
         }
 
         // 累加自由自由度的内力用于收敛判断
@@ -688,55 +783,41 @@ bool AnalysisStep::Check_Rhs(const Eigen::VectorXd& Exteralforce, const Eigen::V
     double RhsNorm = Rhs.norm();
     if (RhsNorm < m_Tolerance)
     {
-        //qDebug().noquote() << QStringLiteral("\n收敛，残差范数: %1\n").arg(RhsNorm);
         return true;
     }
-    //qDebug().noquote() << QStringLiteral("\n残差范数: %1\n").arg(RhsNorm);
     return false;
 }
 
-
-
-
-void AnalysisStep::Assemble_Constraint(
-    VectorXd& x1,
-    double currentTime,
-    double factor)
+void AnalysisStep::Assemble_Constraint(VectorXd& x1, double currentTime, double factor)
 {
     x1.resize(m_nFixed);
     for (auto& constraintPair : m_pData->m_Constraint)
     {
         auto pConstraint = constraintPair.second;
-        if (!pConstraint || !IsStepScopedDataActive(pConstraint->m_StepId)) continue;
+        if (!pConstraint || !IsStepScopedDataActive(pConstraint->m_StepId))
+            continue;
         auto pNode = pConstraint->m_pNode.lock();
-        if (!pNode) continue;
+        if (!pNode)
+            continue;
 
         int iDirection = static_cast<int>(pConstraint->m_Direction);
-        if (iDirection < 0 || iDirection >= pNode->m_DOF.size()) continue;
+        if (iDirection < 0 || iDirection >= pNode->m_DOF.size())
+            continue;
 
         int dof = pNode->m_DOF[iDirection];
         if (dof >= 0 && dof < m_nFixed)
         {
-            const double value =
-                pConstraint->GetValue(currentTime, factor);
+            const double value = pConstraint->GetValue(currentTime, factor);
             x1[dof] = value;
             pNode->m_Displacement[iDirection] = value;
             if (pNode->m_DOF.size() == 6 && iDirection >= 3)
             {
-                // Six-DOF beam elements use m_Rg as the authoritative
-                // rotational state. Keep an imposed rotation synchronized
-                // with the scalar boundary-condition value; otherwise a
-                // prescribed UR would be visible in output but invisible to
-                // both the element and nonlinear MPC equations.
-                const Eigen::Vector3d rotationVector(
-                    pNode->m_Displacement[3],
-                    pNode->m_Displacement[4],
-                    pNode->m_Displacement[5]);
+                // 六自由度梁单元以 m_Rg 为权威转动状态。施加转动必须与标量边界条件同步，否则指定 UR 只会
+                // 出现在输出中，而单元和非线性 MPC 方程均无法感知。
+                const Eigen::Vector3d rotationVector(pNode->m_Displacement[3], pNode->m_Displacement[4],
+                                                     pNode->m_Displacement[5]);
                 Eigen::Matrix3d imposedRotation;
-                Utility::CR::Update_NodalRotation(
-                    rotationVector,
-                    Eigen::Matrix3d::Identity(),
-                    imposedRotation);
+                Utility::CR::Update_NodalRotation(rotationVector, Eigen::Matrix3d::Identity(), imposedRotation);
                 pNode->m_Rg = imposedRotation;
             }
         }
@@ -749,7 +830,9 @@ void AnalysisStep::Assemble_Constraint(
 
 bool AnalysisStep::Solve(bool persistHdf5)
 {
-    if (!PrepareData()) return false;
+    m_lastFailureReason.clear();
+    if (!PrepareData())
+        return false;
     QString gallopingError;
     if (!ValidateGallopingConfiguration(&gallopingError))
     {
@@ -764,13 +847,25 @@ bool AnalysisStep::Solve(bool persistHdf5)
     Init();
     if (!BindGallopingProfiles(&gallopingError))
     {
-        qDebug().noquote() << QStringLiteral("Galloping profile binding error:")
-                           << gallopingError;
+        qDebug().noquote() << QStringLiteral("Galloping profile binding error:") << gallopingError;
         return false;
     }
 
     // 初始化单元长度
     Get_ElementLength();
+
+    if (m_Type == EnumKeyword::StepType::DYNAMIC && m_StructuralDamping.settings.enabled)
+    {
+        QString dampingError;
+        if (!PrepareStructuralDamping(dampingError))
+        {
+            qDebug().noquote() << QStringLiteral("结构阻尼计算失败：") << dampingError;
+            m_lastFailureReason = QStringLiteral("结构阻尼计算失败，动力分析未启动：%1。请编辑该动力分析步，关闭结构阻尼或调整阻尼设置后重新计算。")
+                                       .arg(dampingError);
+            return false;
+        }
+        qDebug().noquote() << m_StructuralDamping.report.summary;
+    }
 
     //solver为求解器类型指针，使用工厂模式创建对应的求解器实例
     auto solver = SolverNameSpace::SolverFactory::Create_StepForSlover(*this);
@@ -782,25 +877,20 @@ bool AnalysisStep::Solve(bool persistHdf5)
 
     const bool dynamicAnalysis = (m_Type == EnumKeyword::StepType::DYNAMIC);
     m_pData->GetOutputter().SetResultContext(m_Id, static_cast<int>(m_Type));
-    m_pData->GetOutputter().SetKeepFramesInMemory(
-        !dynamicAnalysis || !m_pData->m_OutputControl.m_StreamResult);
+    m_pData->GetOutputter().SetKeepFramesInMemory(!dynamicAnalysis || !m_pData->m_OutputControl.m_StreamResult);
 
     if (dynamicAnalysis && persistHdf5)
     {
-        if (!m_pData->GetOutputter().BeginHdf5ResultStream(
-            m_pData->m_OutputControl.m_Hdf5FileName,
-            m_pData,
-            m_pData->m_OutputControl.m_SourceModelName))
+        if (!m_pData->GetOutputter().BeginHdf5ResultStream(m_pData->m_OutputControl.m_Hdf5FileName, m_pData,
+                                                           m_pData->m_OutputControl.m_SourceModelName))
         {
             qDebug().noquote() << QStringLiteral("Error: H5/HDF5 动力结果流式输出初始化失败");
             return false;
         }
-
     }
 
-    // Every analysis result starts with the accepted model state at t = 0.
-    // Dynamic analyses write it directly to the opened H5 stream; static
-    // analyses keep it in memory and include it in the final H5 export.
+    // 每个分析结果都从 t=0 的收敛模型状态开始；动力分析直接写入已打开的 H5 流，静力分析保存在内存中，
+    // 并纳入最终 H5 导出。
     OnStepCompleted(0.0);
 
     // 执行求解
@@ -814,7 +904,12 @@ bool AnalysisStep::Solve(bool persistHdf5)
 
     if (dynamicAnalysis && persistHdf5)
     {
-        m_pData->GetOutputter().EndHdf5ResultStream(solveOk);
+        const bool hdf5Finalized = m_pData->GetOutputter().EndHdf5ResultStream(solveOk);
+        if (!hdf5Finalized)
+        {
+            qDebug().noquote() << QStringLiteral("Error: H5/HDF5 动力结果最终落盘失败");
+            solveOk = false;
+        }
     }
     else if (!dynamicAnalysis && persistHdf5)
     {
@@ -826,11 +921,8 @@ bool AnalysisStep::Solve(bool persistHdf5)
         }
         else
         {
-            hdf5Saved = m_pData->GetOutputter().SaveHdf5File(
-                m_pData->m_OutputControl.m_Hdf5FileName,
-                m_pData,
-                m_pData->m_OutputControl.m_SourceModelName,
-                solveOk);
+            hdf5Saved = m_pData->GetOutputter().SaveHdf5File(m_pData->m_OutputControl.m_Hdf5FileName, m_pData,
+                                                             m_pData->m_OutputControl.m_SourceModelName, solveOk);
             if (!hdf5Saved)
             {
                 qDebug().noquote() << QStringLiteral("Error: H5/HDF5 结果文件保存失败");
@@ -840,7 +932,7 @@ bool AnalysisStep::Solve(bool persistHdf5)
         if (!solveCompleted && hdf5Saved)
         {
             qDebug().noquote() << QStringLiteral("静力求解未完成，已保存此前收敛的 %1 帧部分结果")
-                .arg(m_pData->GetOutputter().GetFrameCount());
+                                      .arg(m_pData->GetOutputter().GetFrameCount());
         }
     }
     else if (!solveOk)
@@ -878,7 +970,7 @@ void AnalysisStep::ReportProgress(double progress, const QString& message)
 // 新增辅助函数实现
 // ==========================================
 
-void AnalysisStep::CalculateReactions(VectorXd& F1)
+void AnalysisStep::CalculateReactions(_OUT VectorXd& F1)
 {
     // 迭代已收敛，节点里的 m_Force 是结构处于平衡状态下的真实总内力
     for (auto& nodePair : m_pData->m_Nodes)
@@ -921,9 +1013,7 @@ void AnalysisStep::CalculateReactions(VectorXd& F1)
         const int count = static_cast<int>(contribution.value.size());
         if (multiplierOffset + count > m_mpcMultipliers.size())
             break;
-        mpc->AccumulateReactions(
-            m_nFixed,
-            m_mpcMultipliers.segment(multiplierOffset, count));
+        mpc->AccumulateReactions(m_nFixed, m_mpcMultipliers.segment(multiplierOffset, count));
         multiplierOffset += count;
     }
 }
@@ -931,11 +1021,16 @@ void AnalysisStep::CalculateReactions(VectorXd& F1)
 void AnalysisStep::Get_CurrentStepState(VectorXd& U, VectorXd& V, VectorXd& A) const
 {
     // 调整向量大小
-    if (U.size() != m_nFree) U.resize(m_nFree);
-    if (V.size() != m_nFree) V.resize(m_nFree);
-    if (A.size() != m_nFree) A.resize(m_nFree);
+    if (U.size() != m_nFree)
+        U.resize(m_nFree);
+    if (V.size() != m_nFree)
+        V.resize(m_nFree);
+    if (A.size() != m_nFree)
+        A.resize(m_nFree);
 
-    U.setZero(); V.setZero(); A.setZero();
+    U.setZero();
+    V.setZero();
+    A.setZero();
 
     // 遍历节点提取自由自由度数据
     for (auto& nodePair : m_pData->m_Nodes)
@@ -952,9 +1047,12 @@ void AnalysisStep::Get_CurrentStepState(VectorXd& U, VectorXd& V, VectorXd& A) c
             {
                 int idx = globalDof - m_nFixed;
 
-                if (i < pNode->m_Displacement.size()) U[idx] = pNode->m_Displacement[i];
-                if (i < pNode->m_Velocity.size())     V[idx] = pNode->m_Velocity[i];
-                if (i < pNode->m_Acceleration.size()) A[idx] = pNode->m_Acceleration[i];
+                if (i < pNode->m_Displacement.size())
+                    U[idx] = pNode->m_Displacement[i];
+                if (i < pNode->m_Velocity.size())
+                    V[idx] = pNode->m_Velocity[i];
+                if (i < pNode->m_Acceleration.size())
+                    A[idx] = pNode->m_Acceleration[i];
             }
         }
     }
@@ -963,6 +1061,77 @@ void AnalysisStep::Get_CurrentStepState(VectorXd& U, VectorXd& V, VectorXd& A) c
 // ==========================================
 // IAnalysisModel 接口实现
 // ==========================================
+
+QString AnalysisStep::DescribeFreeDof(int freeDof) const
+{
+    if (!m_pData || freeDof < 0 || freeDof >= m_nFree)
+        return QStringLiteral("free_dof=%1").arg(freeDof);
+    const int globalDof = m_nFixed + freeDof;
+    for (const auto& [nodeId, node] : m_pData->m_Nodes)
+    {
+        if (!node)
+            continue;
+        for (int direction = 0; direction < node->m_DOF.size(); ++direction)
+            if (node->m_DOF[direction] == globalDof)
+                return QStringLiteral("free_dof=%1 node=%2 direction=%3").arg(freeDof).arg(nodeId).arg(direction);
+    }
+    return QStringLiteral("free_dof=%1 global_dof=%2").arg(freeDof).arg(globalDof);
+}
+
+std::vector<bool> AnalysisStep::GetCableTorsionFreeDofs() const
+{
+    std::vector<bool> torsionDofs(static_cast<std::size_t>(m_nFree), false);
+    if (!m_pData)
+        return torsionDofs;
+    for (const auto& [elementId, element] : m_pData->m_Elements)
+    {
+        Q_UNUSED(elementId);
+        const auto* cable = dynamic_cast<const ElementCable*>(element.get());
+        if (!cable)
+            continue;
+        for (const auto& weakNode : cable->m_pNode)
+        {
+            const auto node = weakNode.lock();
+            if (!node || node->m_DOF.size() <= 3)
+                continue;
+            const int freeDof = node->m_DOF[3] - m_nFixed;
+            if (freeDof >= 0 && freeDof < m_nFree)
+                torsionDofs[static_cast<std::size_t>(freeDof)] = true;
+        }
+    }
+    return torsionDofs;
+}
+
+bool AnalysisStep::PrepareStructuralDamping(QString& errorMessage)
+{
+    m_StructuralDamping.Reset();
+    SpMat stiffness;
+    SpMat mass;
+    SpMat gyroscopic;
+    SpMat centrifugal;
+    Assemble_Matrix(stiffness, false);
+    AssembleDynamicSystem(mass, gyroscopic, centrifugal);
+    SpMat modalTransformation(m_nFree, m_nFree);
+    modalTransformation.setIdentity();
+    SolverNameSpace::NonlinearMPCData constraints;
+    if (!AssembleNonlinearMPC(constraints))
+    {
+        errorMessage = QStringLiteral("结构阻尼无法组装当前平衡构型的 MPC 约束。");
+        return false;
+    }
+    if (!constraints.Empty())
+    {
+        SolverNameSpace::NonlinearMPCReduction reduction;
+        if (!SolverNameSpace::NonlinearMPC::Reduce(stiffness, VectorXd::Zero(m_nFree), constraints, reduction))
+        {
+            errorMessage = QStringLiteral("结构阻尼无法在当前平衡构型上约化 MPC 自由度。");
+            return false;
+        }
+        modalTransformation = reduction.masterTransformation;
+    }
+    return m_StructuralDamping.Calculate(stiffness, mass, GetCableTorsionFreeDofs(), modalTransformation,
+                                         errorMessage);
+}
 
 void AnalysisStep::ApplyIncrement(const SolverNameSpace::Vec& dx)
 {
@@ -1004,7 +1173,6 @@ void AnalysisStep::ApplyIncrement(const SolverNameSpace::Vec& dx)
             pNode->m_Displacement[3] = theta(0);
             pNode->m_Displacement[4] = theta(1);
             pNode->m_Displacement[5] = theta(2);
-            //std::cout << "\ntheta:" << theta.transpose() << std::endl;
         }
         else // 对于非 6 自由度的普通节点（保留你原有的逻辑）
         {
@@ -1018,7 +1186,6 @@ void AnalysisStep::ApplyIncrement(const SolverNameSpace::Vec& dx)
                     pNode->m_Displacement[dofIdx] += dx[idx];
                 }
             }
-
         }
     }
 }
@@ -1028,25 +1195,24 @@ void AnalysisStep::BeginDynamicStep(double dt, double beta, double gamma)
     for (auto& nodePair : m_pData->m_Nodes)
     {
         auto pNode = nodePair.second;
-        std::array<bool, 3> translationActive{ false, false, false };
-        std::array<bool, 3> rotationActive{ false, false, false };
+        std::array<bool, 3> translationActive{false, false, false};
+        std::array<bool, 3> rotationActive{false, false, false};
 
         for (int i = 0; i < pNode->m_DOF.size() && i < 6; ++i)
         {
             const int dof = pNode->m_DOF[i];
             const bool isFree = dof >= m_nFixed && dof < m_nFixed + m_nFree;
-            if (i < 3) translationActive[i] = isFree;
-            else rotationActive[i - 3] = isFree;
+            if (i < 3)
+                translationActive[i] = isFree;
+            else
+                rotationActive[i - 3] = isFree;
         }
 
-        pNode->BeginNewmarkStep(dt, beta, gamma,
-            translationActive, rotationActive);
+        pNode->BeginNewmarkStep(dt, beta, gamma, translationActive, rotationActive);
     }
-
 }
 
-void AnalysisStep::ApplyDynamicCorrection(const SolverNameSpace::Vec& dx,
-    double a0, double a1)
+void AnalysisStep::ApplyDynamicCorrection(const SolverNameSpace::Vec& dx, double a0, double a1)
 {
     for (auto& nodePair : m_pData->m_Nodes)
     {
@@ -1057,11 +1223,14 @@ void AnalysisStep::ApplyDynamicCorrection(const SolverNameSpace::Vec& dx,
         for (int i = 0; i < pNode->m_DOF.size() && i < 6; ++i)
         {
             const int dof = pNode->m_DOF[i];
-            if (dof < m_nFixed || dof >= m_nFixed + m_nFree) continue;
+            if (dof < m_nFixed || dof >= m_nFixed + m_nFree)
+                continue;
 
             const double correction = dx[dof - m_nFixed];
-            if (i < 3) deltaTranslation(i) = correction;
-            else deltaRotation(i - 3) = correction;
+            if (i < 3)
+                deltaTranslation(i) = correction;
+            else
+                deltaRotation(i - 3) = correction;
         }
 
         pNode->ApplyNewmarkCorrection(deltaTranslation, deltaRotation, a0, a1);
@@ -1109,29 +1278,18 @@ void AnalysisStep::SetTrialKinematics(const SolverNameSpace::Vec& v, const Solve
             for (int component = 0; component < 3; ++component)
             {
                 spatialVelocity[component] = pNode->m_Velocity[component + 3];
-                spatialAcceleration[component] =
-                    pNode->m_Acceleration[component + 3];
+                spatialAcceleration[component] = pNode->m_Acceleration[component + 3];
             }
-            pNode->m_OmegaMaterial =
-                pNode->m_Rg.transpose() * spatialVelocity;
-            pNode->m_AlphaMaterial =
-                pNode->m_Rg.transpose() * spatialAcceleration;
-            Utility::CR::Extract_RotationVector(
-                pNode->m_Rg * pNode->m_Rg_n.transpose(),
-                pNode->m_StepRotation);
+            pNode->m_OmegaMaterial = pNode->m_Rg.transpose() * spatialVelocity;
+            pNode->m_AlphaMaterial = pNode->m_Rg.transpose() * spatialAcceleration;
+            Utility::CR::Extract_RotationVector(pNode->m_Rg * pNode->m_Rg_n.transpose(), pNode->m_StepRotation);
         }
     }
-
 }
 
-void AnalysisStep::SetTssbnStageKinematics(
-    int stageIndex,
-    double timeStep,
-    double firstStageTime,
-    double secondStageTime,
-    double secondStageDiagonalFraction,
-    SolverNameSpace::Vec& velocity,
-    SolverNameSpace::Vec& acceleration)
+void AnalysisStep::SetTssbnStageKinematics(int stageIndex, double timeStep, double firstStageTime,
+                                           double secondStageTime, double secondStageDiagonalFraction,
+                                           _OUT SolverNameSpace::Vec& velocity, _OUT SolverNameSpace::Vec& acceleration)
 {
     SetTrialKinematics(velocity, acceleration);
     for (auto& [nodeId, node] : m_pData->m_Nodes)
@@ -1140,16 +1298,12 @@ void AnalysisStep::SetTssbnStageKinematics(
             continue;
         Eigen::Vector3d angularVelocity;
         Eigen::Vector3d angularAcceleration;
-        node->SetTssbnStageKinematics(
-            stageIndex, timeStep,
-            firstStageTime, secondStageTime,
-            secondStageDiagonalFraction,
-            angularVelocity, angularAcceleration);
+        node->SetTssbnStageKinematics(stageIndex, timeStep, firstStageTime, secondStageTime,
+                                      secondStageDiagonalFraction, angularVelocity, angularAcceleration);
         for (int component = 0; component < 3; ++component)
         {
             const int globalDof = node->m_DOF[component + 3];
-            if (globalDof < m_nFixed
-                || globalDof >= m_nFixed + m_nFree)
+            if (globalDof < m_nFixed || globalDof >= m_nFixed + m_nFree)
             {
                 continue;
             }
@@ -1161,57 +1315,36 @@ void AnalysisStep::SetTssbnStageKinematics(
 }
 
 void AnalysisStep::CorrectTssbnStepStates(
-    double timeStep,
-    double firstStageTime,
-    double secondStageTime,
-    double lastStageTime,
-    double baseFirstWeight,
-    double embeddedFirstWeight,
-    double embeddedSecondWeight,
-    double embeddedLastWeight,
-    double lastStageFirstCoefficient,
-    double lastStageSecondCoefficient,
-    SolverNameSpace::Vec& baseIncrement,
-    SolverNameSpace::Vec& baseVelocity,
-    SolverNameSpace::Vec& embeddedIncrement,
-    SolverNameSpace::Vec& embeddedVelocity,
-    SolverNameSpace::Vec& acceptedAcceleration)
+    double timeStep, double firstStageTime, double secondStageTime, double lastStageTime, double baseFirstWeight,
+    double embeddedFirstWeight, double embeddedSecondWeight, double embeddedLastWeight,
+    double lastStageFirstCoefficient, double lastStageSecondCoefficient, _OUT SolverNameSpace::Vec& baseIncrement,
+    _OUT SolverNameSpace::Vec& baseVelocity, _OUT SolverNameSpace::Vec& embeddedIncrement,
+    _OUT SolverNameSpace::Vec& embeddedVelocity, _OUT SolverNameSpace::Vec& acceptedAcceleration)
 {
-    const double stageSeparation =
-        secondStageTime - firstStageTime;
-    const double extrapolation =
-        (lastStageTime - secondStageTime) / stageSeparation;
+    const double stageSeparation = secondStageTime - firstStageTime;
+    const double extrapolation = (lastStageTime - secondStageTime) / stageSeparation;
     for (auto& [nodeId, node] : m_pData->m_Nodes)
     {
         if (!node || node->m_DOF.size() < 6)
             continue;
 
-        const Node::TssbnRotationState rotation =
-            node->IntegrateTssbnRotation(
-                timeStep, extrapolation, baseFirstWeight,
-                embeddedFirstWeight, embeddedSecondWeight,
-                embeddedLastWeight, lastStageFirstCoefficient,
-                lastStageSecondCoefficient);
+        const Node::TssbnRotationState rotation = node->IntegrateTssbnRotation(
+            timeStep, extrapolation, baseFirstWeight, embeddedFirstWeight, embeddedSecondWeight, embeddedLastWeight,
+            lastStageFirstCoefficient, lastStageSecondCoefficient);
 
         for (int component = 0; component < 3; ++component)
         {
             const int globalDof = node->m_DOF[component + 3];
-            if (globalDof < m_nFixed
-                || globalDof >= m_nFixed + m_nFree)
+            if (globalDof < m_nFixed || globalDof >= m_nFixed + m_nFree)
             {
                 continue;
             }
             const int freeDof = globalDof - m_nFixed;
-            baseIncrement[freeDof] =
-                rotation.baseSpatialIncrement[component];
-            embeddedIncrement[freeDof] =
-                rotation.embeddedSpatialIncrement[component];
-            baseVelocity[freeDof] =
-                rotation.baseSpatialVelocity[component];
-            embeddedVelocity[freeDof] =
-                rotation.embeddedSpatialVelocity[component];
-            acceptedAcceleration[freeDof] =
-                rotation.acceptedSpatialAcceleration[component];
+            baseIncrement[freeDof] = rotation.baseSpatialIncrement[component];
+            embeddedIncrement[freeDof] = rotation.embeddedSpatialIncrement[component];
+            baseVelocity[freeDof] = rotation.baseSpatialVelocity[component];
+            embeddedVelocity[freeDof] = rotation.embeddedSpatialVelocity[component];
+            acceptedAcceleration[freeDof] = rotation.acceptedSpatialAcceleration[component];
         }
     }
 }
@@ -1224,50 +1357,25 @@ void AnalysisStep::GetState(SolverNameSpace::Vec& u, SolverNameSpace::Vec& v, So
 
 void AnalysisStep::Assemble_Matrix(SpMat& Keff, bool isDynamic)
 {
-    std::vector<Tri> freeFree;
-    const std::size_t initialTripletCapacity =
-        m_pData->m_Elements.size() * 36;
-    freeFree.reserve(initialTripletCapacity);
-
-    m_Keff22.resize(m_nFree, m_nFree);
-
-    MatrixXd ke;
-    std::vector<int> DOFs;
-
-    for (auto& element : m_pData->m_Elements)
+    Q_UNUSED(isDynamic);
+    EnsureAssemblyPattern();
+    PreparePatternMatrix(m_Keff22);
+    MatrixXd stiffness;
+    for (const ElementAssemblyMap& assemblyMap : m_assemblyPattern.elements)
     {
-        auto pelement = element.second;
-        //pelement->Get_ke(ke);//无内力，目前会出错
-        pelement->Get_ke(ke);
-
-        //std::cout << MatrixXd(ke) << "\n";
-        pelement->GetDOFs(DOFs);
-        AssembleFreeFree(DOFs, ke, freeFree);
+        assemblyMap.element->Get_ke(stiffness);
+        AccumulateElementMatrix(assemblyMap, stiffness, m_Keff22.valuePtr());
     }
-
-    m_Keff22.setFromTriplets(freeFree.begin(), freeFree.end());
-
     Keff = m_Keff22;
-    // Fix: 为了防止刚度矩阵奇异（例如竖直杆件受到横向力时初始切线刚度为0），
-    // 在对角线上添加一个极小值 epsilon
-    //double epsilon = 1e-10;
-    //for (int i = 0; i < m_nFree; ++i)
-    //{
-    //    m_K22.coeffRef(i, i) += epsilon;
-    //}
-
-    //qDebug();
-    //std::cout << MatrixXd(Keff);
 }
 
-void AnalysisStep::AssembleDynamicSystem(
-    SpMat& mass, SpMat& gyroscopic, SpMat& centrifugal)
+void AnalysisStep::AssembleDynamicSystem(SpMat& mass, SpMat& gyroscopic, SpMat& centrifugal)
 {
     std::vector<Tri> massTriplets;
     std::vector<Tri> gyroscopicTriplets;
     std::vector<Tri> centrifugalTriplets;
     const std::size_t initialTripletCapacity =
-        m_pData->m_Elements.size() * 36;
+        (m_pData->m_Elements.size() + m_pData->m_RigidBodyInertias.size()) * 36;
     massTriplets.reserve(initialTripletCapacity);
     gyroscopicTriplets.reserve(initialTripletCapacity);
     centrifugalTriplets.reserve(initialTripletCapacity);
@@ -1279,10 +1387,19 @@ void AnalysisStep::AssembleDynamicSystem(
         const auto& element = elementPair.second;
         EvaluateDynamicElement(*element, elementData);
         AssembleFreeFree(elementData.dofs, elementData.mass, massTriplets);
-        AssembleFreeFree(elementData.dofs,
-            elementData.velocityTangent, gyroscopicTriplets);
-        AssembleFreeFree(elementData.dofs,
-            elementData.configurationTangent, centrifugalTriplets);
+        AssembleFreeFree(elementData.dofs, elementData.velocityTangent, gyroscopicTriplets);
+        AssembleFreeFree(elementData.dofs, elementData.configurationTangent, centrifugalTriplets);
+        AccumulateDynamicInertiaForce(elementData);
+    }
+    for (const auto& [inertiaId, inertia] : m_pData->m_RigidBodyInertias)
+    {
+        Q_UNUSED(inertiaId);
+        if (!inertia)
+            continue;
+        EvaluateRigidBodyInertia(*inertia, elementData);
+        AssembleFreeFree(elementData.dofs, elementData.mass, massTriplets);
+        AssembleFreeFree(elementData.dofs, elementData.velocityTangent, gyroscopicTriplets);
+        AssembleFreeFree(elementData.dofs, elementData.configurationTangent, centrifugalTriplets);
         AccumulateDynamicInertiaForce(elementData);
     }
 
@@ -1290,19 +1407,15 @@ void AnalysisStep::AssembleDynamicSystem(
     gyroscopic.resize(m_nFree, m_nFree);
     centrifugal.resize(m_nFree, m_nFree);
     mass.setFromTriplets(massTriplets.begin(), massTriplets.end());
-    gyroscopic.setFromTriplets(
-        gyroscopicTriplets.begin(), gyroscopicTriplets.end());
-    centrifugal.setFromTriplets(
-        centrifugalTriplets.begin(), centrifugalTriplets.end());
+    gyroscopic.setFromTriplets(gyroscopicTriplets.begin(), gyroscopicTriplets.end());
+    centrifugal.setFromTriplets(centrifugalTriplets.begin(), centrifugalTriplets.end());
 }
 
-void AnalysisStep::AssembleEffectiveDynamicSystem(
-    double accelerationDerivative,
-    double velocityDerivative,
-    SpMat& effectiveDynamicTangent)
+void AnalysisStep::AssembleEffectiveDynamicSystem(double accelerationDerivative, double velocityDerivative,
+                                                  SpMat& effectiveDynamicTangent)
 {
     std::vector<Tri> triplets;
-    triplets.reserve(m_pData->m_Elements.size() * 36);
+    triplets.reserve((m_pData->m_Elements.size() + m_pData->m_RigidBodyInertias.size()) * 36);
     m_dynamicInertiaForce = VectorXd::Zero(m_nFree);
 
     MatrixXd elementEffective;
@@ -1311,121 +1424,175 @@ void AnalysisStep::AssembleEffectiveDynamicSystem(
     {
         Q_UNUSED(elementId);
         EvaluateDynamicElement(*element, elementData);
-        elementEffective =
-            accelerationDerivative * elementData.mass
-            + velocityDerivative * elementData.velocityTangent
-            + elementData.configurationTangent;
+        elementEffective = accelerationDerivative * elementData.mass +
+                           velocityDerivative * elementData.velocityTangent + elementData.configurationTangent;
+        AssembleFreeFree(elementData.dofs, elementEffective, triplets);
+        AccumulateDynamicInertiaForce(elementData);
+    }
+    for (const auto& [inertiaId, inertia] : m_pData->m_RigidBodyInertias)
+    {
+        Q_UNUSED(inertiaId);
+        if (!inertia)
+            continue;
+        EvaluateRigidBodyInertia(*inertia, elementData);
+        elementEffective = accelerationDerivative * elementData.mass +
+                           velocityDerivative * elementData.velocityTangent + elementData.configurationTangent;
         AssembleFreeFree(elementData.dofs, elementEffective, triplets);
         AccumulateDynamicInertiaForce(elementData);
     }
 
     effectiveDynamicTangent.resize(m_nFree, m_nFree);
-    effectiveDynamicTangent.setFromTriplets(
-        triplets.begin(), triplets.end());
+    effectiveDynamicTangent.setFromTriplets(triplets.begin(), triplets.end());
 }
 
-void AnalysisStep::AssembleEffectiveTangent(
-    double accelerationDerivative,
-    double velocityDerivative,
-    SpMat& effectiveTangent)
+void AnalysisStep::AssembleEffectiveTangent(double accelerationDerivative, double velocityDerivative,
+                                             SpMat& effectiveTangent)
 {
-    struct AssemblyBuffer
-    {
-        std::vector<Tri> triplets;
-        VectorXd inertiaForce;
-    };
-
-    std::vector<std::shared_ptr<ElementBase>> elements;
-    elements.reserve(m_pData->m_Elements.size());
-    for (const auto& [elementId, element] : m_pData->m_Elements)
-    {
-        Q_UNUSED(elementId);
-        if (element)
-            elements.push_back(element);
-    }
-
+    EnsureAssemblyPattern();
     const int requestedThreads = SolverNameSpace::AssemblySettings::ThreadCount();
-    const int workerCount = std::min(
-        requestedThreads, static_cast<int>(elements.size()));
+    const int workerCount = std::min(requestedThreads, static_cast<int>(m_assemblyPattern.elements.size()));
     m_dynamicInertiaForce = VectorXd::Zero(m_nFree);
 
-    const auto assembleRange =
-        [this, &elements, accelerationDerivative, velocityDerivative](
-            std::size_t first, std::size_t last)
+    const auto assembleRange = [this, accelerationDerivative, velocityDerivative](std::size_t first, std::size_t last)
     {
-        AssemblyBuffer buffer;
-        buffer.triplets.reserve((last - first) * 36);
-        buffer.inertiaForce = VectorXd::Zero(m_nFree);
+        SpMat matrix;
+        PreparePatternMatrix(matrix);
+        VectorXd inertiaForce = VectorXd::Zero(m_nFree);
         MatrixXd stiffness;
         MatrixXd elementEffective;
         DynamicElementData elementData;
         for (std::size_t index = first; index < last; ++index)
         {
-            ElementBase& element = *elements[index];
+            const ElementAssemblyMap& assemblyMap = m_assemblyPattern.elements[index];
+            ElementBase& element = *assemblyMap.element;
             element.Get_ke(stiffness);
             EvaluateDynamicElement(element, elementData);
-            elementEffective = stiffness
-                + accelerationDerivative * elementData.mass
-                + velocityDerivative * elementData.velocityTangent
-                + elementData.configurationTangent;
-            AssembleFreeFree(elementData.dofs, elementEffective,
-                buffer.triplets);
-            for (int localDof = 0;
-                localDof < static_cast<int>(elementData.dofs.size());
-                ++localDof)
+            elementEffective = stiffness + accelerationDerivative * elementData.mass +
+                               velocityDerivative * elementData.velocityTangent + elementData.configurationTangent;
+            AccumulateElementMatrix(assemblyMap, elementEffective, matrix.valuePtr());
+            for (int localDof = 0; localDof < static_cast<int>(elementData.dofs.size()); ++localDof)
             {
                 const int freeDof = elementData.dofs[localDof] - m_nFixed;
                 if (freeDof >= 0 && freeDof < m_nFree)
-                    buffer.inertiaForce[freeDof] +=
-                        elementData.inertiaForce[localDof];
+                    inertiaForce[freeDof] += elementData.inertiaForce[localDof];
             }
         }
-        return buffer;
+        return std::make_pair(std::move(matrix), std::move(inertiaForce));
     };
 
-    std::vector<AssemblyBuffer> buffers;
+    using AssemblyResult = std::pair<SpMat, VectorXd>;
+    std::vector<AssemblyResult> results;
     if (workerCount <= 1)
     {
-        buffers.push_back(assembleRange(0, elements.size()));
+        results.push_back(assembleRange(0, m_assemblyPattern.elements.size()));
     }
     else
     {
-        std::vector<std::future<AssemblyBuffer>> futures;
+        std::vector<QFuture<AssemblyResult>> futures;
         futures.reserve(workerCount);
+        QThreadPool& threadPool = SolverNameSpace::AssemblySettings::ThreadPool();
         for (int worker = 0; worker < workerCount; ++worker)
         {
-            const std::size_t first = elements.size()
-                * static_cast<std::size_t>(worker) / workerCount;
-            const std::size_t last = elements.size()
-                * static_cast<std::size_t>(worker + 1) / workerCount;
-            futures.push_back(std::async(std::launch::async,
-                assembleRange, first, last));
+            const std::size_t first =
+                m_assemblyPattern.elements.size() * static_cast<std::size_t>(worker) / workerCount;
+            const std::size_t last =
+                m_assemblyPattern.elements.size() * static_cast<std::size_t>(worker + 1) / workerCount;
+            futures.push_back(QtConcurrent::run(&threadPool, assembleRange, first, last));
         }
-        buffers.reserve(futures.size());
-        for (auto& future : futures)
-            buffers.push_back(future.get());
+        results.reserve(futures.size());
+        for (QFuture<AssemblyResult>& future : futures)
+            results.push_back(future.result());
     }
 
-    std::size_t tripletCount = 0;
-    for (const AssemblyBuffer& buffer : buffers)
-        tripletCount += buffer.triplets.size();
-    std::vector<Tri> triplets;
-    triplets.reserve(tripletCount);
-    for (AssemblyBuffer& buffer : buffers)
+    PreparePatternMatrix(effectiveTangent);
+    for (AssemblyResult& result : results)
     {
-        triplets.insert(triplets.end(),
-            std::make_move_iterator(buffer.triplets.begin()),
-            std::make_move_iterator(buffer.triplets.end()));
-        m_dynamicInertiaForce += buffer.inertiaForce;
+        for (Eigen::Index valueIndex = 0; valueIndex < effectiveTangent.nonZeros(); ++valueIndex)
+            effectiveTangent.valuePtr()[valueIndex] += result.first.valuePtr()[valueIndex];
+        m_dynamicInertiaForce += result.second;
     }
-
-    effectiveTangent.resize(m_nFree, m_nFree);
-    effectiveTangent.setFromTriplets(triplets.begin(), triplets.end());
+    MatrixXd inertiaEffective;
+    DynamicElementData inertiaData;
+    for (const RigidBodyInertiaAssemblyMap& assemblyMap : m_assemblyPattern.rigidBodyInertias)
+    {
+        EvaluateRigidBodyInertia(*assemblyMap.inertia, inertiaData);
+        inertiaEffective = accelerationDerivative * inertiaData.mass +
+                           velocityDerivative * inertiaData.velocityTangent + inertiaData.configurationTangent;
+        AccumulateRigidBodyInertiaMatrix(assemblyMap, inertiaEffective, effectiveTangent.valuePtr());
+        AccumulateDynamicInertiaForce(inertiaData);
+    }
 }
 
-void AnalysisStep::EvaluateDynamicElement(
-    ElementBase& element,
-    DynamicElementData& result)
+void AnalysisStep::GetStructuralDampingFactor(Eigen::MatrixXd& factor) const
+{
+    if (m_Type == EnumKeyword::StepType::DYNAMIC && m_StructuralDamping.IsComputed())
+        factor = m_StructuralDamping.Factor();
+    else
+        factor.resize(m_nFree, 0);
+}
+
+bool AnalysisStep::SaveTrialState()
+{
+    if (!m_pData)
+        return false;
+    m_trialNodeStates.clear();
+    for (const auto& [nodeId, node] : m_pData->m_Nodes)
+        if (node)
+            m_trialNodeStates.emplace(nodeId, std::make_shared<Node>(*node));
+    return m_trialNodeStates.size() == m_pData->m_Nodes.size();
+}
+
+bool AnalysisStep::RestoreTrialState()
+{
+    if (!m_pData || m_trialNodeStates.size() != m_pData->m_Nodes.size())
+        return false;
+    for (const auto& [nodeId, state] : m_trialNodeStates)
+    {
+        const auto found = m_pData->m_Nodes.find(nodeId);
+        if (found == m_pData->m_Nodes.end() || !found->second)
+            return false;
+        if (!state)
+            return false;
+        *found->second = *state;
+    }
+    return true;
+}
+
+void AnalysisStep::AssembleExternalLoadTangent(double time, double loadFactor, double velocityDerivative,
+                                                SpMat& externalTangent)
+{
+    externalTangent.resize(m_nFree, m_nFree);
+    externalTangent.setZero();
+    if (!m_pData || !m_EnableGalloping)
+        return;
+
+    const Force_Wind* gallopingWind = nullptr;
+    double gallopingScale = 0.0;
+    for (const auto& [loadId, load] : m_pData->m_Load)
+    {
+        Q_UNUSED(loadId);
+        if (!load || load->m_LoadType != EnumKeyword::LoadType::FORCE_WIND ||
+            !IsStepScopedDataActive(load->m_StepId))
+            continue;
+        double scale = 1.0;
+        if (load->m_StepId == m_Id)
+        {
+            if (!load->IsActive(time))
+                continue;
+            scale = loadFactor * load->GetScaleFactor(time);
+        }
+        gallopingWind = static_cast<const Force_Wind*>(load.get());
+        gallopingScale = scale;
+    }
+    if (!gallopingWind || gallopingScale == 0.0)
+        return;
+
+    LoadAssembler::AssembleGallopingTangent(*gallopingWind, *m_pData, m_gallopingProfileBindings,
+                                            m_GallopingIceThickness, m_GallopingInitialAttackDegrees, m_nFixed,
+                                            m_nFree, gallopingScale, velocityDerivative, externalTangent);
+}
+
+void AnalysisStep::EvaluateDynamicElement(ElementBase& element, _OUT DynamicElementData& result)
 {
     element.GetDOFs(result.dofs);
     const int dofCount = static_cast<int>(result.dofs.size());
@@ -1433,19 +1600,20 @@ void AnalysisStep::EvaluateDynamicElement(
     result.inertiaForce.setZero(dofCount);
     result.velocityTangent.setZero(dofCount, dofCount);
     result.configurationTangent.setZero(dofCount, dofCount);
-    element.GetDynamicContributions(
-        result.mass,
-        result.inertiaForce,
-        result.velocityTangent,
-        result.configurationTangent);
+    element.GetDynamicContributions(result.mass, result.inertiaForce, result.velocityTangent,
+                                    result.configurationTangent);
 }
 
-void AnalysisStep::AccumulateDynamicInertiaForce(
-    const DynamicElementData& elementData)
+void AnalysisStep::EvaluateRigidBodyInertia(const RigidBodyInertia& inertia, _OUT DynamicElementData& result)
 {
-    for (int localDof = 0;
-        localDof < static_cast<int>(elementData.dofs.size());
-        ++localDof)
+    inertia.GetDOFs(result.dofs);
+    inertia.GetDynamicContributions(result.mass, result.inertiaForce, result.velocityTangent,
+                                    result.configurationTangent);
+}
+
+void AnalysisStep::AccumulateDynamicInertiaForce(const DynamicElementData& elementData)
+{
+    for (int localDof = 0; localDof < static_cast<int>(elementData.dofs.size()); ++localDof)
     {
         const int freeDof = elementData.dofs[localDof] - m_nFixed;
         if (freeDof >= 0 && freeDof < m_nFree)
@@ -1453,8 +1621,7 @@ void AnalysisStep::AccumulateDynamicInertiaForce(
     }
 }
 
-bool AnalysisStep::AssembleNonlinearMPC(
-    SolverNameSpace::NonlinearMPCData& constraints)
+bool AnalysisStep::AssembleNonlinearMPC(SolverNameSpace::NonlinearMPCData& constraints)
 {
     constraints.Clear();
     if (!m_pData || m_pData->m_MPCConstraints.empty())
@@ -1469,10 +1636,9 @@ bool AnalysisStep::AssembleNonlinearMPC(
         SolverNameSpace::NonlinearMPCData contribution;
         if (!mpc->Evaluate(m_nFixed, m_nFree, contribution))
         {
-            qDebug().noquote()
-                << QStringLiteral("Error: MPC %1在当前状态无法组装，"
-                                  "请检查从自由度和约束Jacobian。")
-                       .arg(id);
+            qDebug().noquote() << QStringLiteral("Error: MPC %1在当前状态无法组装，"
+                                                 "请检查从自由度和约束Jacobian。")
+                                      .arg(id);
             return false;
         }
         equationCount += static_cast<int>(contribution.value.size());
@@ -1482,8 +1648,7 @@ bool AnalysisStep::AssembleNonlinearMPC(
         return true;
 
     constraints.value = Eigen::VectorXd::Zero(equationCount);
-    constraints.jacobian =
-        Eigen::MatrixXd::Zero(equationCount, m_nFree);
+    constraints.jacobian = Eigen::MatrixXd::Zero(equationCount, m_nFree);
     constraints.hessians.resize(equationCount);
     constraints.hessianEntries.resize(equationCount);
     constraints.slaveDofs.reserve(equationCount);
@@ -1493,27 +1658,21 @@ bool AnalysisStep::AssembleNonlinearMPC(
     {
         const int rows = static_cast<int>(contribution.value.size());
         constraints.value.segment(row, rows) = contribution.value;
-        constraints.jacobian.middleRows(row, rows) =
-            contribution.jacobian;
+        constraints.jacobian.middleRows(row, rows) = contribution.jacobian;
         if (static_cast<int>(contribution.hessians.size()) == rows)
             for (int i = 0; i < rows; ++i)
-                constraints.hessians[row + i] =
-                    std::move(contribution.hessians[i]);
+                constraints.hessians[row + i] = std::move(contribution.hessians[i]);
         if (static_cast<int>(contribution.hessianEntries.size()) == rows)
             for (int i = 0; i < rows; ++i)
-                constraints.hessianEntries[row + i] =
-                    std::move(contribution.hessianEntries[i]);
-        constraints.slaveDofs.insert(
-            constraints.slaveDofs.end(),
-            contribution.slaveDofs.begin(),
-            contribution.slaveDofs.end());
+                constraints.hessianEntries[row + i] = std::move(contribution.hessianEntries[i]);
+        constraints.slaveDofs.insert(constraints.slaveDofs.end(), contribution.slaveDofs.begin(),
+                                     contribution.slaveDofs.end());
         row += rows;
     }
     return constraints.IsValid(m_nFree);
 }
 
-void AnalysisStep::SetNonlinearMPCMultipliers(
-    const SolverNameSpace::Vec& multipliers)
+void AnalysisStep::SetNonlinearMPCMultipliers(const SolverNameSpace::Vec& multipliers)
 {
     m_mpcMultipliers = multipliers;
 }
@@ -1536,26 +1695,23 @@ void AnalysisStep::ComputeResidual(const SolverNameSpace::Vec& F_ext, SolverName
         std::fill(nodePair.second->m_Force.begin(), nodePair.second->m_Force.end(), 0.0);
     }
     Get_CurrentInforce(f_int);
-    //std::cout << "\nF:" << f_int.transpose() << "\n";
     // 动力学：加上惯性力和阻尼力
     if (m_Type == EnumKeyword::StepType::DYNAMIC)
     {
         if (m_dynamicInertiaForce.size() == m_nFree)
             f_int += m_dynamicInertiaForce;
+        if (m_StructuralDamping.IsComputed())
+            f_int += m_StructuralDamping.Apply(GetCurrentVelocity());
     }
 
     R = F_ext - f_int;
 }
 
-void AnalysisStep::ComputeStaticResidual(
-    const SolverNameSpace::Vec& F_ext,
-    SolverNameSpace::Vec& R)
+void AnalysisStep::ComputeStaticResidual(const SolverNameSpace::Vec& F_ext, SolverNameSpace::Vec& R)
 {
     VectorXd internalForce = VectorXd::Zero(m_nFree);
     for (auto& nodePair : m_pData->m_Nodes)
-        std::fill(
-            nodePair.second->m_Force.begin(),
-            nodePair.second->m_Force.end(), 0.0);
+        std::fill(nodePair.second->m_Force.begin(), nodePair.second->m_Force.end(), 0.0);
     Get_CurrentInforce(internalForce);
     R = F_ext - internalForce;
 }
@@ -1585,6 +1741,7 @@ void AnalysisStep::CommitState()
     {
         elementPair.second->CommitState();
     }
+    StoreCurrentNodeState();
 }
 
 VectorXd AnalysisStep::GetCurrentVelocity() const
@@ -1635,8 +1792,13 @@ VectorXd AnalysisStep::GetCurrentAcceleration() const
     return a;
 }
 
-void AnalysisStep::BackupStepState()
+void AnalysisStep::StoreCurrentNodeState()
 {
+    if (!m_pData)
+    {
+        return;
+    }
+
     for (auto& nodePair : m_pData->m_Nodes)
     {
         auto pNode = nodePair.second;
@@ -1648,6 +1810,11 @@ void AnalysisStep::BackupStepState()
         pNode->m_AlphaMaterial_n = pNode->m_AlphaMaterial;
         pNode->m_StepRotation.setZero();
     }
+}
+
+void AnalysisStep::BackupStepState()
+{
+    StoreCurrentNodeState();
 }
 
 void AnalysisStep::GetStepIncrement(SolverNameSpace::Vec& dx_step) const

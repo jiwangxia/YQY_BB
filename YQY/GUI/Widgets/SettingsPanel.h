@@ -7,7 +7,10 @@ class QCheckBox;
 class QComboBox;
 class QSpinBox;
 
-namespace Ui { class SettingsPanelClass; }
+namespace Ui
+{
+class SettingsPanelClass;
+}
 
 class SettingsPanel final : public QWidget
 {
@@ -18,6 +21,9 @@ public:
     QSpinBox* concurrencySpin() const;
     QSpinBox* assemblyThreadsSpin() const;
     QCheckBox* gpuSolverCheckBox() const;
+    QComboBox* linearSolverModeCombo() const;
+    QSpinBox* resultBatchFramesSpin() const;
+    QCheckBox* backgroundResultWriteCheckBox() const;
     QComboBox* nodeLabelModeCombo() const;
     QLabel* statusLabel() const;
 

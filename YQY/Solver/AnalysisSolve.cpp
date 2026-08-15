@@ -4,9 +4,10 @@
 
 #include <QDebug>
 #include <QThread>
+#include <QThreadPool>
+#include <QtConcurrentRun>
 
 #include <algorithm>
-#include <future>
 #include <map>
 #include <mutex>
 #include <numeric>
@@ -79,12 +80,12 @@ bool AnalysisRunner::RunSelectedByRegions(const std::vector<int>& stepIds)
     structure->EnsureDefaultAnalysisConfiguration();
 
     const bool hasStaticDependency = std::any_of(stepIds.cbegin(), stepIds.cend(),
-        [&structure](int stepId)
-        {
-            const auto found = structure->m_AnalysisStep.find(stepId);
-            return found != structure->m_AnalysisStep.cend() && found->second
-                && found->second->m_InitialStaticStepId > 0;
-        });
+                                                 [&structure](int stepId)
+                                                 {
+                                                     const auto found = structure->m_AnalysisStep.find(stepId);
+                                                     return found != structure->m_AnalysisStep.cend() &&
+                                                            found->second && found->second->m_InitialStaticStepId > 0;
+                                                 });
     if (hasStaticDependency)
         return RunWithStaticDependencies(stepIds);
 
@@ -127,9 +128,9 @@ bool AnalysisRunner::RunSelectedByRegions(const std::vector<int>& stepIds)
     {
         const WorkItem work = workItems.front();
         const auto regionIt = structure->m_ComputeRegions.find(work.regionId);
-        if (regionIt != structure->m_ComputeRegions.cend() && regionIt->second
-            && regionIt->second->m_NodeIds.size() == structure->m_Nodes.size()
-            && regionIt->second->m_ElementIds.size() == structure->m_Elements.size())
+        if (regionIt != structure->m_ComputeRegions.cend() && regionIt->second &&
+            regionIt->second->m_NodeIds.size() == structure->m_Nodes.size() &&
+            regionIt->second->m_ElementIds.size() == structure->m_Elements.size())
         {
             return RunStepDirect(work.stepId);
         }
@@ -141,7 +142,7 @@ bool AnalysisRunner::RunSelectedByRegions(const std::vector<int>& stepIds)
     std::vector<WorkResult> results(workItems.size());
 
     const auto runWorkItem = [this, structure, &workItems, &progressValues,
-        &progressMutex](std::size_t index) -> WorkResult
+                              &progressMutex](std::size_t index) -> WorkResult
     {
         WorkResult result;
         const WorkItem work = workItems.at(index);
@@ -158,28 +159,28 @@ bool AnalysisRunner::RunSelectedByRegions(const std::vector<int>& stepIds)
         child.SetStructure(result.model);
         child.SetRuntimeCallbacks(
             [this, index, work, &progressValues, &progressMutex](double progress, const QString& message)
-        {
-            double overall = 0.0;
             {
-                std::lock_guard<std::mutex> lock(progressMutex);
-                progressValues.at(index) = progress;
-                for (double value : progressValues)
-                    overall += value;
-                overall /= static_cast<double>(progressValues.size());
-            }
-            if (m_progressCallback)
-            {
-                m_progressCallback(overall, QStringLiteral("区域 %1 · 分析步 %2 · %3")
-                    .arg(work.regionId).arg(work.stepId).arg(message));
-            }
-        }, m_cancelCallback);
+                double overall = 0.0;
+                {
+                    std::lock_guard<std::mutex> lock(progressMutex);
+                    progressValues.at(index) = progress;
+                    for (double value : progressValues)
+                        overall += value;
+                    overall /= static_cast<double>(progressValues.size());
+                }
+                if (m_progressCallback)
+                {
+                    m_progressCallback(
+                        overall,
+                        QStringLiteral("区域 %1 · 分析步 %2 · %3").arg(work.regionId).arg(work.stepId).arg(message));
+                }
+            },
+            m_cancelCallback);
         result.succeeded = child.RunStepDirect(work.stepId, false);
-        result.cancelled = child.WasCancelled()
-            || (m_cancelCallback && m_cancelCallback());
+        result.cancelled = child.WasCancelled() || (m_cancelCallback && m_cancelCallback());
         if (!result.succeeded && !result.cancelled)
         {
-            result.errorMessage = QStringLiteral("区域 %1 的分析步 %2 求解失败。")
-                .arg(work.regionId).arg(work.stepId);
+            result.errorMessage = QStringLiteral("区域 %1 的分析步 %2 求解失败。").arg(work.regionId).arg(work.stepId);
         }
         return result;
     };
@@ -187,10 +188,10 @@ bool AnalysisRunner::RunSelectedByRegions(const std::vector<int>& stepIds)
     const int idealThreads = std::max(1, QThread::idealThreadCount());
     const int reservedThreads = std::max(1, (idealThreads + 3) / 4);
     const int automaticLimit = std::max(1, std::min(12, idealThreads - reservedThreads));
-    const int configuredLimit = m_maximumRegionThreads > 0
-        ? m_maximumRegionThreads : automaticLimit;
-    const int parallelLimit = std::max(1,
-        std::min(configuredLimit, static_cast<int>(workItems.size())));
+    const int configuredLimit = m_maximumRegionThreads > 0 ? m_maximumRegionThreads : automaticLimit;
+    const int parallelLimit = std::max(1, std::min(configuredLimit, static_cast<int>(workItems.size())));
+    QThreadPool regionThreadPool;
+    regionThreadPool.setMaxThreadCount(parallelLimit);
 
     for (std::size_t first = 0; first < workItems.size(); first += parallelLimit)
     {
@@ -200,12 +201,12 @@ bool AnalysisRunner::RunSelectedByRegions(const std::vector<int>& stepIds)
             break;
         }
         const std::size_t last = std::min(workItems.size(), first + parallelLimit);
-        std::vector<std::future<WorkResult>> futures;
+        std::vector<QFuture<WorkResult>> futures;
         futures.reserve(last - first);
         for (std::size_t index = first; index < last; ++index)
-            futures.push_back(std::async(std::launch::async, runWorkItem, index));
+            futures.push_back(QtConcurrent::run(&regionThreadPool, runWorkItem, index));
         for (std::size_t index = first; index < last; ++index)
-            results.at(index) = futures.at(index - first).get();
+            results.at(index) = futures.at(index - first).result();
     }
 
     bool succeeded = !m_wasCancelled;
@@ -221,10 +222,10 @@ bool AnalysisRunner::RunSelectedByRegions(const std::vector<int>& stepIds)
 
     if (structure->GetOutputter().GetFrameCount() > 0)
     {
-        succeeded = structure->GetOutputter().SaveHdf5File(
-            structure->m_OutputControl.m_Hdf5FileName,
-            structure.get(), structure->m_OutputControl.m_SourceModelName,
-            succeeded && !m_wasCancelled) && succeeded;
+        succeeded = structure->GetOutputter().SaveHdf5File(structure->m_OutputControl.m_Hdf5FileName, structure.get(),
+                                                           structure->m_OutputControl.m_SourceModelName,
+                                                           succeeded && !m_wasCancelled) &&
+                    succeeded;
     }
     else
     {
@@ -253,8 +254,7 @@ bool AnalysisRunner::RunWithStaticDependencies(const std::vector<int>& stepIds)
         int regionId = 0;
         bool operator<(const DependencyKey& other) const
         {
-            return std::tie(staticStepId, regionId)
-                < std::tie(other.staticStepId, other.regionId);
+            return std::tie(staticStepId, regionId) < std::tie(other.staticStepId, other.regionId);
         }
     };
 
@@ -278,8 +278,7 @@ bool AnalysisRunner::RunWithStaticDependencies(const std::vector<int>& stepIds)
         const std::vector<int> regionIds = structure->ResolveAnalysisStepRegionIds(step);
         if (regionIds.empty())
         {
-            qDebug().noquote() << QStringLiteral(
-                "Error: 分析步 %1 没有可运行的启用计算区域。").arg(stepId);
+            qDebug().noquote() << QStringLiteral("Error: 分析步 %1 没有可运行的启用计算区域。").arg(stepId);
             return false;
         }
         if (step.m_InitialStaticStepId <= 0)
@@ -289,26 +288,22 @@ bool AnalysisRunner::RunWithStaticDependencies(const std::vector<int>& stepIds)
             continue;
         }
         const auto staticIt = structure->m_AnalysisStep.find(step.m_InitialStaticStepId);
-        if (step.m_Type != EnumKeyword::StepType::DYNAMIC
-            || staticIt == structure->m_AnalysisStep.cend() || !staticIt->second
-            || staticIt->second->m_Type != EnumKeyword::StepType::STATIC
-            || staticIt->first >= stepId)
+        if (step.m_Type != EnumKeyword::StepType::DYNAMIC || staticIt == structure->m_AnalysisStep.cend() ||
+            !staticIt->second || staticIt->second->m_Type != EnumKeyword::StepType::STATIC || staticIt->first >= stepId)
         {
-            qDebug().noquote() << QStringLiteral(
-                "Error: 动力步 %1 引用的前置静力步无效。").arg(stepId);
+            qDebug().noquote() << QStringLiteral("Error: 动力步 %1 引用的前置静力步无效。").arg(stepId);
             return false;
         }
-        const std::vector<int> staticRegionVector =
-            structure->ResolveAnalysisStepRegionIds(*staticIt->second);
-        const std::set<int> staticRegions(
-            staticRegionVector.cbegin(), staticRegionVector.cend());
+        const std::vector<int> staticRegionVector = structure->ResolveAnalysisStepRegionIds(*staticIt->second);
+        const std::set<int> staticRegions(staticRegionVector.cbegin(), staticRegionVector.cend());
         for (int regionId : regionIds)
         {
             if (staticRegions.find(regionId) == staticRegions.cend())
             {
-                qDebug().noquote() << QStringLiteral(
-                    "Error: 动力步 %1 的计算区域 %2 未包含在前置静力步 %3 中。")
-                    .arg(stepId).arg(regionId).arg(staticIt->first);
+                qDebug().noquote() << QStringLiteral("Error: 动力步 %1 的计算区域 %2 未包含在前置静力步 %3 中。")
+                                          .arg(stepId)
+                                          .arg(regionId)
+                                          .arg(staticIt->first);
                 return false;
             }
             dynamicByEquilibrium[{staticIt->first, regionId}].push_back(stepId);
@@ -318,22 +313,26 @@ bool AnalysisRunner::RunWithStaticDependencies(const std::vector<int>& stepIds)
     // A static step/region pair referenced by a dynamic branch is solved by the
     // dependency chain and must not also remain as an independent work item.
     standaloneItems.erase(std::remove_if(standaloneItems.begin(), standaloneItems.end(),
-        [&dynamicByEquilibrium](const WorkItem& work)
-        {
-            return dynamicByEquilibrium.find({work.stepId, work.regionId})
-                != dynamicByEquilibrium.cend();
-        }), standaloneItems.end());
+                                         [&dynamicByEquilibrium](const WorkItem& work)
+                                         {
+                                             return dynamicByEquilibrium.find({work.stepId, work.regionId}) !=
+                                                    dynamicByEquilibrium.cend();
+                                         }),
+                          standaloneItems.end());
 
-    const int operationCount = std::max(1, static_cast<int>(standaloneItems.size()
-        + dynamicByEquilibrium.size()
-        + std::accumulate(dynamicByEquilibrium.cbegin(), dynamicByEquilibrium.cend(), std::size_t{0},
-            [](std::size_t total, const auto& item) { return total + item.second.size(); })));
+    const int operationCount = std::max(
+        1, static_cast<int>(standaloneItems.size() + dynamicByEquilibrium.size() +
+                            std::accumulate(dynamicByEquilibrium.cbegin(), dynamicByEquilibrium.cend(), std::size_t{0},
+                                            [](std::size_t total, const auto& item)
+                                            {
+                                                return total + item.second.size();
+                                            })));
     int completedOperations = 0;
     structure->GetOutputter().Clear();
 
-    const auto runOne = [this, structure, operationCount, &completedOperations](
-        const std::shared_ptr<StructureData>& model, int stepId, int regionId,
-        bool inheritedState, bool publishResults) -> bool
+    const auto runOne = [this, structure, operationCount,
+                         &completedOperations](const std::shared_ptr<StructureData>& model, int stepId, int regionId,
+                                               bool inheritedState, bool publishResults) -> bool
     {
         if (!model)
             return false;
@@ -351,10 +350,10 @@ bool AnalysisRunner::RunWithStaticDependencies(const std::vector<int>& stepIds)
                 {
                     m_progressCallback(
                         (completedOperations + std::clamp(progress, 0.0, 1.0)) / operationCount,
-                        QStringLiteral("区域 %1 · 分析步 %2 · %3")
-                            .arg(regionId).arg(stepId).arg(message));
+                        QStringLiteral("区域 %1 · 分析步 %2 · %3").arg(regionId).arg(stepId).arg(message));
                 }
-            }, m_cancelCallback);
+            },
+            m_cancelCallback);
         const bool succeeded = child.RunStepDirect(stepId, false);
         m_wasCancelled = m_wasCancelled || child.WasCancelled();
         if (!succeeded)
@@ -368,11 +367,11 @@ bool AnalysisRunner::RunWithStaticDependencies(const std::vector<int>& stepIds)
     for (const WorkItem& work : standaloneItems)
     {
         QString cloneError;
-        auto model = structure->CloneRegionForAnalysis(
-            work.regionId, work.stepId, &cloneError);
+        auto model = structure->CloneRegionForAnalysis(work.regionId, work.stepId, &cloneError);
         if (!model || !runOne(model, work.stepId, work.regionId, false, true))
         {
-            if (!cloneError.isEmpty()) qDebug().noquote() << QStringLiteral("Error:") << cloneError;
+            if (!cloneError.isEmpty())
+                qDebug().noquote() << QStringLiteral("Error:") << cloneError;
             return false;
         }
     }
@@ -382,22 +381,21 @@ bool AnalysisRunner::RunWithStaticDependencies(const std::vector<int>& stepIds)
         QString cloneError;
         std::set<int> chainStepIds{key.staticStepId};
         chainStepIds.insert(dynamicIds.cbegin(), dynamicIds.cend());
-        auto equilibriumModel = structure->CloneRegionForAnalysis(
-            key.regionId, chainStepIds, &cloneError);
-        if (!equilibriumModel
-            || !runOne(equilibriumModel, key.staticStepId, key.regionId, false,
-                requested.find(key.staticStepId) != requested.cend()))
+        auto equilibriumModel = structure->CloneRegionForAnalysis(key.regionId, chainStepIds, &cloneError);
+        if (!equilibriumModel || !runOne(equilibriumModel, key.staticStepId, key.regionId, false,
+                                         requested.find(key.staticStepId) != requested.cend()))
         {
-            if (!cloneError.isEmpty()) qDebug().noquote() << QStringLiteral("Error:") << cloneError;
+            if (!cloneError.isEmpty())
+                qDebug().noquote() << QStringLiteral("Error:") << cloneError;
             return false;
         }
         for (int dynamicStepId : dynamicIds)
         {
             auto dynamicModel = equilibriumModel->CloneForAnalysis(&cloneError);
-            if (!dynamicModel
-                || !runOne(dynamicModel, dynamicStepId, key.regionId, true, true))
+            if (!dynamicModel || !runOne(dynamicModel, dynamicStepId, key.regionId, true, true))
             {
-                if (!cloneError.isEmpty()) qDebug().noquote() << QStringLiteral("Error:") << cloneError;
+                if (!cloneError.isEmpty())
+                    qDebug().noquote() << QStringLiteral("Error:") << cloneError;
                 return false;
             }
         }
@@ -405,9 +403,8 @@ bool AnalysisRunner::RunWithStaticDependencies(const std::vector<int>& stepIds)
 
     const bool hasFrames = structure->GetOutputter().GetFrameCount() > 0;
     const bool saved = hasFrames && structure->GetOutputter().SaveHdf5File(
-        structure->m_OutputControl.m_Hdf5FileName,
-        structure.get(), structure->m_OutputControl.m_SourceModelName,
-        !m_wasCancelled);
+                                        structure->m_OutputControl.m_Hdf5FileName, structure.get(),
+                                        structure->m_OutputControl.m_SourceModelName, !m_wasCancelled);
     if (saved && m_progressCallback)
         m_progressCallback(1.0, QStringLiteral("静力平衡与动力分析链计算完成"));
     return saved && !m_wasCancelled;

@@ -4,36 +4,34 @@
 #include <limits>
 #include <stdexcept>
 
-namespace
-{
-double StartAngle(int bundleCount)
+static double StartAngle(int bundleCount)
 {
     const double pi = std::acos(-1.0);
     switch (bundleCount)
     {
-    case 1: return 0.0;
-    case 2: return 0.0;
-    case 4: return -pi / 4.0;
-    case 6: return -pi / 3.0;
-    case 8: return -3.0 * pi / 8.0;
-    default: return 0.0;
+        case 1:
+            return 0.0;
+        case 2:
+            return 0.0;
+        case 4:
+            return -pi / 4.0;
+        case 6:
+            return -pi / 3.0;
+        case 8:
+            return -3.0 * pi / 8.0;
+        default:
+            return 0.0;
     }
 }
 
-double PeriodicDistance(double first, double second)
+static double PeriodicDistance(double first, double second)
 {
     const double period = 2.0 * std::acos(-1.0);
     return std::abs(std::remainder(first - second, period));
 }
-}
-
-int BundleAeroMapper::ResolveProfile(
-    int bundleCount,
-    int wireId,
-    const Eigen::Vector3d& elementAxis,
-    const Eigen::Vector3d& modelUp,
-    const Eigen::Vector3d& windVelocityGlobal,
-    double bundleTwistRadians)
+int BundleAeroMapper::ResolveProfile(int bundleCount, int wireId, const Eigen::Vector3d& elementAxis,
+                                     const Eigen::Vector3d& modelUp, const Eigen::Vector3d& windVelocityGlobal,
+                                     double bundleTwistRadians)
 {
     constexpr double tolerance = 1.0e-12;
     if (bundleCount <= 0 || wireId < 0 || wireId >= bundleCount)
@@ -52,8 +50,7 @@ int BundleAeroMapper::ResolveProfile(
     up.normalize();
     const Eigen::Vector3d right = axis.cross(up).normalized();
 
-    Eigen::Vector3d normalWind = windVelocityGlobal
-        - windVelocityGlobal.dot(axis) * axis;
+    Eigen::Vector3d normalWind = windVelocityGlobal - windVelocityGlobal.dot(axis) * axis;
     if (!normalWind.allFinite() || normalWind.norm() <= tolerance)
         return wireId;
     normalWind.normalize();
@@ -61,8 +58,7 @@ int BundleAeroMapper::ResolveProfile(
     const double windAngle = std::atan2(normalWind.dot(up), normalWind.dot(right));
     const double twoPi = 2.0 * std::acos(-1.0);
     const double step = twoPi / bundleCount;
-    const double physicalAngle = StartAngle(bundleCount) + step * wireId
-        + bundleTwistRadians;
+    const double physicalAngle = StartAngle(bundleCount) + step * wireId + bundleTwistRadians;
     const double windRelativeAngle = physicalAngle - windAngle;
 
     int bestProfile = 0;

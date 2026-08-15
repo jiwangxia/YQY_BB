@@ -9,8 +9,8 @@ class SectionBase : public Base
 public:
     SectionBase();
 
-    double m_Area = 0.0;  ///< 截面面积
-    double m_Radius = 0.0;  ///< 半径
+    double m_Area = 0.0;   ///< 截面面积
+    double m_Radius = 0.0; ///< 半径
     double Io = 0.0;
     double Irr = 0.0;
     double Sy = 0.0;
@@ -32,7 +32,9 @@ public:
      * @brief 获取截面面积
      * @return 截面面积值
      */
-	double Get_AreaValue() const { return m_Area; };
+    double Get_AreaValue() const
+    {
+        return m_Area;
+    };
     virtual void Calculate_I(_OUT double& Iy, _OUT double& Iz, _OUT double& J) = 0;
 };
-

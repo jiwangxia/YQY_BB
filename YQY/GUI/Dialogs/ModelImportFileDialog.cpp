@@ -8,15 +8,15 @@
 #include <QRubberBand>
 
 ModelImportFileDialog::ModelImportFileDialog(const QString& directory, QWidget* parent)
-    : ModelImportFileDialog(directory, QStringLiteral("导入模型"),
-                            QStringLiteral("模型文件 (*.bdf);;H5模型文件 (*.h5 *.hdf5);;杆塔模型文件 (*.txt);;ABAQUS文件 (*.inp)"),
-                            QFileDialog::ExistingFiles, parent)
+    : ModelImportFileDialog(
+          directory, QStringLiteral("导入模型"),
+          QStringLiteral("模型文件 (*.bdf);;H5模型文件 (*.h5 *.hdf5);;杆塔模型文件 (*.txt);;ABAQUS文件 (*.inp)"),
+          QFileDialog::ExistingFiles, parent)
 {
 }
 
-ModelImportFileDialog::ModelImportFileDialog(const QString& directory, const QString& title,
-                                             const QString& nameFilter, QFileDialog::FileMode fileMode,
-                                             QWidget* parent)
+ModelImportFileDialog::ModelImportFileDialog(const QString& directory, const QString& title, const QString& nameFilter,
+                                             QFileDialog::FileMode fileMode, QWidget* parent)
     : QFileDialog(parent, title, directory, nameFilter)
 {
     setObjectName(QStringLiteral("modelImportFileDialog"));
@@ -49,10 +49,11 @@ QFileDialog QListView#sidebar {
 )QSS"));
 
     configureInternalWidgets();
-    QTimer::singleShot(0, this, [this]()
-    {
-        configureInternalWidgets();
-    });
+    QTimer::singleShot(0, this,
+                       [this]()
+                       {
+                           configureInternalWidgets();
+                       });
 }
 
 void ModelImportFileDialog::configureInternalWidgets()

@@ -5,7 +5,9 @@
 #include <QTabBar>
 #include <QTableWidget>
 #include <QTreeWidget>
-PropertyModule::PropertyModule(QWidget* p) : QWidget(p), m_ui(new Ui::PropertyModuleClass)
+PropertyModule::PropertyModule(QWidget* p)
+    : QWidget(p)
+    , m_ui(new Ui::PropertyModuleClass)
 {
     m_ui->setupUi(this);
     setObjectName(QStringLiteral("propertyPage"));

@@ -8,9 +8,12 @@ class ElementBase;
 class Force_Element : public LoadBase
 {
 public:
-	Force_Element() { m_LoadType = EnumKeyword::LoadType::FORCE_ELEMENT; }
+    Force_Element()
+    {
+        m_LoadType = EnumKeyword::LoadType::FORCE_ELEMENT;
+    }
 
-    std::weak_ptr<ElementBase> m_pElement;  ///< 荷载所在单元
+    std::weak_ptr<ElementBase> m_pElement; ///< 荷载所在单元
 
-    double m_Value = 0.0;  ///< 荷载值
+    double m_Value = 0.0; ///< 荷载值
 };

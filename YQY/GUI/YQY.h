@@ -70,7 +70,7 @@ private:
     void refreshModulePages();
     void openHdf5Result();
     bool loadHdf5Result(const QString& filePath, bool showErrors = true, bool activateResultModule = true,
-                        bool partialResult = false);
+                        bool partialResult = false, QString* failureReason = nullptr);
     void displayResultFrame(int frameIndex);
     void displayResultPosition(double framePosition);
     bool cacheResultFramePair(int firstIndex, int secondIndex);

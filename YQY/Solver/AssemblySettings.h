@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <QThreadPool>
 
 namespace SolverNameSpace
 {
@@ -11,7 +12,9 @@ class AssemblySettings final
 public:
     static void SetThreadCount(int threadCount)
     {
-        s_threadCount.store(std::max(1, threadCount), std::memory_order_relaxed);
+        const int applied = std::max(1, threadCount);
+        s_threadCount.store(applied, std::memory_order_relaxed);
+        ThreadPool().setMaxThreadCount(applied);
     }
 
     static int ThreadCount()
@@ -19,7 +22,13 @@ public:
         return s_threadCount.load(std::memory_order_relaxed);
     }
 
+    static QThreadPool& ThreadPool()
+    {
+        static QThreadPool threadPool;
+        return threadPool;
+    }
+
 private:
-    inline static std::atomic<int> s_threadCount{ 1 };
+    inline static std::atomic<int> s_threadCount{1};
 };
 }

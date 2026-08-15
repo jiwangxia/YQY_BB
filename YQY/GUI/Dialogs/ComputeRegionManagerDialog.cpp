@@ -44,7 +44,7 @@ static bool ParseIds(const QString& text, std::set<int>& ids, QString& errorMess
             errorMessage = QStringLiteral("无效 ID 范围：%1").arg(token);
             return false;
         }
-        for (int id = first; ; ++id)
+        for (int id = first;; ++id)
         {
             ids.insert(id);
             if (id == last)
@@ -68,7 +68,7 @@ class ComputeRegionEditorDialog final : public QDialog
 {
 public:
     ComputeRegionEditorDialog(const std::shared_ptr<StructureData>& structure,
-        const std::shared_ptr<ComputeRegion>& region, QWidget* parent)
+                              const std::shared_ptr<ComputeRegion>& region, QWidget* parent)
         : QDialog(parent)
     {
         setWindowTitle(region ? QStringLiteral("编辑计算区域") : QStringLiteral("新增计算区域"));
@@ -95,23 +95,24 @@ public:
         buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("确定"));
         buttons->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
         root->addWidget(buttons);
-        connect(buttons, &QDialogButtonBox::accepted, this, [this]()
-        {
-            QString error;
-            if (!ParseIds(m_nodeIds->toPlainText(), m_nodes, error)
-                || !ParseIds(m_elementIds->toPlainText(), m_elements, error))
-            {
-                QMessageBox::information(this, QStringLiteral("ID 格式错误"), error);
-                return;
-            }
-            if (m_nodes.empty() && m_elements.empty() && sourceSetIds().empty())
-            {
-                QMessageBox::information(this, QStringLiteral("区域为空"),
-                    QStringLiteral("请至少输入一个节点 ID 或单元 ID。"));
-                return;
-            }
-            accept();
-        });
+        connect(buttons, &QDialogButtonBox::accepted, this,
+                [this]()
+                {
+                    QString error;
+                    if (!ParseIds(m_nodeIds->toPlainText(), m_nodes, error) ||
+                        !ParseIds(m_elementIds->toPlainText(), m_elements, error))
+                    {
+                        QMessageBox::information(this, QStringLiteral("ID 格式错误"), error);
+                        return;
+                    }
+                    if (m_nodes.empty() && m_elements.empty() && sourceSetIds().empty())
+                    {
+                        QMessageBox::information(this, QStringLiteral("区域为空"),
+                                                 QStringLiteral("请至少输入一个节点 ID 或单元 ID。"));
+                        return;
+                    }
+                    accept();
+                });
         connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
         m_enabled->setChecked(true);
@@ -122,14 +123,16 @@ public:
                 if (!modelSet)
                     continue;
                 auto* item = new QListWidgetItem(QStringLiteral("%1（%2，%3 项）")
-                    .arg(modelSet->m_Name,
-                        modelSet->m_Type == ModelSetType::Node
-                            ? QStringLiteral("节点集") : QStringLiteral("单元集"))
-                    .arg(modelSet->m_Ids.size()), m_sourceSets);
+                                                     .arg(modelSet->m_Name, modelSet->m_Type == ModelSetType::Node
+                                                                                ? QStringLiteral("节点集")
+                                                                                : QStringLiteral("单元集"))
+                                                     .arg(modelSet->m_Ids.size()),
+                                                 m_sourceSets);
                 item->setData(Qt::UserRole, setId);
                 item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
-                item->setCheckState(region && region->m_SourceSetIds.find(setId)
-                    != region->m_SourceSetIds.cend() ? Qt::Checked : Qt::Unchecked);
+                item->setCheckState(region && region->m_SourceSetIds.find(setId) != region->m_SourceSetIds.cend()
+                                        ? Qt::Checked
+                                        : Qt::Unchecked);
             }
         }
         if (region)
@@ -183,8 +186,7 @@ private:
     std::set<int> m_elements;
 };
 
-ComputeRegionManagerDialog::ComputeRegionManagerDialog(
-    const std::shared_ptr<StructureData>& structure, QWidget* parent)
+ComputeRegionManagerDialog::ComputeRegionManagerDialog(const std::shared_ptr<StructureData>& structure, QWidget* parent)
     : QDialog(parent)
     , m_structure(structure)
 {
@@ -193,8 +195,8 @@ ComputeRegionManagerDialog::ComputeRegionManagerDialog(
     auto* root = new QVBoxLayout(this);
     m_table = new QTableWidget(this);
     m_table->setColumnCount(5);
-    m_table->setHorizontalHeaderLabels({QStringLiteral("名称"), QStringLiteral("启用"),
-        QStringLiteral("节点数"), QStringLiteral("单元数"), QStringLiteral("来源集合")});
+    m_table->setHorizontalHeaderLabels({QStringLiteral("名称"), QStringLiteral("启用"), QStringLiteral("节点数"),
+                                        QStringLiteral("单元数"), QStringLiteral("来源集合")});
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_table->setSelectionMode(QAbstractItemView::SingleSelection);
     m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -217,21 +219,24 @@ ComputeRegionManagerDialog::ComputeRegionManagerDialog(
     actions->addWidget(closeButton);
     root->addLayout(actions);
 
-    connect(addButton, &QPushButton::clicked, this, [this]()
-    {
-        editRegion();
-    });
-    connect(editButton, &QPushButton::clicked, this, [this]()
-    {
-        editRegion(selectedRegionId());
-    });
+    connect(addButton, &QPushButton::clicked, this,
+            [this]()
+            {
+                editRegion();
+            });
+    connect(editButton, &QPushButton::clicked, this,
+            [this]()
+            {
+                editRegion(selectedRegionId());
+            });
     connect(deleteButton, &QPushButton::clicked, this, &ComputeRegionManagerDialog::deleteSelectedRegion);
     connect(setsButton, &QPushButton::clicked, this, &ComputeRegionManagerDialog::manageSets);
     connect(closeButton, &QPushButton::clicked, this, &QDialog::accept);
-    connect(m_table, &QTableWidget::cellDoubleClicked, this, [this](int, int)
-    {
-        editRegion(selectedRegionId());
-    });
+    connect(m_table, &QTableWidget::cellDoubleClicked, this,
+            [this](int, int)
+            {
+                editRegion(selectedRegionId());
+            });
     refreshTable();
 }
 
@@ -249,8 +254,7 @@ void ComputeRegionManagerDialog::refreshTable(int preferredRegionId)
         auto* nameItem = new QTableWidgetItem(region->m_Name);
         nameItem->setData(Qt::UserRole, regionId);
         m_table->setItem(row, 0, nameItem);
-        m_table->setItem(row, 1, new QTableWidgetItem(region->m_Enabled
-            ? QStringLiteral("是") : QStringLiteral("否")));
+        m_table->setItem(row, 1, new QTableWidgetItem(region->m_Enabled ? QStringLiteral("是") : QStringLiteral("否")));
         m_table->setItem(row, 2, new QTableWidgetItem(QString::number(region->m_NodeIds.size())));
         m_table->setItem(row, 3, new QTableWidgetItem(QString::number(region->m_ElementIds.size())));
         m_table->setItem(row, 4, new QTableWidgetItem(QString::number(region->m_SourceSetIds.size())));
@@ -278,8 +282,8 @@ void ComputeRegionManagerDialog::editRegion(int regionId)
     int selectedId = regionId;
     if (!existing)
     {
-        selectedId = m_structure->AddComputeRegion(editor.name(), editor.nodeIds(),
-            editor.elementIds(), editor.sourceSetIds(), editor.enabled(), &error);
+        selectedId = m_structure->AddComputeRegion(editor.name(), editor.nodeIds(), editor.elementIds(),
+                                                   editor.sourceSetIds(), editor.enabled(), &error);
         if (selectedId <= 0)
         {
             QMessageBox::critical(this, QStringLiteral("无法创建计算区域"), error);
@@ -311,7 +315,8 @@ void ComputeRegionManagerDialog::deleteSelectedRegion()
     if (!m_structure || regionId <= 0)
         return;
     if (QMessageBox::question(this, QStringLiteral("删除计算区域"),
-        QStringLiteral("确定删除选中的计算区域吗？分析步中的对应引用也会删除。")) != QMessageBox::Yes)
+                              QStringLiteral("确定删除选中的计算区域吗？分析步中的对应引用也会删除。")) !=
+        QMessageBox::Yes)
     {
         return;
     }
@@ -333,6 +338,5 @@ void ComputeRegionManagerDialog::manageSets()
 int ComputeRegionManagerDialog::selectedRegionId() const
 {
     const int row = m_table ? m_table->currentRow() : -1;
-    return row >= 0 && m_table->item(row, 0)
-        ? m_table->item(row, 0)->data(Qt::UserRole).toInt() : -1;
+    return row >= 0 && m_table->item(row, 0) ? m_table->item(row, 0)->data(Qt::UserRole).toInt() : -1;
 }

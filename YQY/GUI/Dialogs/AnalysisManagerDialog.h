@@ -22,10 +22,13 @@ public:
         MPCs = 3
     };
 
-    explicit AnalysisManagerDialog(const std::shared_ptr<StructureData>& structure,
-        Page initialPage, QWidget* parent = nullptr);
+    explicit AnalysisManagerDialog(const std::shared_ptr<StructureData>& structure, Page initialPage,
+                                   QWidget* parent = nullptr);
 
-    bool modelChanged() const { return m_modelChanged; }
+    bool modelChanged() const
+    {
+        return m_modelChanged;
+    }
     void setModelChangedCallback(std::function<void(const QSet<int>&)> callback);
     void setOpenManagerCallback(std::function<void(Page)> callback);
     void refreshFromModel();
@@ -63,31 +66,35 @@ private:
 class AnalysisStepManagerDialog final : public AnalysisManagerDialog
 {
 public:
-    explicit AnalysisStepManagerDialog(const std::shared_ptr<StructureData>& structure,
-        QWidget* parent = nullptr)
-        : AnalysisManagerDialog(structure, Page::Steps, parent) {}
+    explicit AnalysisStepManagerDialog(const std::shared_ptr<StructureData>& structure, QWidget* parent = nullptr)
+        : AnalysisManagerDialog(structure, Page::Steps, parent)
+    {
+    }
 };
 
 class AnalysisLoadManagerDialog final : public AnalysisManagerDialog
 {
 public:
-    explicit AnalysisLoadManagerDialog(const std::shared_ptr<StructureData>& structure,
-        QWidget* parent = nullptr)
-        : AnalysisManagerDialog(structure, Page::Loads, parent) {}
+    explicit AnalysisLoadManagerDialog(const std::shared_ptr<StructureData>& structure, QWidget* parent = nullptr)
+        : AnalysisManagerDialog(structure, Page::Loads, parent)
+    {
+    }
 };
 
 class AnalysisConstraintManagerDialog final : public AnalysisManagerDialog
 {
 public:
-    explicit AnalysisConstraintManagerDialog(const std::shared_ptr<StructureData>& structure,
-        QWidget* parent = nullptr)
-        : AnalysisManagerDialog(structure, Page::Constraints, parent) {}
+    explicit AnalysisConstraintManagerDialog(const std::shared_ptr<StructureData>& structure, QWidget* parent = nullptr)
+        : AnalysisManagerDialog(structure, Page::Constraints, parent)
+    {
+    }
 };
 
 class AnalysisMPCManagerDialog final : public AnalysisManagerDialog
 {
 public:
-    explicit AnalysisMPCManagerDialog(const std::shared_ptr<StructureData>& structure,
-        QWidget* parent = nullptr)
-        : AnalysisManagerDialog(structure, Page::MPCs, parent) {}
+    explicit AnalysisMPCManagerDialog(const std::shared_ptr<StructureData>& structure, QWidget* parent = nullptr)
+        : AnalysisManagerDialog(structure, Page::MPCs, parent)
+    {
+    }
 };

@@ -9,9 +9,15 @@
 class NavigationButton final : public QPushButton
 {
 public:
-    explicit NavigationButton(QWidget* parent = nullptr) : QPushButton(parent) {}
+    explicit NavigationButton(QWidget* parent = nullptr)
+        : QPushButton(parent)
+    {
+    }
 
-    explicit NavigationButton(const QString& text, QWidget* parent = nullptr) : QPushButton(text, parent) {}
+    explicit NavigationButton(const QString& text, QWidget* parent = nullptr)
+        : QPushButton(text, parent)
+    {
+    }
 
     QSize sizeHint() const override
     {
@@ -29,21 +35,15 @@ protected:
         painter.drawControl(QStyle::CE_PushButtonBevel, option);
 
         const QSize requestedIconSize = iconSize().boundedTo(QSize(width() - 12, 20));
-        const QRect iconRect(
-            (width() - requestedIconSize.width()) / 2,
-            3,
-            requestedIconSize.width(),
-            requestedIconSize.height());
-        const QIcon::Mode mode = isEnabled()
-            ? (underMouse() ? QIcon::Active : QIcon::Normal)
-            : QIcon::Disabled;
+        const QRect iconRect((width() - requestedIconSize.width()) / 2, 3, requestedIconSize.width(),
+                             requestedIconSize.height());
+        const QIcon::Mode mode = isEnabled() ? (underMouse() ? QIcon::Active : QIcon::Normal) : QIcon::Disabled;
         const QIcon::State state = isChecked() ? QIcon::On : QIcon::Off;
         icon().paint(&painter, iconRect, Qt::AlignCenter, mode, state);
 
         const QRect textRect = rect().adjusted(4, iconRect.bottom() + 1, -4, -2);
         painter.setPen(palette().color(isChecked() ? QPalette::BrightText : QPalette::ButtonText));
-        painter.drawText(textRect,
-            Qt::AlignHCenter | Qt::AlignVCenter | Qt::TextSingleLine, text());
+        painter.drawText(textRect, Qt::AlignHCenter | Qt::AlignVCenter | Qt::TextSingleLine, text());
 
         if (option.state.testFlag(QStyle::State_HasFocus))
         {

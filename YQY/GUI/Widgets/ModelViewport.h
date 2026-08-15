@@ -85,8 +85,9 @@ public:
     bool updateNodePosition(int nodeId, double x, double y, double z);
     bool hasModel() const;
     bool hasSolidGeometry() const;
-    bool displayResultFrame(const Hdf5ResultFrame& frame, ResultField field,
-        double deformationScale = 0.0, bool showOriginal = true);
+    bool displayResultFrame(const Hdf5ResultFrame& frame, ResultField field, double deformationScale = 0.0,
+                            bool showOriginal = true);
+    double automaticDeformationScale(double maximumDisplacement) const;
     void setResultScalarRange(double minimum, double maximum);
     void clearResultScalarRange();
     void clearResultDisplay();
@@ -139,7 +140,7 @@ private:
     bool m_solidVisible = false;
     bool m_rotationCenterValid = false;
     bool m_rotationCenterSnapped = false;
-    std::array<double, 3> m_rotationCenter{ 0.0, 0.0, 0.0 };
+    std::array<double, 3> m_rotationCenter{0.0, 0.0, 0.0};
     InteractionMode m_interactionMode = InteractionMode::Select;
     std::shared_ptr<StructureData> m_structure;
     std::vector<int> m_pointNodeIds;

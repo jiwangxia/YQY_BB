@@ -10,8 +10,14 @@ class UiAuditRunner final
 public:
     explicit UiAuditRunner(const QStringList& arguments);
 
-    bool isValid() const { return m_valid; }
-    int errorCode() const { return m_errorCode; }
+    bool isValid() const
+    {
+        return m_valid;
+    }
+    int errorCode() const
+    {
+        return m_errorCode;
+    }
     std::optional<int> run(QApplication& application, YQY& window) const;
 
 private:

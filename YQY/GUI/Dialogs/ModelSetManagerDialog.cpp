@@ -43,7 +43,7 @@ static bool ParseSetIds(const QString& text, std::set<int>& ids, QString& errorM
             errorMessage = QStringLiteral("无效 ID 范围：%1").arg(token);
             return false;
         }
-        for (int id = first; ; ++id)
+        for (int id = first;; ++id)
         {
             ids.insert(id);
             if (id == last)
@@ -70,19 +70,18 @@ static QString FormatSetIds(const std::set<int>& ids)
     return values.join(QStringLiteral(", "));
 }
 
-static bool ValidateSetIds(const StructureData& structure, ModelSetType type,
-    const std::set<int>& ids, QString& errorMessage)
+static bool ValidateSetIds(const StructureData& structure, ModelSetType type, const std::set<int>& ids,
+                           QString& errorMessage)
 {
     for (int id : ids)
     {
-        const bool exists = type == ModelSetType::Node
-            ? structure.m_Nodes.find(id) != structure.m_Nodes.cend()
-            : structure.m_Elements.find(id) != structure.m_Elements.cend();
+        const bool exists = type == ModelSetType::Node ? structure.m_Nodes.find(id) != structure.m_Nodes.cend()
+                                                       : structure.m_Elements.find(id) != structure.m_Elements.cend();
         if (!exists)
         {
             errorMessage = QStringLiteral("集合引用了不存在的%1 ID %2。")
-                .arg(type == ModelSetType::Node ? QStringLiteral("节点") : QStringLiteral("单元"))
-                .arg(id);
+                               .arg(type == ModelSetType::Node ? QStringLiteral("节点") : QStringLiteral("单元"))
+                               .arg(id);
             return false;
         }
     }
@@ -111,23 +110,24 @@ public:
         form->addRow(QStringLiteral("类型"), m_type);
         form->addRow(QStringLiteral("ID"), m_ids);
         root->addLayout(form);
-        root->addWidget(new QLabel(
-            QStringLiteral("修改被计算区域引用的集合后，相关计算区域将自动重新构建和合并。"), this));
+        root->addWidget(
+            new QLabel(QStringLiteral("修改被计算区域引用的集合后，相关计算区域将自动重新构建和合并。"), this));
 
         auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
         buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("确定"));
         buttons->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
         root->addWidget(buttons);
-        connect(buttons, &QDialogButtonBox::accepted, this, [this]()
-        {
-            QString error;
-            if (!ParseSetIds(m_ids->toPlainText(), m_parsedIds, error))
-            {
-                QMessageBox::information(this, QStringLiteral("ID 格式错误"), error);
-                return;
-            }
-            accept();
-        });
+        connect(buttons, &QDialogButtonBox::accepted, this,
+                [this]()
+                {
+                    QString error;
+                    if (!ParseSetIds(m_ids->toPlainText(), m_parsedIds, error))
+                    {
+                        QMessageBox::information(this, QStringLiteral("ID 格式错误"), error);
+                        return;
+                    }
+                    accept();
+                });
         connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
         if (modelSet)
@@ -160,8 +160,7 @@ private:
     std::set<int> m_parsedIds;
 };
 
-ModelSetManagerDialog::ModelSetManagerDialog(const std::shared_ptr<StructureData>& structure,
-    QWidget* parent)
+ModelSetManagerDialog::ModelSetManagerDialog(const std::shared_ptr<StructureData>& structure, QWidget* parent)
     : QDialog(parent)
     , m_structure(structure)
 {
@@ -171,8 +170,8 @@ ModelSetManagerDialog::ModelSetManagerDialog(const std::shared_ptr<StructureData
     auto* root = new QVBoxLayout(this);
     m_table = new QTableWidget(this);
     m_table->setColumnCount(5);
-    m_table->setHorizontalHeaderLabels({QStringLiteral("ID"), QStringLiteral("名称"),
-        QStringLiteral("类型"), QStringLiteral("成员数"), QStringLiteral("引用区域数")});
+    m_table->setHorizontalHeaderLabels({QStringLiteral("ID"), QStringLiteral("名称"), QStringLiteral("类型"),
+                                        QStringLiteral("成员数"), QStringLiteral("引用区域数")});
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_table->setSelectionMode(QAbstractItemView::SingleSelection);
     m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -193,20 +192,23 @@ ModelSetManagerDialog::ModelSetManagerDialog(const std::shared_ptr<StructureData
     actions->addWidget(closeButton);
     root->addLayout(actions);
 
-    connect(addButton, &QPushButton::clicked, this, [this]()
-    {
-        editSet();
-    });
-    connect(editButton, &QPushButton::clicked, this, [this]()
-    {
-        editSet(selectedSetId());
-    });
+    connect(addButton, &QPushButton::clicked, this,
+            [this]()
+            {
+                editSet();
+            });
+    connect(editButton, &QPushButton::clicked, this,
+            [this]()
+            {
+                editSet(selectedSetId());
+            });
     connect(deleteButton, &QPushButton::clicked, this, &ModelSetManagerDialog::deleteSelectedSet);
     connect(closeButton, &QPushButton::clicked, this, &QDialog::accept);
-    connect(m_table, &QTableWidget::cellDoubleClicked, this, [this](int, int)
-    {
-        editSet(selectedSetId());
-    });
+    connect(m_table, &QTableWidget::cellDoubleClicked, this,
+            [this](int, int)
+            {
+                editSet(selectedSetId());
+            });
     refreshTable();
 }
 
@@ -240,8 +242,9 @@ void ModelSetManagerDialog::refreshTable(int preferredSetId)
         idItem->setData(Qt::UserRole, setId);
         m_table->setItem(row, 0, idItem);
         m_table->setItem(row, 1, new QTableWidgetItem(modelSet->m_Name));
-        m_table->setItem(row, 2, new QTableWidgetItem(modelSet->m_Type == ModelSetType::Node
-            ? QStringLiteral("节点") : QStringLiteral("单元")));
+        m_table->setItem(row, 2,
+                         new QTableWidgetItem(modelSet->m_Type == ModelSetType::Node ? QStringLiteral("节点")
+                                                                                     : QStringLiteral("单元")));
         m_table->setItem(row, 3, new QTableWidgetItem(QString::number(modelSet->m_Ids.size())));
         m_table->setItem(row, 4, new QTableWidgetItem(QString::number(referenceCount)));
         if (setId == preferredSetId)
@@ -342,14 +345,14 @@ void ModelSetManagerDialog::deleteSelectedSet()
         Q_UNUSED(regionId);
         if (region && region->m_SourceSetIds.find(setId) != region->m_SourceSetIds.cend())
         {
-            QMessageBox::information(this, QStringLiteral("无法删除集合"),
-                QStringLiteral("该集合仍被计算区域“%1”引用，请先修改该计算区域。")
-                    .arg(region->m_Name));
+            QMessageBox::information(
+                this, QStringLiteral("无法删除集合"),
+                QStringLiteral("该集合仍被计算区域“%1”引用，请先修改该计算区域。").arg(region->m_Name));
             return;
         }
     }
-    if (QMessageBox::question(this, QStringLiteral("删除集合"),
-        QStringLiteral("确定删除选中的集合吗？")) != QMessageBox::Yes)
+    if (QMessageBox::question(this, QStringLiteral("删除集合"), QStringLiteral("确定删除选中的集合吗？")) !=
+        QMessageBox::Yes)
     {
         return;
     }

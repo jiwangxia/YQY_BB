@@ -13,7 +13,9 @@
 #include <set>
 #include <vector>
 
-ConductorModule::ConductorModule(QWidget* p) : QWidget(p), m_ui(new Ui::ConductorModuleClass)
+ConductorModule::ConductorModule(QWidget* p)
+    : QWidget(p)
+    , m_ui(new Ui::ConductorModuleClass)
 {
     m_ui->setupUi(this);
     setObjectName(QStringLiteral("conductorPage"));
@@ -24,18 +26,34 @@ ConductorModule::ConductorModule(QWidget* p) : QWidget(p), m_ui(new Ui::Conducto
     m_ui->formGroup->setObjectName(QStringLiteral("conductorFormGroup"));
     m_ui->spacerGroup->setObjectName(QStringLiteral("conductorSpacerGroup"));
     m_ui->createButton->setObjectName(QStringLiteral("conductorCreateButton"));
-    const QList<QWidget*> fields = {m_ui->nameEdit, m_ui->materialCombo, m_ui->sectionCombo, m_ui->elementCombo,
-                                     m_ui->bundleCombo, m_ui->spacingSpin, m_ui->segmentsSpin, m_ui->stressSpin,
-                                     m_ui->endTopologyCombo, m_ui->dualSupportSpacingSpin,
-                                     m_ui->modelModeCombo, m_ui->suspensionLengthSpin,
-                                     m_ui->startX, m_ui->startY, m_ui->startZ, m_ui->endX, m_ui->endY, m_ui->endZ,
-                                    m_ui->spacerLayoutCombo, m_ui->spacerStyleCombo, m_ui->spacerCountSpin, m_ui->spacerElementCombo,
-                                    m_ui->spacerMaterialCombo, m_ui->spacerSectionCombo};
+    const QList<QWidget*> fields = {m_ui->nameEdit,
+                                    m_ui->materialCombo,
+                                    m_ui->sectionCombo,
+                                    m_ui->elementCombo,
+                                    m_ui->bundleCombo,
+                                    m_ui->spacingSpin,
+                                    m_ui->segmentsSpin,
+                                    m_ui->stressSpin,
+                                    m_ui->endTopologyCombo,
+                                    m_ui->dualSupportSpacingSpin,
+                                    m_ui->modelModeCombo,
+                                    m_ui->suspensionLengthSpin,
+                                    m_ui->startX,
+                                    m_ui->startY,
+                                    m_ui->startZ,
+                                    m_ui->endX,
+                                    m_ui->endY,
+                                    m_ui->endZ,
+                                    m_ui->spacerLayoutCombo,
+                                    m_ui->spacerStyleCombo,
+                                    m_ui->spacerCountSpin,
+                                    m_ui->spacerElementCombo,
+                                    m_ui->spacerMaterialCombo,
+                                    m_ui->spacerSectionCombo};
     for (auto* f : fields)
         f->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
     for (auto* c : {m_ui->materialCombo, m_ui->sectionCombo, m_ui->elementCombo, m_ui->bundleCombo,
-                    m_ui->endTopologyCombo,
-                    m_ui->spacerLayoutCombo, m_ui->spacerStyleCombo, m_ui->spacerElementCombo,
+                    m_ui->endTopologyCombo, m_ui->spacerLayoutCombo, m_ui->spacerStyleCombo, m_ui->spacerElementCombo,
                     m_ui->spacerMaterialCombo, m_ui->spacerSectionCombo})
     {
         c->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
@@ -49,27 +67,17 @@ ConductorModule::ConductorModule(QWidget* p) : QWidget(p), m_ui(new Ui::Conducto
     m_ui->spacerStyleCombo->setItemData(2, static_cast<int>(Conductor::InnerSpacerStyle::InnerPolygon));
     m_ui->spacerStyleCombo->setItemData(3, static_cast<int>(Conductor::InnerSpacerStyle::RigidCenterMPC));
     m_ui->spacerStyleCombo->setItemData(
-        3,
-        QStringLiteral("一个 6 自由度中心主节点 + 每根子导线一个刚性偏置 MPC；不生成间隔棒单元，也不计间隔棒质量"),
+        3, QStringLiteral("一个 6 自由度中心主节点 + 刚性偏置 MPC；材料与截面用于计算中心集中质量和转动惯量"),
         Qt::ToolTipRole);
     m_ui->spacerElementCombo->setItemData(0, static_cast<int>(EnumKeyword::ElementType::CR3D));
     m_ui->spacerElementCombo->setItemData(1, static_cast<int>(EnumKeyword::ElementType::T3D2));
     // 显式绑定导线本体单元类型，不依赖 .ui 文件中的固定索引。
     // 共旋索是导线分析默认项；桁架和共旋梁保留用于对照。
     m_ui->elementCombo->clear();
-    m_ui->elementCombo->addItem(
-        QStringLiteral("CABLE 共旋索单元"),
-        static_cast<int>(EnumKeyword::ElementType::CABLE));
-    m_ui->elementCombo->addItem(
-        QStringLiteral("T3D2 桁架单元"),
-        static_cast<int>(EnumKeyword::ElementType::T3D2));
-    m_ui->elementCombo->addItem(
-        QStringLiteral("CR3D 共旋梁单元"),
-        static_cast<int>(EnumKeyword::ElementType::CR3D));
-    m_ui->elementCombo->setItemData(
-        0,
-        QStringLiteral("只受拉，包含初应力、几何刚度、扭转和一致质量"),
-        Qt::ToolTipRole);
+    m_ui->elementCombo->addItem(QStringLiteral("CABLE 共旋索单元"), static_cast<int>(EnumKeyword::ElementType::CABLE));
+    m_ui->elementCombo->addItem(QStringLiteral("T3D2 桁架单元"), static_cast<int>(EnumKeyword::ElementType::T3D2));
+    m_ui->elementCombo->addItem(QStringLiteral("CR3D 共旋梁单元"), static_cast<int>(EnumKeyword::ElementType::CR3D));
+    m_ui->elementCombo->setItemData(0, QStringLiteral("只受拉，包含初应力、几何刚度、扭转和一致质量"), Qt::ToolTipRole);
     m_ui->elementCombo->setCurrentIndex(0);
     m_ui->endTopologyCombo->setItemData(0, static_cast<int>(Conductor::BundleEndTopology::SingleSupport));
     m_ui->endTopologyCombo->setItemData(1, static_cast<int>(Conductor::BundleEndTopology::DualSupportByGroup));
@@ -77,24 +85,27 @@ ConductorModule::ConductorModule(QWidget* p) : QWidget(p), m_ui(new Ui::Conducto
     initializeStationTable();
 
     connect(m_ui->modelModeCombo, qOverload<int>(&QComboBox::currentIndexChanged), this,
-            [this]() { updateModelModeUi(); updateSpacerPreview(); });
+            [this]()
+            {
+                updateModelModeUi();
+                updateSpacerPreview();
+            });
     connect(m_ui->addStationButton, &QPushButton::clicked, this,
             [this]()
             {
                 const int lastRow = m_ui->stationTable->rowCount() - 1;
                 const int insertRow = std::max(1, lastRow);
                 auto valueAt = [this](int row, int column)
-                    {
-                        bool ok = false;
-                        const double value = m_ui->stationTable->item(row, column)->text().toDouble(&ok);
-                        return ok ? value : 0.0;
-                    };
+                {
+                    bool ok = false;
+                    const double value = m_ui->stationTable->item(row, column)->text().toDouble(&ok);
+                    return ok ? value : 0.0;
+                };
                 const int previousRow = std::max(0, insertRow - 1);
                 const int nextRow = std::max(previousRow, lastRow);
-                const Vector3d center(
-                    (valueAt(previousRow, 2) + valueAt(nextRow, 2)) * 0.5,
-                    (valueAt(previousRow, 3) + valueAt(nextRow, 3)) * 0.5,
-                    (valueAt(previousRow, 4) + valueAt(nextRow, 4)) * 0.5);
+                const Vector3d center((valueAt(previousRow, 2) + valueAt(nextRow, 2)) * 0.5,
+                                      (valueAt(previousRow, 3) + valueAt(nextRow, 3)) * 0.5,
+                                      (valueAt(previousRow, 4) + valueAt(nextRow, 4)) * 0.5);
                 m_ui->stationTable->insertRow(insertRow);
                 for (int column = 0; column < 5; ++column)
                     m_ui->stationTable->setItem(insertRow, column, new QTableWidgetItem());
@@ -109,8 +120,7 @@ ConductorModule::ConductorModule(QWidget* p) : QWidget(p), m_ui(new Ui::Conducto
             [this]()
             {
                 const int row = m_ui->stationTable->currentRow();
-                if (m_ui->stationTable->rowCount() > 3 &&
-                    row > 0 && row + 1 < m_ui->stationTable->rowCount())
+                if (m_ui->stationTable->rowCount() > 3 && row > 0 && row + 1 < m_ui->stationTable->rowCount())
                 {
                     m_ui->stationTable->removeRow(row);
                     refreshStationTypes();
@@ -118,17 +128,35 @@ ConductorModule::ConductorModule(QWidget* p) : QWidget(p), m_ui(new Ui::Conducto
                 }
             });
     connect(m_ui->stationTable, &QTableWidget::itemChanged, this,
-            [this]() { updateSpacerPreview(); });
+            [this]()
+            {
+                updateSpacerPreview();
+            });
     connect(m_ui->innerSpacerCheck, &QCheckBox::toggled, this,
-            [this]() { updateSpacerUi(); });
+            [this]()
+            {
+                updateSpacerUi();
+            });
     connect(m_ui->spacerLayoutCombo, qOverload<int>(&QComboBox::currentIndexChanged), this,
-            [this]() { updateSpacerUi(); });
+            [this]()
+            {
+                updateSpacerUi();
+            });
     connect(m_ui->spacerStyleCombo, qOverload<int>(&QComboBox::currentIndexChanged), this,
-            [this]() { updateSpacerUi(); });
+            [this]()
+            {
+                updateSpacerUi();
+            });
     connect(m_ui->spacerCountSpin, qOverload<int>(&QSpinBox::valueChanged), this,
-            [this]() { updateSpacerPreview(); });
+            [this]()
+            {
+                updateSpacerPreview();
+            });
     connect(m_ui->endTopologyCombo, qOverload<int>(&QComboBox::currentIndexChanged), this,
-            [this]() { updateEndTopologyUi(); });
+            [this]()
+            {
+                updateEndTopologyUi();
+            });
     connect(m_ui->spacingSpin, qOverload<double>(&QDoubleSpinBox::valueChanged), this,
             [this](double value)
             {
@@ -136,13 +164,23 @@ ConductorModule::ConductorModule(QWidget* p) : QWidget(p), m_ui(new Ui::Conducto
                     m_ui->dualSupportSpacingSpin->setValue(value);
             });
     connect(m_ui->dualSupportSpacingSpin, &QDoubleSpinBox::editingFinished, this,
-            [this]() { m_dualSupportSpacingCustomized = true; });
+            [this]()
+            {
+                m_dualSupportSpacingCustomized = true;
+            });
     connect(m_ui->bundleCombo, qOverload<int>(&QComboBox::currentIndexChanged), this,
-            [this]() { updateSpacerUi(); updateEndTopologyUi(); });
+            [this]()
+            {
+                updateSpacerUi();
+                updateEndTopologyUi();
+            });
     for (auto* coordinate : {m_ui->startX, m_ui->startY, m_ui->endX, m_ui->endY})
     {
         connect(coordinate, qOverload<double>(&QDoubleSpinBox::valueChanged), this,
-                [this]() { updateSpacerPreview(); });
+                [this]()
+                {
+                    updateSpacerPreview();
+                });
     }
     updateSpacerUi();
     updateEndTopologyUi();
@@ -160,11 +198,7 @@ void ConductorModule::initializeStationTable()
     m_ui->stationTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     for (int column = 2; column < 5; ++column)
         m_ui->stationTable->horizontalHeader()->setSectionResizeMode(column, QHeaderView::Stretch);
-    const Vector3d defaults[] = {
-        Vector3d(0.0, 0.0, 0.0),
-        Vector3d(150.0, 0.0, 0.0),
-        Vector3d(300.0, 0.0, 0.0)
-    };
+    const Vector3d defaults[] = {Vector3d(0.0, 0.0, 0.0), Vector3d(150.0, 0.0, 0.0), Vector3d(300.0, 0.0, 0.0)};
     for (int row = 0; row < 3; ++row)
     {
         for (int column = 0; column < 5; ++column)
@@ -184,12 +218,10 @@ void ConductorModule::updateModelModeUi()
     m_ui->startCoordinates->setVisible(!multiSpan);
     m_ui->endLabel->setVisible(!multiSpan);
     m_ui->endCoordinates->setVisible(!multiSpan);
-    m_ui->segmentsLabel->setText(
-        multiSpan ? QStringLiteral("每档每根离散段数") : QStringLiteral("每根离散段数"));
-    m_ui->analysisCheck->setToolTip(
-        multiSpan
-            ? QStringLiteral("约束首末耐张挂点和全部中间悬垂串上端，并创建静力分析步与重力")
-            : QStringLiteral("创建静力分析步、重力和两端约束"));
+    m_ui->segmentsLabel->setText(multiSpan ? QStringLiteral("每档每根离散段数") : QStringLiteral("每根离散段数"));
+    m_ui->analysisCheck->setToolTip(multiSpan
+                                        ? QStringLiteral("约束首末耐张挂点和全部中间悬垂串上端，并创建静力分析步与重力")
+                                        : QStringLiteral("创建静力分析步、重力和两端约束"));
 }
 
 void ConductorModule::refreshStationTypes()
@@ -210,15 +242,14 @@ void ConductorModule::refreshStationTypes()
             m_ui->stationTable->setItem(row, 1, typeItem);
         }
         sequenceItem->setText(QString::number(row + 1));
-        typeItem->setText(row == 0
-            ? QStringLiteral("左耐张")
-            : (row + 1 == rowCount ? QStringLiteral("右耐张") : QStringLiteral("H 型悬垂")));
+        typeItem->setText(row == 0 ? QStringLiteral("左耐张")
+                                   : (row + 1 == rowCount ? QStringLiteral("右耐张") : QStringLiteral("H 型悬垂")));
         sequenceItem->setFlags(sequenceItem->flags() & ~Qt::ItemIsEditable);
         typeItem->setFlags(typeItem->flags() & ~Qt::ItemIsEditable);
     }
 }
 
-std::vector<Vector3d> ConductorModule::stationCenters(QString& error) const
+std::vector<Vector3d> ConductorModule::stationCenters(_OUT QString& error) const
 {
     std::vector<Vector3d> centers;
     if (m_ui->stationTable->rowCount() < 3)
@@ -238,8 +269,8 @@ std::vector<Vector3d> ConductorModule::stationCenters(QString& error) const
             if (!ok)
             {
                 error = QStringLiteral("第 %1 个坐标点的 %2 值无效。")
-                    .arg(row + 1)
-                    .arg(QStringLiteral("XYZ").at(coordinate));
+                            .arg(row + 1)
+                            .arg(QStringLiteral("XYZ").at(coordinate));
                 centers.clear();
                 return centers;
             }
@@ -261,33 +292,22 @@ void ConductorModule::updateSpacerUi()
     const bool multipleBundle = bundleCount > 1;
     const bool enabled = m_ui->innerSpacerCheck->isChecked() && multipleBundle;
     const bool equalSpacing = m_ui->spacerLayoutCombo->currentData().toBool();
-    if (bundleCount <= 2 &&
-        static_cast<Conductor::InnerSpacerStyle>(
-            m_ui->spacerStyleCombo->currentData().toInt()) ==
-            Conductor::InnerSpacerStyle::RigidCenterMPC)
+    if (bundleCount <= 2 && static_cast<Conductor::InnerSpacerStyle>(m_ui->spacerStyleCombo->currentData().toInt()) ==
+                                Conductor::InnerSpacerStyle::RigidCenterMPC)
         m_ui->spacerStyleCombo->setCurrentIndex(0);
     const bool rigidCenterMpc =
-        static_cast<Conductor::InnerSpacerStyle>(
-            m_ui->spacerStyleCombo->currentData().toInt()) ==
+        static_cast<Conductor::InnerSpacerStyle>(m_ui->spacerStyleCombo->currentData().toInt()) ==
         Conductor::InnerSpacerStyle::RigidCenterMPC;
-    for (auto* widget : {static_cast<QWidget*>(m_ui->spacerLayoutCombo),
-                         static_cast<QWidget*>(m_ui->spacerStyleCombo),
-                         static_cast<QWidget*>(m_ui->spacerElementCombo),
-                         static_cast<QWidget*>(m_ui->spacerMaterialCombo),
-                         static_cast<QWidget*>(m_ui->spacerSectionCombo)})
+    for (auto* widget :
+         {static_cast<QWidget*>(m_ui->spacerLayoutCombo), static_cast<QWidget*>(m_ui->spacerStyleCombo),
+          static_cast<QWidget*>(m_ui->spacerElementCombo), static_cast<QWidget*>(m_ui->spacerMaterialCombo),
+          static_cast<QWidget*>(m_ui->spacerSectionCombo)})
     {
         widget->setEnabled(enabled);
     }
     m_ui->spacerStyleCombo->setEnabled(enabled && bundleCount > 2);
-    for (auto* widget : {static_cast<QWidget*>(m_ui->spacerElementCombo),
-                         static_cast<QWidget*>(m_ui->spacerMaterialCombo),
-                         static_cast<QWidget*>(m_ui->spacerSectionCombo),
-                         static_cast<QWidget*>(m_ui->spacerElementLabel),
-                         static_cast<QWidget*>(m_ui->spacerMaterialLabel),
-                         static_cast<QWidget*>(m_ui->spacerSectionLabel)})
-    {
-        widget->setEnabled(enabled && !rigidCenterMpc);
-    }
+    m_ui->spacerElementCombo->setEnabled(enabled && !rigidCenterMpc);
+    m_ui->spacerElementLabel->setEnabled(enabled && !rigidCenterMpc);
     m_ui->spacerCountLabel->setVisible(equalSpacing);
     m_ui->spacerCountSpin->setVisible(equalSpacing);
     m_ui->spacerCountSpin->setEnabled(enabled);
@@ -304,13 +324,11 @@ void ConductorModule::updateEndTopologyUi()
     m_ui->endTopologyCombo->setEnabled(supportsAnyEndTopology);
     if (!supportsAnyEndTopology)
         m_ui->endTopologyCombo->setCurrentIndex(0);
-    else if (!supportsDual &&
-        m_ui->endTopologyCombo->currentData().toInt() ==
-            static_cast<int>(Conductor::BundleEndTopology::DualSupportByGroup))
+    else if (!supportsDual && m_ui->endTopologyCombo->currentData().toInt() ==
+                                  static_cast<int>(Conductor::BundleEndTopology::DualSupportByGroup))
         m_ui->endTopologyCombo->setCurrentIndex(0);
-    const bool dual = supportsDual &&
-        m_ui->endTopologyCombo->currentData().toInt() ==
-            static_cast<int>(Conductor::BundleEndTopology::DualSupportByGroup);
+    const bool dual = supportsDual && m_ui->endTopologyCombo->currentData().toInt() ==
+                                          static_cast<int>(Conductor::BundleEndTopology::DualSupportByGroup);
     // 双挂点间距只对“分组双挂点”有意义；单挂点时完全隐藏，
     // 避免让用户误以为当前模型会采用该参数。
     m_ui->dualSupportSpacingLabel->setVisible(dual);
@@ -337,30 +355,25 @@ void ConductorModule::updateSpacerPreview()
 
     const int bundleCount = m_ui->bundleCombo->currentText().toInt();
     const bool rigidCenterMpc =
-        static_cast<Conductor::InnerSpacerStyle>(
-            m_ui->spacerStyleCombo->currentData().toInt()) ==
+        static_cast<Conductor::InnerSpacerStyle>(m_ui->spacerStyleCombo->currentData().toInt()) ==
         Conductor::InnerSpacerStyle::RigidCenterMPC;
     const auto topologyDescription = [=](int spacerCount)
-        {
-            return rigidCenterMpc
-                ? QStringLiteral("%1 个中心节点、%2 个刚性偏置 MPC、0 个间隔棒单元；不计间隔棒质量")
-                    .arg(spacerCount)
-                    .arg(spacerCount * bundleCount)
-                : QString();
-        };
+    {
+        return rigidCenterMpc
+                   ? QStringLiteral("%1 个中心节点、%2 个刚性偏置 MPC、0 个间隔棒单元；质量和转动惯量等效到中心")
+                                    .arg(spacerCount)
+                                    .arg(spacerCount * bundleCount)
+                   : QString();
+    };
 
     if (m_ui->spacerLayoutCombo->currentData().toBool())
     {
-        const int spanCount = m_ui->modelModeCombo->currentIndex() == 1
-            ? std::max(0, m_ui->stationTable->rowCount() - 1) : 1;
+        const int spanCount =
+            m_ui->modelModeCombo->currentIndex() == 1 ? std::max(0, m_ui->stationTable->rowCount() - 1) : 1;
         const int spacerCount = m_ui->spacerCountSpin->value() * spanCount;
-        m_ui->spacerCountPreview->setText(
-            QStringLiteral("%1 个（%2 档等距布置）")
-                .arg(spacerCount)
-                .arg(spanCount));
-        m_ui->spacerCountPreview->setToolTip(
-            rigidCenterMpc ? topologyDescription(spacerCount)
-                           : QStringLiteral("每一档均按指定数量等距布置"));
+        m_ui->spacerCountPreview->setText(QStringLiteral("%1 个（%2 档等距布置）").arg(spacerCount).arg(spanCount));
+        m_ui->spacerCountPreview->setToolTip(rigidCenterMpc ? topologyDescription(spacerCount)
+                                                            : QStringLiteral("每一档均按指定数量等距布置"));
         return;
     }
 
@@ -380,35 +393,29 @@ void ConductorModule::updateSpacerPreview()
     }
     else
     {
-        const Vector2d span = Vector2d(
-            m_ui->endX->value() - m_ui->startX->value(),
-            m_ui->endY->value() - m_ui->startY->value());
+        const Vector2d span =
+            Vector2d(m_ui->endX->value() - m_ui->startX->value(), m_ui->endY->value() - m_ui->startY->value());
         spanLengths.push_back(span.norm());
     }
     std::vector<double> positions;
     for (double spanLength : spanLengths)
     {
-        const auto current =
-            Conductor::ConductorModelBuilder::CalculateStandardInnerSpacerPositions(spanLength);
+        const auto current = Conductor::ConductorModelBuilder::CalculateStandardInnerSpacerPositions(spanLength);
         positions.insert(positions.end(), current.begin(), current.end());
     }
     QStringList positionTexts;
     positionTexts.reserve(static_cast<qsizetype>(positions.size()));
     for (double position : positions)
         positionTexts.push_back(QString::number(position, 'f', 2));
-    m_ui->spacerCountPreview->setText(
-        QStringLiteral("%1 个（%2 档内置规则）")
-            .arg(static_cast<qulonglong>(positions.size()))
-            .arg(static_cast<qulonglong>(spanLengths.size())));
+    m_ui->spacerCountPreview->setText(QStringLiteral("%1 个（%2 档内置规则）")
+                                          .arg(static_cast<qulonglong>(positions.size()))
+                                          .arg(static_cast<qulonglong>(spanLengths.size())));
     m_ui->spacerCountPreview->setToolTip(
         positions.empty()
             ? QStringLiteral("当前水平档距无效")
-            : (rigidCenterMpc
-                ? topologyDescription(static_cast<int>(positions.size())) +
-                    QStringLiteral("；距左挂点位置：%1 m")
-                        .arg(positionTexts.join(QStringLiteral("、")))
-                : QStringLiteral("距左挂点位置：%1 m")
-                    .arg(positionTexts.join(QStringLiteral("、")))));
+            : (rigidCenterMpc ? topologyDescription(static_cast<int>(positions.size())) +
+                                    QStringLiteral("；距左挂点位置：%1 m").arg(positionTexts.join(QStringLiteral("、")))
+                              : QStringLiteral("距左挂点位置：%1 m").arg(positionTexts.join(QStringLiteral("、")))));
 }
 
 void ConductorModule::setPropertyLibrary(Conductor::PropertyLibrary* library)
@@ -524,10 +531,9 @@ ConductorModule::BuildResult ConductorModule::buildModel(Conductor::PropertyLibr
     config.setNamePrefix = m_ui->nameEdit->text().trimmed();
     // A CR3D end fitting attached to a translation-only conductor forms an
     // independent rotational component with a zero-energy roll mode.
-    config.endFittingElementType =
-        config.elementType == EnumKeyword::ElementType::CR3D
-        ? EnumKeyword::ElementType::CR3D
-        : EnumKeyword::ElementType::T3D2;
+    config.endFittingElementType = config.elementType == EnumKeyword::ElementType::CR3D
+                                       ? EnumKeyword::ElementType::CR3D
+                                       : EnumKeyword::ElementType::T3D2;
 
     Conductor::ConductorModelBuilder builder(build.structure);
     Conductor::LineBuildResult lineResult;
@@ -537,21 +543,14 @@ ConductorModule::BuildResult ConductorModule::buildModel(Conductor::PropertyLibr
     if (m_ui->innerSpacerCheck->isChecked() && config.conductor.nBundle > 1)
     {
         const auto spacerStyle =
-            static_cast<Conductor::InnerSpacerStyle>(
-                m_ui->spacerStyleCombo->currentData().toInt());
-        std::shared_ptr<Property> spacerProperty;
-        if (spacerStyle != Conductor::InnerSpacerStyle::RigidCenterMPC)
+            static_cast<Conductor::InnerSpacerStyle>(m_ui->spacerStyleCombo->currentData().toInt());
+        std::shared_ptr<Property> spacerProperty =
+            library.instantiateProperty(m_ui->spacerMaterialCombo->currentIndex(),
+                                        m_ui->spacerSectionCombo->currentIndex(), *build.structure, build.error);
+        if (!spacerProperty)
         {
-            spacerProperty = library.instantiateProperty(
-                m_ui->spacerMaterialCombo->currentIndex(),
-                m_ui->spacerSectionCombo->currentIndex(),
-                *build.structure,
-                build.error);
-            if (!spacerProperty)
-            {
-                build.structure.reset();
-                return build;
-            }
+            build.structure.reset();
+            return build;
         }
         spanConfig.useInnerSpacerLayout = true;
         spanConfig.innerSpacerLayout.useEqualSpacing = m_ui->spacerLayoutCombo->currentData().toBool();
@@ -586,11 +585,12 @@ ConductorModule::BuildResult ConductorModule::buildModel(Conductor::PropertyLibr
     if (m_ui->analysisCheck->isChecked())
     {
         std::set<int> endpointIds;
-        if (!lineResult.leftTensionEnd.supportNodeIds.empty() ||
-            !lineResult.rightTensionEnd.supportNodeIds.empty())
+        if (!lineResult.leftTensionEnd.supportNodeIds.empty() || !lineResult.rightTensionEnd.supportNodeIds.empty())
         {
-            endpointIds.insert(lineResult.leftTensionEnd.supportNodeIds.begin(), lineResult.leftTensionEnd.supportNodeIds.end());
-            endpointIds.insert(lineResult.rightTensionEnd.supportNodeIds.begin(), lineResult.rightTensionEnd.supportNodeIds.end());
+            endpointIds.insert(lineResult.leftTensionEnd.supportNodeIds.begin(),
+                               lineResult.leftTensionEnd.supportNodeIds.end());
+            endpointIds.insert(lineResult.rightTensionEnd.supportNodeIds.begin(),
+                               lineResult.rightTensionEnd.supportNodeIds.end());
         }
         else
         {
@@ -633,7 +633,7 @@ ConductorModule::BuildResult ConductorModule::buildModel(Conductor::PropertyLibr
             values.assign(constrainedDofCount, 0.0);
             for (int direction = 0; direction < constrainedDofCount; ++direction)
                 directions.push_back(direction);
-            build.structure->Add_Constraint({ nodeId }, directions, values);
+            build.structure->Add_Constraint({nodeId}, directions, values);
         };
         for (int endpointId : endpointIds)
             addZeroConstraint(endpointId, requiredNodeDofs(endpointId));

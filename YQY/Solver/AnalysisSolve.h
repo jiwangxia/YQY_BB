@@ -37,7 +37,10 @@ public:
     using CancelCallback = std::function<bool()>;
     void SetRuntimeCallbacks(ProgressCallback progressCallback, CancelCallback cancelCallback);
     void SetMaximumRegionThreads(int count);
-	bool WasCancelled() const { return m_wasCancelled; }
+    bool WasCancelled() const
+    {
+        return m_wasCancelled;
+    }
 
 private:
     bool RunSelectedByRegions(const std::vector<int>& stepIds);

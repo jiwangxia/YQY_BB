@@ -9,8 +9,7 @@ class QTableWidget;
 class ComputeRegionManagerDialog final : public QDialog
 {
 public:
-    explicit ComputeRegionManagerDialog(const std::shared_ptr<StructureData>& structure,
-        QWidget* parent = nullptr);
+    explicit ComputeRegionManagerDialog(const std::shared_ptr<StructureData>& structure, QWidget* parent = nullptr);
 
 private:
     void refreshTable(int preferredRegionId = -1);

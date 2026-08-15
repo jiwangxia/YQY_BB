@@ -12,20 +12,21 @@ namespace DialogSizing
 inline void lockHeightToContents(QDialog* dialog)
 {
     dialog->setWindowFlag(Qt::WindowMaximizeButtonHint, false);
-    QTimer::singleShot(0, dialog, [dialog]()
-    {
-        if (QLayout* layout = dialog->layout())
-            layout->activate();
+    QTimer::singleShot(0, dialog,
+                       [dialog]()
+                       {
+                           if (QLayout* layout = dialog->layout())
+                               layout->activate();
 
-        const int previousWidth = dialog->width();
-        dialog->adjustSize();
-        dialog->resize(qMax(previousWidth, dialog->width()), dialog->height());
+                           const int previousWidth = dialog->width();
+                           dialog->adjustSize();
+                           dialog->resize(qMax(previousWidth, dialog->width()), dialog->height());
 
-        const int contentHeight = dialog->height();
-        dialog->setMinimumHeight(contentHeight);
-        dialog->setMaximumHeight(contentHeight);
-        dialog->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    });
+                           const int contentHeight = dialog->height();
+                           dialog->setMinimumHeight(contentHeight);
+                           dialog->setMaximumHeight(contentHeight);
+                           dialog->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+                       });
 }
 
 // Use this for deliberately composed dialogs whose designed initial height is
@@ -33,15 +34,16 @@ inline void lockHeightToContents(QDialog* dialog)
 inline void lockCurrentHeight(QDialog* dialog)
 {
     dialog->setWindowFlag(Qt::WindowMaximizeButtonHint, false);
-    QTimer::singleShot(0, dialog, [dialog]()
-    {
-        if (QLayout* layout = dialog->layout())
-            layout->activate();
+    QTimer::singleShot(0, dialog,
+                       [dialog]()
+                       {
+                           if (QLayout* layout = dialog->layout())
+                               layout->activate();
 
-        const int designedHeight = dialog->height();
-        dialog->setMinimumHeight(designedHeight);
-        dialog->setMaximumHeight(designedHeight);
-        dialog->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    });
+                           const int designedHeight = dialog->height();
+                           dialog->setMinimumHeight(designedHeight);
+                           dialog->setMaximumHeight(designedHeight);
+                           dialog->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+                       });
 }
 }

@@ -78,9 +78,9 @@ private:
     {
         TaskInfo info;
         std::shared_ptr<StructureData> modelTemplate;
-        std::atomic<bool> cancelRequested{ false };
-        std::atomic<qint64> startedAtMs{ 0 };
-        std::atomic<qint64> lastProgressReportMs{ 0 };
+        std::atomic<bool> cancelRequested{false};
+        std::atomic<qint64> startedAtMs{0};
+        std::atomic<qint64> lastProgressReportMs{0};
         bool restartRequested = false;
         bool workerScheduled = false;
         std::shared_ptr<StructureData> solvedModel;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Base/EmptyOUT.h"
+
 #include <Eigen/Dense>
 
 struct AerodynamicSectionState
@@ -35,13 +37,8 @@ class AerodynamicLoadCalculator
 public:
     // Angles are radians. Cl/Cd/Cm are evaluated by the caller at the returned
     // attackAngle, allowing AeroManager to remain the coefficient repository.
-    static AerodynamicSectionResult ComputeKinematics(
-        const AerodynamicSectionState& state);
+    static AerodynamicSectionResult ComputeKinematics(const AerodynamicSectionState& state);
 
-    static void ComputeLineLoad(AerodynamicSectionResult& result,
-        double airDensity,
-        double diameter,
-        double liftCoefficient,
-        double dragCoefficient,
-        double momentCoefficient);
+    static void ComputeLineLoad(_OUT AerodynamicSectionResult& result, double airDensity, double diameter,
+                                double liftCoefficient, double dragCoefficient, double momentCoefficient);
 };

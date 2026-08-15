@@ -4,9 +4,7 @@
 #include <QDir>
 #include <QFileInfo>
 
-namespace
-{
-QString existingDirectory(const QStringList& candidates, const QString& fallback)
+static QString existingDirectory(const QStringList& candidates, const QString& fallback)
 {
     for (const QString& candidate : candidates)
     {
@@ -17,16 +15,12 @@ QString existingDirectory(const QStringList& candidates, const QString& fallback
     return fallback;
 }
 
-QString sourceDirectory()
+static QString sourceDirectory()
 {
     const QDir applicationDirectory(QCoreApplication::applicationDirPath());
-    const QStringList candidates =
-    {
-        QDir::current().absoluteFilePath(QStringLiteral("YQY")),
-        QDir::currentPath(),
-        applicationDirectory.absoluteFilePath(QStringLiteral("../../YQY")),
-        applicationDirectory.absoluteFilePath(QStringLiteral("../YQY"))
-    };
+    const QStringList candidates = {QDir::current().absoluteFilePath(QStringLiteral("YQY")), QDir::currentPath(),
+                                    applicationDirectory.absoluteFilePath(QStringLiteral("../../YQY")),
+                                    applicationDirectory.absoluteFilePath(QStringLiteral("../YQY"))};
     for (const QString& candidate : candidates)
     {
         if (QFileInfo(QDir(candidate).filePath(QStringLiteral("YQY.vcxproj"))).isFile())
@@ -35,26 +29,21 @@ QString sourceDirectory()
     return QDir::current().absoluteFilePath(QStringLiteral("YQY"));
 }
 
-QStringList sourceDirectoryCandidates(const QString& projectRelativePath)
+static QStringList sourceDirectoryCandidates(const QString& projectRelativePath)
 {
-    return { QDir(sourceDirectory()).absoluteFilePath(projectRelativePath) };
+    return {QDir(sourceDirectory()).absoluteFilePath(projectRelativePath)};
 }
-}
-
 namespace ApplicationPaths
 {
 QString importFileDirectory()
 {
-    return existingDirectory(
-        sourceDirectoryCandidates(QStringLiteral("Import/ImportFile")),
-        QDir::currentPath());
+    return existingDirectory(sourceDirectoryCandidates(QStringLiteral("Import/ImportFile")), QDir::currentPath());
 }
 
 QString aerodynamicDataDirectory()
 {
-    return existingDirectory(
-        sourceDirectoryCandidates(QStringLiteral("Import/Aero_Data/Input_Data")),
-        QDir::currentPath());
+    return existingDirectory(sourceDirectoryCandidates(QStringLiteral("Import/Aero_Data/Input_Data")),
+                             QDir::currentPath());
 }
 
 QString hdf5ResultDirectory()
@@ -73,13 +62,11 @@ QString resultExportDirectory()
 
 QString iterationResultDirectory()
 {
-    const QStringList candidates =
-        sourceDirectoryCandidates(QStringLiteral("Export/ExportIteration"));
+    const QStringList candidates = sourceDirectoryCandidates(QStringLiteral("Export/ExportIteration"));
     for (const QString& candidate : candidates)
     {
         const QFileInfo parentInfo(QDir(candidate).absoluteFilePath(QStringLiteral("..")));
-        if (QDir(candidate).exists()
-            || (parentInfo.isDir() && QDir().mkpath(candidate)))
+        if (QDir(candidate).exists() || (parentInfo.isDir() && QDir().mkpath(candidate)))
         {
             return QDir(candidate).absolutePath();
         }

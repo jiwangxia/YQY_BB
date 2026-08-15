@@ -3,7 +3,9 @@
 #include "ui_PropertyLibraryDialog.h"
 #include <QHeaderView>
 #include <QTableWidget>
-PropertyLibraryDialog::PropertyLibraryDialog(QWidget* p) : QDialog(p), m_ui(new Ui::PropertyLibraryDialogClass)
+PropertyLibraryDialog::PropertyLibraryDialog(QWidget* p)
+    : QDialog(p)
+    , m_ui(new Ui::PropertyLibraryDialogClass)
 {
     m_ui->setupUi(this);
     resize(920, 560);

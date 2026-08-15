@@ -14,8 +14,7 @@
 ModelController::ModelController(QObject* parent)
     : QObject(parent)
 {
-    connect(&m_loadWatcher, &QFutureWatcher<LoadResult>::finished,
-        this, &ModelController::finishLoading);
+    connect(&m_loadWatcher, &QFutureWatcher<LoadResult>::finished, this, &ModelController::finishLoading);
 }
 
 ModelController::~ModelController()
@@ -60,8 +59,8 @@ int ModelController::loadModels(const QStringList& filePaths)
     return accepted;
 }
 
-int ModelController::adoptModel(
-    const std::shared_ptr<StructureData>& structure, const QString& filePath, qint64 elapsedMs)
+int ModelController::adoptModel(const std::shared_ptr<StructureData>& structure, const QString& filePath,
+                                qint64 elapsedMs)
 {
     if (!structure || structure->m_Nodes.empty() || filePath.trimmed().isEmpty())
         return -1;
@@ -105,63 +104,65 @@ void ModelController::startNextLoading()
     const QString absolutePath = m_pendingFiles.dequeue();
     emit loadStarted(absolutePath);
 
-    m_loadWatcher.setFuture(QtConcurrent::run([absolutePath]() {
-        LoadResult result;
-        result.filePath = absolutePath;
-        QElapsedTimer timer;
-        timer.start();
+    m_loadWatcher.setFuture(QtConcurrent::run(
+        [absolutePath]()
+        {
+            LoadResult result;
+            result.filePath = absolutePath;
+            QElapsedTimer timer;
+            timer.start();
 
-        try
-        {
-            auto structure = std::make_shared<StructureData>();
-            if (QFileInfo(absolutePath).suffix().compare(QStringLiteral("h5"), Qt::CaseInsensitive) == 0
-                || QFileInfo(absolutePath).suffix().compare(QStringLiteral("hdf5"), Qt::CaseInsensitive) == 0)
+            try
             {
-                Hdf5ModelIO importer;
-                result.success = importer.ImportHdf5(absolutePath, structure.get());
-                if (!result.success)
+                auto structure = std::make_shared<StructureData>();
+                if (QFileInfo(absolutePath).suffix().compare(QStringLiteral("h5"), Qt::CaseInsensitive) == 0 ||
+                    QFileInfo(absolutePath).suffix().compare(QStringLiteral("hdf5"), Qt::CaseInsensitive) == 0)
                 {
-                    result.errorMessage = QStringLiteral("H5模型格式不符合YQY统一模型协议。");
+                    Hdf5ModelIO importer;
+                    result.success = importer.ImportHdf5(absolutePath, structure.get());
+                    if (!result.success)
+                    {
+                        result.errorMessage = QStringLiteral("H5模型格式不符合YQY统一模型协议。");
+                    }
                 }
-            }
-            else
-            {
-                Input_Model importer;
-                result.success = importer.InputData(absolutePath, structure);
-                if (!result.success)
+                else
                 {
-                    result.errorMessage = importer.LastError();
+                    Input_Model importer;
+                    result.success = importer.InputData(absolutePath, structure);
+                    if (!result.success)
+                    {
+                        result.errorMessage = importer.LastError();
+                    }
                 }
+                if (result.success && structure->m_Nodes.empty())
+                {
+                    result.success = false;
+                    result.errorMessage = QStringLiteral("文件中没有读取到有效节点。");
+                }
+                if (result.success)
+                    result.structure = std::move(structure);
+                else if (result.errorMessage.isEmpty())
+                    result.errorMessage = QStringLiteral("模型格式不受支持或文件内容不完整。");
             }
-            if (result.success && structure->m_Nodes.empty())
+            catch (const std::exception& exception)
             {
-                result.success = false;
-                result.errorMessage = QStringLiteral("文件中没有读取到有效节点。");
+                result.errorMessage = QString::fromUtf8(exception.what());
             }
-            if (result.success)
-                result.structure = std::move(structure);
-            else if (result.errorMessage.isEmpty())
-                result.errorMessage = QStringLiteral("模型格式不受支持或文件内容不完整。");
-        }
-        catch (const std::exception& exception)
-        {
-            result.errorMessage = QString::fromUtf8(exception.what());
-        }
-        catch (...)
-        {
-            result.errorMessage = QStringLiteral("读取模型时发生未知异常。");
-        }
+            catch (...)
+            {
+                result.errorMessage = QStringLiteral("读取模型时发生未知异常。");
+            }
 
-        result.elapsedMs = timer.elapsed();
-        return result;
-    }));
+            result.elapsedMs = timer.elapsed();
+            return result;
+        }));
 }
 
 bool ModelController::updateNodePosition(int nodeId, double x, double y, double z)
 {
     auto document = m_documents.find(m_activeModelId);
-    if (document == m_documents.end() || !document->structure ||
-        !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z))
+    if (document == m_documents.end() || !document->structure || !std::isfinite(x) || !std::isfinite(y) ||
+        !std::isfinite(z))
         return false;
 
     const auto node = document->structure->FindNode(nodeId);

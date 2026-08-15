@@ -16,6 +16,8 @@
     <WindowsTargetPlatformVersion Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">10.0</WindowsTargetPlatformVersion>
     <WindowsTargetPlatformVersion Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">10.0</WindowsTargetPlatformVersion>
     <QtMsBuild Condition="'$(QtMsBuild)'=='' OR !Exists('$(QtMsBuild)\qt.targets')">$(MSBuildProjectDirectory)\QtMsBuild</QtMsBuild>
+    <CudssRoot>$(ProjectDir)ThirdPartyLibrary\cuDSS\libcudss-windows-x86_64-0.8.0.10_cuda13-archive</CudssRoot>
+    <OneMklRoot>D:\VS\Vcpkg\vcpkg\installed\x64-windows-static-md</OneMklRoot>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="Configuration">
@@ -28,7 +30,7 @@
     <ConfigurationType>Application</ConfigurationType>
     <PlatformToolset>v143</PlatformToolset>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
@@ -77,20 +79,20 @@
       <PrecompiledHeaderFile>Utility\pch.h</PrecompiledHeaderFile>
       <ForcedIncludeFiles>Utility\pch.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
       <WarningLevel>Level3</WarningLevel>
-      <LanguageStandard>stdcpp20</LanguageStandard>
       <TreatAngleIncludeAsExternal>true</TreatAngleIncludeAsExternal>
       <ExternalWarningLevel>TurnOffAllWarnings</ExternalWarningLevel>
       <DisableAnalyzeExternal>true</DisableAnalyzeExternal>
+      <LanguageStandard>stdcpp20</LanguageStandard>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalOptions>/std:c++20 /utf-8 /bigobj %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalIncludeDirectories>$(ProjectDir)GUI;$(CUDA_PATH)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)GUI;$(ProjectDir)ThirdPartyLibrary\spectra-1.2.0\include;$(CUDA_PATH)\include;$(CudssRoot)\include;$(OneMklRoot)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(CUDA_PATH)\lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>cudart.lib;cublas.lib;cusparse.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(CUDA_PATH)\lib\x64;$(CudssRoot)\lib;$(OneMklRoot)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>cudart.lib;cublas.lib;cusparse.lib;cudss.lib;mkl_intel_lp64.lib;mkl_intel_thread.lib;mkl_core.lib;$(ProjectDir)ThirdPartyLibrary\oneMKLRuntime\libiomp5md.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="Configuration">
@@ -100,24 +102,24 @@
       <PrecompiledHeaderFile>Utility\pch.h</PrecompiledHeaderFile>
       <ForcedIncludeFiles>Utility\pch.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
       <WarningLevel>Level3</WarningLevel>
-      <LanguageStandard>stdcpp20</LanguageStandard>
       <TreatAngleIncludeAsExternal>true</TreatAngleIncludeAsExternal>
       <ExternalWarningLevel>TurnOffAllWarnings</ExternalWarningLevel>
       <DisableAnalyzeExternal>true</DisableAnalyzeExternal>
+      <LanguageStandard>stdcpp20</LanguageStandard>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalOptions>/std:c++20 /utf-8 /bigobj %(AdditionalOptions)</AdditionalOptions>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <AdditionalIncludeDirectories>$(ProjectDir)GUI;$(CUDA_PATH)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)GUI;$(ProjectDir)ThirdPartyLibrary\spectra-1.2.0\include;$(CUDA_PATH)\include;$(CudssRoot)\include;$(OneMklRoot)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>false</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalLibraryDirectories>$(CUDA_PATH)\lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>cudart.lib;cublas.lib;cusparse.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(CUDA_PATH)\lib\x64;$(CudssRoot)\lib;$(OneMklRoot)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>cudart.lib;cublas.lib;cusparse.lib;cudss.lib;mkl_intel_lp64.lib;mkl_intel_thread.lib;mkl_core.lib;$(ProjectDir)ThirdPartyLibrary\oneMKLRuntime\libiomp5md.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -139,7 +141,8 @@
     <ClCompile Include="DataStructure\Section\SectionRectangle.cpp" />
     <ClCompile Include="Solver\Dynamic\TimeIntegrationSolver.cpp" />
     <ClCompile Include="Solver\Dynamic\SolverAdaptiveTSSBN.cpp" />
-    <ClCompile Include="Solver\Dynamic\SolverTSSBN.cpp" />
+    <ClCompile Include="Solver\Dynamic\StructuralDamping.cpp" />
+    <ClCompile Include="Solver\GpuSettings.cpp" />
     <ClCompile Include="Utility\CR.cpp" />
     <ClCompile Include="Utility\Logger\Logger.cpp" />
     <ClCompile Include="DataStructure\AnalysisStep\AnalysisStep.cpp" />
@@ -150,6 +153,7 @@
     <ClCompile Include="DataStructure\Load\LoadBase.cpp" />
     <ClCompile Include="DataStructure\Load\Force_Node.cpp" />
     <ClCompile Include="DataStructure\Node\Node.cpp" />
+    <ClCompile Include="DataStructure\Inertia\RigidBodyInertia.cpp" />
     <ClCompile Include="DataStructure\Material\Material.cpp" />
     <ClCompile Include="DataStructure\Property\Property.cpp" />
     <ClCompile Include="DataStructure\Load\Force_Element.cpp" />
@@ -172,6 +176,8 @@
     <ClCompile Include="Solver\Static\SolverStatic.cpp" />
     <ClCompile Include="Solver\Constraint\NonlinearMPC.cpp" />
     <ClCompile Include="Solver\CudaSparseSolver.cpp" />
+    <ClCompile Include="Solver\CudssSolver.cpp" />
+    <ClCompile Include="Solver\PardisoSolver.cpp" />
     <ClCompile Include="Utility\ModelManager.cpp" />
     <ClCompile Include="Utility\EnumKeyword.cpp" />
     <ClCompile Include="DataStructure\Section\SectionBase.cpp" />
@@ -254,7 +260,6 @@
     <ClInclude Include="Solver\Dynamic\TimeIntegrationSolver.h" />
     <ClInclude Include="Solver\Dynamic\AdaptiveTssbnSettings.h" />
     <ClInclude Include="Solver\Dynamic\SolverAdaptiveTSSBN.h" />
-    <ClInclude Include="Solver\Dynamic\SolverTSSBN.h" />
     <ClInclude Include="Utility\CR.h" />
     <ClInclude Include="Utility\Logger\Logger.h" />
     <ClInclude Include="DataStructure\AnalysisStep\AnalysisStep.h" />
@@ -267,6 +272,7 @@
     <ClInclude Include="DataStructure\Load\LoadBase.h" />
     <ClInclude Include="DataStructure\Load\Force_Node.h" />
     <ClInclude Include="DataStructure\Node\Node.h" />
+    <ClInclude Include="DataStructure\Inertia\RigidBodyInertia.h" />
     <ClInclude Include="DataStructure\Element\ElementBase.h" />
     <ClInclude Include="DataStructure\Element\ElementTruss.h" />
     <ClInclude Include="DataStructure\Material\Material.h" />
@@ -288,10 +294,14 @@
     <ClInclude Include="DataStructure\Section\Section_Ice.h" />
     <ClInclude Include="Solver\Dynamic\SolverNewmark.h" />
     <ClInclude Include="Solver\Dynamic\RayleighDamping.h" />
+    <ClInclude Include="Solver\Dynamic\StructuralDamping.h" />
     <ClInclude Include="Solver\Interface\IAnalysisModel.h" />
     <ClInclude Include="Solver\Interface\ISolver.h" />
     <ClInclude Include="Solver\LinearSystemSolver.h" />
+    <ClInclude Include="Solver\LinearSolverSettings.h" />
     <ClInclude Include="Solver\CudaSparseSolver.h" />
+    <ClInclude Include="Solver\CudssSolver.h" />
+    <ClInclude Include="Solver\PardisoSolver.h" />
     <ClInclude Include="Solver\GpuSettings.h" />
     <ClInclude Include="Solver\AssemblySettings.h" />
     <ClInclude Include="Solver\AnalysisSolve.h" />
@@ -304,7 +314,8 @@
     <ClInclude Include="Export\Hdf5ModelIO.h" />
     <ClInclude Include="Export\Hdf5ResultData.h" />
     <ClInclude Include="Export\ResultFrameUtilities.h" />
-    <ClInclude Include="Export\Outputter.h" />
+      <ClInclude Include="Export\Outputter.h" />
+      <ClInclude Include="Export\ResultOutputSettings.h" />
     <ClInclude Include="Utility\pch.h" />
   </ItemGroup>
   <ItemGroup>
@@ -351,6 +362,8 @@
       <CudaRuntimeDll Include="$(CUDA_PATH)\bin\x64\cublas64_13.dll" />
       <CudaRuntimeDll Include="$(CUDA_PATH)\bin\x64\cublasLt64_13.dll" />
       <CudaRuntimeDll Include="$(CUDA_PATH)\bin\x64\cusparse64_12.dll" />
+      <CudaRuntimeDll Include="$(CudssRoot)\bin\cudss64_0.dll" />
+      <CudaRuntimeDll Include="$(ProjectDir)ThirdPartyLibrary\oneMKLRuntime\libiomp5md.dll" />
       <CudaRuntimeDll Include="$(APPDATA)\Python\Python312\site-packages\nvidia\cu13\bin\x86_64\nvJitLink_130_0.dll"
                       Condition="Exists('$(APPDATA)\Python\Python312\site-packages\nvidia\cu13\bin\x86_64\nvJitLink_130_0.dll')" />
     </ItemGroup>

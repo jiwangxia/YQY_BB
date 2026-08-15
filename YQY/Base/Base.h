@@ -4,7 +4,7 @@
 #include <map>
 #include <qdebug>
 #include <iostream>
-#include <Eigen/Dense> 
+#include <Eigen/Dense>
 #include <Eigen/Sparse>
 
 #include "Base/EmptyOUT.h"
@@ -21,8 +21,7 @@ class Base
 {
 public:
     Base();
-    int m_Id;  ///< 对象ID
+    int m_Id; ///< 对象ID
 
-    virtual ~Base() = default;  ///< 虚析构函数，确保派生类正确析构
+    virtual ~Base() = default; ///< 虚析构函数，确保派生类正确析构
 };
-

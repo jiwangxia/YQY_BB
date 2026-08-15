@@ -3,11 +3,11 @@
 #include "Solver/Interface/IAnalysisModel.h"
 #include "Solver/Interface/ISolver.h"
 #include "Solver/Dynamic/AdaptiveTssbnSettings.h"
+#include "Solver/Dynamic/StructuralDamping.h"
 #include <memory>
 #include <functional>
 #include <map>
 #include <set>
-#include <Eigen/SparseLU>
 typedef Eigen::SparseMatrix<double> SpMat;
 typedef Eigen::Triplet<double> Tri;
 
@@ -17,6 +17,8 @@ class Force_Element;
 class Force_Gravity;
 class Force_Wind;
 class ElementBase;
+class RigidBodyInertia;
+class Node;
 struct AeroCaseKey;
 
 enum class AnalysisRegionScope
@@ -40,7 +42,10 @@ struct AnalysisStepConfig
     SolverNameSpace::SolverType dynamicSolverType = SolverNameSpace::SolverType::Newmark;
     int initialStaticStepId = 0; ///< 动力步继承的静力平衡步；0 表示从原始状态开始
     SolverNameSpace::AdaptiveTssbnSettings adaptiveTssbn;
+    SolverNameSpace::StructuralDampingSettings structuralDamping;
     bool enableGalloping = false;
+    SolverNameSpace::AerodynamicTangentMode gallopingAerodynamicTangentMode =
+        SolverNameSpace::AerodynamicTangentMode::EveryNewtonIteration;
     int gallopingIceThickness = 12;
     double gallopingInitialAttackDegrees = 45.0;
     AnalysisRegionScope regionScope = AnalysisRegionScope::AllEnabledRegions;
@@ -55,34 +60,40 @@ struct AnalysisStepConfig
 class AnalysisStep : public Base, public SolverNameSpace::IAnalysisModel
 {
 public:
-    QString m_Name;                 // 用户可读名称；为空时界面回退为 Step-ID
+    QString m_Name; // 用户可读名称；为空时界面回退为 Step-ID
     EnumKeyword::StepType m_Type = EnumKeyword::StepType::UNKNOWN;
-    double m_Time = 0.0;           // 总时间
-    double m_StepSize = 0.0;       // 每步大小
-    double m_Tolerance = 1e-5;     // 容差
-    int m_MaxIterations = 32;      // 最大迭代次数
+    double m_Time = 0.0;       // 总时间
+    double m_StepSize = 0.0;   // 每步大小
+    double m_Tolerance = 1e-5; // 容差
+    int m_MaxIterations = 32;  // 最大迭代次数
 
-    bool isDynamic = false;        // 是否为动力分析
+    bool isDynamic = false; // 是否为动力分析
     /// @brief 动力求解器类型（仅动力分析时有效）
     /// 当前可用: Newmark、AdaptiveTSSBN；其他枚举值为预留。
     SolverNameSpace::SolverType m_DynamicSolverType = SolverNameSpace::SolverType::Newmark;
     int m_InitialStaticStepId = 0; ///< 动力步的前置静力平衡步
     SolverNameSpace::AdaptiveTssbnSettings m_AdaptiveTssbn;
+    SolverNameSpace::StructuralDampingModel m_StructuralDamping;
     bool m_EnableGalloping = false;
-    int m_GallopingIceThickness = 12;    // 气动数据离散工况，单位 mm
+    SolverNameSpace::AerodynamicTangentMode m_GallopingAerodynamicTangentMode =
+        SolverNameSpace::AerodynamicTangentMode::EveryNewtonIteration;
+    int m_GallopingIceThickness = 12; // 气动数据离散工况，单位 mm
     double m_GallopingInitialAttackDegrees = 45.0;
     AnalysisRegionScope m_RegionScope = AnalysisRegionScope::AllEnabledRegions;
     std::set<int> m_ComputeRegionIds;
 
-    int m_nFixed = 0;              // 约束自由度个数
-    int m_nFree = 0;               // 自由自由度个数
+    int m_nFixed = 0; // 约束自由度个数
+    int m_nFree = 0;  // 自由自由度个数
     SpMat m_Keff22;
 
     /**
      * @brief 获取分析步类型名称
      * @return 类型名称字符串
      */
-    QString GetTypeName() const { return EnumKeyword::MapStepType.key(m_Type, "UNKNOWN"); }
+    QString GetTypeName() const
+    {
+        return EnumKeyword::MapStepType.key(m_Type, "UNKNOWN");
+    }
     AeroCaseKey GetGallopingAeroCase(int bundleCount, const Force_Wind& wind) const;
     bool ShouldAssembleGalloping(int bundleCount, const Force_Wind& wind) const;
 
@@ -116,65 +127,63 @@ public:
     bool Solve(bool persistHdf5 = true);
 
     /// 仅供求解调度器设置：下一次求解从模型当前已提交状态开始。
-    void SetInitializeFromCurrentState(bool enabled) { m_initializeFromCurrentState = enabled; }
+    void SetInitializeFromCurrentState(bool enabled)
+    {
+        m_initializeFromCurrentState = enabled;
+    }
 
     using ProgressCallback = std::function<void(double, const QString&)>;
     using CancelCallback = std::function<bool()>;
     void SetRuntimeCallbacks(ProgressCallback progressCallback, CancelCallback cancelCallback);
     void ClearRuntimeCallbacks();
 
+    QString LastFailureReason() const
+    {
+        return m_lastFailureReason;
+    }
+
     // ============ IAnalysisModel 接口实现 ============
-    int  GetFreeDofs() const override { return m_nFree; }
-    int  GetFixedDofs() const override { return m_nFixed; }
+    int GetFreeDofs() const override
+    {
+        return m_nFree;
+    }
+    int GetFixedDofs() const override
+    {
+        return m_nFixed;
+    }
+    QString DescribeFreeDof(int freeDof) const override;
     void ApplyIncrement(const SolverNameSpace::Vec& dx) override;
     void BeginDynamicStep(double dt, double beta, double gamma) override;
     void ApplyDynamicCorrection(const SolverNameSpace::Vec& dx, double a0, double a1) override;
     void RollbackDynamicStep() override;
+    bool SaveTrialState() override;
+    bool RestoreTrialState() override;
     void SetTrialKinematics(const SolverNameSpace::Vec& v, const SolverNameSpace::Vec& a) override;
-    void SetTssbnStageKinematics(
-        int stageIndex,
-        double timeStep,
-        double firstStageTime,
-        double secondStageTime,
-        double secondStageDiagonalFraction,
-        SolverNameSpace::Vec& velocity,
-        SolverNameSpace::Vec& acceleration) override;
-    void CorrectTssbnStepStates(
-        double timeStep,
-        double firstStageTime,
-        double secondStageTime,
-        double lastStageTime,
-        double baseFirstWeight,
-        double embeddedFirstWeight,
-        double embeddedSecondWeight,
-        double embeddedLastWeight,
-        double lastStageFirstCoefficient,
-        double lastStageSecondCoefficient,
-        SolverNameSpace::Vec& baseIncrement,
-        SolverNameSpace::Vec& baseVelocity,
-        SolverNameSpace::Vec& embeddedIncrement,
-        SolverNameSpace::Vec& embeddedVelocity,
-        SolverNameSpace::Vec& acceptedAcceleration) override;
-    void GetState(_OUT SolverNameSpace::Vec& u, _OUT SolverNameSpace::Vec& v, _OUT SolverNameSpace::Vec& a) const override;
-    void Assemble_Matrix(_OUT SpMat& Keff, bool isDynamic);          //组装整体等效刚度矩阵
-    void AssembleDynamicSystem(
-        _OUT SpMat& mass, _OUT SpMat& gyroscopic, _OUT SpMat& centrifugal) override;
-        void AssembleEffectiveDynamicSystem(
-            double accelerationDerivative,
-            double velocityDerivative,
-            _OUT SpMat& effectiveDynamicTangent) override;
-        void AssembleEffectiveTangent(
-            double accelerationDerivative,
-            double velocityDerivative,
-            _OUT SpMat& effectiveTangent) override;
-    bool AssembleNonlinearMPC(
-        _OUT SolverNameSpace::NonlinearMPCData& constraints) override;
-    void SetNonlinearMPCMultipliers(
-        const SolverNameSpace::Vec& multipliers) override;
+    void SetTssbnStageKinematics(int stageIndex, double timeStep, double firstStageTime, double secondStageTime,
+                                 double secondStageDiagonalFraction, _OUT SolverNameSpace::Vec& velocity,
+                                 _OUT SolverNameSpace::Vec& acceleration) override;
+    void CorrectTssbnStepStates(double timeStep, double firstStageTime, double secondStageTime, double lastStageTime,
+                                double baseFirstWeight, double embeddedFirstWeight, double embeddedSecondWeight,
+                                double embeddedLastWeight, double lastStageFirstCoefficient,
+                                double lastStageSecondCoefficient, _OUT SolverNameSpace::Vec& baseIncrement,
+                                _OUT SolverNameSpace::Vec& baseVelocity, _OUT SolverNameSpace::Vec& embeddedIncrement,
+                                _OUT SolverNameSpace::Vec& embeddedVelocity,
+                                _OUT SolverNameSpace::Vec& acceptedAcceleration) override;
+    void GetState(_OUT SolverNameSpace::Vec& u, _OUT SolverNameSpace::Vec& v,
+                  _OUT SolverNameSpace::Vec& a) const override;
+    void Assemble_Matrix(_OUT SpMat& Keff, bool isDynamic); //组装整体等效刚度矩阵
+    void AssembleDynamicSystem(_OUT SpMat& mass, _OUT SpMat& gyroscopic, _OUT SpMat& centrifugal) override;
+    void AssembleEffectiveDynamicSystem(double accelerationDerivative, double velocityDerivative,
+                                        _OUT SpMat& effectiveDynamicTangent) override;
+    void AssembleEffectiveTangent(double accelerationDerivative, double velocityDerivative,
+                                  _OUT SpMat& effectiveTangent) override;
+    void GetStructuralDampingFactor(_OUT Eigen::MatrixXd& factor) const override;
+    void AssembleExternalLoadTangent(double time, double loadFactor, double velocityDerivative,
+                                     _OUT SpMat& externalTangent) override;
+    bool AssembleNonlinearMPC(_OUT SolverNameSpace::NonlinearMPCData& constraints) override;
+    void SetNonlinearMPCMultipliers(const SolverNameSpace::Vec& multipliers) override;
     void ComputeResidual(const SolverNameSpace::Vec& F_ext, _OUT SolverNameSpace::Vec& R) override;
-    void ComputeStaticResidual(
-        const SolverNameSpace::Vec& F_ext,
-        _OUT SolverNameSpace::Vec& R) override;
+    void ComputeStaticResidual(const SolverNameSpace::Vec& F_ext, _OUT SolverNameSpace::Vec& R) override;
     void OnStepCompleted(double time) override;
     void RecordStepIterations(double time, int iterations) override;
     void CommitState() override;
@@ -183,12 +192,14 @@ public:
 
 private:
     bool m_initializeFromCurrentState = false;
-    std::weak_ptr<StructureData> m_pStructure;  // 结构数据的弱引用
-    StructureData* m_pData = nullptr;           // 结构数据的缓存指针
+    std::weak_ptr<StructureData> m_pStructure; // 结构数据的弱引用
+    StructureData* m_pData = nullptr;          // 结构数据的缓存指针
     ProgressCallback m_progressCallback;
     CancelCallback m_cancelCallback;
+    QString m_lastFailureReason;
     SolverNameSpace::Vec m_mpcMultipliers;
     SolverNameSpace::Vec m_dynamicInertiaForce;
+    std::map<int, std::shared_ptr<Node>> m_trialNodeStates;
     // Fixed for one analysis step after resolving physical wire labels against
     // that step's wind direction. Time integration only changes the angle row.
     std::map<int, int> m_gallopingProfileBindings;
@@ -202,21 +213,29 @@ private:
         Eigen::MatrixXd configurationTangent;
     };
 
-    struct SolverCache 
+    struct ElementAssemblyMap
     {
-        Eigen::SimplicialLDLT<SpMat> ldlt; // 首选 (快)
-        Eigen::SparseLU<SpMat> lu;         // 备选 (稳)
-        bool use_ldlt = false;              // 当前策略
-        bool pattern_analyzed = false;     // 模式是否已分析
-
-        void reset() 
-        {
-            use_ldlt = false;
-            pattern_analyzed = false;
-        }
+        std::shared_ptr<ElementBase> element;
+        std::vector<int> dofs;
+        std::vector<Eigen::Index> valueIndices;
     };
 
-    SolverCache m_solverCache;
+    struct RigidBodyInertiaAssemblyMap
+    {
+        std::shared_ptr<RigidBodyInertia> inertia;
+        std::vector<int> dofs;
+        std::vector<Eigen::Index> valueIndices;
+    };
+
+    struct SparseAssemblyPattern
+    {
+        SpMat matrix;
+        std::vector<ElementAssemblyMap> elements;
+        std::vector<RigidBodyInertiaAssemblyMap> rigidBodyInertias;
+        bool valid = false;
+    };
+
+    SparseAssemblyPattern m_assemblyPattern;
 
     /**
      * @brief 准备数据，缓存结构指针
@@ -246,16 +265,20 @@ private:
      * @param [in] T 单元刚度矩阵
      * @param [in,out] freeFree 自由-自由块的三元组列表
      */
-    void AssembleFreeFree(
-        const std::vector<int>& dofs,
-        const Eigen::MatrixXd& elementMatrix,
-        std::vector<Tri>& freeFree);
+    void AssembleFreeFree(const std::vector<int>& dofs, const Eigen::MatrixXd& elementMatrix,
+                          _OUT std::vector<Tri>& freeFree);
+    void EnsureAssemblyPattern();
+    void PreparePatternMatrix(_OUT SpMat& matrix) const;
+    void AccumulateElementMatrix(const ElementAssemblyMap& assemblyMap, const Eigen::MatrixXd& elementMatrix,
+                                 _OUT double* values) const;
+    void AccumulateRigidBodyInertiaMatrix(const RigidBodyInertiaAssemblyMap& assemblyMap,
+                                          const Eigen::MatrixXd& inertiaMatrix, _OUT double* values) const;
 
-    void EvaluateDynamicElement(
-        ElementBase& element,
-        DynamicElementData& result);
-    void AccumulateDynamicInertiaForce(
-        const DynamicElementData& elementData);
+    void EvaluateDynamicElement(ElementBase& element, _OUT DynamicElementData& result);
+    void EvaluateRigidBodyInertia(const RigidBodyInertia& inertia, _OUT DynamicElementData& result);
+    void AccumulateDynamicInertiaForce(const DynamicElementData& elementData);
+    std::vector<bool> GetCableTorsionFreeDofs() const;
+    bool PrepareStructuralDamping(_OUT QString& errorMessage);
 
     /**
      * @brief 组装所有荷载到力向量
@@ -280,9 +303,10 @@ private:
      * @param [in] current_time 当前时间
      * @return 当前时刻的力向量
      */
-    void Updata_NodeData(VectorXd& x1, VectorXd& x2, VectorXd& F1, VectorXd* v2 = nullptr, VectorXd* a2 = nullptr);
+    void Updata_NodeData(const VectorXd& x1, const VectorXd& x2, const VectorXd& F1, const VectorXd* v2 = nullptr,
+                         const VectorXd* a2 = nullptr);
 
-    void Get_CurrentInforce(VectorXd& Inforce);
+    void Get_CurrentInforce(_OUT VectorXd& Inforce);
 
     bool Check_Rhs(const Eigen::VectorXd& F2, const Eigen::VectorXd& f2, _OUT Eigen::VectorXd& Rhs);
 
@@ -290,16 +314,13 @@ private:
      * @brief 组装约束位移
      * @param [out] x1 约束位移向量
      */
-    void Assemble_Constraint(
-        _OUT VectorXd& x1,
-        double currentTime,
-        double factor);
+    void Assemble_Constraint(_OUT VectorXd& x1, double currentTime, double factor);
 
     /**
     * @brief 根据约束自由度的外力计算并写入节点反力
     * @param [in] F1 约束自由度对应的外力向量
     */
-    void CalculateReactions(VectorXd& F1);
+    void CalculateReactions(_OUT VectorXd& F1);
 
     void Get_CurrentStepState(_OUT VectorXd& U, _OUT VectorXd& V, _OUT VectorXd& A) const;
 
@@ -307,6 +328,7 @@ private:
     VectorXd GetCurrentVelocity() const;
     VectorXd GetCurrentAcceleration() const;
 
+    void StoreCurrentNodeState();
     void BackupStepState() override;
     void GetStepIncrement(_OUT SolverNameSpace::Vec& dx_step) const override;
 };

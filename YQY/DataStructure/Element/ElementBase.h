@@ -24,19 +24,23 @@ class ElementBase : public Base
 {
 protected:
     MatrixXd m_ke, m_me, m_ce;
+
 public:
     ElementBase();
-    QVector<std::weak_ptr<Node>> m_pNode;       //节点指针数组
-    std::weak_ptr<Property>      m_pProperty;   //所属属性（材料+截面）
-    double L0 = 0.0, L = 0.0;  ///< 单元初始长度、当前长度
-    double m_InitStress = 0.0;                  // 初始应力
-    double m_Stress = 0.0;                      // 单元应力
-    ElementRole m_Role = ElementRole::Generic;  ///< 单元在模型中的业务用途
-    int m_WireId = -1;                          ///< 子导线编号；非导线单元为 -1
-    int m_AeroBundleCount = 0;                  ///< 所属分裂数；0 表示旧模型未提供
-    int m_AeroProfileId = -1;                   ///< 气动参数编号；小于 0 表示不参与气动计算
+    QVector<std::weak_ptr<Node>> m_pNode;      //节点指针数组
+    std::weak_ptr<Property> m_pProperty;       //所属属性（材料+截面）
+    double L0 = 0.0, L = 0.0;                  ///< 单元初始长度、当前长度
+    double m_InitStress = 0.0;                 // 初始应力
+    double m_Stress = 0.0;                     // 单元应力
+    ElementRole m_Role = ElementRole::Generic; ///< 单元在模型中的业务用途
+    int m_WireId = -1;                         ///< 子导线编号；非导线单元为 -1
+    int m_AeroBundleCount = 0;                 ///< 所属分裂数；0 表示旧模型未提供
+    int m_AeroProfileId = -1;                  ///< 气动参数编号；小于 0 表示不参与气动计算
 
-    bool HasAerodynamicLoad() const { return m_AeroProfileId >= 0; }
+    bool HasAerodynamicLoad() const
+    {
+        return m_AeroProfileId >= 0;
+    }
 
     /**
      * @brief 获取单元每个节点的自由度个数
@@ -45,11 +49,18 @@ public:
     virtual int Get_NodeDOF() const = 0;
 
     /**
+     * @brief 获取各节点在本单元中的局部自由度数量
+     *
+     * 默认每个节点都使用 Get_NodeDOF()。索单元可据此同时连接普通
+     * 4DOF 节点和与梁共用的 6DOF 节点。
+     */
+    virtual void GetNodeLocalDOFCounts(_OUT std::vector<int>& counts) const;
+
+    /**
      * @brief 获取单元所有自由度编号
      * @param [out] DOFs 自由度编号数组
      */
     void GetDOFs(_OUT std::vector<int>& DOFs) const;
-
 
     Eigen::VectorXd m_inforce;
     /**
@@ -57,8 +68,8 @@ public:
      * @param [out] ke 单元刚度矩阵
      */
     virtual void Get_ke(_OUT MatrixXd& ke) = 0;
-    virtual void Get_me_Lumped(_OUT MatrixXd& me) = 0;       //集中质量矩阵
-    virtual void Get_me_Consistent(_OUT MatrixXd& me) = 0;   //一致质量矩阵
+    virtual void Get_me_Lumped(_OUT MatrixXd& me) = 0;     //集中质量矩阵
+    virtual void Get_me_Consistent(_OUT MatrixXd& me) = 0; //一致质量矩阵
     /**
      * @brief 计算当前试探状态的单元惯性力
      *
@@ -89,11 +100,8 @@ public:
      * 默认实现保留旧单元的逐项计算方式；具有共同高斯积分过程的单元可
      * 重写此接口，从而避免重复计算质量、惯性力和动力切线。
      */
-    virtual void GetDynamicContributions(
-        _OUT MatrixXd& massMatrix,
-        _OUT VectorXd& inertiaForce,
-        _OUT MatrixXd& gyroscopicMatrix,
-        _OUT MatrixXd& centrifugalMatrix);
+    virtual void GetDynamicContributions(_OUT MatrixXd& massMatrix, _OUT VectorXd& inertiaForce,
+                                         _OUT MatrixXd& gyroscopicMatrix, _OUT MatrixXd& centrifugalMatrix);
     virtual void Get_L0() = 0;
 
     /**
@@ -101,7 +109,9 @@ public:
      *
      * 没有历史变量的单元使用默认空实现。
      */
-	virtual void CommitState() {}
+    virtual void CommitState()
+    {
+    }
 
     /**
     * @brief 组装单元阻尼矩阵，用vector保存四个阻尼值double trans_m = 0.0, double trans_k = 0.0, double rot_m = 0.0, double rot_k = 0.0

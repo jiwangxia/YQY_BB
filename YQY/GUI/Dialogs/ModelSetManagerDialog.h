@@ -9,8 +9,7 @@ class QTableWidget;
 class ModelSetManagerDialog final : public QDialog
 {
 public:
-    explicit ModelSetManagerDialog(const std::shared_ptr<StructureData>& structure,
-        QWidget* parent = nullptr);
+    explicit ModelSetManagerDialog(const std::shared_ptr<StructureData>& structure, QWidget* parent = nullptr);
 
 private:
     void refreshTable(int preferredSetId = -1);

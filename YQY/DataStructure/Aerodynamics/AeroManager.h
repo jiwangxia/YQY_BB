@@ -43,22 +43,22 @@ struct AeroCoefficients
 
 struct AeroCaseKey
 {
-    int bundleCount = 1;     // 分裂数
-    int windSpeed = 0;       // 风速，单位 m/s
-    int iceThickness = 0;    // 覆冰厚度，单位 mm
+    int bundleCount = 1;  // 分裂数
+    int windSpeed = 0;    // 风速，单位 m/s
+    int iceThickness = 0; // 覆冰厚度，单位 mm
 
     bool operator<(const AeroCaseKey& other) const
     {
-        if (bundleCount != other.bundleCount) return bundleCount < other.bundleCount;
-        if (windSpeed != other.windSpeed) return windSpeed < other.windSpeed;
+        if (bundleCount != other.bundleCount)
+            return bundleCount < other.bundleCount;
+        if (windSpeed != other.windSpeed)
+            return windSpeed < other.windSpeed;
         return iceThickness < other.iceThickness;
     }
 
     bool operator==(const AeroCaseKey& other) const
     {
-        return bundleCount == other.bundleCount
-            && windSpeed == other.windSpeed
-            && iceThickness == other.iceThickness;
+        return bundleCount == other.bundleCount && windSpeed == other.windSpeed && iceThickness == other.iceThickness;
     }
 };
 
@@ -78,14 +78,16 @@ private:
     bool loadModelsFromCSV(const std::filesystem::path& filepath, _OUT std::vector<BladeModel>& outModels) const;
     double interpolate(const std::vector<double>& yValues, double inputX) const;
     double parseDouble(const std::string& str) const;
-    bool removeUTF8BOM(std::string& line) const;
+    bool removeUTF8BOM(_OUT std::string& line) const;
     double getDataFromModels(const std::vector<BladeModel>& data, int modelIdx, CoefType type, double inputAngle) const;
 
 public:
     AeroManager() = default;
     AeroManager(const AeroManager& other)
-        : models(other.models), caseModels(other.caseModels),
-          currentSourceFile(other.currentSourceFile), caseSourceFiles(other.caseSourceFiles)
+        : models(other.models)
+        , caseModels(other.caseModels)
+        , currentSourceFile(other.currentSourceFile)
+        , caseSourceFiles(other.caseSourceFiles)
     {
     }
     AeroManager& operator=(const AeroManager& other)
@@ -123,12 +125,10 @@ public:
     double getData(int modelIdx, CoefType type, double inputAngle) const;
     double getData(const AeroCaseKey& key, int modelIdx, CoefType type, double inputAngle) const;
     const std::vector<BladeModel>* findCaseModels(const AeroCaseKey& key) const;
-    AeroCoefficients getCoefficients(
-        const std::vector<BladeModel>& caseData, int modelIdx, double inputAngle) const;
-    AeroCoefficients getCoefficients(
-        const AeroCaseKey& key, int modelIdx, double inputAngle) const;
+    AeroCoefficients getCoefficients(const std::vector<BladeModel>& caseData, int modelIdx, double inputAngle) const;
+    AeroCoefficients getCoefficients(const AeroCaseKey& key, int modelIdx, double inputAngle) const;
     void setCaseData(const AeroCaseKey& key, std::vector<BladeModel> caseData,
-        const std::filesystem::path& sourceFile = {});
+                     const std::filesystem::path& sourceFile = {});
 
     // 获取模型信息
     int getModelCount() const;
@@ -144,5 +144,6 @@ public:
     bool exportToCSV(const std::filesystem::path& filepath, int precision = 10) const;
 
     // 验证功能
-    bool ValiDateAllCSV(const std::filesystem::path& outputDir, const std::filesystem::path& standardDir, double tolerance = 0.000001) const;
+    bool ValiDateAllCSV(const std::filesystem::path& outputDir, const std::filesystem::path& standardDir,
+                        double tolerance = 0.000001) const;
 };

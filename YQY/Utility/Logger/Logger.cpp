@@ -22,7 +22,8 @@ void WriteNativeConsole(const QString& message, bool errorStream)
     if (handle != INVALID_HANDLE_VALUE && GetConsoleMode(handle, &mode))
     {
         DWORD written = 0;
-        WriteConsoleW(handle, reinterpret_cast<LPCWSTR>(line.utf16()), static_cast<DWORD>(line.size()), &written, nullptr);
+        WriteConsoleW(handle, reinterpret_cast<LPCWSTR>(line.utf16()), static_cast<DWORD>(line.size()), &written,
+                      nullptr);
         return;
     }
 #endif
@@ -69,7 +70,8 @@ bool Logger::Start(const QString& modelFileName, int maxBackupCount)
         WriteRawLine(QStringLiteral("============================================================"));
         WriteRawLine(QStringLiteral("运行结果: 失败"));
         WriteRawLine(QStringLiteral("运行摘要: 新的日志启动前自动关闭上一条日志"));
-        WriteRawLine(QStringLiteral("结束时间: %1").arg(QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz")));
+        WriteRawLine(
+            QStringLiteral("结束时间: %1").arg(QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz")));
         WriteRawLine(QStringLiteral("总耗时: %1 ms").arg(m_elapsedTimer.elapsed()));
         WriteRawLine(QStringLiteral("============================================================"));
         m_file.flush();
@@ -146,9 +148,9 @@ void Logger::InfoToFile(const QString& message)
     }
 
     const QString line = QStringLiteral("[%1] [%2] %3")
-        .arg(QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz"))
-        .arg(LevelName(Level::Info))
-        .arg(message);
+                             .arg(QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz"))
+                             .arg(LevelName(Level::Info))
+                             .arg(message);
     WriteRawLine(line);
 }
 
@@ -189,9 +191,9 @@ void Logger::Write(Level level, const QString& message)
         }
 
         const QString line = QStringLiteral("[%1] [%2] %3")
-            .arg(QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz"))
-            .arg(LevelName(level))
-            .arg(message);
+                                 .arg(QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz"))
+                                 .arg(LevelName(level))
+                                 .arg(message);
         WriteRawLine(line);
     }
 
@@ -214,9 +216,9 @@ void Logger::WriteRawLine(const QString& line)
 void Logger::WriteTerminalLine(Level level, const QString& message)
 {
     const QString line = QStringLiteral("[%1] [%2] %3")
-        .arg(QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz"))
-        .arg(LevelName(level))
-        .arg(message);
+                             .arg(QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz"))
+                             .arg(LevelName(level))
+                             .arg(message);
 
     WriteNativeConsole(line, level == Level::Error);
 }
@@ -288,12 +290,18 @@ QString Logger::LevelName(Level level) const
 {
     switch (level)
     {
-    case Level::Debug:   return QStringLiteral("DEBUG");
-    case Level::Info:    return QStringLiteral("INFO");
-    case Level::Success: return QStringLiteral("SUCCESS");
-    case Level::Warning: return QStringLiteral("WARNING");
-    case Level::Error:   return QStringLiteral("ERROR");
-    default:             return QStringLiteral("INFO");
+        case Level::Debug:
+            return QStringLiteral("DEBUG");
+        case Level::Info:
+            return QStringLiteral("INFO");
+        case Level::Success:
+            return QStringLiteral("SUCCESS");
+        case Level::Warning:
+            return QStringLiteral("WARNING");
+        case Level::Error:
+            return QStringLiteral("ERROR");
+        default:
+            return QStringLiteral("INFO");
     }
 }
 
@@ -327,19 +335,19 @@ void Logger::WriteQtMessage(QtMsgType type, const QMessageLogContext& context, c
     Level level = Level::Info;
     switch (type)
     {
-    case QtDebugMsg:
-        level = Level::Info;
-        break;
-    case QtInfoMsg:
-        level = Level::Info;
-        break;
-    case QtWarningMsg:
-        level = Level::Warning;
-        break;
-    case QtCriticalMsg:
-    case QtFatalMsg:
-        level = Level::Error;
-        break;
+        case QtDebugMsg:
+            level = Level::Info;
+            break;
+        case QtInfoMsg:
+            level = Level::Info;
+            break;
+        case QtWarningMsg:
+            level = Level::Warning;
+            break;
+        case QtCriticalMsg:
+        case QtFatalMsg:
+            level = Level::Error;
+            break;
     }
 
     {
@@ -347,9 +355,9 @@ void Logger::WriteQtMessage(QtMsgType type, const QMessageLogContext& context, c
         if (m_active)
         {
             const QString line = QStringLiteral("[%1] [%2] %3")
-                .arg(QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz"))
-                .arg(LevelName(level))
-                .arg(message);
+                                     .arg(QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz"))
+                                     .arg(LevelName(level))
+                                     .arg(message);
             WriteRawLine(line);
         }
     }

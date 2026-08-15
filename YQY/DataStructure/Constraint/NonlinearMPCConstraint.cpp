@@ -1,70 +1,76 @@
 #include "NonlinearMPCConstraint.h"
 
 #include "DataStructure/Node/Node.h"
+#include "Utility/CR.h"
 
 #include <cmath>
 
-namespace
+static Eigen::Vector3d ReferencePosition(const Node& node)
 {
-    Eigen::Vector3d ReferencePosition(const Node& node)
-    {
-        return Eigen::Vector3d(node.m_X, node.m_Y, node.m_Z);
-    }
-
-    Eigen::Vector3d CurrentPosition(const Node& node)
-    {
-        Eigen::Vector3d result = ReferencePosition(node);
-        for (int i = 0;
-             i < 3 && i < static_cast<int>(node.m_Displacement.size());
-             ++i)
-            result[i] += node.m_Displacement[i];
-        return result;
-    }
-
-    int FreeIndex(
-        const Node& node,
-        int direction,
-        int fixedDofs,
-        int freeDofs)
-    {
-        if (direction < 0 || direction >= node.m_DOF.size())
-            return -1;
-        const int index = node.m_DOF[direction] - fixedDofs;
-        return index >= 0 && index < freeDofs ? index : -1;
-    }
-
-    void AddEntry(
-        std::vector<Eigen::Triplet<double>>& entries,
-        int row,
-        int column,
-        double value)
-    {
-        if (row >= 0 && column >= 0 && std::abs(value) > 1.0e-16)
-            entries.emplace_back(row, column, value);
-    }
-
-    void AddFixedReaction(
-        Node& node,
-        int direction,
-        int fixedDofs,
-        double value)
-    {
-        if (direction < 0 || direction >= node.m_DOF.size())
-            return;
-        const int dof = node.m_DOF[direction];
-        if (dof < 0 || dof >= fixedDofs)
-            return;
-        if (node.m_ReactionForce.size()
-            < static_cast<std::size_t>(node.m_DOF.size()))
-            node.m_ReactionForce.resize(node.m_DOF.size(), 0.0);
-        node.m_ReactionForce[direction] += value;
-    }
+    return Eigen::Vector3d(node.m_X, node.m_Y, node.m_Z);
 }
 
-bool TranslationalTieMPCConstraint::Evaluate(
-    int fixedDofs,
-    int freeDofs,
-    SolverNameSpace::NonlinearMPCData& data) const
+static Eigen::Vector3d CurrentPosition(const Node& node)
+{
+    Eigen::Vector3d result = ReferencePosition(node);
+    for (int i = 0; i < 3 && i < static_cast<int>(node.m_Displacement.size()); ++i)
+        result[i] += node.m_Displacement[i];
+    return result;
+}
+
+static int FreeIndex(const Node& node, int direction, int fixedDofs, int freeDofs)
+{
+    if (direction < 0 || direction >= node.m_DOF.size())
+        return -1;
+    const int index = node.m_DOF[direction] - fixedDofs;
+    return index >= 0 && index < freeDofs ? index : -1;
+}
+
+static void AddEntry(std::vector<Eigen::Triplet<double>>& entries, int row, int column, double value)
+{
+    if (row >= 0 && column >= 0 && std::abs(value) > 1.0e-16)
+        entries.emplace_back(row, column, value);
+}
+
+static void AddFixedReaction(Node& node, int direction, int fixedDofs, double value)
+{
+    if (direction < 0 || direction >= node.m_DOF.size())
+        return;
+    const int dof = node.m_DOF[direction];
+    if (dof < 0 || dof >= fixedDofs)
+        return;
+    if (node.m_ReactionForce.size() < static_cast<std::size_t>(node.m_DOF.size()))
+        node.m_ReactionForce.resize(node.m_DOF.size(), 0.0);
+    node.m_ReactionForce[direction] += value;
+}
+
+static bool EvaluateAxialTwistKinematics(const Eigen::Matrix3d& rotation, const Eigen::Vector3d& inputAxis,
+                                         _OUT double& twist, _OUT Eigen::Vector3d& gradient,
+                                         _OUT Eigen::Matrix3d& hessian)
+{
+    const Eigen::Vector3d axis = Utility::CR::CanonicalAxis(inputAxis);
+    Eigen::Quaterniond quaternion(rotation);
+    quaternion.normalize();
+    if (quaternion.w() < 0.0)
+        quaternion.coeffs() *= -1.0;
+
+    const double scalar = quaternion.w();
+    const Eigen::Vector3d vector = quaternion.vec();
+    const double projection = vector.dot(axis);
+    const double denominator = scalar * scalar + projection * projection;
+    if (!std::isfinite(denominator) || denominator <= 1.0e-14)
+        return false;
+
+    twist = 2.0 * std::atan2(projection, scalar);
+    const Eigen::Vector3d auxiliary = scalar * axis + vector.cross(axis);
+    gradient = (scalar * scalar * axis + scalar * vector.cross(axis) + projection * vector) / denominator;
+    hessian = (scalar * projection * (vector * vector.transpose() - auxiliary * auxiliary.transpose()) +
+               0.5 * (scalar * scalar - projection * projection) *
+                   (vector * auxiliary.transpose() + auxiliary * vector.transpose())) /
+              (denominator * denominator);
+    return std::isfinite(twist) && gradient.allFinite() && hessian.allFinite();
+}
+bool TranslationalTieMPCConstraint::Evaluate(int fixedDofs, int freeDofs, SolverNameSpace::NonlinearMPCData& data) const
 {
     const auto master = m_pMasterNode.lock();
     const auto slave = m_pSlaveNode.lock();
@@ -80,17 +86,13 @@ bool TranslationalTieMPCConstraint::Evaluate(
     for (int direction = 0; direction < 3; ++direction)
     {
         const double masterDisplacement =
-            direction < static_cast<int>(master->m_Displacement.size())
-            ? master->m_Displacement[direction] : 0.0;
+            direction < static_cast<int>(master->m_Displacement.size()) ? master->m_Displacement[direction] : 0.0;
         const double slaveDisplacement =
-            direction < static_cast<int>(slave->m_Displacement.size())
-            ? slave->m_Displacement[direction] : 0.0;
+            direction < static_cast<int>(slave->m_Displacement.size()) ? slave->m_Displacement[direction] : 0.0;
         data.value[direction] = slaveDisplacement - masterDisplacement;
 
-        const int masterDof =
-            FreeIndex(*master, direction, fixedDofs, freeDofs);
-        const int slaveDof =
-            FreeIndex(*slave, direction, fixedDofs, freeDofs);
+        const int masterDof = FreeIndex(*master, direction, fixedDofs, freeDofs);
+        const int slaveDof = FreeIndex(*slave, direction, fixedDofs, freeDofs);
         if (masterDof >= 0)
             data.jacobian(direction, masterDof) = -1.0;
         if (slaveDof >= 0)
@@ -101,8 +103,7 @@ bool TranslationalTieMPCConstraint::Evaluate(
     return data.IsValid(freeDofs);
 }
 
-std::shared_ptr<NonlinearMPCConstraint>
-TranslationalTieMPCConstraint::Clone(
+std::shared_ptr<NonlinearMPCConstraint> TranslationalTieMPCConstraint::Clone(
     const std::map<int, std::shared_ptr<Node>>& nodes) const
 {
     const auto master = m_pMasterNode.lock();
@@ -129,9 +130,7 @@ std::vector<int> TranslationalTieMPCConstraint::GetNodeIds() const
     return result;
 }
 
-void TranslationalTieMPCConstraint::AccumulateReactions(
-    int fixedDofs,
-    const Eigen::VectorXd& multipliers) const
+void TranslationalTieMPCConstraint::AccumulateReactions(int fixedDofs, const Eigen::VectorXd& multipliers) const
 {
     const auto master = m_pMasterNode.lock();
     const auto slave = m_pSlaveNode.lock();
@@ -139,17 +138,12 @@ void TranslationalTieMPCConstraint::AccumulateReactions(
         return;
     for (int direction = 0; direction < 3; ++direction)
     {
-        AddFixedReaction(
-            *master, direction, fixedDofs, multipliers[direction]);
-        AddFixedReaction(
-            *slave, direction, fixedDofs, -multipliers[direction]);
+        AddFixedReaction(*master, direction, fixedDofs, multipliers[direction]);
+        AddFixedReaction(*slave, direction, fixedDofs, -multipliers[direction]);
     }
 }
 
-bool DistanceMPCConstraint::Evaluate(
-    int fixedDofs,
-    int freeDofs,
-    SolverNameSpace::NonlinearMPCData& data) const
+bool DistanceMPCConstraint::Evaluate(int fixedDofs, int freeDofs, SolverNameSpace::NonlinearMPCData& data) const
 {
     const auto nodeA = m_pNodeA.lock();
     const auto nodeB = m_pNodeB.lock();
@@ -157,15 +151,11 @@ bool DistanceMPCConstraint::Evaluate(
     if (!nodeA || !nodeB || !slave || freeDofs <= 1)
         return false;
 
-    const Eigen::Vector3d referenceDelta =
-        ReferencePosition(*nodeA) - ReferencePosition(*nodeB);
-    const double targetLength =
-        m_Length >= 0.0 ? m_Length : referenceDelta.norm();
-    const Eigen::Vector3d delta =
-        CurrentPosition(*nodeA) - CurrentPosition(*nodeB);
+    const Eigen::Vector3d referenceDelta = ReferencePosition(*nodeA) - ReferencePosition(*nodeB);
+    const double targetLength = m_Length >= 0.0 ? m_Length : referenceDelta.norm();
+    const Eigen::Vector3d delta = CurrentPosition(*nodeA) - CurrentPosition(*nodeB);
     const double length = delta.norm();
-    if (!std::isfinite(targetLength) || targetLength < 0.0
-        || !std::isfinite(length) || length <= 1.0e-14)
+    if (!std::isfinite(targetLength) || targetLength < 0.0 || !std::isfinite(length) || length <= 1.0e-14)
         return false;
 
     data.Clear();
@@ -174,17 +164,17 @@ bool DistanceMPCConstraint::Evaluate(
     data.hessians.emplace_back(freeDofs, freeDofs);
 
     const Eigen::Vector3d direction = delta / length;
-    const Eigen::Matrix3d curvature =
-        (Eigen::Matrix3d::Identity()
-            - direction * direction.transpose()) / length;
-    int dofA[3] = { -1, -1, -1 };
-    int dofB[3] = { -1, -1, -1 };
+    const Eigen::Matrix3d curvature = (Eigen::Matrix3d::Identity() - direction * direction.transpose()) / length;
+    int dofA[3] = {-1, -1, -1};
+    int dofB[3] = {-1, -1, -1};
     for (int i = 0; i < 3; ++i)
     {
         dofA[i] = FreeIndex(*nodeA, i, fixedDofs, freeDofs);
         dofB[i] = FreeIndex(*nodeB, i, fixedDofs, freeDofs);
-        if (dofA[i] >= 0) data.jacobian(0, dofA[i]) += direction[i];
-        if (dofB[i] >= 0) data.jacobian(0, dofB[i]) -= direction[i];
+        if (dofA[i] >= 0)
+            data.jacobian(0, dofA[i]) += direction[i];
+        if (dofB[i] >= 0)
+            data.jacobian(0, dofB[i]) -= direction[i];
     }
 
     std::vector<Eigen::Triplet<double>> entries;
@@ -200,8 +190,7 @@ bool DistanceMPCConstraint::Evaluate(
         }
     }
     data.hessians[0].setFromTriplets(entries.begin(), entries.end());
-    data.slaveDofs.push_back(
-        FreeIndex(*slave, m_SlaveDirection, fixedDofs, freeDofs));
+    data.slaveDofs.push_back(FreeIndex(*slave, m_SlaveDirection, fixedDofs, freeDofs));
     return data.IsValid(freeDofs);
 }
 
@@ -216,8 +205,7 @@ std::shared_ptr<NonlinearMPCConstraint> DistanceMPCConstraint::Clone(
     const auto foundA = nodes.find(nodeA->m_Id);
     const auto foundB = nodes.find(nodeB->m_Id);
     const auto foundSlave = nodes.find(slave->m_Id);
-    if (foundA == nodes.end() || foundB == nodes.end()
-        || foundSlave == nodes.end())
+    if (foundA == nodes.end() || foundB == nodes.end() || foundSlave == nodes.end())
         return nullptr;
     auto result = std::make_shared<DistanceMPCConstraint>(*this);
     result->m_pNodeA = foundA->second;
@@ -230,21 +218,20 @@ std::vector<int> DistanceMPCConstraint::GetNodeIds() const
 {
     std::vector<int> result;
     // 对文本MPC保持统一顺序：主节点、从节点。
-    if (const auto node = m_pNodeB.lock()) result.push_back(node->m_Id);
-    if (const auto node = m_pNodeA.lock()) result.push_back(node->m_Id);
+    if (const auto node = m_pNodeB.lock())
+        result.push_back(node->m_Id);
+    if (const auto node = m_pNodeA.lock())
+        result.push_back(node->m_Id);
     return result;
 }
 
-void DistanceMPCConstraint::AccumulateReactions(
-    int fixedDofs,
-    const Eigen::VectorXd& multipliers) const
+void DistanceMPCConstraint::AccumulateReactions(int fixedDofs, const Eigen::VectorXd& multipliers) const
 {
     const auto nodeA = m_pNodeA.lock();
     const auto nodeB = m_pNodeB.lock();
     if (!nodeA || !nodeB || multipliers.size() != 1)
         return;
-    const Eigen::Vector3d delta =
-        CurrentPosition(*nodeA) - CurrentPosition(*nodeB);
+    const Eigen::Vector3d delta = CurrentPosition(*nodeA) - CurrentPosition(*nodeB);
     const double length = delta.norm();
     if (length <= 1.0e-14)
         return;
@@ -253,54 +240,37 @@ void DistanceMPCConstraint::AccumulateReactions(
     // constraint-force contribution is -G^T*Y.
     for (int direction = 0; direction < 3; ++direction)
     {
-        AddFixedReaction(
-            *nodeA, direction, fixedDofs,
-            -gradient[direction] * multipliers[0]);
-        AddFixedReaction(
-            *nodeB, direction, fixedDofs,
-            gradient[direction] * multipliers[0]);
+        AddFixedReaction(*nodeA, direction, fixedDofs, -gradient[direction] * multipliers[0]);
+        AddFixedReaction(*nodeB, direction, fixedDofs, gradient[direction] * multipliers[0]);
     }
 }
 
-bool RigidOffsetMPCConstraint::Evaluate(
-    int fixedDofs,
-    int freeDofs,
-    SolverNameSpace::NonlinearMPCData& data) const
+bool RigidOffsetMPCConstraint::Evaluate(int fixedDofs, int freeDofs, SolverNameSpace::NonlinearMPCData& data) const
 {
     const auto master = m_pMasterNode.lock();
     const auto slave = m_pSlaveNode.lock();
-    if (!master || !slave || master->m_DOF.size() < 3
-        || slave->m_DOF.size() < 3 || freeDofs <= 3)
+    if (!master || !slave || master->m_DOF.size() < 3 || slave->m_DOF.size() < 3 || freeDofs <= 3)
         return false;
 
-    const Eigen::Vector3d offset = m_Offset.allFinite()
-        ? m_Offset
-        : ReferencePosition(*slave) - ReferencePosition(*master);
+    const Eigen::Vector3d offset =
+        m_Offset.allFinite() ? m_Offset : ReferencePosition(*slave) - ReferencePosition(*master);
     const bool masterHasRotation = master->m_DOF.size() >= 6;
-    const Eigen::Vector3d rotatedOffset =
-        masterHasRotation ? master->m_Rg * offset : offset;
-    const Eigen::Vector3d value =
-        CurrentPosition(*slave)
-        - CurrentPosition(*master)
-        - rotatedOffset;
+    const Eigen::Vector3d rotatedOffset = masterHasRotation ? master->m_Rg * offset : offset;
+    const Eigen::Vector3d value = CurrentPosition(*slave) - CurrentPosition(*master) - rotatedOffset;
 
     data.Clear();
     data.value = value;
     data.jacobian = Eigen::MatrixXd::Zero(3, freeDofs);
     data.hessianEntries.resize(3);
 
-    int masterTranslation[3] = { -1, -1, -1 };
-    int masterRotation[3] = { -1, -1, -1 };
-    int slaveTranslation[3] = { -1, -1, -1 };
+    int masterTranslation[3] = {-1, -1, -1};
+    int masterRotation[3] = {-1, -1, -1};
+    int slaveTranslation[3] = {-1, -1, -1};
     for (int i = 0; i < 3; ++i)
     {
-        masterTranslation[i] =
-            FreeIndex(*master, i, fixedDofs, freeDofs);
-        masterRotation[i] = masterHasRotation
-            ? FreeIndex(*master, i + 3, fixedDofs, freeDofs)
-            : -1;
-        slaveTranslation[i] =
-            FreeIndex(*slave, i, fixedDofs, freeDofs);
+        masterTranslation[i] = FreeIndex(*master, i, fixedDofs, freeDofs);
+        masterRotation[i] = masterHasRotation ? FreeIndex(*master, i + 3, fixedDofs, freeDofs) : -1;
+        slaveTranslation[i] = FreeIndex(*slave, i, fixedDofs, freeDofs);
         if (masterTranslation[i] >= 0)
             data.jacobian(i, masterTranslation[i]) = -1.0;
         if (slaveTranslation[i] >= 0)
@@ -308,32 +278,25 @@ bool RigidOffsetMPCConstraint::Evaluate(
     }
 
     Eigen::Matrix3d skew;
-    skew <<
-        0.0, -rotatedOffset.z(), rotatedOffset.y(),
-        rotatedOffset.z(), 0.0, -rotatedOffset.x(),
-        -rotatedOffset.y(), rotatedOffset.x(), 0.0;
+    skew << 0.0, -rotatedOffset.z(), rotatedOffset.y(), rotatedOffset.z(), 0.0, -rotatedOffset.x(), -rotatedOffset.y(),
+        rotatedOffset.x(), 0.0;
     for (int row = 0; row < 3; ++row)
         for (int column = 0; column < 3; ++column)
             if (masterRotation[column] >= 0)
-                data.jacobian(row, masterRotation[column])
-                    = skew(row, column);
+                data.jacobian(row, masterRotation[column]) = skew(row, column);
 
     for (int component = 0; component < 3; ++component)
     {
         Eigen::Vector3d basis = Eigen::Vector3d::Zero();
         basis[component] = 1.0;
         const Eigen::Matrix3d rotationHessian =
-            rotatedOffset[component] * Eigen::Matrix3d::Identity()
-            - 0.5 * (
-                basis * rotatedOffset.transpose()
-                + rotatedOffset * basis.transpose());
+            rotatedOffset[component] * Eigen::Matrix3d::Identity() -
+            0.5 * (basis * rotatedOffset.transpose() + rotatedOffset * basis.transpose());
         auto& entries = data.hessianEntries[component];
         entries.reserve(9);
         for (int i = 0; i < 3; ++i)
             for (int j = 0; j < 3; ++j)
-                AddEntry(
-                    entries, masterRotation[i], masterRotation[j],
-                    rotationHessian(i, j));
+                AddEntry(entries, masterRotation[i], masterRotation[j], rotationHessian(i, j));
     }
 
     for (int i = 0; i < 3; ++i)
@@ -368,9 +331,7 @@ std::vector<int> RigidOffsetMPCConstraint::GetNodeIds() const
     return result;
 }
 
-void RigidOffsetMPCConstraint::AccumulateReactions(
-    int fixedDofs,
-    const Eigen::VectorXd& multipliers) const
+void RigidOffsetMPCConstraint::AccumulateReactions(int fixedDofs, const Eigen::VectorXd& multipliers) const
 {
     const auto master = m_pMasterNode.lock();
     const auto slave = m_pSlaveNode.lock();
@@ -379,46 +340,126 @@ void RigidOffsetMPCConstraint::AccumulateReactions(
 
     for (int direction = 0; direction < 3; ++direction)
     {
-        AddFixedReaction(
-            *master, direction, fixedDofs, multipliers[direction]);
-        AddFixedReaction(
-            *slave, direction, fixedDofs, -multipliers[direction]);
+        AddFixedReaction(*master, direction, fixedDofs, multipliers[direction]);
+        AddFixedReaction(*slave, direction, fixedDofs, -multipliers[direction]);
     }
 
     if (master->m_DOF.size() >= 6)
     {
-        const Eigen::Vector3d offset = m_Offset.allFinite()
-            ? m_Offset
-            : ReferencePosition(*slave) - ReferencePosition(*master);
+        const Eigen::Vector3d offset =
+            m_Offset.allFinite() ? m_Offset : ReferencePosition(*slave) - ReferencePosition(*master);
         const Eigen::Vector3d rotatedOffset = master->m_Rg * offset;
         Eigen::Matrix3d skew;
-        skew <<
-            0.0, -rotatedOffset.z(), rotatedOffset.y(),
-            rotatedOffset.z(), 0.0, -rotatedOffset.x(),
+        skew << 0.0, -rotatedOffset.z(), rotatedOffset.y(), rotatedOffset.z(), 0.0, -rotatedOffset.x(),
             -rotatedOffset.y(), rotatedOffset.x(), 0.0;
-        const Eigen::Vector3d moment =
-            -skew.transpose() * multipliers;
+        const Eigen::Vector3d moment = -skew.transpose() * multipliers;
         for (int direction = 0; direction < 3; ++direction)
-            AddFixedReaction(
-                *master, direction + 3, fixedDofs, moment[direction]);
+            AddFixedReaction(*master, direction + 3, fixedDofs, moment[direction]);
     }
 }
 
-bool PlanarShearReleaseMPCConstraint::Evaluate(
-    int fixedDofs,
-    int freeDofs,
-    SolverNameSpace::NonlinearMPCData& data) const
+bool AxialTwistTieMPCConstraint::Evaluate(int fixedDofs, int freeDofs, SolverNameSpace::NonlinearMPCData& data) const
 {
     const auto master = m_pMasterNode.lock();
     const auto slave = m_pSlaveNode.lock();
-    if (!master || !slave || master->m_DOF.size() < 6
-        || slave->m_DOF.size() < 6 || freeDofs <= 2)
+    if (!master || !slave || master->m_DOF.size() < 6 || slave->m_DOF.size() <= m_SlaveDirection ||
+        !m_Axis.allFinite() || m_Axis.norm() <= 1.0e-14)
         return false;
 
-    const double phiMaster =
-        std::atan2(master->m_Rg(1, 0), master->m_Rg(0, 0));
-    const double phiSlave =
-        std::atan2(slave->m_Rg(1, 0), slave->m_Rg(0, 0));
+    const double slaveTwist = slave->m_Displacement[m_SlaveDirection];
+    const double previousSlaveTwist = m_SlaveDirection < static_cast<int>(slave->m_Displacement_n.size())
+                                          ? slave->m_Displacement_n[m_SlaveDirection]
+                                          : 0.0;
+    const double slaveTwistIncrement = slaveTwist - previousSlaveTwist;
+    const Eigen::Matrix3d relativeRotation = master->m_Rg * master->m_Rg_n.transpose();
+    double masterTwist = 0.0;
+    Eigen::Vector3d twistGradient;
+    Eigen::Matrix3d twistHessian;
+    if (!EvaluateAxialTwistKinematics(relativeRotation, m_Axis, masterTwist, twistGradient, twistHessian))
+        return false;
+    const double fullTurn = 2.0 * std::acos(-1.0);
+    masterTwist += fullTurn * std::round((slaveTwistIncrement - masterTwist) / fullTurn);
+
+    data.Clear();
+    data.value = Eigen::VectorXd::Constant(1, slaveTwistIncrement - masterTwist);
+    data.jacobian = Eigen::MatrixXd::Zero(1, freeDofs);
+    data.hessianEntries.resize(1);
+
+    int masterDofs[3] = {-1, -1, -1};
+    for (int direction = 0; direction < 3; ++direction)
+    {
+        masterDofs[direction] = FreeIndex(*master, direction + 3, fixedDofs, freeDofs);
+        if (masterDofs[direction] >= 0)
+            data.jacobian(0, masterDofs[direction]) = -twistGradient[direction];
+    }
+    const int slaveDof = FreeIndex(*slave, m_SlaveDirection, fixedDofs, freeDofs);
+    if (slaveDof >= 0)
+        data.jacobian(0, slaveDof) = 1.0;
+    data.slaveDofs.push_back(slaveDof);
+
+    auto& entries = data.hessianEntries[0];
+    entries.reserve(9);
+    for (int row = 0; row < 3; ++row)
+        for (int column = 0; column < 3; ++column)
+            AddEntry(entries, masterDofs[row], masterDofs[column], -twistHessian(row, column));
+
+    return data.IsValid(freeDofs);
+}
+
+std::shared_ptr<NonlinearMPCConstraint> AxialTwistTieMPCConstraint::Clone(
+    const std::map<int, std::shared_ptr<Node>>& nodes) const
+{
+    const auto master = m_pMasterNode.lock();
+    const auto slave = m_pSlaveNode.lock();
+    if (!master || !slave)
+        return nullptr;
+    const auto foundMaster = nodes.find(master->m_Id);
+    const auto foundSlave = nodes.find(slave->m_Id);
+    if (foundMaster == nodes.end() || foundSlave == nodes.end())
+        return nullptr;
+    auto result = std::make_shared<AxialTwistTieMPCConstraint>(*this);
+    result->m_pMasterNode = foundMaster->second;
+    result->m_pSlaveNode = foundSlave->second;
+    return result;
+}
+
+std::vector<int> AxialTwistTieMPCConstraint::GetNodeIds() const
+{
+    std::vector<int> result;
+    if (const auto node = m_pMasterNode.lock())
+        result.push_back(node->m_Id);
+    if (const auto node = m_pSlaveNode.lock())
+        result.push_back(node->m_Id);
+    return result;
+}
+
+void AxialTwistTieMPCConstraint::AccumulateReactions(int fixedDofs, const Eigen::VectorXd& multipliers) const
+{
+    const auto master = m_pMasterNode.lock();
+    const auto slave = m_pSlaveNode.lock();
+    if (!master || !slave || multipliers.size() != 1 || !m_Axis.allFinite())
+        return;
+    double twist = 0.0;
+    Eigen::Vector3d gradient;
+    Eigen::Matrix3d hessian;
+    const Eigen::Matrix3d relativeRotation = master->m_Rg * master->m_Rg_n.transpose();
+    if (!EvaluateAxialTwistKinematics(relativeRotation, m_Axis, twist, gradient, hessian))
+        return;
+    for (int direction = 0; direction < 3; ++direction)
+        AddFixedReaction(*master, direction + 3, fixedDofs, gradient[direction] * multipliers[0]);
+    AddFixedReaction(*slave, m_SlaveDirection, fixedDofs, -multipliers[0]);
+}
+
+bool PlanarShearReleaseMPCConstraint::Evaluate(int fixedDofs, int freeDofs,
+                                               SolverNameSpace::NonlinearMPCData& data) const
+{
+    const auto master = m_pMasterNode.lock();
+    const auto slave = m_pSlaveNode.lock();
+    if (!master || !slave || master->m_DOF.size() < 6 || slave->m_DOF.size() < 6 || freeDofs <= 2)
+        return false;
+
+    const double phiMaster = std::atan2(master->m_Rg(1, 0), master->m_Rg(0, 0));
+    const double phiSlave = std::atan2(slave->m_Rg(1, 0), slave->m_Rg(0, 0));
     const double cm = std::cos(phiMaster);
     const double sm = std::sin(phiMaster);
     const double cs = std::cos(phiSlave);
@@ -430,10 +471,8 @@ bool PlanarShearReleaseMPCConstraint::Evaluate(
 
     // Use the relative rotation for the equality equation so that a full
     // revolution does not create an artificial atan2 branch jump.
-    const Eigen::Matrix3d relative =
-        master->m_Rg.transpose() * slave->m_Rg;
-    const double relativeAngle =
-        std::atan2(relative(1, 0), relative(0, 0));
+    const Eigen::Matrix3d relative = master->m_Rg.transpose() * slave->m_Rg;
+    const double relativeAngle = std::atan2(relative(1, 0), relative(0, 0));
 
     data.Clear();
     data.value = Eigen::VectorXd::Zero(2);
@@ -483,15 +522,11 @@ bool PlanarShearReleaseMPCConstraint::Evaluate(
     // The paper's constraint is fully coupled. Select the translational
     // slave column with the larger pivot so the elimination remains regular
     // while the beam rolls through 90 and 270 degrees.
-    data.slaveDofs = {
-        std::abs(cs) >= std::abs(ss) ? sX : sY,
-        sRz
-    };
+    data.slaveDofs = {std::abs(cs) >= std::abs(ss) ? sX : sY, sRz};
     return data.IsValid(freeDofs);
 }
 
-std::shared_ptr<NonlinearMPCConstraint>
-PlanarShearReleaseMPCConstraint::Clone(
+std::shared_ptr<NonlinearMPCConstraint> PlanarShearReleaseMPCConstraint::Clone(
     const std::map<int, std::shared_ptr<Node>>& nodes) const
 {
     const auto master = m_pMasterNode.lock();
@@ -502,8 +537,7 @@ PlanarShearReleaseMPCConstraint::Clone(
     const auto foundSlave = nodes.find(slave->m_Id);
     if (foundMaster == nodes.end() || foundSlave == nodes.end())
         return nullptr;
-    auto result =
-        std::make_shared<PlanarShearReleaseMPCConstraint>(*this);
+    auto result = std::make_shared<PlanarShearReleaseMPCConstraint>(*this);
     result->m_pMasterNode = foundMaster->second;
     result->m_pSlaveNode = foundSlave->second;
     return result;
@@ -519,19 +553,15 @@ std::vector<int> PlanarShearReleaseMPCConstraint::GetNodeIds() const
     return result;
 }
 
-void PlanarShearReleaseMPCConstraint::AccumulateReactions(
-    int fixedDofs,
-    const Eigen::VectorXd& multipliers) const
+void PlanarShearReleaseMPCConstraint::AccumulateReactions(int fixedDofs, const Eigen::VectorXd& multipliers) const
 {
     const auto master = m_pMasterNode.lock();
     const auto slave = m_pSlaveNode.lock();
     if (!master || !slave || multipliers.size() != 2)
         return;
 
-    const double phiMaster =
-        std::atan2(master->m_Rg(1, 0), master->m_Rg(0, 0));
-    const double phiSlave =
-        std::atan2(slave->m_Rg(1, 0), slave->m_Rg(0, 0));
+    const double phiMaster = std::atan2(master->m_Rg(1, 0), master->m_Rg(0, 0));
+    const double phiSlave = std::atan2(slave->m_Rg(1, 0), slave->m_Rg(0, 0));
     const double cm = std::cos(phiMaster);
     const double sm = std::sin(phiMaster);
     const double cs = std::cos(phiSlave);
@@ -545,12 +575,8 @@ void PlanarShearReleaseMPCConstraint::AccumulateReactions(
 
     AddFixedReaction(*master, 0, fixedDofs, -cm * multipliers[0]);
     AddFixedReaction(*master, 1, fixedDofs, -sm * multipliers[0]);
-    AddFixedReaction(
-        *master, 5, fixedDofs,
-        -rotationGradientMaster * multipliers[0] - multipliers[1]);
+    AddFixedReaction(*master, 5, fixedDofs, -rotationGradientMaster * multipliers[0] - multipliers[1]);
     AddFixedReaction(*slave, 0, fixedDofs, cs * multipliers[0]);
     AddFixedReaction(*slave, 1, fixedDofs, ss * multipliers[0]);
-    AddFixedReaction(
-        *slave, 5, fixedDofs,
-        -rotationGradientSlave * multipliers[0] + multipliers[1]);
+    AddFixedReaction(*slave, 5, fixedDofs, -rotationGradientSlave * multipliers[0] + multipliers[1]);
 }

@@ -10,7 +10,8 @@
  */
 void Section_Ice::Calculate()
 {
-    if (m_Radius <= 0.0) return;
+    if (m_Radius <= 0.0)
+        return;
 
     // 导线自身特性（圆形截面）
     double wireArea = m_Area;
@@ -42,8 +43,8 @@ void Section_Ice::Calculate()
     J = Iyy + Izz;
 }
 
-void Section_Ice::CalculateCrescentProperties(double& area, double& my, double& mz,
-    double& iyy, double& izz, double& iyz)
+void Section_Ice::CalculateCrescentProperties(double& area, double& my, double& mz, double& iyy, double& izz,
+                                              double& iyz)
 {
     area = my = mz = iyy = izz = iyz = 0.0;
     const int n = 180;
@@ -54,7 +55,8 @@ void Section_Ice::CalculateCrescentProperties(double& area, double& my, double& 
     {
         double theta = theta_start + (i + 0.5) * dtheta;
         double t = GetIceThicknessAt(theta);
-        if (t <= 1e-9) continue;
+        if (t <= 1e-9)
+            continue;
 
         double R1 = m_Radius;
         double R2 = R1 + t;
@@ -87,10 +89,12 @@ double Section_Ice::GetIceThicknessAt(double theta) const
 {
     // 计算角度偏差并归一化到 [-PI, PI]
     double delta = fmod(theta - m_IceAngle + PI, 2.0 * PI);
-    if (delta < 0) delta += 2.0 * PI;
+    if (delta < 0)
+        delta += 2.0 * PI;
     delta -= PI;
 
-    if (std::abs(delta) > m_IceHalfAngle) return 0.0;
+    if (std::abs(delta) > m_IceHalfAngle)
+        return 0.0;
 
     // 余弦分布公式：t = t_max * cos^k( (delta/beta) * (PI/2) )
     double ratio = delta / m_IceHalfAngle;

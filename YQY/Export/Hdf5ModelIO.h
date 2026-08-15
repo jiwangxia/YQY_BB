@@ -46,14 +46,14 @@ public:
      * @param [in] sourceModelName 原始模型文件名，可以为空。
      * @return 成功返回 true，失败返回 false。
      */
-    bool ExportHdf5(const QString& fileName, const StructureData* pData,
-        const QString& sourceModelName, bool resultComplete = true) const;
+    bool ExportHdf5(const QString& fileName, const StructureData* pData, const QString& sourceModelName,
+                    bool resultComplete = true) const;
 
     /**
      * @brief 仅导出模型与分析配置，不创建 RESULT 分组。
      */
     bool ExportModelHdf5(const QString& fileName, const StructureData* pData,
-        const QString& sourceModelName = QString()) const;
+                         const QString& sourceModelName = QString()) const;
 
     /**
      * @brief 开始 H5/HDF5 结果流式输出。
@@ -75,12 +75,13 @@ public:
      * @return 成功返回 true，失败返回 false。
      */
     bool WriteResultFrame(int domainId, int stepId, int increment, int analysis, double time, const DataFrame& frame);
+    bool WriteResultFrames(int firstDomainId, const std::vector<DataFrame>& frames);
     bool WriteSolverIterationHistory(const std::vector<SolverIterationRecord>& records);
 
     /**
      * @brief 结束 H5/HDF5 结果流式输出。
      */
-    void EndResultStream(bool resultComplete = true);
+    bool EndResultStream(bool resultComplete = true);
 
     /**
      * @brief 从 H5/HDF5 结果文件转换输出 BDF 风格结果文件。
@@ -92,12 +93,11 @@ public:
      * @param [in] elementTypes 需要输出的单元结果类型数组。
      * @return 成功返回 true，失败返回 false。
      */
-    bool ExportBdfResultFromHdf5(const QString& hdf5FileName,
-        const QString& bdfFileName,
-        const std::vector<int>& nodeIds,
-        const std::vector<EnumKeyword::NodeResultType>& nodeTypes,
-        const std::vector<int>& elementIds,
-        const std::vector<EnumKeyword::ElementResultType>& elementTypes) const;
+    bool ExportBdfResultFromHdf5(const QString& hdf5FileName, const QString& bdfFileName,
+                                 const std::vector<int>& nodeIds,
+                                 const std::vector<EnumKeyword::NodeResultType>& nodeTypes,
+                                 const std::vector<int>& elementIds,
+                                 const std::vector<EnumKeyword::ElementResultType>& elementTypes) const;
 
     /**
      * @brief 导入 H5/HDF5 文件。
@@ -117,8 +117,8 @@ public:
     bool OpenResultFile(const QString& fileName, _OUT std::vector<Hdf5ResultFrameInfo>& frames);
     bool ReadResultRanges(_OUT Hdf5ResultRanges& ranges) const;
     bool ReadResultFrame(int frameIndex, _OUT Hdf5ResultFrame& frame) const;
-    bool RestoreLastDynamicState(const QString& fileName, StructureData* pData,
-        _OUT double* time = nullptr, _OUT int* stepId = nullptr);
+    bool RestoreLastDynamicState(const QString& fileName, StructureData* pData, _OUT double* time = nullptr,
+                                 _OUT int* stepId = nullptr);
     bool ReadSolverIterationHistory(_OUT std::vector<SolverIterationRecord>& records) const;
     void CloseResultFile();
 

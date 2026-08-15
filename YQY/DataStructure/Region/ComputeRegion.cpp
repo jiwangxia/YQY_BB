@@ -36,8 +36,7 @@ bool ComputeRegion::ContainsElement(int elementId) const
 
 bool ComputeRegion::Overlaps(const ComputeRegion& other) const
 {
-    return HasIntersection(m_NodeIds, other.m_NodeIds)
-        || HasIntersection(m_ElementIds, other.m_ElementIds);
+    return HasIntersection(m_NodeIds, other.m_NodeIds) || HasIntersection(m_ElementIds, other.m_ElementIds);
 }
 
 void ComputeRegion::MergeFrom(const ComputeRegion& other)

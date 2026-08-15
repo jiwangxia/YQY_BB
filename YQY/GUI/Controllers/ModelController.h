@@ -64,8 +64,8 @@ private:
     struct NodeEdit
     {
         int nodeId = -1;
-        double before[3] = { 0.0, 0.0, 0.0 };
-        double after[3] = { 0.0, 0.0, 0.0 };
+        double before[3] = {0.0, 0.0, 0.0};
+        double after[3] = {0.0, 0.0, 0.0};
     };
 
     struct ModelDocument

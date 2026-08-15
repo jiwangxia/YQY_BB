@@ -8,22 +8,18 @@ void Constraint::SetTimePoints(std::vector<ConstraintTimePoint> points)
 {
     if (points.size() < 2)
     {
-        throw std::invalid_argument(
-            "Constraint TABULAR history requires at least two points");
+        throw std::invalid_argument("Constraint TABULAR history requires at least two points");
     }
 
     for (size_t i = 0; i < points.size(); ++i)
     {
-        if (!std::isfinite(points[i].time)
-            || !std::isfinite(points[i].value))
+        if (!std::isfinite(points[i].time) || !std::isfinite(points[i].value))
         {
-            throw std::invalid_argument(
-                "Constraint TABULAR history contains a non-finite value");
+            throw std::invalid_argument("Constraint TABULAR history contains a non-finite value");
         }
         if (i > 0 && points[i].time <= points[i - 1].time)
         {
-            throw std::invalid_argument(
-                "Constraint TABULAR time values must increase strictly");
+            throw std::invalid_argument("Constraint TABULAR time values must increase strictly");
         }
     }
 
@@ -58,10 +54,8 @@ double Constraint::GetValue(double currentTime, double factor) const
         if (currentTime <= right.time)
         {
             const ConstraintTimePoint& left = m_TimePoints[i - 1];
-            const double ratio =
-                (currentTime - left.time) / (right.time - left.time);
-            const double scale =
-                left.value + ratio * (right.value - left.value);
+            const double ratio = (currentTime - left.time) / (right.time - left.time);
+            const double scale = left.value + ratio * (right.value - left.value);
             return m_Value * scale;
         }
     }

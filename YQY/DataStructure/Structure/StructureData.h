@@ -12,6 +12,7 @@
 #include "DataStructure/Property/Property.h"
 #include "DataStructure/Constraint/Constraint.h"
 #include "DataStructure/Constraint/NonlinearMPCConstraint.h"
+#include "DataStructure/Inertia/RigidBodyInertia.h"
 #include "DataStructure/Load/LoadBase.h"
 #include "DataStructure/Load/Force_Node.h"
 #include "DataStructure/Load/Force_Element.h"
@@ -28,9 +29,9 @@
  */
 struct OutputControl
 {
-    bool m_StreamResult = true;      ///< 动力分析是否按时间步流式写入结果
-    QString m_Hdf5FileName;          ///< H5/HDF5 输出文件名
-    QString m_SourceModelName;       ///< 原始输入模型文件名
+    bool m_StreamResult = true; ///< 动力分析是否按时间步流式写入结果
+    QString m_Hdf5FileName;     ///< H5/HDF5 输出文件名
+    QString m_SourceModelName;  ///< 原始输入模型文件名
 };
 
 /**
@@ -41,22 +42,22 @@ class StructureData : public Base
 public:
     /// @name 数据存储容器
     /// @{
-    std::map<int, std::shared_ptr<Node>>              m_Nodes;        ///< 节点集合
-    std::map<int, std::shared_ptr<ElementBase>>       m_Elements;     ///< 单元集合
-    std::map<int, std::shared_ptr<Material>>          m_Material;     ///< 材料集合
-    std::map<int, std::shared_ptr<SectionBase>>       m_Section;      ///< 截面集合
-    std::map<int, std::shared_ptr<Property>>          m_Property;     ///< 属性集合
-    std::map<int, std::shared_ptr<Constraint>>        m_Constraint;   ///< 约束集合
-    std::map<int, std::shared_ptr<NonlinearMPCConstraint>>
-                                                       m_MPCConstraints; ///< 主从约束集合
-    std::map<int, std::shared_ptr<LoadBase>>          m_Load;         ///< 荷载集合
-    std::map<int, std::shared_ptr<AnalysisStep>>      m_AnalysisStep; ///< 分析步集合
-    std::map<int, std::shared_ptr<ModelSet>>          m_ModelSets;    ///< 节点/单元集合
-    std::map<int, std::shared_ptr<ComputeRegion>>     m_ComputeRegions; ///< 计算区域
+    std::map<int, std::shared_ptr<Node>> m_Nodes;                            ///< 节点集合
+    std::map<int, std::shared_ptr<ElementBase>> m_Elements;                  ///< 单元集合
+    std::map<int, std::shared_ptr<Material>> m_Material;                     ///< 材料集合
+    std::map<int, std::shared_ptr<SectionBase>> m_Section;                   ///< 截面集合
+    std::map<int, std::shared_ptr<Property>> m_Property;                     ///< 属性集合
+    std::map<int, std::shared_ptr<Constraint>> m_Constraint;                 ///< 约束集合
+    std::map<int, std::shared_ptr<NonlinearMPCConstraint>> m_MPCConstraints; ///< 主从约束集合
+    std::map<int, std::shared_ptr<RigidBodyInertia>> m_RigidBodyInertias;    ///< 节点刚体集中惯性集合
+    std::map<int, std::shared_ptr<LoadBase>> m_Load;                         ///< 荷载集合
+    std::map<int, std::shared_ptr<AnalysisStep>> m_AnalysisStep;             ///< 分析步集合
+    std::map<int, std::shared_ptr<ModelSet>> m_ModelSets;                    ///< 节点/单元集合
+    std::map<int, std::shared_ptr<ComputeRegion>> m_ComputeRegions;          ///< 计算区域
     /// @}
 
-    OutputControl m_OutputControl;                                      ///< 输出控制参数
-    AeroManager m_AeroManager;                                          ///< 气动参数管理器
+    OutputControl m_OutputControl; ///< 输出控制参数
+    AeroManager m_AeroManager;     ///< 气动参数管理器
 
     ~StructureData();
 
@@ -105,7 +106,8 @@ public:
      * @return 创建的属性对象
      */
     std::shared_ptr<Property> Create_Property(int id_material, int id_section);
-    void Add_Property(double E, double density, double Area, double* v = nullptr, double* S = nullptr, double* e = nullptr);
+    void Add_Property(double E, double density, double Area, double* v = nullptr, double* S = nullptr,
+                      double* e = nullptr);
     /**
     * @brief 创建约束
     * @param [in] Nodeid 约束节点id集合
@@ -118,19 +120,16 @@ public:
     void Add_Gravity(int direction, int idStep);
     void AddAnalysisStep(const AnalysisStepConfig& config);
 
-    int AddModelSet(const QString& name, ModelSetType type, const std::set<int>& ids,
-        QString* errorMessage = nullptr);
-    int AddComputeRegion(const QString& name, const std::set<int>& nodeIds,
-        const std::set<int>& elementIds, const std::set<int>& sourceSetIds = {},
-        bool enabled = true, QString* errorMessage = nullptr);
-    int AddComputeRegionFromSets(const QString& name, const std::set<int>& sourceSetIds,
-        bool enabled = true, QString* errorMessage = nullptr);
+    int AddModelSet(const QString& name, ModelSetType type, const std::set<int>& ids, QString* errorMessage = nullptr);
+    int AddComputeRegion(const QString& name, const std::set<int>& nodeIds, const std::set<int>& elementIds,
+                         const std::set<int>& sourceSetIds = {}, bool enabled = true, QString* errorMessage = nullptr);
+    int AddComputeRegionFromSets(const QString& name, const std::set<int>& sourceSetIds, bool enabled = true,
+                                 QString* errorMessage = nullptr);
     bool RemoveComputeRegion(int regionId);
     bool RebuildAndMergeComputeRegions(QString* errorMessage = nullptr);
     bool ValidateComputeRegions(QString* errorMessage = nullptr) const;
     void EnsureDefaultAnalysisConfiguration();
     std::vector<int> ResolveAnalysisStepRegionIds(const AnalysisStep& step) const;
-
 
     /**
      * @brief 模型清理（合并重复节点、删除重复单元、删除孤立节点、重新编号）
@@ -153,9 +152,9 @@ public:
      */
     std::shared_ptr<StructureData> CloneForAnalysis(QString* errorMessage = nullptr) const;
     std::shared_ptr<StructureData> CloneRegionForAnalysis(int regionId, int analysisStepId,
-        QString* errorMessage = nullptr) const;
-    std::shared_ptr<StructureData> CloneRegionForAnalysis(int regionId,
-        const std::set<int>& analysisStepIds, QString* errorMessage = nullptr) const;
+                                                          QString* errorMessage = nullptr) const;
+    std::shared_ptr<StructureData> CloneRegionForAnalysis(int regionId, const std::set<int>& analysisStepIds,
+                                                          QString* errorMessage = nullptr) const;
 
 private:
     /**
@@ -180,11 +179,17 @@ private:
     void RenumberAll();
 
 public:
-    Outputter m_Outputter;          // 分析结果输出
+    Outputter m_Outputter; // 分析结果输出
 
     /**
      * @brief 获取输出
      */
-	Outputter& GetOutputter() { return m_Outputter; }
-	const Outputter& GetOutputter() const { return m_Outputter; }
+    Outputter& GetOutputter()
+    {
+        return m_Outputter;
+    }
+    const Outputter& GetOutputter() const
+    {
+        return m_Outputter;
+    }
 };

@@ -1,11 +1,17 @@
 #pragma once
+#include "Base/EmptyOUT.h"
+
 /**
  * @file Outputter.h
  * @brief 分析结果输出管理器 - 用于静力/动力分析结果的缓存和导出
  */
 
 #include <map>
+#include <condition_variable>
+#include <deque>
 #include <memory>
+#include <mutex>
+#include <thread>
 #include <utility>
 #include <vector>
 #include <QString>
@@ -52,15 +58,15 @@ public:
 private:
     double m_vr1 = 0, m_vr2 = 0, m_vr3 = 0;
     double m_ar1 = 0, m_ar2 = 0, m_ar3 = 0;
-    double m_cx = 0, m_cy = 0, m_cz = 0;       // 当前坐标
-    double m_u1 = 0, m_u2 = 0, m_u3 = 0;       // 位移
-    double m_magnitudeU = 0;                   // 位移幅值
-    double m_v1 = 0, m_v2 = 0, m_v3 = 0;       // 速度
-    double m_a1 = 0, m_a2 = 0, m_a3 = 0;       // 加速度
-    double m_ur1 = 0, m_ur2 = 0, m_ur3 = 0;    // 转角
-    double m_f1 = 0, m_f2 = 0, m_f3 = 0;       // 节点内力
-    double m_m1 = 0, m_m2 = 0, m_m3 = 0;       // 节点力矩
-    double m_r1 = 0, m_r2 = 0, m_r3 = 0;       // 节点反力
+    double m_cx = 0, m_cy = 0, m_cz = 0;    // 当前坐标
+    double m_u1 = 0, m_u2 = 0, m_u3 = 0;    // 位移
+    double m_magnitudeU = 0;                // 位移幅值
+    double m_v1 = 0, m_v2 = 0, m_v3 = 0;    // 速度
+    double m_a1 = 0, m_a2 = 0, m_a3 = 0;    // 加速度
+    double m_ur1 = 0, m_ur2 = 0, m_ur3 = 0; // 转角
+    double m_f1 = 0, m_f2 = 0, m_f3 = 0;    // 节点内力
+    double m_m1 = 0, m_m2 = 0, m_m3 = 0;    // 节点力矩
+    double m_r1 = 0, m_r2 = 0, m_r3 = 0;    // 节点反力
 };
 
 /**
@@ -85,16 +91,16 @@ public:
     double GetValue(EnumKeyword::ElementResultType type) const;
 
 private:
-    double m_axialForce = 0.0;                 // 轴力
-    double m_shearY = 0.0;                     // 局部 y 向剪力
-    double m_shearZ = 0.0;                     // 局部 z 向剪力
-    double m_torque = 0.0;                     // 扭矩
-    double m_momentY = 0.0;                    // 绕局部 y 轴弯矩
-    double m_momentZ = 0.0;                    // 绕局部 z 轴弯矩
-    double m_strain = 0.0;                     // 应变
-    double m_initStress = 0.0;                 // 初始应力
-    double m_currentStress = 0.0;              // 当前应力
-    double m_deltaStress = 0.0;                // 应力增量
+    double m_axialForce = 0.0;    // 轴力
+    double m_shearY = 0.0;        // 局部 y 向剪力
+    double m_shearZ = 0.0;        // 局部 z 向剪力
+    double m_torque = 0.0;        // 扭矩
+    double m_momentY = 0.0;       // 绕局部 y 轴弯矩
+    double m_momentZ = 0.0;       // 绕局部 z 轴弯矩
+    double m_strain = 0.0;        // 应变
+    double m_initStress = 0.0;    // 初始应力
+    double m_currentStress = 0.0; // 当前应力
+    double m_deltaStress = 0.0;   // 应力增量
 };
 
 /**
@@ -109,10 +115,22 @@ public:
      * @brief 获取当前帧时间
      * @return 当前时间
      */
-	double GetTime() const { return m_currentTime; }
-    int GetStepId() const { return m_stepId; }
-    int GetIncrement() const { return m_increment; }
-    int GetAnalysisType() const { return m_analysisType; }
+    double GetTime() const
+    {
+        return m_currentTime;
+    }
+    int GetStepId() const
+    {
+        return m_stepId;
+    }
+    int GetIncrement() const
+    {
+        return m_increment;
+    }
+    int GetAnalysisType() const
+    {
+        return m_analysisType;
+    }
 
     /**
      * @brief 获取指定节点的指定结果
@@ -134,21 +152,27 @@ public:
      * @brief 获取当前帧的全部节点结果
      * @return 节点结果只读集合
      */
-	const std::map<int, NodeData>& GetNodeDatas() const { return m_nodeDatas; }
+    const std::map<int, NodeData>& GetNodeDatas() const
+    {
+        return m_nodeDatas;
+    }
 
     /**
      * @brief 获取当前帧的全部单元结果
      * @return 单元结果只读集合
      */
-	const std::map<int, ElementData>& GetElementDatas() const { return m_elementDatas; }
+    const std::map<int, ElementData>& GetElementDatas() const
+    {
+        return m_elementDatas;
+    }
 
 private:
-    double m_currentTime = 0;                         // 当前时间
-    int m_stepId = 0;                                 // 所属分析步编号
-    int m_increment = 0;                              // 分析步内帧序号
-    int m_analysisType = 0;                           // EnumKeyword::StepType
-    std::map<int, NodeData> m_nodeDatas;              // 节点编号 -> 节点结果
-    std::map<int, ElementData> m_elementDatas;        // 单元编号 -> 单元结果
+    double m_currentTime = 0;                  // 当前时间
+    int m_stepId = 0;                          // 所属分析步编号
+    int m_increment = 0;                       // 分析步内帧序号
+    int m_analysisType = 0;                    // EnumKeyword::StepType
+    std::map<int, NodeData> m_nodeDatas;       // 节点编号 -> 节点结果
+    std::map<int, ElementData> m_elementDatas; // 单元编号 -> 单元结果
 };
 
 /**
@@ -174,7 +198,10 @@ public:
      * @brief 设置是否将结果帧保存在内存中
      * @param [in] keep true 表示保存到内存，false 表示只进行流式输出
      */
-	void SetKeepFramesInMemory(bool keep) { m_keepFramesInMemory = keep; }
+    void SetKeepFramesInMemory(bool keep)
+    {
+        m_keepFramesInMemory = keep;
+    }
     void SetResultContext(int stepId, int analysisType);
 
     /**
@@ -183,9 +210,8 @@ public:
      * @param [in] nodeIds 节点编号数组
      * @param [in] types 节点结果类型数组
      */
-    void ExportNodes(const QString& fileName,
-        const std::vector<int>& nodeIds,
-        const std::vector<EnumKeyword::NodeResultType>& types) const;
+    void ExportNodes(const QString& fileName, const std::vector<int>& nodeIds,
+                     const std::vector<EnumKeyword::NodeResultType>& types) const;
 
     /**
      * @brief 导出指定单元的时程结果
@@ -193,9 +219,8 @@ public:
      * @param [in] elementIds 单元编号数组
      * @param [in] types 单元结果类型数组
      */
-    void ExportElements(const QString& fileName,
-        const std::vector<int>& elementIds,
-        const std::vector<EnumKeyword::ElementResultType>& types) const;
+    void ExportElements(const QString& fileName, const std::vector<int>& elementIds,
+                        const std::vector<EnumKeyword::ElementResultType>& types) const;
 
     /**
      * @brief 开始 BDF 风格结果流式输出
@@ -206,11 +231,10 @@ public:
      * @param [in] elementTypes 需要输出的单元结果类型数组
      * @return 成功返回 true，失败返回 false
      */
-    bool BeginBdfResultStream(const QString& fileName,
-        const std::vector<int>& nodeIds,
-        const std::vector<EnumKeyword::NodeResultType>& nodeTypes,
-        const std::vector<int>& elementIds,
-        const std::vector<EnumKeyword::ElementResultType>& elementTypes);
+    bool BeginBdfResultStream(const QString& fileName, const std::vector<int>& nodeIds,
+                              const std::vector<EnumKeyword::NodeResultType>& nodeTypes,
+                              const std::vector<int>& elementIds,
+                              const std::vector<EnumKeyword::ElementResultType>& elementTypes);
 
     /**
      * @brief 结束 BDF 风格结果流式输出
@@ -224,12 +248,13 @@ public:
      * @param [in] sourceModelName 原始模型文件名，可为空
      * @return 成功返回 true，失败返回 false
      */
-    bool BeginHdf5ResultStream(const QString& fileName, StructureData* pData, const QString& sourceModelName = QString());
+    bool BeginHdf5ResultStream(const QString& fileName, StructureData* pData,
+                               const QString& sourceModelName = QString());
 
     /**
      * @brief 结束 H5/HDF5 结果流式输出
      */
-    void EndHdf5ResultStream(bool resultComplete = true);
+    bool EndHdf5ResultStream(bool resultComplete = true);
 
     /**
      * @brief 导出 BDF 模型文件
@@ -246,18 +271,17 @@ public:
      * @param [in] sourceModelName 原始模型文件名，可为空
      * @return 成功返回 true，失败返回 false
      */
-    bool SaveHdf5File(const QString& fileName, StructureData* pData,
-        const QString& sourceModelName = QString(), bool resultComplete = true);
+    bool SaveHdf5File(const QString& fileName, StructureData* pData, const QString& sourceModelName = QString(),
+                      bool resultComplete = true);
 
     /**
      * @brief 从 H5/HDF5 文件转换输出 BDF 风格结果文件
      */
-    bool ExportBdfResultFromHdf5(const QString& hdf5FileName,
-        const QString& bdfFileName,
-        const std::vector<int>& nodeIds,
-        const std::vector<EnumKeyword::NodeResultType>& nodeTypes,
-        const std::vector<int>& elementIds,
-        const std::vector<EnumKeyword::ElementResultType>& elementTypes) const;
+    bool ExportBdfResultFromHdf5(const QString& hdf5FileName, const QString& bdfFileName,
+                                 const std::vector<int>& nodeIds,
+                                 const std::vector<EnumKeyword::NodeResultType>& nodeTypes,
+                                 const std::vector<int>& elementIds,
+                                 const std::vector<EnumKeyword::ElementResultType>& elementTypes) const;
 
     /**
      * @brief 导出模型数据
@@ -270,8 +294,14 @@ public:
      * @brief 获取当前缓存的结果帧数量
      * @return 结果帧数量
      */
-	size_t GetFrameCount() const { return m_DataSet.size(); }
-    const std::vector<DataFrame>& GetFrames() const { return m_DataSet; }
+    size_t GetFrameCount() const
+    {
+        return m_DataSet.size();
+    }
+    const std::vector<DataFrame>& GetFrames() const
+    {
+        return m_DataSet;
+    }
 
     /**
      * @brief 清除所有缓存结果并关闭流式输出
@@ -295,22 +325,40 @@ public:
      * @brief 获取结果数据集
      * @return 结果数据集只读引用
      */
-	const std::vector<DataFrame>& GetDataSet() const { return m_DataSet; }
+    const std::vector<DataFrame>& GetDataSet() const
+    {
+        return m_DataSet;
+    }
 
 private:
+    struct Hdf5FrameBatch
+    {
+        int firstDomainId = 0;
+        std::vector<DataFrame> frames;
+    };
+
     std::vector<SolverIterationRecord> m_solverIterationRecords;
-    std::vector<DataFrame> m_DataSet;                 // 结果帧集合
-    bool m_keepFramesInMemory = true;                 // 是否将结果帧保存到内存
-    std::unique_ptr<QFile> m_streamFile;              // 流式输出文件
-    std::unique_ptr<QTextStream> m_stream;            // 流式输出文本流
-    std::unique_ptr<Hdf5ModelIO> m_hdf5Stream;       // H5/HDF5 流式输出对象
-    int m_hdf5NextDomainId = 1;                       // H5/HDF5 下一帧域编号
-    int m_hdf5NextIncrement = 0;                      // H5/HDF5 下一增量编号
-    int m_currentStepId = 0;                          // 当前输出分析步编号
-    int m_currentAnalysisType = 0;                    // 当前输出分析类型
-    std::vector<int> m_streamNodeIds;                 // 流式输出节点编号
+    std::vector<DataFrame> m_DataSet;                                 // 结果帧集合
+    bool m_keepFramesInMemory = true;                                 // 是否将结果帧保存到内存
+    std::unique_ptr<QFile> m_streamFile;                              // 流式输出文件
+    std::unique_ptr<QTextStream> m_stream;                            // 流式输出文本流
+    std::unique_ptr<Hdf5ModelIO> m_hdf5Stream;                        // H5/HDF5 流式输出对象
+    std::vector<DataFrame> m_hdf5PendingFrames;                       // 等待批量写入的 H5/HDF5 结果帧
+    bool m_hdf5StreamWriteOk = true;                                  // H5/HDF5 流式写入状态
+    bool m_hdf5BackgroundWrite = false;                               // 是否由后台线程写入 H5/HDF5
+    int m_hdf5FrameBatchSize = 1;                                     // 当前结果流采用的批量帧数
+    bool m_hdf5WriterStopping = false;                                // 后台写入线程停止标记
+    std::thread m_hdf5WriterThread;                                   // H5/HDF5 单写线程
+    std::mutex m_hdf5QueueMutex;                                      // H5/HDF5 批次队列互斥量
+    std::condition_variable m_hdf5QueueCondition;                     // H5/HDF5 批次队列状态通知
+    std::deque<Hdf5FrameBatch> m_hdf5WriteQueue;                      // 等待后台写入的结果批次
+    int m_hdf5NextDomainId = 1;                                       // H5/HDF5 下一帧域编号
+    int m_hdf5NextIncrement = 0;                                      // H5/HDF5 下一增量编号
+    int m_currentStepId = 0;                                          // 当前输出分析步编号
+    int m_currentAnalysisType = 0;                                    // 当前输出分析类型
+    std::vector<int> m_streamNodeIds;                                 // 流式输出节点编号
     std::vector<EnumKeyword::NodeResultType> m_streamNodeTypes;       // 流式输出节点结果类型
-    std::vector<int> m_streamElementIds;              // 流式输出单元编号
+    std::vector<int> m_streamElementIds;                              // 流式输出单元编号
     std::vector<EnumKeyword::ElementResultType> m_streamElementTypes; // 流式输出单元结果类型
 
     /**
@@ -330,18 +378,19 @@ private:
     /**
      * @brief 写入结果表头
      */
-    void WriteResultTableHeader(QTextStream& stream,
-        const std::vector<int>& nodeIds,
-        const std::vector<EnumKeyword::NodeResultType>& nodeTypes,
-        const std::vector<int>& elementIds,
-        const std::vector<EnumKeyword::ElementResultType>& elementTypes) const;
+    void WriteResultTableHeader(_OUT QTextStream& stream, const std::vector<int>& nodeIds,
+                                const std::vector<EnumKeyword::NodeResultType>& nodeTypes,
+                                const std::vector<int>& elementIds,
+                                const std::vector<EnumKeyword::ElementResultType>& elementTypes) const;
 
     /**
      * @brief 写入单帧结果
      */
-    void WriteResultFrame(QTextStream& stream, const DataFrame& frame,
-        const std::vector<int>& nodeIds,
-        const std::vector<EnumKeyword::NodeResultType>& nodeTypes,
-        const std::vector<int>& elementIds,
-        const std::vector<EnumKeyword::ElementResultType>& elementTypes) const;
+    void WriteResultFrame(_OUT QTextStream& stream, const DataFrame& frame, const std::vector<int>& nodeIds,
+                          const std::vector<EnumKeyword::NodeResultType>& nodeTypes, const std::vector<int>& elementIds,
+                          const std::vector<EnumKeyword::ElementResultType>& elementTypes) const;
+    bool FlushHdf5ResultFrames();
+    bool StartHdf5Writer();
+    bool StopHdf5Writer();
+    void RunHdf5Writer();
 };

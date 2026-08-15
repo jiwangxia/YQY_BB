@@ -21,14 +21,16 @@ struct ConstraintTimePoint
 class Constraint : public Base
 {
 public:
-	Constraint() {}
+    Constraint()
+    {
+    }
 
-    QString m_Name;          ///< 用户可读名称；为空时界面回退为 Constraint-ID
-    int m_StepId = 0;        ///< 首次生效分析步；0 表示导入的全局/初始约束
+    QString m_Name;   ///< 用户可读名称；为空时界面回退为 Constraint-ID
+    int m_StepId = 0; ///< 首次生效分析步；0 表示导入的全局/初始约束
 
-    std::weak_ptr<Node> m_pNode;  ///< 约束所在节点
-    EnumKeyword::Direction m_Direction = EnumKeyword::Direction::UNKNOWN;  ///< 约束方向
-    double m_Value = 0.0;  ///< 约束位移值
+    std::weak_ptr<Node> m_pNode;                                          ///< 约束所在节点
+    EnumKeyword::Direction m_Direction = EnumKeyword::Direction::UNKNOWN; ///< 约束方向
+    double m_Value = 0.0;                                                 ///< 约束位移值
 
     /**
      * @brief 设置约束自己的分段线性时程

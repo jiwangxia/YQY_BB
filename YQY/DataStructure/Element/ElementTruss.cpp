@@ -83,8 +83,8 @@ void ElementTruss::Get_ke(MatrixXd& ke)
         double materialStiffness = E * A / length_current;
         ke = B_matrix * B_matrix.transpose() * materialStiffness;
 
-        double strain = log(length_current / L0);  // 对数应变
-        m_Stress = E * strain + m_InitStress;      // 真应力，保留单元初始应力
+        double strain = log(length_current / L0); // 对数应变
+        m_Stress = E * strain + m_InitStress;     // 真应力，保留单元初始应力
         double axialForce = m_Stress * A;
 
         m_inforce = B_matrix * axialForce;
@@ -107,7 +107,7 @@ void ElementTruss::Get_ke(MatrixXd& ke)
     }
 }
 
-void ElementTruss::Get_me_Lumped(MatrixXd& me)//集中质量矩阵
+void ElementTruss::Get_me_Lumped(MatrixXd& me) //集中质量矩阵
 {
     auto pProperty = m_pProperty.lock();
     auto pSection = pProperty->m_pSection.lock();
@@ -166,7 +166,7 @@ void ElementTruss::Assemble(const std::vector<double>& damping, _OUT MatrixXd& c
     MatrixXd me;
     Get_L0();
     Get_ke(ke);
-    Get_me_Consistent(me);//一致质量矩阵
+    Get_me_Consistent(me); //一致质量矩阵
 
     ce = damping[0] * me + damping[1] * ke;
 }

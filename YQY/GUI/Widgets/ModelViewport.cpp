@@ -89,24 +89,24 @@ public:
     {
         switch (m_mode)
         {
-        case ModelViewport::InteractionMode::Rotate:
-            if (this->Interactor)
-            {
-                const int* position = this->Interactor->GetEventPosition();
-                this->FindPokedRenderer(position[0], position[1]);
-                m_lastPosition[0] = position[0];
-                m_lastPosition[1] = position[1];
-                m_rotating = true;
-            }
-            break;
-        case ModelViewport::InteractionMode::Pan:
-            vtkInteractorStyleTrackballCamera::OnMiddleButtonDown();
-            break;
-        case ModelViewport::InteractionMode::Zoom:
-            vtkInteractorStyleTrackballCamera::OnRightButtonDown();
-            break;
-        case ModelViewport::InteractionMode::Select:
-            break;
+            case ModelViewport::InteractionMode::Rotate:
+                if (this->Interactor)
+                {
+                    const int* position = this->Interactor->GetEventPosition();
+                    this->FindPokedRenderer(position[0], position[1]);
+                    m_lastPosition[0] = position[0];
+                    m_lastPosition[1] = position[1];
+                    m_rotating = true;
+                }
+                break;
+            case ModelViewport::InteractionMode::Pan:
+                vtkInteractorStyleTrackballCamera::OnMiddleButtonDown();
+                break;
+            case ModelViewport::InteractionMode::Zoom:
+                vtkInteractorStyleTrackballCamera::OnRightButtonDown();
+                break;
+            case ModelViewport::InteractionMode::Select:
+                break;
         }
     }
 
@@ -114,26 +114,25 @@ public:
     {
         switch (m_mode)
         {
-        case ModelViewport::InteractionMode::Rotate:
-            m_rotating = false;
-            break;
-        case ModelViewport::InteractionMode::Pan:
-            vtkInteractorStyleTrackballCamera::OnMiddleButtonUp();
-            if (m_panFinished)
-                m_panFinished();
-            break;
-        case ModelViewport::InteractionMode::Zoom:
-            vtkInteractorStyleTrackballCamera::OnRightButtonUp();
-            break;
-        case ModelViewport::InteractionMode::Select:
-            break;
+            case ModelViewport::InteractionMode::Rotate:
+                m_rotating = false;
+                break;
+            case ModelViewport::InteractionMode::Pan:
+                vtkInteractorStyleTrackballCamera::OnMiddleButtonUp();
+                if (m_panFinished)
+                    m_panFinished();
+                break;
+            case ModelViewport::InteractionMode::Zoom:
+                vtkInteractorStyleTrackballCamera::OnRightButtonUp();
+                break;
+            case ModelViewport::InteractionMode::Select:
+                break;
         }
     }
 
     void OnMouseMove() override
     {
-        if (m_mode == ModelViewport::InteractionMode::Rotate && m_rotating
-            && this->Interactor && this->CurrentRenderer)
+        if (m_mode == ModelViewport::InteractionMode::Rotate && m_rotating && this->Interactor && this->CurrentRenderer)
         {
             const int* position = this->Interactor->GetEventPosition();
             const int dx = position[0] - m_lastPosition[0];
@@ -143,7 +142,7 @@ public:
             if (dx == 0 && dy == 0)
                 return;
 
-            double center[3] = { 0.0, 0.0, 0.0 };
+            double center[3] = {0.0, 0.0, 0.0};
             vtkCamera* camera = this->CurrentRenderer->GetActiveCamera();
             if (!camera || !m_rotationCenterProvider || !m_rotationCenterProvider(center))
                 return;
@@ -154,20 +153,19 @@ public:
             camera->GetPosition(cameraPosition);
             camera->GetFocalPoint(focalPoint);
             camera->GetViewUp(viewUp);
-            double positionOffset[3] = { cameraPosition[0] - center[0],
-                cameraPosition[1] - center[1], cameraPosition[2] - center[2] };
-            double focalOffset[3] = { focalPoint[0] - center[0],
-                focalPoint[1] - center[1], focalPoint[2] - center[2] };
+            double positionOffset[3] = {cameraPosition[0] - center[0], cameraPosition[1] - center[1],
+                                        cameraPosition[2] - center[2]};
+            double focalOffset[3] = {focalPoint[0] - center[0], focalPoint[1] - center[1], focalPoint[2] - center[2]};
 
             const double azimuth = -static_cast<double>(dx) * 0.25;
             rotateVector(positionOffset, viewUp, azimuth, positionOffset);
             rotateVector(focalOffset, viewUp, azimuth, focalOffset);
 
-            double projection[3] = { focalOffset[0] - positionOffset[0],
-                focalOffset[1] - positionOffset[1], focalOffset[2] - positionOffset[2] };
-            double right[3] = { projection[1] * viewUp[2] - projection[2] * viewUp[1],
-                projection[2] * viewUp[0] - projection[0] * viewUp[2],
-                projection[0] * viewUp[1] - projection[1] * viewUp[0] };
+            double projection[3] = {focalOffset[0] - positionOffset[0], focalOffset[1] - positionOffset[1],
+                                    focalOffset[2] - positionOffset[2]};
+            double right[3] = {projection[1] * viewUp[2] - projection[2] * viewUp[1],
+                               projection[2] * viewUp[0] - projection[0] * viewUp[2],
+                               projection[0] * viewUp[1] - projection[1] * viewUp[0]};
             if (normalizeVector(right))
             {
                 const double elevation = static_cast<double>(dy) * 0.25;
@@ -177,9 +175,8 @@ public:
             }
 
             camera->SetPosition(center[0] + positionOffset[0], center[1] + positionOffset[1],
-                center[2] + positionOffset[2]);
-            camera->SetFocalPoint(center[0] + focalOffset[0], center[1] + focalOffset[1],
-                center[2] + focalOffset[2]);
+                                center[2] + positionOffset[2]);
+            camera->SetFocalPoint(center[0] + focalOffset[0], center[1] + focalOffset[1], center[2] + focalOffset[2]);
             camera->SetViewUp(viewUp);
             camera->OrthogonalizeViewUp();
             this->CurrentRenderer->ResetCameraClippingRange();
@@ -204,38 +201,37 @@ public:
 private:
     static bool normalizeVector(double value[3])
     {
-        const double length = std::sqrt(value[0] * value[0]
-            + value[1] * value[1] + value[2] * value[2]);
+        const double length = std::sqrt(value[0] * value[0] + value[1] * value[1] + value[2] * value[2]);
         if (!std::isfinite(length) || length <= 1.0e-12)
             return false;
-        value[0] /= length; value[1] /= length; value[2] /= length;
+        value[0] /= length;
+        value[1] /= length;
+        value[2] /= length;
         return true;
     }
 
-    static void rotateVector(const double input[3], const double rawAxis[3],
-        double degrees, double output[3])
+    static void rotateVector(const double input[3], const double rawAxis[3], double degrees, double output[3])
     {
-        double axis[3] = { rawAxis[0], rawAxis[1], rawAxis[2] };
+        double axis[3] = {rawAxis[0], rawAxis[1], rawAxis[2]};
         if (!normalizeVector(axis))
             return;
         const double radians = degrees * 3.14159265358979323846 / 180.0;
         const double cosine = std::cos(radians);
         const double sine = std::sin(radians);
         const double axisDot = axis[0] * input[0] + axis[1] * input[1] + axis[2] * input[2];
-        const double crossValue[3] = { axis[1] * input[2] - axis[2] * input[1],
-            axis[2] * input[0] - axis[0] * input[2],
-            axis[0] * input[1] - axis[1] * input[0] };
-        const double result[3] = {
-            input[0] * cosine + crossValue[0] * sine + axis[0] * axisDot * (1.0 - cosine),
-            input[1] * cosine + crossValue[1] * sine + axis[1] * axisDot * (1.0 - cosine),
-            input[2] * cosine + crossValue[2] * sine + axis[2] * axisDot * (1.0 - cosine)
-        };
-        output[0] = result[0]; output[1] = result[1]; output[2] = result[2];
+        const double crossValue[3] = {axis[1] * input[2] - axis[2] * input[1], axis[2] * input[0] - axis[0] * input[2],
+                                      axis[0] * input[1] - axis[1] * input[0]};
+        const double result[3] = {input[0] * cosine + crossValue[0] * sine + axis[0] * axisDot * (1.0 - cosine),
+                                  input[1] * cosine + crossValue[1] * sine + axis[1] * axisDot * (1.0 - cosine),
+                                  input[2] * cosine + crossValue[2] * sine + axis[2] * axisDot * (1.0 - cosine)};
+        output[0] = result[0];
+        output[1] = result[1];
+        output[2] = result[2];
     }
 
     ModelViewport::InteractionMode m_mode = ModelViewport::InteractionMode::Select;
     bool m_rotating = false;
-    int m_lastPosition[2] = { 0, 0 };
+    int m_lastPosition[2] = {0, 0};
     std::function<bool(double*)> m_rotationCenterProvider;
     std::function<void()> m_cameraChanged;
     std::function<void()> m_panFinished;
@@ -256,24 +252,27 @@ struct RenderColors
 RenderColors colorsForTheme(int themeIndex)
 {
     if (themeIndex == 1)
-        return { { 0.063, 0.035, 0.106 }, { 0.063, 0.035, 0.106 }, { 0.50, 0.38, 1.00 }, { 0.94, 0.36, 1.00 }, { 0.55, 0.40, 0.95 }, false };
+        return {{0.063, 0.035, 0.106}, {0.063, 0.035, 0.106}, {0.50, 0.38, 1.00},
+                {0.94, 0.36, 1.00},    {0.55, 0.40, 0.95},    false};
     if (themeIndex == 2)
-        return { { 0.051, 0.145, 0.169 }, { 0.051, 0.145, 0.169 }, { 0.27, 0.66, 1.00 }, { 0.33, 0.88, 0.76 }, { 0.20, 0.63, 0.72 }, false };
+        return {{0.051, 0.145, 0.169}, {0.051, 0.145, 0.169}, {0.27, 0.66, 1.00},
+                {0.33, 0.88, 0.76},    {0.20, 0.63, 0.72},    false};
     if (themeIndex == 3)
     {
         // FEM uses #FFFFFF -> #EEF6FF in its VTK renderer. Dark geometry and
         // blue nodes preserve strong contrast against both ends of the gradient.
-        return { { 1.0, 1.0, 1.0 }, { 0.933, 0.965, 1.0 },
-            { 0.114, 0.169, 0.227 }, { 0.184, 0.502, 0.929 }, { 0.31, 0.52, 0.72 }, true };
+        return {{1.0, 1.0, 1.0},       {0.933, 0.965, 1.0}, {0.114, 0.169, 0.227},
+                {0.184, 0.502, 0.929}, {0.31, 0.52, 0.72},  true};
     }
-    return { { 0.043, 0.075, 0.106 }, { 0.043, 0.075, 0.106 }, { 0.31, 0.55, 1.00 }, { 0.19, 0.78, 0.85 }, { 0.28, 0.48, 0.68 }, false };
+    return {{0.043, 0.075, 0.106}, {0.043, 0.075, 0.106}, {0.31, 0.55, 1.00},
+            {0.19, 0.78, 0.85},    {0.28, 0.48, 0.68},    false};
 }
 
 using SolidVector3 = std::array<double, 3>;
 
 SolidVector3 subtract(const SolidVector3& first, const SolidVector3& second)
 {
-    return { first[0] - second[0], first[1] - second[1], first[2] - second[2] };
+    return {first[0] - second[0], first[1] - second[1], first[2] - second[2]};
 }
 
 double dot(const SolidVector3& first, const SolidVector3& second)
@@ -283,9 +282,8 @@ double dot(const SolidVector3& first, const SolidVector3& second)
 
 SolidVector3 cross(const SolidVector3& first, const SolidVector3& second)
 {
-    return { first[1] * second[2] - first[2] * second[1],
-        first[2] * second[0] - first[0] * second[2],
-        first[0] * second[1] - first[1] * second[0] };
+    return {first[1] * second[2] - first[2] * second[1], first[2] * second[0] - first[0] * second[2],
+            first[0] * second[1] - first[1] * second[0]};
 }
 
 bool normalize(SolidVector3& value)
@@ -317,19 +315,19 @@ std::vector<SectionPoint> buildSectionContour(const std::shared_ptr<SectionBase>
     {
         const double halfWidth = 0.5 * rectangle->m_Width * displayScale;
         const double halfHeight = 0.5 * rectangle->m_Height * displayScale;
-        if (std::isfinite(halfWidth) && std::isfinite(halfHeight)
-            && halfWidth > epsilon && halfHeight > epsilon)
+        if (std::isfinite(halfWidth) && std::isfinite(halfHeight) && halfWidth > epsilon && halfHeight > epsilon)
         {
-            return { { halfWidth, halfHeight }, { -halfWidth, halfHeight },
-                { -halfWidth, -halfHeight }, { halfWidth, -halfHeight } };
+            return {{halfWidth, halfHeight},
+                    {-halfWidth, halfHeight},
+                    {-halfWidth, -halfHeight},
+                    {halfWidth, -halfHeight}};
         }
         return contour;
     }
 
     const auto ice = std::dynamic_pointer_cast<Section_Ice>(section);
     double radius = section->m_Radius;
-    if ((!std::isfinite(radius) || radius <= epsilon)
-        && std::isfinite(section->m_Area) && section->m_Area > epsilon)
+    if ((!std::isfinite(radius) || radius <= epsilon) && std::isfinite(section->m_Area) && section->m_Area > epsilon)
     {
         radius = std::sqrt(section->m_Area / pi);
     }
@@ -340,8 +338,7 @@ std::vector<SectionPoint> buildSectionContour(const std::shared_ptr<SectionBase>
     contour.reserve(segmentCount);
     for (int index = 0; index < segmentCount; ++index)
     {
-        const double angle = 2.0 * pi * static_cast<double>(index)
-            / static_cast<double>(segmentCount);
+        const double angle = 2.0 * pi * static_cast<double>(index) / static_cast<double>(segmentCount);
         double outerRadius = radius;
         if (ice && ice->m_IceThickness > 0.0 && ice->m_IceHalfAngle > epsilon)
         {
@@ -352,12 +349,12 @@ std::vector<SectionPoint> buildSectionContour(const std::shared_ptr<SectionBase>
             if (std::abs(delta) <= ice->m_IceHalfAngle)
             {
                 const double ratio = delta / ice->m_IceHalfAngle;
-                outerRadius += ice->m_IceThickness
-                    * std::pow(std::max(0.0, std::cos(ratio * pi * 0.5)), ice->m_IceShapeFactor);
+                outerRadius +=
+                    ice->m_IceThickness * std::pow(std::max(0.0, std::cos(ratio * pi * 0.5)), ice->m_IceShapeFactor);
             }
         }
         outerRadius *= displayScale;
-        contour.push_back({ outerRadius * std::cos(angle), outerRadius * std::sin(angle) });
+        contour.push_back({outerRadius * std::cos(angle), outerRadius * std::sin(angle)});
     }
     return contour;
 }
@@ -407,16 +404,22 @@ ModelViewport::ModelViewport(QWidget* parent)
     auto interactionStyle = vtkSmartPointer<ModeInteractorStyle>::New();
     interactionStyle->SetDefaultRenderer(m_renderer);
     interactionStyle->SetMotionFactor(8.0);
-    interactionStyle->SetRotationCenterProvider([this](double* center) {
-        return ensureRotationCenter(center);
-    });
-    interactionStyle->SetCameraChangedCallback([this]() {
-        updateRotationCenterIndicator();
-        updateAdaptiveLabels();
-    });
-    interactionStyle->SetPanFinishedCallback([this]() {
-        updateRotationCenterToViewportCenter(true);
-    });
+    interactionStyle->SetRotationCenterProvider(
+        [this](double* center)
+        {
+            return ensureRotationCenter(center);
+        });
+    interactionStyle->SetCameraChangedCallback(
+        [this]()
+        {
+            updateRotationCenterIndicator();
+            updateAdaptiveLabels();
+        });
+    interactionStyle->SetPanFinishedCallback(
+        [this]()
+        {
+            updateRotationCenterToViewportCenter(true);
+        });
     m_interactorStyle = interactionStyle;
     m_renderWindow->GetInteractor()->SetInteractorStyle(interactionStyle);
 
@@ -517,8 +520,7 @@ ModelViewport::ModelViewport(QWidget* parent)
     m_emptyStateIconLabel->setAlignment(Qt::AlignCenter);
     m_emptyStateIconLabel->setScaledContents(true);
     m_emptyStateIconLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
-    m_emptyStateLabel = new QLabel(
-        QStringLiteral("尚未加载模型\n\n导入模型后，真实几何与计算结果将在此处显示"), this);
+    m_emptyStateLabel = new QLabel(QStringLiteral("尚未加载模型\n\n导入模型后，真实几何与计算结果将在此处显示"), this);
     m_emptyStateLabel->setObjectName(QStringLiteral("viewportEmptyLabel"));
     m_emptyStateLabel->setAlignment(Qt::AlignCenter);
     m_emptyStateLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
@@ -581,8 +583,7 @@ void ModelViewport::displayModel(const std::shared_ptr<StructureData>& structure
         const vtkIdType pointId = points->InsertNextPoint(node->m_X, node->m_Y, node->m_Z);
         pointIds.emplace(node.get(), pointId);
         m_nodePointIds.emplace(nodeId, pointId);
-        m_originalNodeCoordinates.emplace(nodeId,
-            std::array<double, 3>{ node->m_X, node->m_Y, node->m_Z });
+        m_originalNodeCoordinates.emplace(nodeId, std::array<double, 3>{node->m_X, node->m_Y, node->m_Z});
         m_pointNodeIds.push_back(nodeId);
     }
 
@@ -610,7 +611,7 @@ void ModelViewport::displayModel(const std::shared_ptr<StructureData>& structure
 
         lines->InsertNextCell(static_cast<vtkIdType>(connectivity.size()), connectivity.data());
         m_cellElementIds.push_back(elementId);
-        double center[3] = { 0.0, 0.0, 0.0 };
+        double center[3] = {0.0, 0.0, 0.0};
         for (const vtkIdType pointId : connectivity)
         {
             double point[3] = {};
@@ -623,7 +624,7 @@ void ModelViewport::displayModel(const std::shared_ptr<StructureData>& structure
         center[0] *= inverseCount;
         center[1] *= inverseCount;
         center[2] *= inverseCount;
-        m_elementLabelPositions.push_back({ center[0], center[1], center[2] });
+        m_elementLabelPositions.push_back({center[0], center[1], center[2]});
     }
 
     vtkNew<vtkCellArray> vertices;
@@ -807,8 +808,7 @@ void ModelViewport::updateNodeDisplaySize()
     const int displaySize = m_nodeSize;
     m_nodeActor->GetProperty()->SetPointSize(static_cast<float>(displaySize));
     if (m_selectionActor)
-        m_selectionActor->GetProperty()->SetPointSize(
-            static_cast<float>(qMax(12, displaySize + 4)));
+        m_selectionActor->GetProperty()->SetPointSize(static_cast<float>(qMax(12, displaySize + 4)));
 }
 
 void ModelViewport::resetCamera()
@@ -828,9 +828,7 @@ void ModelViewport::resetCamera()
     m_renderer->ResetCameraClippingRange();
     double bounds[6] = {};
     m_renderer->ComputeVisiblePropBounds(bounds);
-    m_rotationCenter = { (bounds[0] + bounds[1]) * 0.5,
-        (bounds[2] + bounds[3]) * 0.5,
-        (bounds[4] + bounds[5]) * 0.5 };
+    m_rotationCenter = {(bounds[0] + bounds[1]) * 0.5, (bounds[2] + bounds[3]) * 0.5, (bounds[4] + bounds[5]) * 0.5};
     m_rotationCenterValid = true;
     m_rotationCenterSnapped = false;
     updateRotationCenterIndicator();
@@ -848,10 +846,18 @@ void ModelViewport::setInteractionMode(InteractionMode mode)
 
     switch (mode)
     {
-    case InteractionMode::Select: setCursor(Qt::ArrowCursor); break;
-    case InteractionMode::Rotate: setCursor(Qt::SizeAllCursor); break;
-    case InteractionMode::Pan: setCursor(Qt::OpenHandCursor); break;
-    case InteractionMode::Zoom: setCursor(Qt::SizeVerCursor); break;
+        case InteractionMode::Select:
+            setCursor(Qt::ArrowCursor);
+            break;
+        case InteractionMode::Rotate:
+            setCursor(Qt::SizeAllCursor);
+            break;
+        case InteractionMode::Pan:
+            setCursor(Qt::OpenHandCursor);
+            break;
+        case InteractionMode::Zoom:
+            setCursor(Qt::SizeVerCursor);
+            break;
     }
     if (mode == InteractionMode::Select)
         m_rotationCenterIndicator->hide();
@@ -871,11 +877,7 @@ void ModelViewport::setStandardView(StandardView view)
 
     double bounds[6] = {};
     m_renderer->ComputeVisiblePropBounds(bounds);
-    double center[3] = {
-        (bounds[0] + bounds[1]) * 0.5,
-        (bounds[2] + bounds[3]) * 0.5,
-        (bounds[4] + bounds[5]) * 0.5
-    };
+    double center[3] = {(bounds[0] + bounds[1]) * 0.5, (bounds[2] + bounds[3]) * 0.5, (bounds[4] + bounds[5]) * 0.5};
     if (m_rotationCenterValid)
     {
         center[0] = m_rotationCenter[0];
@@ -884,7 +886,7 @@ void ModelViewport::setStandardView(StandardView view)
     }
     else
     {
-        m_rotationCenter = { center[0], center[1], center[2] };
+        m_rotationCenter = {center[0], center[1], center[2]};
         m_rotationCenterValid = true;
         m_rotationCenterSnapped = false;
     }
@@ -893,46 +895,57 @@ void ModelViewport::setStandardView(StandardView view)
     const double dz = bounds[5] - bounds[4];
     const double distance = qMax(1.0, std::sqrt(dx * dx + dy * dy + dz * dz) * 2.0);
 
-    double direction[3] = { 0.0, 0.0, 1.0 };
-    double viewUp[3] = { 0.0, 1.0, 0.0 };
+    double direction[3] = {0.0, 0.0, 1.0};
+    double viewUp[3] = {0.0, 1.0, 0.0};
     switch (view)
     {
-    case StandardView::Front:
-        direction[1] = -1.0; direction[2] = 0.0;
-        viewUp[1] = 0.0; viewUp[2] = 1.0;
-        break;
-    case StandardView::Back:
-        direction[1] = 1.0; direction[2] = 0.0;
-        viewUp[1] = 0.0; viewUp[2] = 1.0;
-        break;
-    case StandardView::Left:
-        direction[0] = -1.0; direction[2] = 0.0;
-        viewUp[1] = 0.0; viewUp[2] = 1.0;
-        break;
-    case StandardView::Right:
-        direction[0] = 1.0; direction[2] = 0.0;
-        viewUp[1] = 0.0; viewUp[2] = 1.0;
-        break;
-    case StandardView::Top:
-        break;
-    case StandardView::Bottom:
-        direction[2] = -1.0;
-        break;
-    case StandardView::Isometric:
-        direction[0] = 1.0; direction[1] = 1.0; direction[2] = 1.0;
-        {
-            const double invLength = 1.0 / std::sqrt(3.0);
-            direction[0] *= invLength; direction[1] *= invLength; direction[2] *= invLength;
-        }
-        break;
+        case StandardView::Front:
+            direction[1] = -1.0;
+            direction[2] = 0.0;
+            viewUp[1] = 0.0;
+            viewUp[2] = 1.0;
+            break;
+        case StandardView::Back:
+            direction[1] = 1.0;
+            direction[2] = 0.0;
+            viewUp[1] = 0.0;
+            viewUp[2] = 1.0;
+            break;
+        case StandardView::Left:
+            direction[0] = -1.0;
+            direction[2] = 0.0;
+            viewUp[1] = 0.0;
+            viewUp[2] = 1.0;
+            break;
+        case StandardView::Right:
+            direction[0] = 1.0;
+            direction[2] = 0.0;
+            viewUp[1] = 0.0;
+            viewUp[2] = 1.0;
+            break;
+        case StandardView::Top:
+            break;
+        case StandardView::Bottom:
+            direction[2] = -1.0;
+            break;
+        case StandardView::Isometric:
+            direction[0] = 1.0;
+            direction[1] = 1.0;
+            direction[2] = 1.0;
+            {
+                const double invLength = 1.0 / std::sqrt(3.0);
+                direction[0] *= invLength;
+                direction[1] *= invLength;
+                direction[2] *= invLength;
+            }
+            break;
     }
 
     vtkCamera* camera = m_renderer->GetActiveCamera();
     camera->ParallelProjectionOn();
     camera->SetFocalPoint(center);
-    camera->SetPosition(center[0] + direction[0] * distance,
-        center[1] + direction[1] * distance,
-        center[2] + direction[2] * distance);
+    camera->SetPosition(center[0] + direction[0] * distance, center[1] + direction[1] * distance,
+                        center[2] + direction[2] * distance);
     camera->SetViewUp(viewUp);
     camera->OrthogonalizeViewUp();
     m_renderer->ResetCameraClippingRange();
@@ -958,8 +971,8 @@ bool ModelViewport::updateNodePosition(int nodeId, double x, double y, double z)
     return true;
 }
 
-bool ModelViewport::displayResultFrame(const Hdf5ResultFrame& frame, ResultField field,
-    double deformationScale, bool showOriginal)
+bool ModelViewport::displayResultFrame(const Hdf5ResultFrame& frame, ResultField field, double deformationScale,
+                                       bool showOriginal)
 {
     if (!hasModel() || frame.nodes.empty())
         return false;
@@ -970,22 +983,13 @@ bool ModelViewport::displayResultFrame(const Hdf5ResultFrame& frame, ResultField
     for (const Hdf5NodalResult& result : frame.nodes)
     {
         nodalResults.emplace(result.id, &result);
-        maximumDisplacement = std::max(maximumDisplacement,
-            std::sqrt(result.displacement[0] * result.displacement[0]
-                + result.displacement[1] * result.displacement[1]
-                + result.displacement[2] * result.displacement[2]));
+        maximumDisplacement = std::max(maximumDisplacement, std::sqrt(result.displacement[0] * result.displacement[0] +
+                                                                      result.displacement[1] * result.displacement[1] +
+                                                                      result.displacement[2] * result.displacement[2]));
     }
 
     if (deformationScale <= 0.0)
-    {
-        double bounds[6] = {};
-        m_originalElementData->GetBounds(bounds);
-        const double modelSize = std::max({ bounds[1] - bounds[0], bounds[3] - bounds[2],
-            bounds[5] - bounds[4], 1.0e-12 });
-        deformationScale = maximumDisplacement > 1.0e-30
-            ? modelSize * 0.10 / maximumDisplacement : 1.0;
-        deformationScale = std::clamp(deformationScale, 1.0e-6, 1.0e6);
-    }
+        deformationScale = automaticDeformationScale(maximumDisplacement);
     m_activeDeformationScale = deformationScale;
 
     auto pointScalars = vtkSmartPointer<vtkDoubleArray>::New();
@@ -1008,20 +1012,27 @@ bool ModelViewport::displayResultFrame(const Hdf5ResultFrame& frame, ResultField
         if (result)
             std::copy_n(result->displacement, 3, displacement);
         m_points->SetPoint(pointId, original[0] + displacement[0] * deformationScale,
-            original[1] + displacement[1] * deformationScale,
-            original[2] + displacement[2] * deformationScale);
+                           original[1] + displacement[1] * deformationScale,
+                           original[2] + displacement[2] * deformationScale);
 
         double scalar = 0.0;
         switch (field)
         {
-        case ResultField::DisplacementMagnitude:
-            scalar = std::sqrt(displacement[0] * displacement[0]
-                + displacement[1] * displacement[1] + displacement[2] * displacement[2]);
-            break;
-        case ResultField::DisplacementX: scalar = displacement[0]; break;
-        case ResultField::DisplacementY: scalar = displacement[1]; break;
-        case ResultField::DisplacementZ: scalar = displacement[2]; break;
-        default: break;
+            case ResultField::DisplacementMagnitude:
+                scalar = std::sqrt(displacement[0] * displacement[0] + displacement[1] * displacement[1] +
+                                   displacement[2] * displacement[2]);
+                break;
+            case ResultField::DisplacementX:
+                scalar = displacement[0];
+                break;
+            case ResultField::DisplacementY:
+                scalar = displacement[1];
+                break;
+            case ResultField::DisplacementZ:
+                scalar = displacement[2];
+                break;
+            default:
+                break;
         }
         pointScalars->SetValue(pointId, scalar);
         if (field <= ResultField::DisplacementZ && result)
@@ -1058,10 +1069,17 @@ bool ModelViewport::displayResultFrame(const Hdf5ResultFrame& frame, ResultField
             {
                 switch (field)
                 {
-                case ResultField::AxialForce: scalar = it->second->axialForce; break;
-                case ResultField::Stress: scalar = it->second->currentStress; break;
-                case ResultField::Strain: scalar = it->second->strain; break;
-                default: break;
+                    case ResultField::AxialForce:
+                        scalar = it->second->axialForce;
+                        break;
+                    case ResultField::Stress:
+                        scalar = it->second->currentStress;
+                        break;
+                    case ResultField::Strain:
+                        scalar = it->second->strain;
+                        break;
+                    default:
+                        break;
                 }
                 scalarMinimum = std::min(scalarMinimum, scalar);
                 scalarMaximum = std::max(scalarMaximum, scalar);
@@ -1093,7 +1111,7 @@ bool ModelViewport::displayResultFrame(const Hdf5ResultFrame& frame, ResultField
     m_elementMapper->ScalarVisibilityOn();
     m_nodeMapper->SetLookupTable(m_resultLookupTable);
     m_nodeMapper->SetScalarRange(scalarMinimum, scalarMaximum);
-    const char* titles[] = { "|U|", "U-X", "U-Y", "U-Z", "Axial force", "Stress", "Strain" };
+    const char* titles[] = {"|U|", "U-X", "U-Y", "U-Z", "Axial force", "Stress", "Strain"};
     m_resultScalarBar->SetTitle(titles[static_cast<int>(field)]);
     m_resultScalarBar->SetVisibility(true);
     m_originalElementActor->SetVisibility(showOriginal);
@@ -1163,10 +1181,28 @@ double ModelViewport::activeDeformationScale() const
     return m_activeDeformationScale;
 }
 
+double ModelViewport::automaticDeformationScale(double maximumDisplacement) const
+{
+    if (!std::isfinite(maximumDisplacement) || maximumDisplacement <= 1.0e-30)
+        return 1.0;
+
+    double bounds[6] = {};
+    m_originalElementData->GetBounds(bounds);
+    const double modelSize = std::max({bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4], 1.0e-12});
+
+    // Keep the largest displacement near 5% of the model extent. A dynamic
+    // result can finish near its equilibrium position, so callers should pass
+    // the maximum over the complete result history rather than the last frame.
+    constexpr double targetExtentRatio = 0.05;
+    constexpr double minimumAutomaticScale = 0.01;
+    constexpr double maximumAutomaticScale = 10.0;
+    return std::clamp(modelSize * targetExtentRatio / maximumDisplacement, minimumAutomaticScale,
+                      maximumAutomaticScale);
+}
+
 void ModelViewport::updateElementLabelPositions()
 {
-    m_elementLabelPositions.resize(
-        static_cast<std::size_t>(m_elementData->GetNumberOfCells()));
+    m_elementLabelPositions.resize(static_cast<std::size_t>(m_elementData->GetNumberOfCells()));
 
     vtkNew<vtkIdList> pointIds;
     for (vtkIdType cellId = 0; cellId < m_elementData->GetNumberOfCells(); ++cellId)
@@ -1175,7 +1211,7 @@ void ModelViewport::updateElementLabelPositions()
         if (pointIds->GetNumberOfIds() == 0)
             continue;
 
-        double center[3] = { 0.0, 0.0, 0.0 };
+        double center[3] = {0.0, 0.0, 0.0};
         for (vtkIdType index = 0; index < pointIds->GetNumberOfIds(); ++index)
         {
             double point[3] = {};
@@ -1185,10 +1221,8 @@ void ModelViewport::updateElementLabelPositions()
             center[2] += point[2];
         }
         const double inverseCount = 1.0 / static_cast<double>(pointIds->GetNumberOfIds());
-        m_elementLabelPositions[static_cast<std::size_t>(cellId)] = {
-            center[0] * inverseCount, center[1] * inverseCount,
-            center[2] * inverseCount
-        };
+        m_elementLabelPositions[static_cast<std::size_t>(cellId)] = {center[0] * inverseCount, center[1] * inverseCount,
+                                                                     center[2] * inverseCount};
     }
     updateAdaptiveLabels();
 }
@@ -1207,18 +1241,16 @@ void ModelViewport::updateAdaptiveLabels()
     if (!rendererSize || rendererSize[0] <= 0 || rendererSize[1] <= 0)
         return;
     const double gridSize = std::max(36.0, 52.0 * devicePixelRatioF());
-    const int gridColumnCount = std::max(1,
-        static_cast<int>(std::ceil(rendererSize[0] / gridSize)));
+    const int gridColumnCount = std::max(1, static_cast<int>(std::ceil(rendererSize[0] / gridSize)));
 
-    auto projectToGrid = [this, rendererSize, gridSize, gridColumnCount](
-        const double world[3], long long& gridKey) {
+    auto projectToGrid = [this, rendererSize, gridSize, gridColumnCount](const double world[3], long long& gridKey)
+    {
         m_renderer->SetWorldPoint(world[0], world[1], world[2], 1.0);
         m_renderer->WorldToDisplay();
         const double* display = m_renderer->GetDisplayPoint();
-        if (!display || !std::isfinite(display[0]) || !std::isfinite(display[1])
-            || !std::isfinite(display[2]) || display[2] < 0.0 || display[2] > 1.0
-            || display[0] < 0.0 || display[0] >= rendererSize[0]
-            || display[1] < 0.0 || display[1] >= rendererSize[1])
+        if (!display || !std::isfinite(display[0]) || !std::isfinite(display[1]) || !std::isfinite(display[2]) ||
+            display[2] < 0.0 || display[2] > 1.0 || display[0] < 0.0 || display[0] >= rendererSize[0] ||
+            display[1] < 0.0 || display[1] >= rendererSize[1])
         {
             return false;
         }
@@ -1241,8 +1273,8 @@ void ModelViewport::updateAdaptiveLabels()
         if (m_adaptiveNodeLabels)
             occupiedCells.reserve(maximumLabelsPerType);
 
-        const vtkIdType pointCount = std::min<vtkIdType>(m_points->GetNumberOfPoints(),
-            static_cast<vtkIdType>(m_pointNodeIds.size()));
+        const vtkIdType pointCount =
+            std::min<vtkIdType>(m_points->GetNumberOfPoints(), static_cast<vtkIdType>(m_pointNodeIds.size()));
         for (vtkIdType pointId = 0; pointId < pointCount; ++pointId)
         {
             double world[3] = {};
@@ -1250,15 +1282,13 @@ void ModelViewport::updateAdaptiveLabels()
             if (m_adaptiveNodeLabels)
             {
                 long long gridKey = 0;
-                if (!projectToGrid(world, gridKey)
-                    || !occupiedCells.insert(gridKey).second
-                    || static_cast<int>(occupiedCells.size()) > maximumLabelsPerType)
+                if (!projectToGrid(world, gridKey) || !occupiedCells.insert(gridKey).second ||
+                    static_cast<int>(occupiedCells.size()) > maximumLabelsPerType)
                     continue;
             }
             const vtkIdType labelPointId = labelPoints->InsertNextPoint(world);
             labelVertices->InsertNextCell(1, &labelPointId);
-            labelIds->InsertNextValue(
-                m_pointNodeIds[static_cast<std::size_t>(pointId)]);
+            labelIds->InsertNextValue(m_pointNodeIds[static_cast<std::size_t>(pointId)]);
         }
         m_nodeLabelData->SetPoints(labelPoints);
         m_nodeLabelData->SetVerts(labelVertices);
@@ -1278,13 +1308,12 @@ void ModelViewport::updateAdaptiveLabels()
         std::unordered_set<long long> occupiedCells;
         occupiedCells.reserve(maximumLabelsPerType);
 
-        const std::size_t candidateCount = std::min(
-            m_elementLabelPositions.size(), m_cellElementIds.size());
-        for (std::size_t index = 0; index < candidateCount
-            && static_cast<int>(occupiedCells.size()) < maximumLabelsPerType; ++index)
+        const std::size_t candidateCount = std::min(m_elementLabelPositions.size(), m_cellElementIds.size());
+        for (std::size_t index = 0;
+             index < candidateCount && static_cast<int>(occupiedCells.size()) < maximumLabelsPerType; ++index)
         {
             const auto& position = m_elementLabelPositions[index];
-            const double world[3] = { position[0], position[1], position[2] };
+            const double world[3] = {position[0], position[1], position[2]};
             long long gridKey = 0;
             if (!projectToGrid(world, gridKey) || !occupiedCells.insert(gridKey).second)
                 continue;
@@ -1313,9 +1342,7 @@ void ModelViewport::rebuildSolidGeometry()
     solidPoints->SetDataTypeToDouble();
     vtkNew<vtkCellArray> solidPolys;
 
-    const SolidVector3 globalAxes[3] = {
-        { 1.0, 0.0, 0.0 }, { 0.0, 1.0, 0.0 }, { 0.0, 0.0, 1.0 }
-    };
+    const SolidVector3 globalAxes[3] = {{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0}};
     for (const auto& [elementId, element] : m_structure->m_Elements)
     {
         if (!element || element->m_pNode.size() < 2)
@@ -1327,8 +1354,8 @@ void ModelViewport::rebuildSolidGeometry()
         if (!startNode || !endNode || !section)
             continue;
 
-        SolidVector3 start = { startNode->m_X, startNode->m_Y, startNode->m_Z };
-        SolidVector3 end = { endNode->m_X, endNode->m_Y, endNode->m_Z };
+        SolidVector3 start = {startNode->m_X, startNode->m_Y, startNode->m_Z};
+        SolidVector3 end = {endNode->m_X, endNode->m_Y, endNode->m_Z};
         const auto startPoint = m_nodePointIds.find(startNode->m_Id);
         if (startPoint != m_nodePointIds.end())
             m_points->GetPoint(startPoint->second, start.data());
@@ -1364,27 +1391,23 @@ void ModelViewport::rebuildSolidGeometry()
         const vtkIdType startBase = solidPoints->GetNumberOfPoints();
         for (const SectionPoint& point : contour)
         {
-            solidPoints->InsertNextPoint(
-                start[0] + point.y * localY[0] + point.z * localZ[0],
-                start[1] + point.y * localY[1] + point.z * localZ[1],
-                start[2] + point.y * localY[2] + point.z * localZ[2]);
+            solidPoints->InsertNextPoint(start[0] + point.y * localY[0] + point.z * localZ[0],
+                                         start[1] + point.y * localY[1] + point.z * localZ[1],
+                                         start[2] + point.y * localY[2] + point.z * localZ[2]);
         }
         const vtkIdType endBase = solidPoints->GetNumberOfPoints();
         for (const SectionPoint& point : contour)
         {
-            solidPoints->InsertNextPoint(
-                end[0] + point.y * localY[0] + point.z * localZ[0],
-                end[1] + point.y * localY[1] + point.z * localZ[1],
-                end[2] + point.y * localY[2] + point.z * localZ[2]);
+            solidPoints->InsertNextPoint(end[0] + point.y * localY[0] + point.z * localZ[0],
+                                         end[1] + point.y * localY[1] + point.z * localZ[1],
+                                         end[2] + point.y * localY[2] + point.z * localZ[2]);
         }
 
         const vtkIdType contourCount = static_cast<vtkIdType>(contour.size());
         for (vtkIdType index = 0; index < contourCount; ++index)
         {
             const vtkIdType next = (index + 1) % contourCount;
-            const vtkIdType side[4] = {
-                startBase + index, startBase + next, endBase + next, endBase + index
-            };
+            const vtkIdType side[4] = {startBase + index, startBase + next, endBase + next, endBase + index};
             solidPolys->InsertNextCell(4, side);
             m_solidCellElementIds.push_back(elementId);
         }
@@ -1434,18 +1457,19 @@ void ModelViewport::resizeEvent(QResizeEvent* event)
 {
     QVTKOpenGLNativeWidget::resizeEvent(event);
     updateEmptyStateGeometry();
-    QTimer::singleShot(0, this, [this]() {
-        updateAdaptiveLabels();
-        updateRotationCenterIndicator();
-        requestRender();
-    });
+    QTimer::singleShot(0, this,
+                       [this]()
+                       {
+                           updateAdaptiveLabels();
+                           updateRotationCenterIndicator();
+                           requestRender();
+                       });
 }
 
 void ModelViewport::mouseReleaseEvent(QMouseEvent* event)
 {
-    const bool selectClick = m_structure
-        && event->button() == Qt::LeftButton
-        && m_interactionMode == InteractionMode::Select;
+    const bool selectClick =
+        m_structure && event->button() == Qt::LeftButton && m_interactionMode == InteractionMode::Select;
     const QPointF clickPosition = event->position();
     QVTKOpenGLNativeWidget::mouseReleaseEvent(event);
     if (selectClick)
@@ -1455,10 +1479,12 @@ void ModelViewport::mouseReleaseEvent(QMouseEvent* event)
         else
             performSelectionAt(clickPosition.x(), clickPosition.y());
     }
-    QTimer::singleShot(0, this, [this]() {
-        updateAdaptiveLabels();
-        requestRender();
-    });
+    QTimer::singleShot(0, this,
+                       [this]()
+                       {
+                           updateAdaptiveLabels();
+                           requestRender();
+                       });
 }
 
 void ModelViewport::wheelEvent(QWheelEvent* event)
@@ -1483,8 +1509,7 @@ void ModelViewport::wheelEvent(QWheelEvent* event)
 
     const double steps = static_cast<double>(event->angleDelta().y()) / 120.0;
     const double factor = std::pow(1.18, steps);
-    camera->SetParallelScale(qBound(1.0e-12,
-        camera->GetParallelScale() / factor, 1.0e18));
+    camera->SetParallelScale(qBound(1.0e-12, camera->GetParallelScale() / factor, 1.0e18));
 
     double worldAfter[3] = {};
     if (displayToFocalPlaneWorld(displayX, displayY, worldAfter))
@@ -1493,8 +1518,8 @@ void ModelViewport::wheelEvent(QWheelEvent* event)
         double focal[3] = {};
         camera->GetPosition(position);
         camera->GetFocalPoint(focal);
-        const double offset[3] = { worldBefore[0] - worldAfter[0],
-            worldBefore[1] - worldAfter[1], worldBefore[2] - worldAfter[2] };
+        const double offset[3] = {worldBefore[0] - worldAfter[0], worldBefore[1] - worldAfter[1],
+                                  worldBefore[2] - worldAfter[2]};
         camera->SetPosition(position[0] + offset[0], position[1] + offset[1], position[2] + offset[2]);
         camera->SetFocalPoint(focal[0] + offset[0], focal[1] + offset[1], focal[2] + offset[2]);
     }
@@ -1508,8 +1533,7 @@ void ModelViewport::wheelEvent(QWheelEvent* event)
 
 void ModelViewport::mouseDoubleClickEvent(QMouseEvent* event)
 {
-    if (m_structure && event->button() == Qt::LeftButton
-        && m_interactionMode == InteractionMode::Select)
+    if (m_structure && event->button() == Qt::LeftButton && m_interactionMode == InteractionMode::Select)
         m_skipNextSelectionRelease = true;
     QVTKOpenGLNativeWidget::mouseDoubleClickEvent(event);
 }
@@ -1575,8 +1599,8 @@ void ModelViewport::updateRotationCenterToViewportCenter(bool snapToGeometry)
         vtkNew<vtkCellPicker> picker;
         picker->PickFromListOn();
         picker->SetTolerance(0.008);
-        const QList<vtkActor*> actors = { m_nodeActor.GetPointer(), m_elementActor.GetPointer(),
-            m_solidActor.GetPointer() };
+        const QList<vtkActor*> actors = {m_nodeActor.GetPointer(), m_elementActor.GetPointer(),
+                                         m_solidActor.GetPointer()};
         std::array<int, 3> oldPickable = {};
         for (int index = 0; index < actors.size(); ++index)
         {
@@ -1594,7 +1618,9 @@ void ModelViewport::updateRotationCenterToViewportCenter(bool snapToGeometry)
             double* picked = picker->GetPickPosition();
             if (picked && std::isfinite(picked[0]) && std::isfinite(picked[1]) && std::isfinite(picked[2]))
             {
-                center[0] = picked[0]; center[1] = picked[1]; center[2] = picked[2];
+                center[0] = picked[0];
+                center[1] = picked[1];
+                center[2] = picked[2];
             }
             else
                 snapped = false;
@@ -1603,7 +1629,7 @@ void ModelViewport::updateRotationCenterToViewportCenter(bool snapToGeometry)
             actors.at(index)->SetPickable(oldPickable[static_cast<std::size_t>(index)]);
     }
 
-    m_rotationCenter = { center[0], center[1], center[2] };
+    m_rotationCenter = {center[0], center[1], center[2]};
     m_rotationCenterValid = true;
     m_rotationCenterSnapped = snapped;
     updateRotationCenterIndicatorAppearance();
@@ -1647,8 +1673,8 @@ void ModelViewport::updateRotationCenterIndicatorAppearance()
 
 void ModelViewport::updateRotationCenterIndicator()
 {
-    if (!m_rotationCenterIndicator || !m_rotationCenterValid || !hasModel()
-        || m_interactionMode == InteractionMode::Select)
+    if (!m_rotationCenterIndicator || !m_rotationCenterValid || !hasModel() ||
+        m_interactionMode == InteractionMode::Select)
     {
         if (m_rotationCenterIndicator)
             m_rotationCenterIndicator->hide();
@@ -1671,7 +1697,7 @@ void ModelViewport::updateRotationCenterIndicator()
         return;
     }
     m_rotationCenterIndicator->move(center.x() - m_rotationCenterIndicator->width() / 2,
-        center.y() - m_rotationCenterIndicator->height() / 2);
+                                    center.y() - m_rotationCenterIndicator->height() / 2);
     m_rotationCenterIndicator->show();
     m_rotationCenterIndicator->raise();
 }
@@ -1682,12 +1708,12 @@ void ModelViewport::performSelectionAt(double widgetX, double widgetY)
     const double x = widgetX * scale;
     const double y = (height() - widgetY) * scale;
 
-    const auto selectElement = [this](int elementId) {
+    const auto selectElement = [this](int elementId)
+    {
         const auto found = std::find(m_cellElementIds.cbegin(), m_cellElementIds.cend(), elementId);
         if (found == m_cellElementIds.cend())
             return false;
-        const vtkIdType cellId = static_cast<vtkIdType>(
-            std::distance(m_cellElementIds.cbegin(), found));
+        const vtkIdType cellId = static_cast<vtkIdType>(std::distance(m_cellElementIds.cbegin(), found));
         highlightElement(cellId);
         emit elementSelected(elementId);
         return true;
@@ -1699,10 +1725,8 @@ void ModelViewport::performSelectionAt(double widgetX, double widgetY)
     m_hardwarePicker->SetPixelTolerance(6);
     if (m_nodeActor->GetVisibility())
         m_hardwarePicker->AddPickList(m_nodeActor);
-    if (m_nodeActor->GetVisibility()
-        && m_hardwarePicker->Pick(x, y, 0.0, m_renderer)
-        && m_hardwarePicker->GetActor() == m_nodeActor.GetPointer()
-        && m_hardwarePicker->GetPointId() >= 0)
+    if (m_nodeActor->GetVisibility() && m_hardwarePicker->Pick(x, y, 0.0, m_renderer) &&
+        m_hardwarePicker->GetActor() == m_nodeActor.GetPointer() && m_hardwarePicker->GetPointId() >= 0)
     {
         const vtkIdType pointId = m_hardwarePicker->GetPointId();
         if (pointId < static_cast<vtkIdType>(m_pointNodeIds.size()))
@@ -1724,13 +1748,13 @@ void ModelViewport::performSelectionAt(double widgetX, double widgetY)
         m_hardwarePicker->InitializePickList();
         m_hardwarePicker->SnapToMeshPointOff();
         m_hardwarePicker->AddPickList(m_solidActor);
-        const bool picked = m_hardwarePicker->Pick(x, y, 0.0, m_renderer)
-            && m_hardwarePicker->GetActor() == m_solidActor.GetPointer()
-            && m_hardwarePicker->GetCellId() >= 0;
+        const bool picked = m_hardwarePicker->Pick(x, y, 0.0, m_renderer) &&
+                            m_hardwarePicker->GetActor() == m_solidActor.GetPointer() &&
+                            m_hardwarePicker->GetCellId() >= 0;
         const vtkIdType solidCellId = m_hardwarePicker->GetCellId();
         m_solidActor->SetPickable(originalPickable);
-        if (picked && solidCellId < static_cast<vtkIdType>(m_solidCellElementIds.size())
-            && selectElement(m_solidCellElementIds[static_cast<std::size_t>(solidCellId)]))
+        if (picked && solidCellId < static_cast<vtkIdType>(m_solidCellElementIds.size()) &&
+            selectElement(m_solidCellElementIds[static_cast<std::size_t>(solidCellId)]))
         {
             m_hardwarePicker->InitializePickList();
             return;
@@ -1741,10 +1765,8 @@ void ModelViewport::performSelectionAt(double widgetX, double widgetY)
     m_hardwarePicker->SnapToMeshPointOff();
     if (m_elementActor->GetVisibility())
         m_hardwarePicker->AddPickList(m_elementActor);
-    if (m_elementActor->GetVisibility()
-        && m_hardwarePicker->Pick(x, y, 0.0, m_renderer)
-        && m_hardwarePicker->GetActor() == m_elementActor.GetPointer()
-        && m_hardwarePicker->GetCellId() >= 0)
+    if (m_elementActor->GetVisibility() && m_hardwarePicker->Pick(x, y, 0.0, m_renderer) &&
+        m_hardwarePicker->GetActor() == m_elementActor.GetPointer() && m_hardwarePicker->GetCellId() >= 0)
     {
         const vtkIdType cellId = m_hardwarePicker->GetCellId();
         if (cellId < static_cast<vtkIdType>(m_cellElementIds.size()))
@@ -1764,10 +1786,8 @@ void ModelViewport::performSelectionAt(double widgetX, double widgetY)
     m_cellPicker->SetTolerance(0.006);
     if (m_elementActor->GetVisibility())
         m_cellPicker->AddPickList(m_elementActor);
-    if (m_elementActor->GetVisibility()
-        && m_cellPicker->Pick(x, y, 0.0, m_renderer)
-        && m_cellPicker->GetActor() == m_elementActor.GetPointer()
-        && m_cellPicker->GetCellId() >= 0)
+    if (m_elementActor->GetVisibility() && m_cellPicker->Pick(x, y, 0.0, m_renderer) &&
+        m_cellPicker->GetActor() == m_elementActor.GetPointer() && m_cellPicker->GetCellId() >= 0)
     {
         const vtkIdType cellId = m_cellPicker->GetCellId();
         if (cellId < static_cast<vtkIdType>(m_cellElementIds.size()))
@@ -1795,7 +1815,7 @@ void ModelViewport::contextMenuEvent(QContextMenuEvent* event)
     QAction* rotateAction = interactionMenu->addAction(QStringLiteral("旋转"));
     QAction* panAction = interactionMenu->addAction(QStringLiteral("平移"));
     QAction* zoomAction = interactionMenu->addAction(QStringLiteral("缩放"));
-    const QList<QAction*> modeActions = { selectAction, rotateAction, panAction, zoomAction };
+    const QList<QAction*> modeActions = {selectAction, rotateAction, panAction, zoomAction};
     for (QAction* action : modeActions)
     {
         action->setCheckable(true);
@@ -1809,7 +1829,7 @@ void ModelViewport::contextMenuEvent(QContextMenuEvent* event)
     QAction* solidAction = menu.addAction(QStringLiteral("显示实体"));
     QAction* nodeIdsAction = menu.addAction(QStringLiteral("显示节点 ID"));
     QAction* elementIdsAction = menu.addAction(QStringLiteral("显示单元 ID"));
-    for (QAction* action : { nodesAction, elementsAction, solidAction, nodeIdsAction, elementIdsAction })
+    for (QAction* action : {nodesAction, elementsAction, solidAction, nodeIdsAction, elementIdsAction})
         action->setCheckable(true);
     nodesAction->setChecked(m_nodesVisible);
     elementsAction->setChecked(m_elementsVisible);
@@ -1838,29 +1858,46 @@ void ModelViewport::contextMenuEvent(QContextMenuEvent* event)
     QAction* selected = menu.exec(event->globalPos());
     if (!selected)
         return;
-    if (selected == selectAction) setInteractionMode(InteractionMode::Select);
-    else if (selected == rotateAction) setInteractionMode(InteractionMode::Rotate);
-    else if (selected == panAction) setInteractionMode(InteractionMode::Pan);
-    else if (selected == zoomAction) setInteractionMode(InteractionMode::Zoom);
-    else if (selected == nodesAction) setNodesVisible(nodesAction->isChecked());
-    else if (selected == elementsAction) setElementsVisible(elementsAction->isChecked());
-    else if (selected == solidAction) setSolidVisible(solidAction->isChecked());
-    else if (selected == nodeIdsAction) setNodeLabelsVisible(nodeIdsAction->isChecked());
-    else if (selected == elementIdsAction) setElementLabelsVisible(elementIdsAction->isChecked());
-    else if (selected == frontAction) setStandardView(StandardView::Front);
-    else if (selected == backAction) setStandardView(StandardView::Back);
-    else if (selected == leftAction) setStandardView(StandardView::Left);
-    else if (selected == rightAction) setStandardView(StandardView::Right);
-    else if (selected == topAction) setStandardView(StandardView::Top);
-    else if (selected == bottomAction) setStandardView(StandardView::Bottom);
-    else if (selected == fitAction) resetCamera();
-    else if (selected == viewportCenterAction) updateRotationCenterToViewportCenter(true);
+    if (selected == selectAction)
+        setInteractionMode(InteractionMode::Select);
+    else if (selected == rotateAction)
+        setInteractionMode(InteractionMode::Rotate);
+    else if (selected == panAction)
+        setInteractionMode(InteractionMode::Pan);
+    else if (selected == zoomAction)
+        setInteractionMode(InteractionMode::Zoom);
+    else if (selected == nodesAction)
+        setNodesVisible(nodesAction->isChecked());
+    else if (selected == elementsAction)
+        setElementsVisible(elementsAction->isChecked());
+    else if (selected == solidAction)
+        setSolidVisible(solidAction->isChecked());
+    else if (selected == nodeIdsAction)
+        setNodeLabelsVisible(nodeIdsAction->isChecked());
+    else if (selected == elementIdsAction)
+        setElementLabelsVisible(elementIdsAction->isChecked());
+    else if (selected == frontAction)
+        setStandardView(StandardView::Front);
+    else if (selected == backAction)
+        setStandardView(StandardView::Back);
+    else if (selected == leftAction)
+        setStandardView(StandardView::Left);
+    else if (selected == rightAction)
+        setStandardView(StandardView::Right);
+    else if (selected == topAction)
+        setStandardView(StandardView::Top);
+    else if (selected == bottomAction)
+        setStandardView(StandardView::Bottom);
+    else if (selected == fitAction)
+        resetCamera();
+    else if (selected == viewportCenterAction)
+        updateRotationCenterToViewportCenter(true);
     else if (selected == modelCenterAction)
     {
         double bounds[6] = {};
         m_renderer->ComputeVisiblePropBounds(bounds);
-        m_rotationCenter = { (bounds[0] + bounds[1]) * 0.5,
-            (bounds[2] + bounds[3]) * 0.5, (bounds[4] + bounds[5]) * 0.5 };
+        m_rotationCenter = {(bounds[0] + bounds[1]) * 0.5, (bounds[2] + bounds[3]) * 0.5,
+                            (bounds[4] + bounds[5]) * 0.5};
         m_rotationCenterValid = true;
         m_rotationCenterSnapped = false;
         updateRotationCenterIndicatorAppearance();
@@ -1880,15 +1917,12 @@ void ModelViewport::updateThemeColors()
     else
         m_renderer->GradientBackgroundOff();
     if (m_elementActor)
-    m_elementActor->GetProperty()->SetColor(
-        colors.element[0], colors.element[1], colors.element[2]);
+        m_elementActor->GetProperty()->SetColor(colors.element[0], colors.element[1], colors.element[2]);
     if (m_nodeActor)
-    m_nodeActor->GetProperty()->SetColor(
-        colors.node[0], colors.node[1], colors.node[2]);
+        m_nodeActor->GetProperty()->SetColor(colors.node[0], colors.node[1], colors.node[2]);
     if (m_solidActor)
     {
-        m_solidActor->GetProperty()->SetColor(
-            colors.solid[0], colors.solid[1], colors.solid[2]);
+        m_solidActor->GetProperty()->SetColor(colors.solid[0], colors.solid[1], colors.solid[2]);
         // Keep solid faces legible in every theme, including faces turned away
         // from the scene light.  Without ambient light they can render black.
         m_solidActor->GetProperty()->SetAmbient(0.48);
@@ -1896,15 +1930,12 @@ void ModelViewport::updateThemeColors()
         m_solidActor->GetProperty()->SetSpecular(0.20);
         m_solidActor->GetProperty()->SetSpecularPower(18.0);
         m_solidActor->GetProperty()->EdgeVisibilityOn();
-        m_solidActor->GetProperty()->SetEdgeColor(
-            colors.element[0], colors.element[1], colors.element[2]);
+        m_solidActor->GetProperty()->SetEdgeColor(colors.element[0], colors.element[1], colors.element[2]);
     }
     if (m_nodeLabelMapper)
-        m_nodeLabelMapper->GetLabelTextProperty()->SetColor(
-            colors.node[0], colors.node[1], colors.node[2]);
+        m_nodeLabelMapper->GetLabelTextProperty()->SetColor(colors.node[0], colors.node[1], colors.node[2]);
     if (m_elementLabelMapper)
-        m_elementLabelMapper->GetLabelTextProperty()->SetColor(
-            colors.element[0], colors.element[1], colors.element[2]);
+        m_elementLabelMapper->GetLabelTextProperty()->SetColor(colors.element[0], colors.element[1], colors.element[2]);
     if (m_emptyStateIconLabel)
     {
         QPixmap icon(96, 96);
@@ -1915,8 +1946,9 @@ void ModelViewport::updateThemeColors()
         const QColor line = QColor::fromRgbF(colors.element[0], colors.element[1], colors.element[2]);
         const QColor accent = QColor::fromRgbF(colors.node[0], colors.node[1], colors.node[2]);
         painter.setPen(QPen(line, 2.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-        painter.drawPolygon(QPolygonF{ QPointF(16, 3), QPointF(27, 9), QPointF(16, 15), QPointF(5, 9) });
-        painter.drawPolyline(QPolygonF{ QPointF(5, 9), QPointF(5, 22), QPointF(16, 29), QPointF(27, 22), QPointF(27, 9) });
+        painter.drawPolygon(QPolygonF{QPointF(16, 3), QPointF(27, 9), QPointF(16, 15), QPointF(5, 9)});
+        painter.drawPolyline(
+            QPolygonF{QPointF(5, 9), QPointF(5, 22), QPointF(16, 29), QPointF(27, 22), QPointF(27, 9)});
         painter.setPen(QPen(accent, 2.4, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
         painter.drawLine(QPointF(16, 15), QPointF(16, 29));
         painter.drawLine(QPointF(5, 9), QPointF(16, 15));
@@ -1941,11 +1973,13 @@ void ModelViewport::requestRender()
     if (m_renderPending)
         return;
     m_renderPending = true;
-    QTimer::singleShot(0, this, [this]() {
-        m_renderPending = false;
-        if (m_renderWindow)
-            m_renderWindow->Render();
-    });
+    QTimer::singleShot(0, this,
+                       [this]()
+                       {
+                           m_renderPending = false;
+                           if (m_renderWindow)
+                               m_renderWindow->Render();
+                       });
 }
 
 void ModelViewport::clearSelectionHighlight()

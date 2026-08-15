@@ -44,10 +44,12 @@ bool PropertyLibrary::load(_OUT QString& error)
     const QStringList candidates = {
         QDir::current().absoluteFilePath(QStringLiteral("YQY/Import/ImportFile/MaterialProperty.bdf")),
         QDir::current().absoluteFilePath(QStringLiteral("Import/ImportFile/MaterialProperty.bdf")),
-        QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(QStringLiteral("../../YQY/Import/ImportFile/MaterialProperty.bdf")),
-        QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(QStringLiteral("../../Import/ImportFile/MaterialProperty.bdf")),
-        QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(QStringLiteral("../Import/ImportFile/MaterialProperty.bdf"))
-    };
+        QDir(QCoreApplication::applicationDirPath())
+            .absoluteFilePath(QStringLiteral("../../YQY/Import/ImportFile/MaterialProperty.bdf")),
+        QDir(QCoreApplication::applicationDirPath())
+            .absoluteFilePath(QStringLiteral("../../Import/ImportFile/MaterialProperty.bdf")),
+        QDir(QCoreApplication::applicationDirPath())
+            .absoluteFilePath(QStringLiteral("../Import/ImportFile/MaterialProperty.bdf"))};
     QString filePath;
     for (const QString& candidate : candidates)
     {
@@ -79,7 +81,12 @@ bool PropertyLibrary::loadBdf(const QString& filePath, _OUT QString& error)
         error = QStringLiteral("无法读取默认属性文件：%1").arg(filePath);
         return false;
     }
-    enum class Block { None, Material, Section } block = Block::None;
+    enum class Block
+    {
+        None,
+        Material,
+        Section
+    } block = Block::None;
     QTextStream stream(&file);
     stream.setEncoding(QStringConverter::Utf8);
     int lineNumber = 0;
@@ -92,8 +99,9 @@ bool PropertyLibrary::loadBdf(const QString& filePath, _OUT QString& error)
         if (line.startsWith(QLatin1Char('*')))
         {
             const QString keyword = line.section(QLatin1Char(','), 0, 0).trimmed().toUpper();
-            block = keyword == QStringLiteral("*MATERIAL") ? Block::Material
-                : keyword == QStringLiteral("*SECTION") ? Block::Section : Block::None;
+            block = keyword == QStringLiteral("*MATERIAL")  ? Block::Material
+                    : keyword == QStringLiteral("*SECTION") ? Block::Section
+                                                            : Block::None;
             continue;
         }
         const QStringList fields = line.split(QLatin1Char(','));
@@ -114,8 +122,8 @@ bool PropertyLibrary::loadBdf(const QString& filePath, _OUT QString& error)
             value.density = fields[5].trimmed().toDouble(&okDensity);
             value.maxStress = fields[6].trimmed().toDouble(&okStress);
             value.expansion = fields[7].trimmed().toDouble(&okExpansion);
-            if (!okId || !okE || !okNu || !okDensity || !okStress || !okExpansion ||
-                value.id <= 0 || value.name.isEmpty() || value.young <= 0.0 || value.density <= 0.0)
+            if (!okId || !okE || !okNu || !okDensity || !okStress || !okExpansion || value.id <= 0 ||
+                value.name.isEmpty() || value.young <= 0.0 || value.density <= 0.0)
             {
                 error = QStringLiteral("MaterialProperty.bdf 第 %1 行材料数据无效").arg(lineNumber);
                 return false;
@@ -176,8 +184,8 @@ bool PropertyLibrary::loadMaterials(const QString& resourcePath, _OUT QString& e
         item.density = fields[5].trimmed().toDouble(&okDensity);
         item.maxStress = fields[6].trimmed().toDouble(&okStress);
         item.expansion = fields[7].trimmed().toDouble(&okAlpha);
-        if (!okId || !okE || !okNu || !okDensity || !okStress || !okAlpha ||
-            item.id <= 0 || item.name.isEmpty() || item.young <= 0.0 || item.density <= 0.0)
+        if (!okId || !okE || !okNu || !okDensity || !okStress || !okAlpha || item.id <= 0 || item.name.isEmpty() ||
+            item.young <= 0.0 || item.density <= 0.0)
         {
             error = QStringLiteral("材料库数据无效：%1").arg(row);
             return false;
@@ -220,9 +228,8 @@ bool PropertyLibrary::loadSections(const QString& resourcePath, _OUT QString& er
 
 bool PropertyLibrary::updateMaterial(int index, const MaterialPreset& value, _OUT QString& error)
 {
-    if (index < 0 || index >= m_materials.size() || value.young <= 0.0 ||
-        value.poisson <= -1.0 || value.poisson >= 0.5 || value.density <= 0.0 ||
-        value.maxStress < 0.0 || value.expansion < 0.0)
+    if (index < 0 || index >= m_materials.size() || value.young <= 0.0 || value.poisson <= -1.0 ||
+        value.poisson >= 0.5 || value.density <= 0.0 || value.maxStress < 0.0 || value.expansion < 0.0)
     {
         error = QStringLiteral("材料属性无效：E、密度必须大于 0，泊松比必须在 (-1, 0.5) 内");
         return false;
@@ -242,11 +249,11 @@ bool PropertyLibrary::updateSection(int index, const SectionPreset& value, _OUT 
     return true;
 }
 
-std::shared_ptr<Property> PropertyLibrary::instantiateProperty(
-    int materialIndex, int sectionIndex, StructureData& target, _OUT QString& error) const
+std::shared_ptr<Property> PropertyLibrary::instantiateProperty(int materialIndex, int sectionIndex,
+                                                               _OUT StructureData& target, _OUT QString& error) const
 {
-    if (materialIndex < 0 || materialIndex >= m_materials.size() ||
-        sectionIndex < 0 || sectionIndex >= m_sections.size())
+    if (materialIndex < 0 || materialIndex >= m_materials.size() || sectionIndex < 0 ||
+        sectionIndex >= m_sections.size())
     {
         error = QStringLiteral("请选择有效的材料和截面");
         return nullptr;

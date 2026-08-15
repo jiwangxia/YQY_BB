@@ -7,12 +7,10 @@
 
 namespace ResultFrameUtilities
 {
-bool modelsMatch(
-    const std::shared_ptr<StructureData>& current,
-    const std::shared_ptr<StructureData>& embedded)
+bool modelsMatch(const std::shared_ptr<StructureData>& current, const std::shared_ptr<StructureData>& embedded)
 {
-    if (!current || !embedded || current->m_Nodes.size() != embedded->m_Nodes.size()
-        || current->m_Elements.size() != embedded->m_Elements.size())
+    if (!current || !embedded || current->m_Nodes.size() != embedded->m_Nodes.size() ||
+        current->m_Elements.size() != embedded->m_Elements.size())
     {
         return false;
     }
@@ -21,10 +19,10 @@ bool modelsMatch(
     for (const auto& [nodeId, embeddedNode] : embedded->m_Nodes)
     {
         const auto found = current->m_Nodes.find(nodeId);
-        if (found == current->m_Nodes.end() || !found->second || !embeddedNode
-            || std::abs(found->second->m_X - embeddedNode->m_X) > coordinateTolerance
-            || std::abs(found->second->m_Y - embeddedNode->m_Y) > coordinateTolerance
-            || std::abs(found->second->m_Z - embeddedNode->m_Z) > coordinateTolerance)
+        if (found == current->m_Nodes.end() || !found->second || !embeddedNode ||
+            std::abs(found->second->m_X - embeddedNode->m_X) > coordinateTolerance ||
+            std::abs(found->second->m_Y - embeddedNode->m_Y) > coordinateTolerance ||
+            std::abs(found->second->m_Z - embeddedNode->m_Z) > coordinateTolerance)
         {
             return false;
         }
@@ -33,8 +31,8 @@ bool modelsMatch(
     for (const auto& [elementId, embeddedElement] : embedded->m_Elements)
     {
         const auto found = current->m_Elements.find(elementId);
-        if (found == current->m_Elements.end() || !found->second || !embeddedElement
-            || found->second->m_pNode.size() != embeddedElement->m_pNode.size())
+        if (found == current->m_Elements.end() || !found->second || !embeddedElement ||
+            found->second->m_pNode.size() != embeddedElement->m_pNode.size())
         {
             return false;
         }
@@ -49,17 +47,13 @@ bool modelsMatch(
     return true;
 }
 
-Hdf5ResultFrame interpolate(
-    const Hdf5ResultFrame& first,
-    const Hdf5ResultFrame& second,
-    double interpolation)
+Hdf5ResultFrame interpolate(const Hdf5ResultFrame& first, const Hdf5ResultFrame& second, double interpolation)
 {
     interpolation = std::clamp(interpolation, 0.0, 1.0);
     const double firstWeight = 1.0 - interpolation;
     Hdf5ResultFrame result = first;
     result.info.time = first.info.time * firstWeight + second.info.time * interpolation;
-    result.info.loadFactor =
-        first.info.loadFactor * firstWeight + second.info.loadFactor * interpolation;
+    result.info.loadFactor = first.info.loadFactor * firstWeight + second.info.loadFactor * interpolation;
 
     if (result.nodes.size() == second.nodes.size())
     {
@@ -71,10 +65,10 @@ Hdf5ResultFrame interpolate(
                 continue;
             for (int component = 0; component < 3; ++component)
             {
-                target.displacement[component] = target.displacement[component] * firstWeight
-                    + next.displacement[component] * interpolation;
-                target.currentCoordinate[component] = target.currentCoordinate[component] * firstWeight
-                    + next.currentCoordinate[component] * interpolation;
+                target.displacement[component] =
+                    target.displacement[component] * firstWeight + next.displacement[component] * interpolation;
+                target.currentCoordinate[component] = target.currentCoordinate[component] * firstWeight +
+                                                      next.currentCoordinate[component] * interpolation;
             }
         }
     }

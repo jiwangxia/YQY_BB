@@ -40,20 +40,16 @@ void ElementBeam_CR2D::Get_ke(MatrixXd& ke)
 
     Eigen::Matrix<double, 3, 6> B_matrix;
 
-    B_matrix << -dirCos_x, -dirCos_y, 0, dirCos_x, dirCos_y, 0,
-        -dirCos_y / L0, dirCos_x / L0, 1, dirCos_y / L0, -dirCos_x / L0, 0,
-        -dirCos_y / L0, dirCos_x / L0, 0, dirCos_y / L0, -dirCos_x / L0, 1;
-
+    B_matrix << -dirCos_x, -dirCos_y, 0, dirCos_x, dirCos_y, 0, -dirCos_y / L0, dirCos_x / L0, 1, dirCos_y / L0,
+        -dirCos_x / L0, 0, -dirCos_y / L0, dirCos_x / L0, 0, dirCos_y / L0, -dirCos_x / L0, 1;
 }
 
 void ElementBeam_CR2D::Get_me_Lumped(MatrixXd& me)
 {
-
 }
 
 void ElementBeam_CR2D::Get_me_Consistent(MatrixXd& me)
 {
-
 }
 
 void ElementBeam_CR2D::Get_L0()

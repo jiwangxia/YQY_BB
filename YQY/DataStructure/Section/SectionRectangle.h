@@ -3,8 +3,8 @@
 class SectionRectangle : public SectionBase
 {
 public:
-    double m_Width = 0.0;   // 矩形宽度
-    double m_Height = 0.0;  // 矩形高度
+    double m_Width = 0.0;  // 矩形宽度
+    double m_Height = 0.0; // 矩形高度
     /**
      * @brief 根据宽高计算截面面积
      */

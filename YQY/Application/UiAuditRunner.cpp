@@ -140,12 +140,14 @@ std::optional<int> UiAuditRunner::run(QApplication& application, YQY& window) co
             if (window.openResult(resultFile))
             {
                 const int delay = kind == Kind::NodeExport ? 300 : 600;
-                QTimer::singleShot(delay, &application, [&application, &window, kind, outputFile]()
-                {
-                    const bool saved = kind == Kind::NodeExport ? window.saveNodeExportPreview(outputFile)
-                                                                : window.grab().save(outputFile);
-                    application.exit(saved ? 0 : 3);
-                });
+                QTimer::singleShot(delay, &application,
+                                   [&application, &window, kind, outputFile]()
+                                   {
+                                       const bool saved = kind == Kind::NodeExport
+                                                              ? window.saveNodeExportPreview(outputFile)
+                                                              : window.grab().save(outputFile);
+                                       application.exit(saved ? 0 : 3);
+                                   });
                 return;
             }
             if (++(*attempts) >= 100)

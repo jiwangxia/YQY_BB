@@ -20,6 +20,8 @@
 #include "Application/ApplicationPaths.h"
 #include "Solver/AssemblySettings.h"
 #include "Solver/GpuSettings.h"
+#include "Solver/LinearSolverSettings.h"
+#include "Export/ResultOutputSettings.h"
 #include "DataStructure/Structure/StructureData.h"
 #include "Export/Hdf5ModelIO.h"
 #include "Export/Outputter.h"
@@ -56,18 +58,24 @@ QString solveTaskDisplayStatus(const SolveTaskController::TaskInfo& info)
     return SolveTaskController::statusText(info.status);
 }
 
-const Hdf5ResultRange& resultRangeForField(
-    const Hdf5ResultRanges& ranges, ModelViewport::ResultField field)
+const Hdf5ResultRange& resultRangeForField(const Hdf5ResultRanges& ranges, ModelViewport::ResultField field)
 {
     switch (field)
     {
-    case ModelViewport::ResultField::DisplacementMagnitude: return ranges.displacementMagnitude;
-    case ModelViewport::ResultField::DisplacementX: return ranges.displacementX;
-    case ModelViewport::ResultField::DisplacementY: return ranges.displacementY;
-    case ModelViewport::ResultField::DisplacementZ: return ranges.displacementZ;
-    case ModelViewport::ResultField::AxialForce: return ranges.axialForce;
-    case ModelViewport::ResultField::Stress: return ranges.stress;
-    case ModelViewport::ResultField::Strain: return ranges.strain;
+        case ModelViewport::ResultField::DisplacementMagnitude:
+            return ranges.displacementMagnitude;
+        case ModelViewport::ResultField::DisplacementX:
+            return ranges.displacementX;
+        case ModelViewport::ResultField::DisplacementY:
+            return ranges.displacementY;
+        case ModelViewport::ResultField::DisplacementZ:
+            return ranges.displacementZ;
+        case ModelViewport::ResultField::AxialForce:
+            return ranges.axialForce;
+        case ModelViewport::ResultField::Stress:
+            return ranges.stress;
+        case ModelViewport::ResultField::Strain:
+            return ranges.strain;
     }
     return ranges.displacementMagnitude;
 }
@@ -159,7 +167,11 @@ constexpr int TreeGlyphRole = Qt::UserRole + 20;
 class InstantToolTipFilter final : public QObject
 {
 public:
-    explicit InstantToolTipFilter(QAbstractButton* button) : QObject(button), m_button(button) {}
+    explicit InstantToolTipFilter(QAbstractButton* button)
+        : QObject(button)
+        , m_button(button)
+    {
+    }
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override
@@ -197,16 +209,14 @@ constexpr auto WindowBorderColorProperty = "yqyWindowBorderColor";
 #ifdef Q_OS_WIN
 void applyWindowsTitleBarTheme(QWidget* widget)
 {
-    if (!widget || !widget->isWindow() || widget->windowType() == Qt::Popup ||
-        widget->windowType() == Qt::ToolTip)
+    if (!widget || !widget->isWindow() || widget->windowType() == Qt::Popup || widget->windowType() == Qt::ToolTip)
         return;
 
     using DwmSetWindowAttributeFunction = HRESULT(WINAPI*)(HWND, DWORD, LPCVOID, DWORD);
     static const DwmSetWindowAttributeFunction setWindowAttribute = []()
     {
         const HMODULE dwmApi = LoadLibraryW(L"dwmapi.dll");
-        return dwmApi ? reinterpret_cast<DwmSetWindowAttributeFunction>(
-                            GetProcAddress(dwmApi, "DwmSetWindowAttribute"))
+        return dwmApi ? reinterpret_cast<DwmSetWindowAttributeFunction>(GetProcAddress(dwmApi, "DwmSetWindowAttribute"))
                       : nullptr;
     }();
     if (!setWindowAttribute)
@@ -244,7 +254,10 @@ void applyWindowsTitleBarTheme(QWidget*)
 class PopupThemeFilter final : public QObject
 {
 public:
-    explicit PopupThemeFilter(QObject* parent) : QObject(parent) {}
+    explicit PopupThemeFilter(QObject* parent)
+        : QObject(parent)
+    {
+    }
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override
@@ -255,10 +268,11 @@ protected:
         auto* widget = qobject_cast<QWidget*>(watched);
         if (widget && widget->isWindow())
         {
-            QTimer::singleShot(0, widget, [widget]()
-            {
-                applyWindowsTitleBarTheme(widget);
-            });
+            QTimer::singleShot(0, widget,
+                               [widget]()
+                               {
+                                   applyWindowsTitleBarTheme(widget);
+                               });
         }
 
         auto* view = qobject_cast<QAbstractItemView*>(watched);
@@ -281,20 +295,20 @@ QPolygonF viewFace(ToolbarGlyph glyph)
 {
     switch (glyph)
     {
-    case ToolbarGlyph::Front:
-        return {QPointF(5, 8), QPointF(15, 8), QPointF(15, 18), QPointF(5, 18)};
-    case ToolbarGlyph::Back:
-        return {QPointF(9, 4), QPointF(19, 4), QPointF(19, 14), QPointF(9, 14)};
-    case ToolbarGlyph::Left:
-        return {QPointF(5, 8), QPointF(9, 4), QPointF(9, 14), QPointF(5, 18)};
-    case ToolbarGlyph::Right:
-        return {QPointF(15, 8), QPointF(19, 4), QPointF(19, 14), QPointF(15, 18)};
-    case ToolbarGlyph::Top:
-        return {QPointF(5, 8), QPointF(9, 4), QPointF(19, 4), QPointF(15, 8)};
-    case ToolbarGlyph::Bottom:
-        return {QPointF(5, 18), QPointF(9, 14), QPointF(19, 14), QPointF(15, 18)};
-    default:
-        return {};
+        case ToolbarGlyph::Front:
+            return {QPointF(5, 8), QPointF(15, 8), QPointF(15, 18), QPointF(5, 18)};
+        case ToolbarGlyph::Back:
+            return {QPointF(9, 4), QPointF(19, 4), QPointF(19, 14), QPointF(9, 14)};
+        case ToolbarGlyph::Left:
+            return {QPointF(5, 8), QPointF(9, 4), QPointF(9, 14), QPointF(5, 18)};
+        case ToolbarGlyph::Right:
+            return {QPointF(15, 8), QPointF(19, 4), QPointF(19, 14), QPointF(15, 18)};
+        case ToolbarGlyph::Top:
+            return {QPointF(5, 8), QPointF(9, 4), QPointF(19, 4), QPointF(15, 8)};
+        case ToolbarGlyph::Bottom:
+            return {QPointF(5, 18), QPointF(9, 14), QPointF(19, 14), QPointF(15, 18)};
+        default:
+            return {};
     }
 }
 
@@ -321,219 +335,219 @@ QPixmap renderToolbarGlyph(ToolbarGlyph glyph, const QColor& color, const QColor
 
     switch (glyph)
     {
-    case ToolbarGlyph::Import:
-        painter.drawLine(QPointF(12, 3), QPointF(12, 14));
-        drawArrowHead(QPointF(12, 14), QPointF(8.5, 10.5), QPointF(15.5, 10.5));
-        painter.drawLine(QPointF(4, 17), QPointF(4, 20));
-        painter.drawLine(QPointF(4, 20), QPointF(20, 20));
-        painter.drawLine(QPointF(20, 20), QPointF(20, 17));
-        break;
-    case ToolbarGlyph::Undo:
-    {
-        QPainterPath path;
-        path.moveTo(5, 11);
-        path.cubicTo(8, 5, 18.5, 6, 19.5, 14);
-        path.cubicTo(20, 17, 18, 19.5, 15.5, 20.5);
-        painter.drawPath(path);
-        drawArrowHead(QPointF(5, 11), QPointF(5.2, 6), QPointF(10, 10));
-        break;
-    }
-    case ToolbarGlyph::Model:
-    {
-        painter.drawRoundedRect(QRectF(4, 7, 13, 13), 1.2, 1.2);
-        painter.setPen(QPen(accent, 1.8, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-        painter.drawRoundedRect(QRectF(8, 3, 13, 13), 1.2, 1.2);
-        painter.drawLine(QPointF(4, 7), QPointF(8, 3));
-        painter.drawLine(QPointF(17, 7), QPointF(21, 3));
-        painter.drawLine(QPointF(17, 20), QPointF(21, 16));
-        break;
-    }
-    case ToolbarGlyph::Conductor:
-    {
-        painter.drawLine(QPointF(4, 4), QPointF(4, 21));
-        painter.drawLine(QPointF(20, 4), QPointF(20, 21));
-        painter.drawLine(QPointF(1.5, 7), QPointF(6.5, 7));
-        painter.drawLine(QPointF(17.5, 7), QPointF(22.5, 7));
-        painter.setPen(QPen(accent, 2.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-        QPainterPath cable;
-        cable.moveTo(4, 7);
-        cable.cubicTo(8, 18, 16, 18, 20, 7);
-        painter.drawPath(cable);
-        break;
-    }
-    case ToolbarGlyph::Analysis:
-        painter.drawLine(QPointF(4, 3), QPointF(4, 20));
-        painter.drawLine(QPointF(4, 20), QPointF(21, 20));
-        painter.setPen(QPen(accent, 2.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-        painter.drawPolyline(QPolygonF{QPointF(6, 16), QPointF(10, 11), QPointF(14, 14), QPointF(20, 6)});
-        painter.setBrush(accent);
-        painter.drawEllipse(QPointF(10, 11), 1.5, 1.5);
-        painter.drawEllipse(QPointF(20, 6), 1.5, 1.5);
-        break;
-    case ToolbarGlyph::Results:
-        painter.drawLine(QPointF(3, 21), QPointF(21, 21));
-        painter.setPen(QPen(accent, 1.4, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-        painter.setBrush(accent);
-        painter.drawRoundedRect(QRectF(5, 12, 3.5, 8), 1, 1);
-        painter.drawRoundedRect(QRectF(10.3, 7, 3.5, 13), 1, 1);
-        painter.drawRoundedRect(QRectF(15.7, 3, 3.5, 17), 1, 1);
-        break;
-    case ToolbarGlyph::Settings:
-    {
-        painter.setBrush(accentFill);
-        painter.drawEllipse(QRectF(6, 6, 12, 12));
-        painter.setBrush(Qt::NoBrush);
-        painter.drawEllipse(QRectF(9.2, 9.2, 5.6, 5.6));
-        for (int angle = 0; angle < 360; angle += 45)
+        case ToolbarGlyph::Import:
+            painter.drawLine(QPointF(12, 3), QPointF(12, 14));
+            drawArrowHead(QPointF(12, 14), QPointF(8.5, 10.5), QPointF(15.5, 10.5));
+            painter.drawLine(QPointF(4, 17), QPointF(4, 20));
+            painter.drawLine(QPointF(4, 20), QPointF(20, 20));
+            painter.drawLine(QPointF(20, 20), QPointF(20, 17));
+            break;
+        case ToolbarGlyph::Undo:
         {
-            painter.save();
-            painter.translate(12, 12);
-            painter.rotate(angle);
-            painter.drawLine(QPointF(0, -9.5), QPointF(0, -6));
-            painter.restore();
+            QPainterPath path;
+            path.moveTo(5, 11);
+            path.cubicTo(8, 5, 18.5, 6, 19.5, 14);
+            path.cubicTo(20, 17, 18, 19.5, 15.5, 20.5);
+            painter.drawPath(path);
+            drawArrowHead(QPointF(5, 11), QPointF(5.2, 6), QPointF(10, 10));
+            break;
         }
-        break;
-    }
-    case ToolbarGlyph::Select:
-    {
-        QPainterPath cursor;
-        cursor.moveTo(5, 3);
-        cursor.lineTo(18.5, 13);
-        cursor.lineTo(12.5, 14.2);
-        cursor.lineTo(16.2, 20.2);
-        cursor.lineTo(13.1, 22);
-        cursor.lineTo(9.6, 15.7);
-        cursor.lineTo(5, 19.5);
-        cursor.closeSubpath();
-        painter.setBrush(color);
-        painter.drawPath(cursor);
-        break;
-    }
-    case ToolbarGlyph::Rotate:
-        painter.drawArc(QRectF(4, 4, 16, 16), 35 * 16, 285 * 16);
-        drawArrowHead(QPointF(18.8, 5.4), QPointF(14.2, 5), QPointF(18, 9.4));
-        break;
-    case ToolbarGlyph::Pan:
-        painter.drawLine(QPointF(12, 3), QPointF(12, 21));
-        painter.drawLine(QPointF(3, 12), QPointF(21, 12));
-        drawArrowHead(QPointF(12, 3), QPointF(9.3, 6), QPointF(14.7, 6));
-        drawArrowHead(QPointF(12, 21), QPointF(9.3, 18), QPointF(14.7, 18));
-        drawArrowHead(QPointF(3, 12), QPointF(6, 9.3), QPointF(6, 14.7));
-        drawArrowHead(QPointF(21, 12), QPointF(18, 9.3), QPointF(18, 14.7));
-        painter.setBrush(accent);
-        painter.drawEllipse(QPointF(12, 12), 1.7, 1.7);
-        break;
-    case ToolbarGlyph::Zoom:
-        painter.drawEllipse(QRectF(3.5, 3.5, 12.5, 12.5));
-        painter.drawLine(QPointF(14.2, 14.2), QPointF(21, 21));
-        painter.drawLine(QPointF(7, 9.75), QPointF(12.5, 9.75));
-        painter.drawLine(QPointF(9.75, 7), QPointF(9.75, 12.5));
-        break;
-    case ToolbarGlyph::Nodes:
-        painter.drawLine(QPointF(5, 18), QPointF(12, 5));
-        painter.drawLine(QPointF(12, 5), QPointF(20, 17));
-        painter.drawLine(QPointF(5, 18), QPointF(20, 17));
-        painter.setBrush(accent);
-        painter.drawEllipse(QPointF(5, 18), 2.2, 2.2);
-        painter.drawEllipse(QPointF(12, 5), 2.2, 2.2);
-        painter.drawEllipse(QPointF(20, 17), 2.2, 2.2);
-        break;
-    case ToolbarGlyph::Elements:
-        painter.drawPolygon(QPolygonF{QPointF(3.5, 19.5), QPointF(12, 3.5), QPointF(20.5, 19.5)});
-        painter.drawLine(QPointF(3.5, 19.5), QPointF(12, 12));
-        painter.drawLine(QPointF(12, 3.5), QPointF(12, 12));
-        painter.drawLine(QPointF(20.5, 19.5), QPointF(12, 12));
-        painter.setBrush(accent);
-        painter.drawEllipse(QPointF(12, 12), 1.7, 1.7);
-        break;
-    case ToolbarGlyph::NodeIds:
-        painter.drawLine(QPointF(4, 18), QPointF(10, 11));
-        painter.drawLine(QPointF(10, 11), QPointF(17, 18));
-        painter.setBrush(accent);
-        painter.drawEllipse(QPointF(10, 11), 2.4, 2.4);
-        painter.setBrush(Qt::NoBrush);
-        painter.drawRoundedRect(QRectF(12.5, 3, 9, 6), 1.5, 1.5);
-        painter.drawLine(QPointF(14.5, 5), QPointF(19.5, 5));
-        painter.drawLine(QPointF(14.5, 7), QPointF(18, 7));
-        break;
-    case ToolbarGlyph::ElementIds:
-        painter.drawPolygon(QPolygonF{QPointF(3.5, 19.5), QPointF(11, 5), QPointF(18.5, 19.5)});
-        painter.drawRoundedRect(QRectF(13, 3, 8.5, 6.5), 1.5, 1.5);
-        painter.drawLine(QPointF(15, 5.2), QPointF(19.5, 5.2));
-        painter.drawLine(QPointF(15, 7.3), QPointF(18.2, 7.3));
-        painter.setBrush(accent);
-        painter.drawEllipse(QPointF(11, 12), 1.6, 1.6);
-        break;
-    case ToolbarGlyph::Front:
-    case ToolbarGlyph::Back:
-    case ToolbarGlyph::Left:
-    case ToolbarGlyph::Right:
-    case ToolbarGlyph::Top:
-    case ToolbarGlyph::Bottom:
-    {
-        QColor faceColor = accent;
-        faceColor.setAlpha(90);
-        painter.setBrush(faceColor);
-        painter.drawPolygon(viewFace(glyph));
-        painter.setBrush(Qt::NoBrush);
-        painter.drawRect(QRectF(5, 8, 10, 10));
-        painter.drawRect(QRectF(9, 4, 10, 10));
-        painter.drawLine(QPointF(5, 8), QPointF(9, 4));
-        painter.drawLine(QPointF(15, 8), QPointF(19, 4));
-        painter.drawLine(QPointF(15, 18), QPointF(19, 14));
-        painter.drawLine(QPointF(5, 18), QPointF(9, 14));
-        painter.setPen(QPen(accent, 2.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-        switch (glyph)
+        case ToolbarGlyph::Model:
         {
+            painter.drawRoundedRect(QRectF(4, 7, 13, 13), 1.2, 1.2);
+            painter.setPen(QPen(accent, 1.8, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            painter.drawRoundedRect(QRectF(8, 3, 13, 13), 1.2, 1.2);
+            painter.drawLine(QPointF(4, 7), QPointF(8, 3));
+            painter.drawLine(QPointF(17, 7), QPointF(21, 3));
+            painter.drawLine(QPointF(17, 20), QPointF(21, 16));
+            break;
+        }
+        case ToolbarGlyph::Conductor:
+        {
+            painter.drawLine(QPointF(4, 4), QPointF(4, 21));
+            painter.drawLine(QPointF(20, 4), QPointF(20, 21));
+            painter.drawLine(QPointF(1.5, 7), QPointF(6.5, 7));
+            painter.drawLine(QPointF(17.5, 7), QPointF(22.5, 7));
+            painter.setPen(QPen(accent, 2.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            QPainterPath cable;
+            cable.moveTo(4, 7);
+            cable.cubicTo(8, 18, 16, 18, 20, 7);
+            painter.drawPath(cable);
+            break;
+        }
+        case ToolbarGlyph::Analysis:
+            painter.drawLine(QPointF(4, 3), QPointF(4, 20));
+            painter.drawLine(QPointF(4, 20), QPointF(21, 20));
+            painter.setPen(QPen(accent, 2.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            painter.drawPolyline(QPolygonF{QPointF(6, 16), QPointF(10, 11), QPointF(14, 14), QPointF(20, 6)});
+            painter.setBrush(accent);
+            painter.drawEllipse(QPointF(10, 11), 1.5, 1.5);
+            painter.drawEllipse(QPointF(20, 6), 1.5, 1.5);
+            break;
+        case ToolbarGlyph::Results:
+            painter.drawLine(QPointF(3, 21), QPointF(21, 21));
+            painter.setPen(QPen(accent, 1.4, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            painter.setBrush(accent);
+            painter.drawRoundedRect(QRectF(5, 12, 3.5, 8), 1, 1);
+            painter.drawRoundedRect(QRectF(10.3, 7, 3.5, 13), 1, 1);
+            painter.drawRoundedRect(QRectF(15.7, 3, 3.5, 17), 1, 1);
+            break;
+        case ToolbarGlyph::Settings:
+        {
+            painter.setBrush(accentFill);
+            painter.drawEllipse(QRectF(6, 6, 12, 12));
+            painter.setBrush(Qt::NoBrush);
+            painter.drawEllipse(QRectF(9.2, 9.2, 5.6, 5.6));
+            for (int angle = 0; angle < 360; angle += 45)
+            {
+                painter.save();
+                painter.translate(12, 12);
+                painter.rotate(angle);
+                painter.drawLine(QPointF(0, -9.5), QPointF(0, -6));
+                painter.restore();
+            }
+            break;
+        }
+        case ToolbarGlyph::Select:
+        {
+            QPainterPath cursor;
+            cursor.moveTo(5, 3);
+            cursor.lineTo(18.5, 13);
+            cursor.lineTo(12.5, 14.2);
+            cursor.lineTo(16.2, 20.2);
+            cursor.lineTo(13.1, 22);
+            cursor.lineTo(9.6, 15.7);
+            cursor.lineTo(5, 19.5);
+            cursor.closeSubpath();
+            painter.setBrush(color);
+            painter.drawPath(cursor);
+            break;
+        }
+        case ToolbarGlyph::Rotate:
+            painter.drawArc(QRectF(4, 4, 16, 16), 35 * 16, 285 * 16);
+            drawArrowHead(QPointF(18.8, 5.4), QPointF(14.2, 5), QPointF(18, 9.4));
+            break;
+        case ToolbarGlyph::Pan:
+            painter.drawLine(QPointF(12, 3), QPointF(12, 21));
+            painter.drawLine(QPointF(3, 12), QPointF(21, 12));
+            drawArrowHead(QPointF(12, 3), QPointF(9.3, 6), QPointF(14.7, 6));
+            drawArrowHead(QPointF(12, 21), QPointF(9.3, 18), QPointF(14.7, 18));
+            drawArrowHead(QPointF(3, 12), QPointF(6, 9.3), QPointF(6, 14.7));
+            drawArrowHead(QPointF(21, 12), QPointF(18, 9.3), QPointF(18, 14.7));
+            painter.setBrush(accent);
+            painter.drawEllipse(QPointF(12, 12), 1.7, 1.7);
+            break;
+        case ToolbarGlyph::Zoom:
+            painter.drawEllipse(QRectF(3.5, 3.5, 12.5, 12.5));
+            painter.drawLine(QPointF(14.2, 14.2), QPointF(21, 21));
+            painter.drawLine(QPointF(7, 9.75), QPointF(12.5, 9.75));
+            painter.drawLine(QPointF(9.75, 7), QPointF(9.75, 12.5));
+            break;
+        case ToolbarGlyph::Nodes:
+            painter.drawLine(QPointF(5, 18), QPointF(12, 5));
+            painter.drawLine(QPointF(12, 5), QPointF(20, 17));
+            painter.drawLine(QPointF(5, 18), QPointF(20, 17));
+            painter.setBrush(accent);
+            painter.drawEllipse(QPointF(5, 18), 2.2, 2.2);
+            painter.drawEllipse(QPointF(12, 5), 2.2, 2.2);
+            painter.drawEllipse(QPointF(20, 17), 2.2, 2.2);
+            break;
+        case ToolbarGlyph::Elements:
+            painter.drawPolygon(QPolygonF{QPointF(3.5, 19.5), QPointF(12, 3.5), QPointF(20.5, 19.5)});
+            painter.drawLine(QPointF(3.5, 19.5), QPointF(12, 12));
+            painter.drawLine(QPointF(12, 3.5), QPointF(12, 12));
+            painter.drawLine(QPointF(20.5, 19.5), QPointF(12, 12));
+            painter.setBrush(accent);
+            painter.drawEllipse(QPointF(12, 12), 1.7, 1.7);
+            break;
+        case ToolbarGlyph::NodeIds:
+            painter.drawLine(QPointF(4, 18), QPointF(10, 11));
+            painter.drawLine(QPointF(10, 11), QPointF(17, 18));
+            painter.setBrush(accent);
+            painter.drawEllipse(QPointF(10, 11), 2.4, 2.4);
+            painter.setBrush(Qt::NoBrush);
+            painter.drawRoundedRect(QRectF(12.5, 3, 9, 6), 1.5, 1.5);
+            painter.drawLine(QPointF(14.5, 5), QPointF(19.5, 5));
+            painter.drawLine(QPointF(14.5, 7), QPointF(18, 7));
+            break;
+        case ToolbarGlyph::ElementIds:
+            painter.drawPolygon(QPolygonF{QPointF(3.5, 19.5), QPointF(11, 5), QPointF(18.5, 19.5)});
+            painter.drawRoundedRect(QRectF(13, 3, 8.5, 6.5), 1.5, 1.5);
+            painter.drawLine(QPointF(15, 5.2), QPointF(19.5, 5.2));
+            painter.drawLine(QPointF(15, 7.3), QPointF(18.2, 7.3));
+            painter.setBrush(accent);
+            painter.drawEllipse(QPointF(11, 12), 1.6, 1.6);
+            break;
         case ToolbarGlyph::Front:
-            painter.drawLine(QPointF(14, 10), QPointF(7, 17));
-            drawArrowHead(QPointF(7, 17), QPointF(7.5, 12.8), QPointF(11.2, 16.5));
-            break;
         case ToolbarGlyph::Back:
-            painter.drawLine(QPointF(10, 14), QPointF(17, 7));
-            drawArrowHead(QPointF(17, 7), QPointF(16.5, 11.2), QPointF(12.8, 7.5));
-            break;
         case ToolbarGlyph::Left:
-            painter.drawLine(QPointF(14, 12), QPointF(3, 12));
-            drawArrowHead(QPointF(3, 12), QPointF(7, 8.8), QPointF(7, 15.2));
-            break;
         case ToolbarGlyph::Right:
-            painter.drawLine(QPointF(10, 12), QPointF(21, 12));
-            drawArrowHead(QPointF(21, 12), QPointF(17, 8.8), QPointF(17, 15.2));
-            break;
         case ToolbarGlyph::Top:
-            painter.drawLine(QPointF(12, 14), QPointF(12, 2));
-            drawArrowHead(QPointF(12, 2), QPointF(8.8, 6), QPointF(15.2, 6));
-            break;
         case ToolbarGlyph::Bottom:
-            painter.drawLine(QPointF(12, 10), QPointF(12, 22));
-            drawArrowHead(QPointF(12, 22), QPointF(8.8, 18), QPointF(15.2, 18));
-            break;
-        default:
+        {
+            QColor faceColor = accent;
+            faceColor.setAlpha(90);
+            painter.setBrush(faceColor);
+            painter.drawPolygon(viewFace(glyph));
+            painter.setBrush(Qt::NoBrush);
+            painter.drawRect(QRectF(5, 8, 10, 10));
+            painter.drawRect(QRectF(9, 4, 10, 10));
+            painter.drawLine(QPointF(5, 8), QPointF(9, 4));
+            painter.drawLine(QPointF(15, 8), QPointF(19, 4));
+            painter.drawLine(QPointF(15, 18), QPointF(19, 14));
+            painter.drawLine(QPointF(5, 18), QPointF(9, 14));
+            painter.setPen(QPen(accent, 2.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            switch (glyph)
+            {
+                case ToolbarGlyph::Front:
+                    painter.drawLine(QPointF(14, 10), QPointF(7, 17));
+                    drawArrowHead(QPointF(7, 17), QPointF(7.5, 12.8), QPointF(11.2, 16.5));
+                    break;
+                case ToolbarGlyph::Back:
+                    painter.drawLine(QPointF(10, 14), QPointF(17, 7));
+                    drawArrowHead(QPointF(17, 7), QPointF(16.5, 11.2), QPointF(12.8, 7.5));
+                    break;
+                case ToolbarGlyph::Left:
+                    painter.drawLine(QPointF(14, 12), QPointF(3, 12));
+                    drawArrowHead(QPointF(3, 12), QPointF(7, 8.8), QPointF(7, 15.2));
+                    break;
+                case ToolbarGlyph::Right:
+                    painter.drawLine(QPointF(10, 12), QPointF(21, 12));
+                    drawArrowHead(QPointF(21, 12), QPointF(17, 8.8), QPointF(17, 15.2));
+                    break;
+                case ToolbarGlyph::Top:
+                    painter.drawLine(QPointF(12, 14), QPointF(12, 2));
+                    drawArrowHead(QPointF(12, 2), QPointF(8.8, 6), QPointF(15.2, 6));
+                    break;
+                case ToolbarGlyph::Bottom:
+                    painter.drawLine(QPointF(12, 10), QPointF(12, 22));
+                    drawArrowHead(QPointF(12, 22), QPointF(8.8, 18), QPointF(15.2, 18));
+                    break;
+                default:
+                    break;
+            }
             break;
         }
-        break;
-    }
-    case ToolbarGlyph::Fit:
-        painter.drawLine(QPointF(4, 9), QPointF(4, 4));
-        painter.drawLine(QPointF(4, 4), QPointF(9, 4));
-        painter.drawLine(QPointF(15, 4), QPointF(20, 4));
-        painter.drawLine(QPointF(20, 4), QPointF(20, 9));
-        painter.drawLine(QPointF(20, 15), QPointF(20, 20));
-        painter.drawLine(QPointF(20, 20), QPointF(15, 20));
-        painter.drawLine(QPointF(9, 20), QPointF(4, 20));
-        painter.drawLine(QPointF(4, 20), QPointF(4, 15));
-        painter.setBrush(accent);
-        painter.drawRoundedRect(QRectF(8, 8, 8, 8), 1.5, 1.5);
-        break;
-    case ToolbarGlyph::Solve:
-        painter.setBrush(accent);
-        painter.drawPolygon(QPolygonF{QPointF(7, 4), QPointF(20, 12), QPointF(7, 20)});
-        break;
-    case ToolbarGlyph::Stop:
-        painter.setBrush(accent);
-        painter.drawRoundedRect(QRectF(5, 5, 14, 14), 2, 2);
-        break;
+        case ToolbarGlyph::Fit:
+            painter.drawLine(QPointF(4, 9), QPointF(4, 4));
+            painter.drawLine(QPointF(4, 4), QPointF(9, 4));
+            painter.drawLine(QPointF(15, 4), QPointF(20, 4));
+            painter.drawLine(QPointF(20, 4), QPointF(20, 9));
+            painter.drawLine(QPointF(20, 15), QPointF(20, 20));
+            painter.drawLine(QPointF(20, 20), QPointF(15, 20));
+            painter.drawLine(QPointF(9, 20), QPointF(4, 20));
+            painter.drawLine(QPointF(4, 20), QPointF(4, 15));
+            painter.setBrush(accent);
+            painter.drawRoundedRect(QRectF(8, 8, 8, 8), 1.5, 1.5);
+            break;
+        case ToolbarGlyph::Solve:
+            painter.setBrush(accent);
+            painter.drawPolygon(QPolygonF{QPointF(7, 4), QPointF(20, 12), QPointF(7, 20)});
+            break;
+        case ToolbarGlyph::Stop:
+            painter.setBrush(accent);
+            painter.drawRoundedRect(QRectF(5, 5, 14, 14), 2, 2);
+            break;
     }
     return pixmap;
 }
@@ -548,8 +562,7 @@ QIcon toolbarIcon(ToolbarGlyph glyph, const QColor& color, const QColor& accent)
 
 QPixmap renderNavigationGlyph(NavigationGlyph glyph, const QColor& color, const QColor& accent)
 {
-    // Keep this as a plain high-resolution pixmap. QIcon performs the final
-    // DPI scaling, avoiding the double-DPR clipping that affected the rail.
+    // 保持普通高分辨率位图，由 QIcon 完成最终 DPI 缩放，避免侧栏出现双重设备像素比裁剪。
     QPixmap pixmap(64, 64);
     pixmap.fill(Qt::transparent);
     QPainter painter(&pixmap);
@@ -560,77 +573,77 @@ QPixmap renderNavigationGlyph(NavigationGlyph glyph, const QColor& color, const 
 
     switch (glyph)
     {
-    case NavigationGlyph::Model:
-        painter.drawPolygon(QPolygonF{QPointF(16, 3), QPointF(27, 9), QPointF(16, 15), QPointF(5, 9)});
-        painter.drawPolyline(
-            QPolygonF{QPointF(5, 9), QPointF(5, 22), QPointF(16, 29), QPointF(27, 22), QPointF(27, 9)});
-        painter.drawLine(QPointF(16, 15), QPointF(16, 29));
-        painter.setPen(QPen(accent, 2.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-        painter.drawLine(QPointF(5, 9), QPointF(16, 15));
-        painter.drawLine(QPointF(27, 9), QPointF(16, 15));
-        break;
-    case NavigationGlyph::Properties:
-        painter.drawRoundedRect(QRectF(5, 4, 22, 24), 2.5, 2.5);
-        for (int y : {10, 16, 22})
-            painter.drawLine(QPointF(9, y), QPointF(23, y));
-        painter.setPen(QPen(accent, 2.8, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-        painter.drawEllipse(QPointF(13, 10), 2.1, 2.1);
-        painter.drawEllipse(QPointF(20, 16), 2.1, 2.1);
-        painter.drawEllipse(QPointF(11, 22), 2.1, 2.1);
-        break;
-    case NavigationGlyph::Conductor:
-    {
-        painter.drawLine(QPointF(6, 5), QPointF(6, 27));
-        painter.drawLine(QPointF(26, 5), QPointF(26, 27));
-        painter.drawLine(QPointF(2, 9), QPointF(10, 9));
-        painter.drawLine(QPointF(22, 9), QPointF(30, 9));
-        painter.setPen(QPen(accent, 2.6, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-        QPainterPath wire;
-        wire.moveTo(6, 9);
-        wire.cubicTo(10, 25, 22, 25, 26, 9);
-        painter.drawPath(wire);
-        break;
-    }
-    case NavigationGlyph::Analysis:
-    {
-        painter.drawLine(QPointF(4, 5), QPointF(4, 27));
-        painter.drawLine(QPointF(4, 27), QPointF(28, 27));
-        painter.setPen(QPen(accent, 2.6, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-        QPainterPath curve;
-        curve.moveTo(6, 22);
-        curve.cubicTo(10, 22, 10, 10, 15, 14);
-        curve.cubicTo(20, 18, 21, 7, 27, 7);
-        painter.drawPath(curve);
-        break;
-    }
-    case NavigationGlyph::Solve:
-        painter.drawEllipse(QRectF(3.5, 3.5, 25, 25));
-        painter.setPen(QPen(accent, 2.2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-        painter.setBrush(accent);
-        painter.drawPolygon(QPolygonF{QPointF(12, 9), QPointF(24, 16), QPointF(12, 23)});
-        break;
-    case NavigationGlyph::Results:
-        painter.drawLine(QPointF(4, 28), QPointF(29, 28));
-        painter.setPen(QPen(accent, 2.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-        painter.setBrush(accent);
-        painter.drawRoundedRect(QRectF(7, 18, 4, 9), 1, 1);
-        painter.drawRoundedRect(QRectF(14, 11, 4, 16), 1, 1);
-        painter.drawRoundedRect(QRectF(21, 5, 4, 22), 1, 1);
-        break;
-    case NavigationGlyph::Settings:
-        painter.drawEllipse(QRectF(8, 8, 16, 16));
-        painter.drawEllipse(QRectF(13, 13, 6, 6));
-        for (int angle = 0; angle < 360; angle += 45)
+        case NavigationGlyph::Model:
+            painter.drawPolygon(QPolygonF{QPointF(16, 3), QPointF(27, 9), QPointF(16, 15), QPointF(5, 9)});
+            painter.drawPolyline(
+                QPolygonF{QPointF(5, 9), QPointF(5, 22), QPointF(16, 29), QPointF(27, 22), QPointF(27, 9)});
+            painter.drawLine(QPointF(16, 15), QPointF(16, 29));
+            painter.setPen(QPen(accent, 2.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            painter.drawLine(QPointF(5, 9), QPointF(16, 15));
+            painter.drawLine(QPointF(27, 9), QPointF(16, 15));
+            break;
+        case NavigationGlyph::Properties:
+            painter.drawRoundedRect(QRectF(5, 4, 22, 24), 2.5, 2.5);
+            for (int y : {10, 16, 22})
+                painter.drawLine(QPointF(9, y), QPointF(23, y));
+            painter.setPen(QPen(accent, 2.8, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            painter.drawEllipse(QPointF(13, 10), 2.1, 2.1);
+            painter.drawEllipse(QPointF(20, 16), 2.1, 2.1);
+            painter.drawEllipse(QPointF(11, 22), 2.1, 2.1);
+            break;
+        case NavigationGlyph::Conductor:
         {
-            painter.save();
-            painter.translate(16, 16);
-            painter.rotate(angle);
-            painter.drawLine(QPointF(0, -14), QPointF(0, -9));
-            painter.restore();
+            painter.drawLine(QPointF(6, 5), QPointF(6, 27));
+            painter.drawLine(QPointF(26, 5), QPointF(26, 27));
+            painter.drawLine(QPointF(2, 9), QPointF(10, 9));
+            painter.drawLine(QPointF(22, 9), QPointF(30, 9));
+            painter.setPen(QPen(accent, 2.6, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            QPainterPath wire;
+            wire.moveTo(6, 9);
+            wire.cubicTo(10, 25, 22, 25, 26, 9);
+            painter.drawPath(wire);
+            break;
         }
-        painter.setPen(QPen(accent, 2.2));
-        painter.drawEllipse(QRectF(13, 13, 6, 6));
-        break;
+        case NavigationGlyph::Analysis:
+        {
+            painter.drawLine(QPointF(4, 5), QPointF(4, 27));
+            painter.drawLine(QPointF(4, 27), QPointF(28, 27));
+            painter.setPen(QPen(accent, 2.6, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            QPainterPath curve;
+            curve.moveTo(6, 22);
+            curve.cubicTo(10, 22, 10, 10, 15, 14);
+            curve.cubicTo(20, 18, 21, 7, 27, 7);
+            painter.drawPath(curve);
+            break;
+        }
+        case NavigationGlyph::Solve:
+            painter.drawEllipse(QRectF(3.5, 3.5, 25, 25));
+            painter.setPen(QPen(accent, 2.2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            painter.setBrush(accent);
+            painter.drawPolygon(QPolygonF{QPointF(12, 9), QPointF(24, 16), QPointF(12, 23)});
+            break;
+        case NavigationGlyph::Results:
+            painter.drawLine(QPointF(4, 28), QPointF(29, 28));
+            painter.setPen(QPen(accent, 2.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            painter.setBrush(accent);
+            painter.drawRoundedRect(QRectF(7, 18, 4, 9), 1, 1);
+            painter.drawRoundedRect(QRectF(14, 11, 4, 16), 1, 1);
+            painter.drawRoundedRect(QRectF(21, 5, 4, 22), 1, 1);
+            break;
+        case NavigationGlyph::Settings:
+            painter.drawEllipse(QRectF(8, 8, 16, 16));
+            painter.drawEllipse(QRectF(13, 13, 6, 6));
+            for (int angle = 0; angle < 360; angle += 45)
+            {
+                painter.save();
+                painter.translate(16, 16);
+                painter.rotate(angle);
+                painter.drawLine(QPointF(0, -14), QPointF(0, -9));
+                painter.restore();
+            }
+            painter.setPen(QPen(accent, 2.2));
+            painter.drawEllipse(QRectF(13, 13, 6, 6));
+            break;
     }
     return pixmap;
 }
@@ -661,81 +674,81 @@ QPixmap renderActionGlyph(ActionGlyph glyph, const QColor& color, const QColor& 
 
     switch (glyph)
     {
-    case ActionGlyph::Import:
-        painter.drawLine(QPointF(16, 4), QPointF(16, 21));
-        arrowHead(QPointF(16, 21), QPointF(10, 15), QPointF(22, 15));
-        painter.setPen(QPen(accent, 2.4, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-        painter.drawPolyline(QPolygonF{QPointF(5, 23), QPointF(5, 28), QPointF(27, 28), QPointF(27, 23)});
-        break;
-    case ActionGlyph::Fit:
-        painter.drawPolyline(QPolygonF{QPointF(12, 5), QPointF(5, 5), QPointF(5, 12)});
-        painter.drawPolyline(QPolygonF{QPointF(20, 5), QPointF(27, 5), QPointF(27, 12)});
-        painter.drawPolyline(QPolygonF{QPointF(27, 20), QPointF(27, 27), QPointF(20, 27)});
-        painter.drawPolyline(QPolygonF{QPointF(12, 27), QPointF(5, 27), QPointF(5, 20)});
-        painter.setPen(QPen(accent, 2.0));
-        painter.drawRoundedRect(QRectF(11, 11, 10, 10), 1.5, 1.5);
-        break;
-    case ActionGlyph::OpenFile:
-        painter.drawRoundedRect(QRectF(3, 8, 26, 19), 2, 2);
-        painter.drawPolyline(QPolygonF{QPointF(3, 11), QPointF(3, 5), QPointF(13, 5), QPointF(17, 9)});
-        painter.setPen(QPen(accent, 2.2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-        painter.drawLine(QPointF(16, 13), QPointF(16, 23));
-        arrowHead(QPointF(16, 23), QPointF(12, 19), QPointF(20, 19));
-        break;
-    case ActionGlyph::Run:
-        painter.drawEllipse(QRectF(3, 3, 26, 26));
-        painter.setBrush(accent);
-        painter.setPen(QPen(accent, 2));
-        painter.drawPolygon(QPolygonF{QPointF(12, 9), QPointF(24, 16), QPointF(12, 23)});
-        break;
-    case ActionGlyph::Stop:
-        painter.drawEllipse(QRectF(3, 3, 26, 26));
-        painter.setBrush(accent);
-        painter.setPen(QPen(accent, 2));
-        painter.drawRoundedRect(QRectF(10, 10, 12, 12), 1.5, 1.5);
-        break;
-    case ActionGlyph::Library:
-        for (int y : {5, 14, 23})
+        case ActionGlyph::Import:
+            painter.drawLine(QPointF(16, 4), QPointF(16, 21));
+            arrowHead(QPointF(16, 21), QPointF(10, 15), QPointF(22, 15));
+            painter.setPen(QPen(accent, 2.4, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            painter.drawPolyline(QPolygonF{QPointF(5, 23), QPointF(5, 28), QPointF(27, 28), QPointF(27, 23)});
+            break;
+        case ActionGlyph::Fit:
+            painter.drawPolyline(QPolygonF{QPointF(12, 5), QPointF(5, 5), QPointF(5, 12)});
+            painter.drawPolyline(QPolygonF{QPointF(20, 5), QPointF(27, 5), QPointF(27, 12)});
+            painter.drawPolyline(QPolygonF{QPointF(27, 20), QPointF(27, 27), QPointF(20, 27)});
+            painter.drawPolyline(QPolygonF{QPointF(12, 27), QPointF(5, 27), QPointF(5, 20)});
+            painter.setPen(QPen(accent, 2.0));
+            painter.drawRoundedRect(QRectF(11, 11, 10, 10), 1.5, 1.5);
+            break;
+        case ActionGlyph::OpenFile:
+            painter.drawRoundedRect(QRectF(3, 8, 26, 19), 2, 2);
+            painter.drawPolyline(QPolygonF{QPointF(3, 11), QPointF(3, 5), QPointF(13, 5), QPointF(17, 9)});
+            painter.setPen(QPen(accent, 2.2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            painter.drawLine(QPointF(16, 13), QPointF(16, 23));
+            arrowHead(QPointF(16, 23), QPointF(12, 19), QPointF(20, 19));
+            break;
+        case ActionGlyph::Run:
+            painter.drawEllipse(QRectF(3, 3, 26, 26));
+            painter.setBrush(accent);
+            painter.setPen(QPen(accent, 2));
+            painter.drawPolygon(QPolygonF{QPointF(12, 9), QPointF(24, 16), QPointF(12, 23)});
+            break;
+        case ActionGlyph::Stop:
+            painter.drawEllipse(QRectF(3, 3, 26, 26));
+            painter.setBrush(accent);
+            painter.setPen(QPen(accent, 2));
+            painter.drawRoundedRect(QRectF(10, 10, 12, 12), 1.5, 1.5);
+            break;
+        case ActionGlyph::Library:
+            for (int y : {5, 14, 23})
+            {
+                painter.drawEllipse(QRectF(5, y, 22, 6));
+                if (y < 23)
+                    painter.drawLine(QPointF(5, y + 3), QPointF(5, y + 12));
+            }
+            painter.drawLine(QPointF(27, 8), QPointF(27, 26));
+            painter.setPen(QPen(accent, 2));
+            painter.drawLine(QPointF(10, 17), QPointF(22, 17));
+            break;
+        case ActionGlyph::CreateConductor:
         {
-            painter.drawEllipse(QRectF(5, y, 22, 6));
-            if (y < 23)
-                painter.drawLine(QPointF(5, y + 3), QPointF(5, y + 12));
+            painter.drawLine(QPointF(4, 5), QPointF(4, 27));
+            painter.drawLine(QPointF(24, 5), QPointF(24, 27));
+            QPainterPath wire;
+            wire.moveTo(4, 9);
+            wire.cubicTo(8, 24, 20, 24, 24, 9);
+            painter.drawPath(wire);
+            painter.setPen(QPen(accent, 2.4, Qt::SolidLine, Qt::RoundCap));
+            painter.drawLine(QPointF(27, 18), QPointF(27, 28));
+            painter.drawLine(QPointF(22, 23), QPointF(32, 23));
+            break;
         }
-        painter.drawLine(QPointF(27, 8), QPointF(27, 26));
-        painter.setPen(QPen(accent, 2));
-        painter.drawLine(QPointF(10, 17), QPointF(22, 17));
-        break;
-    case ActionGlyph::CreateConductor:
-    {
-        painter.drawLine(QPointF(4, 5), QPointF(4, 27));
-        painter.drawLine(QPointF(24, 5), QPointF(24, 27));
-        QPainterPath wire;
-        wire.moveTo(4, 9);
-        wire.cubicTo(8, 24, 20, 24, 24, 9);
-        painter.drawPath(wire);
-        painter.setPen(QPen(accent, 2.4, Qt::SolidLine, Qt::RoundCap));
-        painter.drawLine(QPointF(27, 18), QPointF(27, 28));
-        painter.drawLine(QPointF(22, 23), QPointF(32, 23));
-        break;
-    }
-    case ActionGlyph::Refresh:
-        painter.drawArc(QRectF(5, 5, 22, 22), 35 * 16, 285 * 16);
-        arrowHead(QPointF(25, 7), QPointF(19, 7), QPointF(24, 13));
-        painter.setPen(QPen(accent, 2));
-        painter.drawEllipse(QPointF(16, 16), 2, 2);
-        break;
-    case ActionGlyph::Apply:
-        painter.drawRoundedRect(QRectF(3, 3, 26, 26), 3, 3);
-        painter.setPen(QPen(accent, 3.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-        painter.drawPolyline(QPolygonF{QPointF(8, 16), QPointF(14, 22), QPointF(25, 10)});
-        break;
-    case ActionGlyph::Export:
-        painter.drawRoundedRect(QRectF(4, 4, 24, 24), 3, 3);
-        painter.drawLine(QPointF(16, 20), QPointF(16, 8));
-        arrowHead(QPointF(16, 8), QPointF(11, 13), QPointF(21, 13));
-        painter.setPen(QPen(accent, 2.4, Qt::SolidLine, Qt::RoundCap));
-        painter.drawLine(QPointF(9, 24), QPointF(23, 24));
-        break;
+        case ActionGlyph::Refresh:
+            painter.drawArc(QRectF(5, 5, 22, 22), 35 * 16, 285 * 16);
+            arrowHead(QPointF(25, 7), QPointF(19, 7), QPointF(24, 13));
+            painter.setPen(QPen(accent, 2));
+            painter.drawEllipse(QPointF(16, 16), 2, 2);
+            break;
+        case ActionGlyph::Apply:
+            painter.drawRoundedRect(QRectF(3, 3, 26, 26), 3, 3);
+            painter.setPen(QPen(accent, 3.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            painter.drawPolyline(QPolygonF{QPointF(8, 16), QPointF(14, 22), QPointF(25, 10)});
+            break;
+        case ActionGlyph::Export:
+            painter.drawRoundedRect(QRectF(4, 4, 24, 24), 3, 3);
+            painter.drawLine(QPointF(16, 20), QPointF(16, 8));
+            arrowHead(QPointF(16, 8), QPointF(11, 13), QPointF(21, 13));
+            painter.setPen(QPen(accent, 2.4, Qt::SolidLine, Qt::RoundCap));
+            painter.drawLine(QPointF(9, 24), QPointF(23, 24));
+            break;
     }
     return pixmap;
 }
@@ -766,8 +779,7 @@ void applyActionIcons(QWidget* root, const QColor& color, const QColor& accent)
 
 QIcon treeIcon(TreeGlyph glyph, const QColor& color, const QColor& accent)
 {
-    // Render at 64 px without a device-pixel-ratio flag. The tree requests a
-    // 20 px icon and Qt downsamples this cleanly on every display scale.
+    // 按 64 像素渲染且不设置设备像素比；树控件请求 20 像素图标时由 Qt 在各缩放比例下清晰降采样。
     QPixmap pixmap(64, 64);
     pixmap.fill(Qt::transparent);
 
@@ -782,161 +794,161 @@ QIcon treeIcon(TreeGlyph glyph, const QColor& color, const QColor& accent)
 
     switch (glyph)
     {
-    case TreeGlyph::Project:
-        painter.drawRoundedRect(QRectF(3, 2, 10, 12), 1.2, 1.2);
-        painter.drawLine(QPointF(9, 2), QPointF(13, 6));
-        painter.drawLine(QPointF(9, 2), QPointF(9, 6));
-        painter.drawLine(QPointF(9, 6), QPointF(13, 6));
-        painter.setPen(QPen(accent, 1.25));
-        painter.drawLine(QPointF(5, 9), QPointF(11, 9));
-        painter.drawLine(QPointF(5, 11.5), QPointF(10, 11.5));
-        break;
-    case TreeGlyph::Model:
-        painter.setBrush(accentFill);
-        painter.drawPolygon(QPolygonF{QPointF(8, 1.5), QPointF(14, 5), QPointF(8, 8.5), QPointF(2, 5)});
-        painter.setBrush(Qt::NoBrush);
-        painter.drawLine(QPointF(2, 5), QPointF(2, 11));
-        painter.drawLine(QPointF(14, 5), QPointF(14, 11));
-        painter.drawLine(QPointF(8, 8.5), QPointF(8, 14.5));
-        painter.drawLine(QPointF(2, 11), QPointF(8, 14.5));
-        painter.drawLine(QPointF(14, 11), QPointF(8, 14.5));
-        break;
-    case TreeGlyph::Nodes:
-        painter.drawLine(QPointF(3, 12.5), QPointF(8, 3));
-        painter.drawLine(QPointF(8, 3), QPointF(13, 12.5));
-        painter.drawLine(QPointF(3, 12.5), QPointF(13, 12.5));
-        painter.setBrush(accent);
-        painter.drawEllipse(QPointF(3, 12.5), 1.6, 1.6);
-        painter.drawEllipse(QPointF(8, 3), 1.6, 1.6);
-        painter.drawEllipse(QPointF(13, 12.5), 1.6, 1.6);
-        break;
-    case TreeGlyph::Elements:
-    case TreeGlyph::Truss:
-        painter.setBrush(accentFill);
-        painter.drawPolygon(QPolygonF{QPointF(2, 13), QPointF(8, 2), QPointF(14, 13)});
-        painter.setBrush(Qt::NoBrush);
-        painter.drawLine(QPointF(2, 13), QPointF(8, 8));
-        painter.drawLine(QPointF(8, 2), QPointF(8, 8));
-        painter.drawLine(QPointF(14, 13), QPointF(8, 8));
-        break;
-    case TreeGlyph::Material:
-        painter.setBrush(accentFill);
-        painter.drawEllipse(QRectF(3, 2, 10, 4));
-        painter.setBrush(Qt::NoBrush);
-        painter.drawLine(QPointF(3, 4), QPointF(3, 12));
-        painter.drawLine(QPointF(13, 4), QPointF(13, 12));
-        painter.drawArc(QRectF(3, 10, 10, 4), 180 * 16, 180 * 16);
-        painter.drawArc(QRectF(3, 6, 10, 4), 180 * 16, 180 * 16);
-        break;
-    case TreeGlyph::Section:
-    case TreeGlyph::Beam:
-        painter.setBrush(accentFill);
-        painter.drawRoundedRect(QRectF(2, 2, 12, 3), 0.8, 0.8);
-        painter.drawRect(QRectF(6.5, 5, 3, 6));
-        painter.drawRoundedRect(QRectF(2, 11, 12, 3), 0.8, 0.8);
-        break;
-    case TreeGlyph::ElementTypes:
-        painter.drawPolygon(QPolygonF{QPointF(2, 5), QPointF(4, 2), QPointF(6, 5)});
-        painter.drawArc(QRectF(2, 6, 4, 4), 0, 180 * 16);
-        painter.drawLine(QPointF(2, 13), QPointF(6, 13));
-        painter.setPen(QPen(accent, 1.25));
-        painter.drawLine(QPointF(8, 3), QPointF(14, 3));
-        painter.drawLine(QPointF(8, 8), QPointF(14, 8));
-        painter.drawLine(QPointF(8, 13), QPointF(14, 13));
-        break;
-    case TreeGlyph::Cable:
-        painter.drawLine(QPointF(2, 3), QPointF(2, 6));
-        painter.drawLine(QPointF(14, 3), QPointF(14, 6));
-        painter.drawArc(QRectF(2, 1, 12, 11), 180 * 16, 180 * 16);
-        painter.setBrush(accent);
-        painter.drawEllipse(QPointF(2, 5.5), 1.2, 1.2);
-        painter.drawEllipse(QPointF(14, 5.5), 1.2, 1.2);
-        break;
-    case TreeGlyph::Other:
-        painter.setBrush(accentFill);
-        painter.drawPolygon(QPolygonF{QPointF(8, 1.5), QPointF(13.5, 4.8), QPointF(13.5, 11.2), QPointF(8, 14.5),
-                                      QPointF(2.5, 11.2), QPointF(2.5, 4.8)});
-        break;
-    case TreeGlyph::AnalysisSteps:
-        painter.drawLine(QPointF(3, 8), QPointF(13, 8));
-        painter.setBrush(accent);
-        painter.drawEllipse(QPointF(3, 8), 1.6, 1.6);
-        painter.drawEllipse(QPointF(8, 8), 1.6, 1.6);
-        painter.drawEllipse(QPointF(13, 8), 1.6, 1.6);
-        painter.drawLine(QPointF(11, 5.5), QPointF(13.5, 8));
-        painter.drawLine(QPointF(13.5, 8), QPointF(11, 10.5));
-        break;
-    case TreeGlyph::AnalysisStep:
-        painter.drawPolyline(
-            QPolygonF{QPointF(2, 12), QPointF(5, 12), QPointF(5, 8), QPointF(9, 8), QPointF(9, 4), QPointF(14, 4)});
-        painter.setBrush(accent);
-        painter.drawEllipse(QPointF(5, 12), 1.2, 1.2);
-        painter.drawEllipse(QPointF(9, 8), 1.2, 1.2);
-        painter.drawEllipse(QPointF(14, 4), 1.2, 1.2);
-        break;
-    case TreeGlyph::Load:
-        painter.drawLine(QPointF(8, 1.5), QPointF(8, 10));
-        painter.drawLine(QPointF(5, 7), QPointF(8, 10));
-        painter.drawLine(QPointF(11, 7), QPointF(8, 10));
-        painter.setPen(QPen(accent, 1.5));
-        painter.drawLine(QPointF(2, 13), QPointF(14, 13));
-        break;
-    case TreeGlyph::Constraint:
-        painter.setBrush(accentFill);
-        painter.drawPolygon(QPolygonF{QPointF(8, 3), QPointF(3, 11), QPointF(13, 11)});
-        painter.setBrush(Qt::NoBrush);
-        painter.drawLine(QPointF(2, 12.5), QPointF(14, 12.5));
-        painter.drawLine(QPointF(4, 12.5), QPointF(2.5, 15));
-        painter.drawLine(QPointF(8, 12.5), QPointF(6.5, 15));
-        painter.drawLine(QPointF(12, 12.5), QPointF(10.5, 15));
-        break;
-    case TreeGlyph::MPC:
-        painter.drawEllipse(QPointF(3.5, 8), 2.0, 2.0);
-        painter.drawEllipse(QPointF(12.5, 8), 2.0, 2.0);
-        painter.drawLine(QPointF(5.7, 8), QPointF(10.3, 8));
-        painter.setPen(QPen(accent, 1.5, Qt::SolidLine, Qt::RoundCap));
-        painter.drawLine(QPointF(8, 4.5), QPointF(8, 11.5));
-        break;
-    case TreeGlyph::SolveTask:
-        painter.drawEllipse(QRectF(1.5, 1.5, 13, 13));
-        painter.setBrush(accent);
-        painter.drawPolygon(QPolygonF{QPointF(6, 4.5), QPointF(12, 8), QPointF(6, 11.5)});
-        break;
-    case TreeGlyph::StopTask:
-        painter.drawEllipse(QRectF(1.5, 1.5, 13, 13));
-        painter.setBrush(accent);
-        painter.drawRoundedRect(QRectF(5.2, 5.2, 5.6, 5.6), 0.8, 0.8);
-        break;
-    case TreeGlyph::ResultFile:
-        painter.drawRoundedRect(QRectF(2, 1.5, 12, 13), 1.2, 1.2);
-        painter.setPen(QPen(accent, 1.4, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-        painter.drawPolyline(QPolygonF{QPointF(4, 11), QPointF(7, 8), QPointF(9, 10), QPointF(12, 5)});
-        break;
-    case TreeGlyph::ResultFrames:
-        painter.drawRoundedRect(QRectF(1.5, 3, 11, 10), 1, 1);
-        painter.drawRoundedRect(QRectF(4, 1, 10.5, 10), 1, 1);
-        painter.setPen(QPen(accent, 1.3));
-        painter.drawLine(QPointF(6, 4), QPointF(12, 4));
-        painter.drawLine(QPointF(6, 7), QPointF(11, 7));
-        break;
-    case TreeGlyph::Displacement:
-        painter.drawLine(QPointF(2, 12), QPointF(13, 3));
-        painter.drawLine(QPointF(13, 3), QPointF(9, 3.5));
-        painter.drawLine(QPointF(13, 3), QPointF(12.5, 7));
-        painter.setPen(QPen(accent, 1.4));
-        painter.drawLine(QPointF(3, 13.5), QPointF(10, 13.5));
-        break;
-    case TreeGlyph::Stress:
-        painter.drawEllipse(QRectF(2, 2, 12, 12));
-        painter.drawArc(QRectF(4, 4, 8, 8), 20 * 16, 140 * 16);
-        painter.setPen(QPen(accent, 1.5, Qt::SolidLine, Qt::RoundCap));
-        painter.drawLine(QPointF(8, 8), QPointF(12, 5));
-        break;
-    case TreeGlyph::Strain:
-        painter.drawRect(QRectF(2, 3, 9, 10));
-        painter.setPen(QPen(accent, 1.4, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-        painter.drawPolygon(QPolygonF{QPointF(6, 1.5), QPointF(14, 4), QPointF(11, 14), QPointF(3, 11.5)});
-        break;
+        case TreeGlyph::Project:
+            painter.drawRoundedRect(QRectF(3, 2, 10, 12), 1.2, 1.2);
+            painter.drawLine(QPointF(9, 2), QPointF(13, 6));
+            painter.drawLine(QPointF(9, 2), QPointF(9, 6));
+            painter.drawLine(QPointF(9, 6), QPointF(13, 6));
+            painter.setPen(QPen(accent, 1.25));
+            painter.drawLine(QPointF(5, 9), QPointF(11, 9));
+            painter.drawLine(QPointF(5, 11.5), QPointF(10, 11.5));
+            break;
+        case TreeGlyph::Model:
+            painter.setBrush(accentFill);
+            painter.drawPolygon(QPolygonF{QPointF(8, 1.5), QPointF(14, 5), QPointF(8, 8.5), QPointF(2, 5)});
+            painter.setBrush(Qt::NoBrush);
+            painter.drawLine(QPointF(2, 5), QPointF(2, 11));
+            painter.drawLine(QPointF(14, 5), QPointF(14, 11));
+            painter.drawLine(QPointF(8, 8.5), QPointF(8, 14.5));
+            painter.drawLine(QPointF(2, 11), QPointF(8, 14.5));
+            painter.drawLine(QPointF(14, 11), QPointF(8, 14.5));
+            break;
+        case TreeGlyph::Nodes:
+            painter.drawLine(QPointF(3, 12.5), QPointF(8, 3));
+            painter.drawLine(QPointF(8, 3), QPointF(13, 12.5));
+            painter.drawLine(QPointF(3, 12.5), QPointF(13, 12.5));
+            painter.setBrush(accent);
+            painter.drawEllipse(QPointF(3, 12.5), 1.6, 1.6);
+            painter.drawEllipse(QPointF(8, 3), 1.6, 1.6);
+            painter.drawEllipse(QPointF(13, 12.5), 1.6, 1.6);
+            break;
+        case TreeGlyph::Elements:
+        case TreeGlyph::Truss:
+            painter.setBrush(accentFill);
+            painter.drawPolygon(QPolygonF{QPointF(2, 13), QPointF(8, 2), QPointF(14, 13)});
+            painter.setBrush(Qt::NoBrush);
+            painter.drawLine(QPointF(2, 13), QPointF(8, 8));
+            painter.drawLine(QPointF(8, 2), QPointF(8, 8));
+            painter.drawLine(QPointF(14, 13), QPointF(8, 8));
+            break;
+        case TreeGlyph::Material:
+            painter.setBrush(accentFill);
+            painter.drawEllipse(QRectF(3, 2, 10, 4));
+            painter.setBrush(Qt::NoBrush);
+            painter.drawLine(QPointF(3, 4), QPointF(3, 12));
+            painter.drawLine(QPointF(13, 4), QPointF(13, 12));
+            painter.drawArc(QRectF(3, 10, 10, 4), 180 * 16, 180 * 16);
+            painter.drawArc(QRectF(3, 6, 10, 4), 180 * 16, 180 * 16);
+            break;
+        case TreeGlyph::Section:
+        case TreeGlyph::Beam:
+            painter.setBrush(accentFill);
+            painter.drawRoundedRect(QRectF(2, 2, 12, 3), 0.8, 0.8);
+            painter.drawRect(QRectF(6.5, 5, 3, 6));
+            painter.drawRoundedRect(QRectF(2, 11, 12, 3), 0.8, 0.8);
+            break;
+        case TreeGlyph::ElementTypes:
+            painter.drawPolygon(QPolygonF{QPointF(2, 5), QPointF(4, 2), QPointF(6, 5)});
+            painter.drawArc(QRectF(2, 6, 4, 4), 0, 180 * 16);
+            painter.drawLine(QPointF(2, 13), QPointF(6, 13));
+            painter.setPen(QPen(accent, 1.25));
+            painter.drawLine(QPointF(8, 3), QPointF(14, 3));
+            painter.drawLine(QPointF(8, 8), QPointF(14, 8));
+            painter.drawLine(QPointF(8, 13), QPointF(14, 13));
+            break;
+        case TreeGlyph::Cable:
+            painter.drawLine(QPointF(2, 3), QPointF(2, 6));
+            painter.drawLine(QPointF(14, 3), QPointF(14, 6));
+            painter.drawArc(QRectF(2, 1, 12, 11), 180 * 16, 180 * 16);
+            painter.setBrush(accent);
+            painter.drawEllipse(QPointF(2, 5.5), 1.2, 1.2);
+            painter.drawEllipse(QPointF(14, 5.5), 1.2, 1.2);
+            break;
+        case TreeGlyph::Other:
+            painter.setBrush(accentFill);
+            painter.drawPolygon(QPolygonF{QPointF(8, 1.5), QPointF(13.5, 4.8), QPointF(13.5, 11.2), QPointF(8, 14.5),
+                                          QPointF(2.5, 11.2), QPointF(2.5, 4.8)});
+            break;
+        case TreeGlyph::AnalysisSteps:
+            painter.drawLine(QPointF(3, 8), QPointF(13, 8));
+            painter.setBrush(accent);
+            painter.drawEllipse(QPointF(3, 8), 1.6, 1.6);
+            painter.drawEllipse(QPointF(8, 8), 1.6, 1.6);
+            painter.drawEllipse(QPointF(13, 8), 1.6, 1.6);
+            painter.drawLine(QPointF(11, 5.5), QPointF(13.5, 8));
+            painter.drawLine(QPointF(13.5, 8), QPointF(11, 10.5));
+            break;
+        case TreeGlyph::AnalysisStep:
+            painter.drawPolyline(
+                QPolygonF{QPointF(2, 12), QPointF(5, 12), QPointF(5, 8), QPointF(9, 8), QPointF(9, 4), QPointF(14, 4)});
+            painter.setBrush(accent);
+            painter.drawEllipse(QPointF(5, 12), 1.2, 1.2);
+            painter.drawEllipse(QPointF(9, 8), 1.2, 1.2);
+            painter.drawEllipse(QPointF(14, 4), 1.2, 1.2);
+            break;
+        case TreeGlyph::Load:
+            painter.drawLine(QPointF(8, 1.5), QPointF(8, 10));
+            painter.drawLine(QPointF(5, 7), QPointF(8, 10));
+            painter.drawLine(QPointF(11, 7), QPointF(8, 10));
+            painter.setPen(QPen(accent, 1.5));
+            painter.drawLine(QPointF(2, 13), QPointF(14, 13));
+            break;
+        case TreeGlyph::Constraint:
+            painter.setBrush(accentFill);
+            painter.drawPolygon(QPolygonF{QPointF(8, 3), QPointF(3, 11), QPointF(13, 11)});
+            painter.setBrush(Qt::NoBrush);
+            painter.drawLine(QPointF(2, 12.5), QPointF(14, 12.5));
+            painter.drawLine(QPointF(4, 12.5), QPointF(2.5, 15));
+            painter.drawLine(QPointF(8, 12.5), QPointF(6.5, 15));
+            painter.drawLine(QPointF(12, 12.5), QPointF(10.5, 15));
+            break;
+        case TreeGlyph::MPC:
+            painter.drawEllipse(QPointF(3.5, 8), 2.0, 2.0);
+            painter.drawEllipse(QPointF(12.5, 8), 2.0, 2.0);
+            painter.drawLine(QPointF(5.7, 8), QPointF(10.3, 8));
+            painter.setPen(QPen(accent, 1.5, Qt::SolidLine, Qt::RoundCap));
+            painter.drawLine(QPointF(8, 4.5), QPointF(8, 11.5));
+            break;
+        case TreeGlyph::SolveTask:
+            painter.drawEllipse(QRectF(1.5, 1.5, 13, 13));
+            painter.setBrush(accent);
+            painter.drawPolygon(QPolygonF{QPointF(6, 4.5), QPointF(12, 8), QPointF(6, 11.5)});
+            break;
+        case TreeGlyph::StopTask:
+            painter.drawEllipse(QRectF(1.5, 1.5, 13, 13));
+            painter.setBrush(accent);
+            painter.drawRoundedRect(QRectF(5.2, 5.2, 5.6, 5.6), 0.8, 0.8);
+            break;
+        case TreeGlyph::ResultFile:
+            painter.drawRoundedRect(QRectF(2, 1.5, 12, 13), 1.2, 1.2);
+            painter.setPen(QPen(accent, 1.4, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            painter.drawPolyline(QPolygonF{QPointF(4, 11), QPointF(7, 8), QPointF(9, 10), QPointF(12, 5)});
+            break;
+        case TreeGlyph::ResultFrames:
+            painter.drawRoundedRect(QRectF(1.5, 3, 11, 10), 1, 1);
+            painter.drawRoundedRect(QRectF(4, 1, 10.5, 10), 1, 1);
+            painter.setPen(QPen(accent, 1.3));
+            painter.drawLine(QPointF(6, 4), QPointF(12, 4));
+            painter.drawLine(QPointF(6, 7), QPointF(11, 7));
+            break;
+        case TreeGlyph::Displacement:
+            painter.drawLine(QPointF(2, 12), QPointF(13, 3));
+            painter.drawLine(QPointF(13, 3), QPointF(9, 3.5));
+            painter.drawLine(QPointF(13, 3), QPointF(12.5, 7));
+            painter.setPen(QPen(accent, 1.4));
+            painter.drawLine(QPointF(3, 13.5), QPointF(10, 13.5));
+            break;
+        case TreeGlyph::Stress:
+            painter.drawEllipse(QRectF(2, 2, 12, 12));
+            painter.drawArc(QRectF(4, 4, 8, 8), 20 * 16, 140 * 16);
+            painter.setPen(QPen(accent, 1.5, Qt::SolidLine, Qt::RoundCap));
+            painter.drawLine(QPointF(8, 8), QPointF(12, 5));
+            break;
+        case TreeGlyph::Strain:
+            painter.drawRect(QRectF(2, 3, 9, 10));
+            painter.setPen(QPen(accent, 1.4, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            painter.drawPolygon(QPolygonF{QPointF(6, 1.5), QPointF(14, 4), QPointF(11, 14), QPointF(3, 11.5)});
+            break;
     }
 
     return QIcon(pixmap);
@@ -1394,8 +1406,7 @@ QToolTip, QLabel#qtooltip_label {
 }
 )QSS");
 
-    // Keep the file-dialog navigation buttons separate from ordinary text buttons:
-    // their icons need an actual square drawing area rather than horizontal text padding.
+    // 文件对话框导航按钮与普通文字按钮分开设置，其图标需要正方形绘制区域，不能使用文字按钮的水平内边距。
     style += QStringLiteral(R"QSS(
 QFileDialog QToolButton { background: $ELEVATED; border: 1px solid $BORDER_STRONG; border-radius: 6px; padding: 0; min-width: 34px; max-width: 34px; min-height: 30px; max-height: 30px; icon-size: 20px; }
 QFileDialog QToolButton:hover { background: $ACCENT_SOFT; border-color: $ACCENT2; }
@@ -1422,8 +1433,9 @@ QFileDialog QToolButton:pressed { background: $FIELD; border-color: $ACCENT; pad
 } // namespace
 
 YQY::YQY(QWidget* parent)
-    : QMainWindow(parent), m_modelController(new ModelController(this)),
-      m_solveTaskController(new SolveTaskController(this))
+    : QMainWindow(parent)
+    , m_modelController(new ModelController(this))
+    , m_solveTaskController(new SolveTaskController(this))
 {
     ui.setupUi(this);
     if (!qApp->findChild<QObject*>(QStringLiteral("popupThemeFilter")))
@@ -1444,9 +1456,7 @@ YQY::YQY(QWidget* parent)
     setMinimumSize(760, 520);
     initializeToolbarAppearance();
 
-    // The conductor/property/analysis editors need enough room for their
-    // labels and native sub-controls.  A narrower initial pane made fields
-    // look broken even though the splitter itself was still valid.
+    // 导线、属性和分析编辑器需要为标签及原生子控件保留足够空间；初始面板过窄会造成字段显示错乱。
     ui.mainSplitter->setSizes(m_normalMainSplitterSizes);
     ui.modelDataTree->header()->setStretchLastSection(true);
     ui.solveStepTree->setColumnCount(4);
@@ -1467,8 +1477,8 @@ YQY::YQY(QWidget* parent)
     m_solveCasesButton = ui.solveCasesButton;
     m_solveAllCasesButton = ui.solveAllCasesButton;
     m_solveRestartAllCasesButton = ui.solveRestartAllCasesButton;
-    const QList<QPushButton*> solveBatchButtons = {
-        m_solveCasesButton, m_solveAllCasesButton, m_solveRestartAllCasesButton};
+    const QList<QPushButton*> solveBatchButtons = {m_solveCasesButton, m_solveAllCasesButton,
+                                                   m_solveRestartAllCasesButton};
     for (QPushButton* button : solveBatchButtons)
     {
         button->setMinimumHeight(54);
@@ -1484,7 +1494,8 @@ YQY::YQY(QWidget* parent)
     m_solveAllCasesButton->setFont(solveCasesFont);
     m_solveRestartAllCasesButton->setFont(solveCasesFont);
     m_solveCasesButton->setToolTip(QStringLiteral("打开全部分析步求解窗口"));
-    m_solveAllCasesButton->setToolTip(QStringLiteral("将所有待运行分析步加入计算队列；正在计算、已排队和已有结果的算例不会重复计算；单个分析步失败不会停止其他队列任务"));
+    m_solveAllCasesButton->setToolTip(QStringLiteral("将所有待运行分析步加入计算队列；正在计算、已排队和已有结果的算例"
+                                                     "不会重复计算；单个分析步失败不会停止其他队列任务"));
     m_solveRestartAllCasesButton->setToolTip(
         QStringLiteral("重新计算所有分析步；正在排队或计算的任务会先安全停止，再从头加入计算队列"));
     connect(m_solveCasesButton, &QPushButton::clicked, this, &YQY::openSolveTaskManager);
@@ -1492,7 +1503,10 @@ YQY::YQY(QWidget* parent)
     connect(m_solveRestartAllCasesButton, &QPushButton::clicked, this, &YQY::restartAllSolveTasks);
     ui.solveProgress->setObjectName(QStringLiteral("solveTaskProgress"));
     connect(ui.solveProgress, &QProgressBar::valueChanged, ui.solveProgress,
-            [this](int value) { ui.solveProgress->setFormat(QStringLiteral("%1%").arg(value / 10.0, 0, 'f', 1)); });
+            [this](int value)
+            {
+                ui.solveProgress->setFormat(QStringLiteral("%1%").arg(value / 10.0, 0, 'f', 1));
+            });
     initializeAnalysisEditor();
     initializeResponsiveLayout();
 
@@ -1522,7 +1536,10 @@ void YQY::initializeSettingsModule()
     m_settingsPanel = new SettingsPanel(ui.settingsModulePage);
     auto* concurrencySpin = m_settingsPanel->concurrencySpin();
     auto* assemblyThreadsSpin = m_settingsPanel->assemblyThreadsSpin();
+    auto* resultBatchFramesSpin = m_settingsPanel->resultBatchFramesSpin();
+    auto* backgroundResultWriteCheckBox = m_settingsPanel->backgroundResultWriteCheckBox();
     auto* gpuSolverCheckBox = m_settingsPanel->gpuSolverCheckBox();
+    auto* linearSolverModeCombo = m_settingsPanel->linearSolverModeCombo();
     auto* nodeLabelModeCombo = m_settingsPanel->nodeLabelModeCombo();
     const int availableThreads = SolveTaskController::availableThreadCount();
     const int allowedThreads = SolveTaskController::maximumAllowedThreadCount();
@@ -1534,12 +1551,11 @@ void YQY::initializeSettingsModule()
     assemblyThreadsSpin->setRange(1, allowedThreads);
     assemblyThreadsSpin->setSuffix(QStringLiteral(" 个线程"));
     assemblyThreadsSpin->setMinimumWidth(150);
-    assemblyThreadsSpin->setToolTip(
-        QStringLiteral("单个分析步的单元装配工作线程数。大模型可提高该值；多个分析步同时计算时，请避免两项设置的乘积超过本机线程数。"));
+    assemblyThreadsSpin->setToolTip(QStringLiteral("单个分析步的单元装配工作线程数。大模型可提高该值；多个分析步同时计"
+                                                   "算时，请避免两项设置的乘积超过本机线程数。"));
 
     QSettings settings;
-    const bool adaptiveNodeLabels = settings.value(
-        QStringLiteral("view/adaptiveNodeLabels"), false).toBool();
+    const bool adaptiveNodeLabels = settings.value(QStringLiteral("view/adaptiveNodeLabels"), false).toBool();
     nodeLabelModeCombo->setCurrentIndex(adaptiveNodeLabels ? 1 : 0);
     ui.modelViewport->setAdaptiveNodeLabels(adaptiveNodeLabels);
     connect(nodeLabelModeCombo, qOverload<int>(&QComboBox::currentIndexChanged), this,
@@ -1557,22 +1573,35 @@ void YQY::initializeSettingsModule()
         allowedThreads);
     concurrencySpin->setValue(savedConcurrency);
     m_solveTaskController->setMaximumThreadCount(savedConcurrency);
-    const int savedAssemblyThreads = qBound(
-        1,
-        settings.value(QStringLiteral("solver/assemblyThreads"), 1).toInt(),
-        allowedThreads);
+    const int savedAssemblyThreads =
+        qBound(1, settings.value(QStringLiteral("solver/assemblyThreads"), 1).toInt(), allowedThreads);
     assemblyThreadsSpin->setValue(savedAssemblyThreads);
     SolverNameSpace::AssemblySettings::SetThreadCount(savedAssemblyThreads);
-    const bool useGpuSolver = settings.value(
-        QStringLiteral("solver/useGpuSparseSolver"), false).toBool();
+    const int savedResultBatchFrames =
+        qBound(ResultOutputSettings::MinimumFrameBatchSize,
+               settings.value(QStringLiteral("output/resultBatchFrames"), ResultOutputSettings::DefaultFrameBatchSize)
+                   .toInt(),
+               ResultOutputSettings::MaximumFrameBatchSize);
+    resultBatchFramesSpin->setValue(savedResultBatchFrames);
+    ResultOutputSettings::SetFrameBatchSize(savedResultBatchFrames);
+    const bool backgroundResultWrite = settings.value(QStringLiteral("output/backgroundResultWrite"), true).toBool();
+    backgroundResultWriteCheckBox->setChecked(backgroundResultWrite);
+    ResultOutputSettings::SetBackgroundWriteEnabled(backgroundResultWrite);
+    const bool useGpuSolver = settings.value(QStringLiteral("solver/useGpuSparseSolver"), false).toBool();
     gpuSolverCheckBox->setChecked(useGpuSolver);
     SolverNameSpace::GpuSettings::SetEnabled(useGpuSolver);
+    const int savedLinearSolverMode =
+        qBound(0, settings.value(QStringLiteral("solver/linearSolverMode"), 0).toInt(), 5);
+    linearSolverModeCombo->setCurrentIndex(savedLinearSolverMode);
+    SolverNameSpace::LinearSolverSettings::SetMode(
+        static_cast<SolverNameSpace::LinearSolverMode>(savedLinearSolverMode));
+    gpuSolverCheckBox->setEnabled(savedLinearSolverMode == 0);
     auto* status = m_settingsPanel->statusLabel();
-    const auto updateStatus = [status, availableThreads, allowedThreads](
-        int concurrency, int assemblyThreads)
+    const auto updateStatus = [status, availableThreads, allowedThreads](int concurrency, int assemblyThreads)
     {
         status->setText(
-            QStringLiteral("检测到 %1 个逻辑线程，本机安全上限为 %2；当前最多并发 %3 个分析步，每个分析步使用 %4 个装配线程。")
+            QStringLiteral(
+                "检测到 %1 个逻辑线程，本机安全上限为 %2；当前最多并发 %3 个分析步，每个分析步使用 %4 个装配线程。")
                 .arg(availableThreads)
                 .arg(allowedThreads)
                 .arg(concurrency)
@@ -1596,14 +1625,58 @@ void YQY::initializeSettingsModule()
                 updateStatus(concurrencySpin->value(), count);
                 setWorkspaceMessage(QStringLiteral("单步单元装配线程已设置为 %1").arg(count));
             });
+    connect(resultBatchFramesSpin, qOverload<int>(&QSpinBox::valueChanged), this,
+            [this](int frameCount)
+            {
+                ResultOutputSettings::SetFrameBatchSize(frameCount);
+                QSettings().setValue(QStringLiteral("output/resultBatchFrames"), frameCount);
+                setWorkspaceMessage(QStringLiteral("动力结果已设置为每 %1 帧批量写入一次").arg(frameCount));
+            });
+    connect(backgroundResultWriteCheckBox, &QCheckBox::toggled, this,
+            [this](bool enabled)
+            {
+                ResultOutputSettings::SetBackgroundWriteEnabled(enabled);
+                QSettings().setValue(QStringLiteral("output/backgroundResultWrite"), enabled);
+                setWorkspaceMessage(enabled ? QStringLiteral("动力结果后台写入已启用")
+                                            : QStringLiteral("动力结果后台写入已关闭"));
+            });
     connect(gpuSolverCheckBox, &QCheckBox::toggled, this,
             [this](bool enabled)
             {
                 SolverNameSpace::GpuSettings::SetEnabled(enabled);
                 QSettings().setValue(QStringLiteral("solver/useGpuSparseSolver"), enabled);
-                setWorkspaceMessage(enabled
-                    ? QStringLiteral("GPU 稀疏迭代求解已启用；失败时将回退到 CPU")
-                    : QStringLiteral("GPU 稀疏迭代求解已关闭"));
+                setWorkspaceMessage(enabled ? QStringLiteral("GPU 稀疏迭代求解已启用；失败时将回退到 CPU")
+                                            : QStringLiteral("GPU 稀疏迭代求解已关闭"));
+            });
+    connect(linearSolverModeCombo, qOverload<int>(&QComboBox::currentIndexChanged), this,
+            [this](int index)
+            {
+                const auto mode = static_cast<SolverNameSpace::LinearSolverMode>(index);
+                SolverNameSpace::LinearSolverSettings::SetMode(mode);
+                QSettings().setValue(QStringLiteral("solver/linearSolverMode"), index);
+                m_settingsPanel->gpuSolverCheckBox()->setEnabled(mode == SolverNameSpace::LinearSolverMode::Automatic);
+                switch (mode)
+                {
+                    case SolverNameSpace::LinearSolverMode::Automatic:
+                        setWorkspaceMessage(QStringLiteral("线性求解方法已设置为自动选择"));
+                        break;
+                    case SolverNameSpace::LinearSolverMode::Ldlt:
+                        setWorkspaceMessage(QStringLiteral("线性求解方法已设置为 LDLT，仅适用于对称矩阵"));
+                        break;
+                    case SolverNameSpace::LinearSolverMode::Lu:
+                        setWorkspaceMessage(QStringLiteral("线性求解方法已设置为 Eigen LU，可处理非对称矩阵"));
+                        break;
+                    case SolverNameSpace::LinearSolverMode::Pardiso:
+                        setWorkspaceMessage(
+                            QStringLiteral("线性求解方法已设置为 oneMKL PARDISO，对称矩阵使用 LDLT，非对称矩阵使用 LU"));
+                        break;
+                    case SolverNameSpace::LinearSolverMode::CudaIterative:
+                        setWorkspaceMessage(QStringLiteral("线性求解方法已设置为 CUDA BiCGSTAB 通用非对称迭代法"));
+                        break;
+                    case SolverNameSpace::LinearSolverMode::Cudss:
+                        setWorkspaceMessage(QStringLiteral("线性求解方法已设置为 NVIDIA cuDSS 通用非对称直接法"));
+                        break;
+                }
             });
 
     ui.settingsModuleLayout->insertWidget(1, m_settingsPanel);
@@ -1694,30 +1767,47 @@ void YQY::initializeResultModule()
     setActionGlyph(m_resultPanel->exportElementButton(), ActionGlyph::Export);
     setActionGlyph(m_resultPanel->exportIterationButton(), ActionGlyph::Export);
     ui.resultModuleLayout->insertWidget(3, m_resultPanel);
-    m_resultPanel->setFrameChangedHandler([this](double framePosition)
-    {
-        displayResultPosition(framePosition);
-    });
-    m_resultPanel->setVisualizationChangedHandler([this]() { updateResultVisualization(); });
-    m_resultPanel->setPlaybackStateChangedHandler([this](bool playing)
-    {
-        // Label generation and rendering are expensive for large models.  IDs
-        // are therefore forcibly hidden and unavailable for the entire run.
-        const QSignalBlocker nodeIdsBlocker(ui.showNodeIdsButton);
-        const QSignalBlocker elementIdsBlocker(ui.showElementIdsButton);
-        ui.modelViewport->setIdLabelsPlaybackLocked(playing);
-        if (playing)
+    m_resultPanel->setFrameChangedHandler(
+        [this](double framePosition)
         {
-            ui.showNodeIdsButton->setChecked(false);
-            ui.showElementIdsButton->setChecked(false);
-        }
-        const bool idsAvailable = !playing && ui.modelViewport->hasModel();
-        ui.showNodeIdsButton->setEnabled(idsAvailable);
-        ui.showElementIdsButton->setEnabled(idsAvailable);
-    });
-    m_resultPanel->setExportHandler([this]() { exportNodeResults(); });
-    m_resultPanel->setElementExportHandler([this]() { exportElementResults(); });
-    m_resultPanel->setIterationExportHandler([this]() { exportIterationHistory(); });
+            displayResultPosition(framePosition);
+        });
+    m_resultPanel->setVisualizationChangedHandler(
+        [this]()
+        {
+            updateResultVisualization();
+        });
+    m_resultPanel->setPlaybackStateChangedHandler(
+        [this](bool playing)
+        {
+            // 大模型的标签生成和渲染开销较高，因此整个运行期间强制隐藏并禁用编号标签。
+            const QSignalBlocker nodeIdsBlocker(ui.showNodeIdsButton);
+            const QSignalBlocker elementIdsBlocker(ui.showElementIdsButton);
+            ui.modelViewport->setIdLabelsPlaybackLocked(playing);
+            if (playing)
+            {
+                ui.showNodeIdsButton->setChecked(false);
+                ui.showElementIdsButton->setChecked(false);
+            }
+            const bool idsAvailable = !playing && ui.modelViewport->hasModel();
+            ui.showNodeIdsButton->setEnabled(idsAvailable);
+            ui.showElementIdsButton->setEnabled(idsAvailable);
+        });
+    m_resultPanel->setExportHandler(
+        [this]()
+        {
+            exportNodeResults();
+        });
+    m_resultPanel->setElementExportHandler(
+        [this]()
+        {
+            exportElementResults();
+        });
+    m_resultPanel->setIterationExportHandler(
+        [this]()
+        {
+            exportIterationHistory();
+        });
 }
 
 void YQY::initializeConductorModule()
@@ -1730,7 +1820,11 @@ void YQY::initializeConductorModule()
     m_conductorModule->setPropertyLibrary(m_propertyLibrary.get());
     ui.moduleStack->insertWidget(1, m_conductorModule);
 
-    connect(viewLibraryButton, &QPushButton::clicked, this, [this]() { switchModule(Module::Properties); });
+    connect(viewLibraryButton, &QPushButton::clicked, this,
+            [this]()
+            {
+                switchModule(Module::Properties);
+            });
     connect(m_conductorModule->createButton(), &QPushButton::clicked, this, &YQY::createConductorModel);
 }
 
@@ -2347,7 +2441,8 @@ void YQY::createConductorModel()
     }
     else
     {
-        QMessageBox::warning(this, QStringLiteral("创建导线模型"), QStringLiteral("模型已生成并保存，但未能加入当前工作区。"));
+        QMessageBox::warning(this, QStringLiteral("创建导线模型"),
+                             QStringLiteral("模型已生成并保存，但未能加入当前工作区。"));
     }
 }
 
@@ -2427,14 +2522,11 @@ void YQY::initializeToolbarAppearance()
 
 void YQY::initializeResponsiveLayout()
 {
-    // These values keep the model usable on smaller laptop displays. The
-    // previous fixed minimums added up to more than the available width.
+    // 这些尺寸保证模型可在较小的笔记本屏幕上使用，旧版固定最小宽度之和超过了可用宽度。
     ui.navigationRail->setMinimumWidth(84);
     ui.navigationRail->setMaximumWidth(84);
-    // The reference FEM shell reserves about 380 logical pixels for its whole
-    // left work area. Our rail is outside the splitter and the property/
-    // conductor pages contain longer Chinese labels, so 420 px is the first
-    // width at which those pages stay aligned without wasting the viewport.
+    // 参考有限元界面的整个左侧工作区约为 380 逻辑像素。本程序侧栏位于分隔器外，属性和导线页面的
+    // 中文标签更长，因此 420 像素是既能保持对齐、又不浪费视口的最小宽度。
     ui.projectPanel->setMinimumWidth(320);
     ui.projectPanel->setMaximumWidth(520);
     ui.workspacePanel->setMinimumWidth(300);
@@ -2450,7 +2542,11 @@ void YQY::initializeResponsiveLayout()
     ui.workspaceVerticalSplitter->setStretchFactor(0, 4);
     ui.workspaceVerticalSplitter->setStretchFactor(1, 1);
     ui.workspaceVerticalSplitter->setSizes({520, 160});
-    connect(ui.mainSplitter, &QSplitter::splitterMoved, this, [this](int, int) { updateResponsiveLayout(); });
+    connect(ui.mainSplitter, &QSplitter::splitterMoved, this,
+            [this](int, int)
+            {
+                updateResponsiveLayout();
+            });
 
     const QList<QPushButton*> navigationButtons = {ui.propertyButton, ui.conductorButton, ui.modelButton,
                                                    ui.analysisButton, ui.solveButton,     ui.resultButton,
@@ -2471,9 +2567,7 @@ void YQY::initializeResponsiveLayout()
     }
     ui.modelPropertyValue->setWordWrap(true);
 
-    // Stretch the toolbar background on wide screens while preserving a
-    // stable logical button size. Narrow screens scroll horizontally instead
-    // of shrinking the buttons or growing the toolbar vertically.
+    // 宽屏时拉伸工具栏背景但保持按钮逻辑尺寸稳定；窄屏使用水平滚动，不缩小按钮或增加工具栏高度。
     m_toolbarScrollArea = ui.toolbarScrollArea;
     ui.toolBarLayout->activate();
     m_toolbarNaturalWidth = ui.toolBarCard->sizeHint().width();
@@ -2493,9 +2587,7 @@ void YQY::updateResponsiveLayout()
     const int availableWidth = width();
     const int projectWidth = ui.projectPanel->width();
 
-    // The task monitor already exposes status and elapsed time. Give the case
-    // name priority as the project pane narrows: hide elapsed time first, then
-    // status, instead of squeezing the name down to only a few characters.
+    // 任务监视器已经显示状态和耗时；项目面板变窄时优先保留算例名称，依次隐藏耗时和状态。
     const bool compactSolveTree = projectWidth < 360;
     const bool mediumSolveTree = projectWidth < 480;
     ui.solveStepTree->setColumnHidden(2, compactSolveTree);
@@ -2670,7 +2762,11 @@ void YQY::initializeInteractions()
         {ui.bottomViewButton, ModelViewport::StandardView::Bottom}};
     for (const auto& [button, view] : viewButtons)
     {
-        connect(button, &QToolButton::clicked, this, [this, view]() { ui.modelViewport->setStandardView(view); });
+        connect(button, &QToolButton::clicked, this,
+                [this, view]()
+                {
+                    ui.modelViewport->setStandardView(view);
+                });
     }
     connect(ui.fitViewButton, &QToolButton::clicked, ui.modelViewport, &ModelViewport::resetCamera);
 
@@ -2685,7 +2781,10 @@ void YQY::initializeInteractions()
                 }
             });
     connect(ui.documentTabBar, &QTabBar::tabCloseRequested, this,
-            [this](int tabIndex) { m_modelController->closeModel(ui.documentTabBar->tabData(tabIndex).toInt()); });
+            [this](int tabIndex)
+            {
+                m_modelController->closeModel(ui.documentTabBar->tabData(tabIndex).toInt());
+            });
     connect(ui.documentTabBar, &QTabBar::currentChanged, this,
             [this](int tabIndex)
             {
@@ -2699,7 +2798,11 @@ void YQY::initializeInteractions()
         {ui.settingsButton, Module::Settings}};
     for (const auto& item : navigationItems)
     {
-        connect(item.first, &QPushButton::clicked, this, [this, module = item.second]() { switchModule(module); });
+        connect(item.first, &QPushButton::clicked, this,
+                [this, module = item.second]()
+                {
+                    switchModule(module);
+                });
     }
 
     connect(ui.modelImportButton, &QPushButton::clicked, ui.importButton, &QPushButton::click);
@@ -2709,7 +2812,10 @@ void YQY::initializeInteractions()
     connect(ui.solvePageStartButton, &QPushButton::clicked, this, &YQY::submitSolveTask);
     connect(ui.stopButton, &QPushButton::clicked, this, &YQY::cancelSelectedSolveTask);
     connect(ui.solveStepTree, &QTreeWidget::itemSelectionChanged, this,
-            [this]() { updateTaskMonitor(selectedSolveTaskId()); });
+            [this]()
+            {
+                updateTaskMonitor(selectedSolveTaskId());
+            });
     connect(m_solveTaskController, &SolveTaskController::taskAdded, this,
             [this](int taskId)
             {
@@ -2724,6 +2830,14 @@ void YQY::initializeInteractions()
                 updateSolveTaskRow(taskId);
                 refreshSolveTaskManager();
                 const auto info = m_solveTaskController->taskInfo(taskId);
+                if (info.status == SolveTaskController::Status::Queued && m_resultPanel &&
+                    QFileInfo(m_resultPanel->resultFilePath()).absoluteFilePath() ==
+                        QFileInfo(info.outputFile).absoluteFilePath())
+                {
+                    // 结果读取器仍通过 ASCII 硬链接占用同一 NTFS 文件时，Windows 无法替换该 H5 文件。
+                    m_resultFilesByModelId.remove(m_modelController->activeModelId());
+                    clearActiveResultContext();
+                }
                 if (info.status == SolveTaskController::Status::Completed ||
                     info.status == SolveTaskController::Status::Failed ||
                     info.status == SolveTaskController::Status::Cancelled)
@@ -2741,17 +2855,18 @@ void YQY::initializeInteractions()
                 }
             });
 
-    connect(ui.importButton, &QPushButton::clicked, this, [this]()
-    {
-        ModelImportFileDialog dialog(ApplicationPaths::importFileDirectory(), this);
-        if (dialog.exec() != QDialog::Accepted)
-            return;
-        const QStringList paths = dialog.selectedFiles();
-        if (paths.isEmpty())
-            return;
-        const int accepted = m_modelController->loadModels(paths);
-        setWorkspaceMessage(QStringLiteral("已加入 %1 个模型的读取队列").arg(accepted));
-    });
+    connect(ui.importButton, &QPushButton::clicked, this,
+            [this]()
+            {
+                ModelImportFileDialog dialog(ApplicationPaths::importFileDirectory(), this);
+                if (dialog.exec() != QDialog::Accepted)
+                    return;
+                const QStringList paths = dialog.selectedFiles();
+                if (paths.isEmpty())
+                    return;
+                const int accepted = m_modelController->loadModels(paths);
+                setWorkspaceMessage(QStringLiteral("已加入 %1 个模型的读取队列").arg(accepted));
+            });
 
     connect(ui.modelViewport, &ModelViewport::nodeSelected, this, &YQY::showNodeProperties);
     connect(ui.modelViewport, &ModelViewport::elementSelected, this, &YQY::showElementProperties);
@@ -2786,7 +2901,10 @@ void YQY::initializeInteractions()
                 refreshModulePages();
             });
     connect(m_modelController, &ModelController::busyChanged, this,
-            [this](bool busy) { ui.importButton->setEnabled(!busy); });
+            [this](bool busy)
+            {
+                ui.importButton->setEnabled(!busy);
+            });
     connect(m_modelController, &ModelController::undoAvailabilityChanged, ui.undoButton, &QPushButton::setEnabled);
     connect(m_modelController, &ModelController::modelCleared, this,
             [this]()
@@ -2855,10 +2973,8 @@ void YQY::applyTheme(int themeIndex)
     qApp->setProperty(CaptionColorProperty, captionColor);
     qApp->setProperty(CaptionTextColorProperty, QColor(colors.text));
     qApp->setProperty(WindowBorderColorProperty, QColor(colors.borderStrong));
-    // Popups and modal dialogs are separate top-level Qt windows. Applying the
-    // theme only to this QMainWindow leaves their frame and selection palette
-    // at the Windows defaults, which produces white gutters and system-blue
-    // rows inside otherwise dark controls.
+    // 弹出窗口和模态对话框是独立的 Qt 顶层窗口。若主题仅应用于主窗口，它们仍使用 Windows 默认边框和
+    // 选中调色板，会在深色控件中出现白色边缘和系统蓝色行。
     QApplication::setPalette(themedPalette);
     qApp->setStyleSheet(buildStyleSheet(colors));
     for (QWidget* topLevelWidget : QApplication::topLevelWidgets())
@@ -2907,27 +3023,27 @@ void YQY::switchModule(Module module)
 
     switch (module)
     {
-    case Module::Properties:
-        ui.propertyButton->setChecked(true);
-        break;
-    case Module::Conductor:
-        ui.conductorButton->setChecked(true);
-        break;
-    case Module::Model:
-        ui.modelButton->setChecked(true);
-        break;
-    case Module::Analysis:
-        ui.analysisButton->setChecked(true);
-        break;
-    case Module::Solve:
-        ui.solveButton->setChecked(true);
-        break;
-    case Module::Result:
-        ui.resultButton->setChecked(true);
-        break;
-    case Module::Settings:
-        ui.settingsButton->setChecked(true);
-        break;
+        case Module::Properties:
+            ui.propertyButton->setChecked(true);
+            break;
+        case Module::Conductor:
+            ui.conductorButton->setChecked(true);
+            break;
+        case Module::Model:
+            ui.modelButton->setChecked(true);
+            break;
+        case Module::Analysis:
+            ui.analysisButton->setChecked(true);
+            break;
+        case Module::Solve:
+            ui.solveButton->setChecked(true);
+            break;
+        case Module::Result:
+            ui.resultButton->setChecked(true);
+            break;
+        case Module::Settings:
+            ui.settingsButton->setChecked(true);
+            break;
     }
 
     refreshModulePages();
@@ -2971,9 +3087,8 @@ void YQY::refreshModulePages()
         auto* constraints =
             new QTreeWidgetItem(ui.analysisTree, {QStringLiteral("约束  %1").arg(structure->m_Constraint.size())});
         setTreeGlyph(constraints, TreeGlyph::Constraint);
-        auto* mpcs = new QTreeWidgetItem(
-            ui.analysisTree,
-            {QStringLiteral("MPC  %1").arg(structure->m_MPCConstraints.size())});
+        auto* mpcs =
+            new QTreeWidgetItem(ui.analysisTree, {QStringLiteral("MPC  %1").arg(structure->m_MPCConstraints.size())});
         setTreeGlyph(mpcs, TreeGlyph::MPC);
         for (const auto& [mpcId, mpc] : structure->m_MPCConstraints)
         {
@@ -2987,28 +3102,26 @@ void YQY::refreshModulePages()
                     value.append(QString::number(direction));
                 return value;
             }();
-            auto* mpcItem = new QTreeWidgetItem(mpcs,
-                {QStringLiteral("%1  ·  %2 → %3  ·  %4")
-                    .arg(mpc->m_Name.trimmed().isEmpty()
-                        ? QStringLiteral("MPC-%1").arg(mpcId) : mpc->m_Name)
-                    .arg(nodeIds.size() == 2 ? QString::number(nodeIds[0])
-                                             : QStringLiteral("--"))
-                    .arg(nodeIds.size() == 2 ? QString::number(nodeIds[1])
-                                             : QStringLiteral("--"))
-                    .arg(directions)});
+            auto* mpcItem = new QTreeWidgetItem(
+                mpcs, {QStringLiteral("%1  ·  %2 → %3  ·  %4")
+                           .arg(mpc->m_Name.trimmed().isEmpty() ? QStringLiteral("MPC-%1").arg(mpcId) : mpc->m_Name)
+                           .arg(nodeIds.size() == 2 ? QString::number(nodeIds[0]) : QStringLiteral("--"))
+                           .arg(nodeIds.size() == 2 ? QString::number(nodeIds[1]) : QStringLiteral("--"))
+                           .arg(directions)});
             setTreeGlyph(mpcItem, TreeGlyph::MPC);
         }
         auto* regions = new QTreeWidgetItem(ui.analysisTree,
-            {QStringLiteral("计算区域  %1").arg(structure->m_ComputeRegions.size())});
+                                            {QStringLiteral("计算区域  %1").arg(structure->m_ComputeRegions.size())});
         setTreeGlyph(regions, TreeGlyph::Model);
         for (const auto& [regionId, region] : structure->m_ComputeRegions)
         {
             Q_UNUSED(regionId);
             if (!region)
                 continue;
-            auto* regionItem = new QTreeWidgetItem(regions,
-                {QStringLiteral("%1  ·  节点 %2  ·  单元 %3")
-                    .arg(region->m_Name).arg(region->m_NodeIds.size()).arg(region->m_ElementIds.size())});
+            auto* regionItem = new QTreeWidgetItem(regions, {QStringLiteral("%1  ·  节点 %2  ·  单元 %3")
+                                                                 .arg(region->m_Name)
+                                                                 .arg(region->m_NodeIds.size())
+                                                                 .arg(region->m_ElementIds.size())});
             setTreeGlyph(regionItem, TreeGlyph::Model);
         }
         ui.analysisTree->expandAll();
@@ -3044,13 +3157,25 @@ void YQY::initializeAnalysisEditor()
     m_analysisPanel->regionsButton()->setObjectName(QStringLiteral("analysisRegionsButton"));
     ui.analysisModuleLayout->insertWidget(1, m_analysisPanel);
     connect(m_analysisPanel->stepsButton(), &QPushButton::clicked, this,
-            [this]() { openAnalysisManager(static_cast<int>(AnalysisManagerDialog::Page::Steps)); });
+            [this]()
+            {
+                openAnalysisManager(static_cast<int>(AnalysisManagerDialog::Page::Steps));
+            });
     connect(m_analysisPanel->loadsButton(), &QPushButton::clicked, this,
-            [this]() { openAnalysisManager(static_cast<int>(AnalysisManagerDialog::Page::Loads)); });
+            [this]()
+            {
+                openAnalysisManager(static_cast<int>(AnalysisManagerDialog::Page::Loads));
+            });
     connect(m_analysisPanel->constraintsButton(), &QPushButton::clicked, this,
-            [this]() { openAnalysisManager(static_cast<int>(AnalysisManagerDialog::Page::Constraints)); });
+            [this]()
+            {
+                openAnalysisManager(static_cast<int>(AnalysisManagerDialog::Page::Constraints));
+            });
     connect(m_analysisPanel->mpcsButton(), &QPushButton::clicked, this,
-            [this]() { openAnalysisManager(static_cast<int>(AnalysisManagerDialog::Page::MPCs)); });
+            [this]()
+            {
+                openAnalysisManager(static_cast<int>(AnalysisManagerDialog::Page::MPCs));
+            });
     connect(m_analysisPanel->regionsButton(), &QPushButton::clicked, this, &YQY::openComputeRegionManager);
     connect(ui.analysisTree, &QTreeWidget::itemDoubleClicked, this,
             [this](QTreeWidgetItem* item, int)
@@ -3103,15 +3228,13 @@ void YQY::refreshAnalysisEditor()
     stepsButton->setText(QStringLiteral("分析步 · %1").arg(structure ? structure->m_AnalysisStep.size() : 0));
     loadsButton->setText(QStringLiteral("荷载 · %1").arg(structure ? structure->m_Load.size() : 0));
     constraintsButton->setText(QStringLiteral("约束 · %1").arg(structure ? structure->m_Constraint.size() : 0));
-    mpcsButton->setText(QStringLiteral("MPC · %1").arg(
-        structure ? structure->m_MPCConstraints.size() : 0));
+    mpcsButton->setText(QStringLiteral("MPC · %1").arg(structure ? structure->m_MPCConstraints.size() : 0));
     regionsButton->setText(QStringLiteral("计算区域 · %1").arg(structure ? structure->m_ComputeRegions.size() : 0));
     const ThemeColors colors = themeColors(ui.themeComboBox->currentIndex());
     stepsButton->setIcon(treeIcon(TreeGlyph::AnalysisSteps, QColor(colors.text), QColor(colors.accentSecond)));
     loadsButton->setIcon(treeIcon(TreeGlyph::Load, QColor(colors.text), QColor(colors.accentSecond)));
     constraintsButton->setIcon(treeIcon(TreeGlyph::Constraint, QColor(colors.text), QColor(colors.accentSecond)));
-    mpcsButton->setIcon(treeIcon(
-        TreeGlyph::MPC, QColor(colors.text), QColor(colors.accentSecond)));
+    mpcsButton->setIcon(treeIcon(TreeGlyph::MPC, QColor(colors.text), QColor(colors.accentSecond)));
     regionsButton->setIcon(treeIcon(TreeGlyph::Model, QColor(colors.text), QColor(colors.accentSecond)));
 }
 
@@ -3155,10 +3278,16 @@ void YQY::openAnalysisManager(int initialPage)
     *managerSlot = manager;
     manager->setAttribute(Qt::WA_DeleteOnClose);
     manager->setWindowModality(Qt::NonModal);
-    manager->setModelChangedCallback([this](const QSet<int>& affectedStepIds)
-                                     { handleAnalysisResourcesChanged(affectedStepIds); });
-    manager->setOpenManagerCallback([this](AnalysisManagerDialog::Page page)
-                                    { openAnalysisManager(static_cast<int>(page)); });
+    manager->setModelChangedCallback(
+        [this](const QSet<int>& affectedStepIds)
+        {
+            handleAnalysisResourcesChanged(affectedStepIds);
+        });
+    manager->setOpenManagerCallback(
+        [this](AnalysisManagerDialog::Page page)
+        {
+            openAnalysisManager(static_cast<int>(page));
+        });
     manager->show();
     manager->raise();
     manager->activateWindow();
@@ -3180,16 +3309,14 @@ void YQY::handleAnalysisResourcesChanged(const QSet<int>& affectedStepIds)
         if (m_solveTaskController->prepare(structure, sourceFile, stepId) >= 0)
             ++preparedCount;
     }
-    ui.logEdit->appendPlainText(
-        QStringLiteral(
-            "[INFO] 分析资源已增量更新：影响 %1 个分析步，准备 %2 个算例；"
-            "当前共 %3 个分析步、%4 个荷载、%5 个约束、%6 个 MPC")
-            .arg(affectedStepIds.size())
-            .arg(preparedCount)
-            .arg(structure->m_AnalysisStep.size())
-            .arg(structure->m_Load.size())
-            .arg(structure->m_Constraint.size())
-            .arg(structure->m_MPCConstraints.size()));
+    ui.logEdit->appendPlainText(QStringLiteral("[INFO] 分析资源已增量更新：影响 %1 个分析步，准备 %2 个算例；"
+                                               "当前共 %3 个分析步、%4 个荷载、%5 个约束、%6 个 MPC")
+                                    .arg(affectedStepIds.size())
+                                    .arg(preparedCount)
+                                    .arg(structure->m_AnalysisStep.size())
+                                    .arg(structure->m_Load.size())
+                                    .arg(structure->m_Constraint.size())
+                                    .arg(structure->m_MPCConstraints.size()));
     setWorkspaceMessage(QStringLiteral("分析资源已增量同步，未受影响的计算状态保持不变"));
     refreshModulePages();
 
@@ -3300,13 +3427,17 @@ void YQY::openSolveTaskManager()
     solveAllButton->setIcon(treeIcon(TreeGlyph::SolveTask, QColor(colors.text), QColor(colors.accentSecond)));
     restartAllButton->setIcon(actionIcon(ActionGlyph::Refresh, QColor(colors.text), QColor(colors.accentSecond)));
     solveAllButton->setToolTip(QStringLiteral("将所有待运行分析步加入队列；正在计算、已排队和已有结果的算例不会重复计"
-                                               "算；单个分析步失败不会停止其他队列任务"));
+                                              "算；单个分析步失败不会停止其他队列任务"));
     restartAllButton->setToolTip(
         QStringLiteral("重新计算所有分析步；正在排队或计算的任务会先安全停止，再从头加入计算队列"));
     connect(solveAllButton, &QPushButton::clicked, this, &YQY::startAllReadySolveTasks);
     connect(restartAllButton, &QPushButton::clicked, this, &YQY::restartAllSolveTasks);
     m_solveTaskManager = dialog;
-    connect(dialog, &QObject::destroyed, this, [this]() { m_solveTaskManager = nullptr; });
+    connect(dialog, &QObject::destroyed, this,
+            [this]()
+            {
+                m_solveTaskManager = nullptr;
+            });
     refreshSolveTaskManager();
     dialog->show();
 }
@@ -3324,12 +3455,11 @@ void YQY::startAllReadySolveTasks()
 void YQY::restartAllSolveTasks()
 {
     const int requested = m_solveTaskController->restartAll();
-    setWorkspaceMessage(
-        requested > 0
-            ? QStringLiteral("已请求重新计算 %1 个分析步 · 活动任务将先安全停止 · 最大并发 %2")
-                  .arg(requested)
-                  .arg(m_solveTaskController->maximumThreadCount())
-            : QStringLiteral("没有可重新计算的分析步"));
+    setWorkspaceMessage(requested > 0
+                            ? QStringLiteral("已请求重新计算 %1 个分析步 · 活动任务将先安全停止 · 最大并发 %2")
+                                  .arg(requested)
+                                  .arg(m_solveTaskController->maximumThreadCount())
+                            : QStringLiteral("没有可重新计算的分析步"));
     refreshSolveTaskManager();
 }
 
@@ -3499,7 +3629,10 @@ void YQY::refreshSolveTasks(int preferredTaskId)
         progress->setTextVisible(true);
         progress->setFormat(QStringLiteral("%1%").arg(info.progress * 100.0, 0, 'f', 1));
         connect(progress, &QProgressBar::valueChanged, progress,
-                [progress](int value) { progress->setFormat(QStringLiteral("%1%").arg(value / 10.0, 0, 'f', 1)); });
+                [progress](int value)
+                {
+                    progress->setFormat(QStringLiteral("%1%").arg(value / 10.0, 0, 'f', 1));
+                });
         ui.solveStepTree->setItemWidget(item, 1, progress);
         auto* caseWidget = new QWidget(ui.solveStepTree);
         caseWidget->setObjectName(QStringLiteral("solveCaseWidget"));
@@ -3679,17 +3812,22 @@ void YQY::openHdf5Result()
     QStringList failedFiles;
     for (const QString& filePath : selectedFiles)
     {
-        if (loadHdf5Result(filePath, false))
+        QString failureReason;
+        if (loadHdf5Result(filePath, false, true, false, &failureReason))
             ++loadedCount;
         else
-            failedFiles.append(QFileInfo(filePath).fileName());
+        {
+            const QString description = failureReason.isEmpty() ? QStringLiteral("未知读取错误") : failureReason;
+            failedFiles.append(QStringLiteral("%1：%2").arg(QFileInfo(filePath).fileName(), description));
+            ui.logEdit->appendPlainText(QStringLiteral("[WARN] H5结果读取失败：%1；%2").arg(filePath, description));
+        }
     }
 
     if (!failedFiles.isEmpty())
     {
-        QMessageBox::warning(this, QStringLiteral("部分 H5 文件未能打开"),
-                             QStringLiteral("以下文件没有有效的模型或结果数据：\n%1")
-                                 .arg(failedFiles.join(QLatin1Char('\n'))));
+        QMessageBox::warning(
+            this, QStringLiteral("部分 H5 文件未能打开"),
+            QStringLiteral("以下文件没有有效的模型或结果数据：\n%1").arg(failedFiles.join(QLatin1Char('\n'))));
     }
     if (loadedCount > 0)
         setWorkspaceMessage(QStringLiteral("已打开 %1 个 H5 结果文件").arg(loadedCount));
@@ -3747,8 +3885,8 @@ void YQY::exportNodeResults()
     const QString sourceFile = m_resultFilePath;
     auto* watcher = new QFutureWatcher<bool>(this);
     connect(watcher, &QFutureWatcher<bool>::finished, this,
-            [this, watcher, outputFile, m_resultPlayButton, m_resultFrameSlider, m_exportNodeResultsButton, m_exportElementResultsButton,
-             nodeCount = nodeIds.size(), fieldCount = resultTypes.size()]()
+            [this, watcher, outputFile, m_resultPlayButton, m_resultFrameSlider, m_exportNodeResultsButton,
+             m_exportElementResultsButton, nodeCount = nodeIds.size(), fieldCount = resultTypes.size()]()
             {
                 const bool succeeded = watcher->result();
                 watcher->deleteLater();
@@ -3792,51 +3930,72 @@ void YQY::exportElementResults()
     const auto structure = m_modelController->model();
     if (!structure || resultFilePath.isEmpty() || frames.empty())
     {
-        QMessageBox::information(this, QStringLiteral("尚无可导出结果"), QStringLiteral("请先加载模型及其 H5 结果文件。"));
+        QMessageBox::information(this, QStringLiteral("尚无可导出结果"),
+                                 QStringLiteral("请先加载模型及其 H5 结果文件。"));
         return;
     }
 
     QSet<int> availableElements;
     for (const auto& [elementId, element] : structure->m_Elements)
-        if (element) availableElements.insert(elementId);
+        if (element)
+            availableElements.insert(elementId);
     ElementResultExportDialog dialog(resultFilePath, availableElements, this);
-    if (dialog.exec() != QDialog::Accepted) return;
+    if (dialog.exec() != QDialog::Accepted)
+        return;
 
     const std::vector<int> elementIds = dialog.elementIds();
     const std::vector<EnumKeyword::ElementResultType> resultTypes = dialog.resultTypes();
     QString outputFile = dialog.outputFile();
-    if (QFileInfo(outputFile).suffix().isEmpty()) outputFile += QStringLiteral(".bdf");
-    if (QFileInfo::exists(outputFile) && QMessageBox::question(this, QStringLiteral("替换已有文件"),
-        QStringLiteral("文件已经存在，是否替换？\n%1").arg(outputFile), QMessageBox::Yes | QMessageBox::Cancel,
-        QMessageBox::Cancel) != QMessageBox::Yes) return;
+    if (QFileInfo(outputFile).suffix().isEmpty())
+        outputFile += QStringLiteral(".bdf");
+    if (QFileInfo::exists(outputFile) &&
+        QMessageBox::question(this, QStringLiteral("替换已有文件"),
+                              QStringLiteral("文件已经存在，是否替换？\n%1").arg(outputFile),
+                              QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
+        return;
 
     m_resultPanel->stopPlayback();
-    playButton->setEnabled(false); frameSlider->setEnabled(false); exportButton->setEnabled(false);
+    playButton->setEnabled(false);
+    frameSlider->setEnabled(false);
+    exportButton->setEnabled(false);
     m_resultPanel->exportButton()->setEnabled(false);
     exportButton->setText(QStringLiteral("正在导出…"));
     const QString sourceFile = resultFilePath;
     auto* watcher = new QFutureWatcher<bool>(this);
     connect(watcher, &QFutureWatcher<bool>::finished, this,
-        [this, watcher, outputFile, playButton, frameSlider, exportButton, elementCount = elementIds.size(), fieldCount = resultTypes.size()]()
+            [this, watcher, outputFile, playButton, frameSlider, exportButton, elementCount = elementIds.size(),
+             fieldCount = resultTypes.size()]()
+            {
+                const bool succeeded = watcher->result();
+                watcher->deleteLater();
+                exportButton->setText(QStringLiteral("导出单元数据…"));
+                const auto& currentFrames = m_resultPanel->frames();
+                const bool enabled = !m_resultPanel->resultFilePath().isEmpty() && !currentFrames.empty();
+                exportButton->setEnabled(enabled);
+                m_resultPanel->exportButton()->setEnabled(enabled);
+                frameSlider->setEnabled(!currentFrames.empty());
+                playButton->setEnabled(currentFrames.size() > 1);
+                if (succeeded)
+                {
+                    ui.logEdit->appendPlainText(QStringLiteral("[INFO] 单元结果已导出：%1 个单元，%2 个分量 → %3")
+                                                    .arg(elementCount)
+                                                    .arg(fieldCount)
+                                                    .arg(outputFile));
+                    setWorkspaceMessage(QStringLiteral("单元结果导出完成 · %1").arg(QFileInfo(outputFile).fileName()));
+                }
+                else
+                {
+                    setWorkspaceMessage(QStringLiteral("单元结果导出失败"));
+                    QMessageBox::critical(this, QStringLiteral("导出失败"),
+                                          QStringLiteral("无法导出单元结果，请检查结果文件和保存路径。"));
+                }
+            });
+    watcher->setFuture(QtConcurrent::run(
+        [sourceFile, outputFile, elementIds, resultTypes]()
         {
-            const bool succeeded = watcher->result(); watcher->deleteLater();
-            exportButton->setText(QStringLiteral("导出单元数据…"));
-            const auto& currentFrames = m_resultPanel->frames();
-            const bool enabled = !m_resultPanel->resultFilePath().isEmpty() && !currentFrames.empty();
-            exportButton->setEnabled(enabled); m_resultPanel->exportButton()->setEnabled(enabled);
-            frameSlider->setEnabled(!currentFrames.empty()); playButton->setEnabled(currentFrames.size() > 1);
-            if (succeeded) {
-                ui.logEdit->appendPlainText(QStringLiteral("[INFO] 单元结果已导出：%1 个单元，%2 个分量 → %3").arg(elementCount).arg(fieldCount).arg(outputFile));
-                setWorkspaceMessage(QStringLiteral("单元结果导出完成 · %1").arg(QFileInfo(outputFile).fileName()));
-            } else {
-                setWorkspaceMessage(QStringLiteral("单元结果导出失败"));
-                QMessageBox::critical(this, QStringLiteral("导出失败"), QStringLiteral("无法导出单元结果，请检查结果文件和保存路径。"));
-            }
-        });
-    watcher->setFuture(QtConcurrent::run([sourceFile, outputFile, elementIds, resultTypes]() {
-        Hdf5ModelIO exporter;
-        return exporter.ExportBdfResultFromHdf5(sourceFile, outputFile, {}, {}, elementIds, resultTypes);
-    }));
+            Hdf5ModelIO exporter;
+            return exporter.ExportBdfResultFromHdf5(sourceFile, outputFile, {}, {}, elementIds, resultTypes);
+        }));
 }
 
 void YQY::exportIterationHistory()
@@ -3844,38 +4003,35 @@ void YQY::exportIterationHistory()
     const QString sourceFile = m_resultPanel->resultFilePath();
     if (sourceFile.isEmpty())
     {
-        QMessageBox::information(this, QStringLiteral("暂无迭代步"),
-            QStringLiteral("请先加载计算结果文件。"));
+        QMessageBox::information(this, QStringLiteral("暂无迭代步"), QStringLiteral("请先加载计算结果文件。"));
         return;
     }
 
     Hdf5ModelIO reader;
     std::vector<Hdf5ResultFrameInfo> frames;
     std::vector<SolverIterationRecord> records;
-    const bool readOk = reader.OpenResultFile(sourceFile, frames)
-        && reader.ReadSolverIterationHistory(records);
+    const bool readOk = reader.OpenResultFile(sourceFile, frames) && reader.ReadSolverIterationHistory(records);
     reader.CloseResultFile();
     if (!readOk || records.empty())
     {
         QMessageBox::information(this, QStringLiteral("暂无迭代步"),
-            QStringLiteral("当前 H5 结果文件中没有迭代步数据。"));
+                                 QStringLiteral("当前 H5 结果文件中没有迭代步数据。"));
         return;
     }
 
-    const QString defaultOutputFile = QDir(ApplicationPaths::iterationResultDirectory())
-        .absoluteFilePath(QStringLiteral("IterationStep.bdf"));
-    QString outputFile = QFileDialog::getSaveFileName(this,
-        QStringLiteral("保存迭代步"), defaultOutputFile,
-        QStringLiteral("BDF 文件 (*.bdf);;所有文件 (*.*)"), nullptr,
-        QFileDialog::DontUseNativeDialog);
+    const QString defaultOutputFile =
+        QDir(ApplicationPaths::iterationResultDirectory()).absoluteFilePath(QStringLiteral("IterationStep.bdf"));
+    QString outputFile = QFileDialog::getSaveFileName(this, QStringLiteral("保存迭代步"), defaultOutputFile,
+                                                      QStringLiteral("BDF 文件 (*.bdf);;所有文件 (*.*)"), nullptr,
+                                                      QFileDialog::DontUseNativeDialog);
     if (outputFile.isEmpty())
         return;
     if (QFileInfo(outputFile).suffix().isEmpty())
         outputFile += QStringLiteral(".bdf");
-    if (QFileInfo::exists(outputFile)
-        && QMessageBox::question(this, QStringLiteral("替换已有文件"),
-            QStringLiteral("文件已经存在，是否替换？\n%1").arg(outputFile),
-            QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
+    if (QFileInfo::exists(outputFile) &&
+        QMessageBox::question(this, QStringLiteral("替换已有文件"),
+                              QStringLiteral("文件已经存在，是否替换？\n%1").arg(outputFile),
+                              QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
     {
         return;
     }
@@ -3889,13 +4045,21 @@ void YQY::exportIterationHistory()
     }
     else
     {
-        QMessageBox::critical(this, QStringLiteral("导出失败"),
-            QStringLiteral("无法导出迭代步，请检查保存路径。"));
+        QMessageBox::critical(this, QStringLiteral("导出失败"), QStringLiteral("无法导出迭代步，请检查保存路径。"));
     }
 }
 
-bool YQY::loadHdf5Result(const QString& filePath, bool showErrors, bool activateResultModule, bool partialResult)
+bool YQY::loadHdf5Result(const QString& filePath, bool showErrors, bool activateResultModule, bool partialResult,
+                         QString* failureReason)
 {
+    if (failureReason)
+        failureReason->clear();
+    const auto fail = [failureReason](const QString& reason)
+    {
+        if (failureReason)
+            *failureReason = reason;
+        return false;
+    };
     auto* m_resultPlayButton = m_resultPanel->playButton();
     auto* m_resultFrameSlider = m_resultPanel->frameSlider();
     auto* m_exportNodeResultsButton = m_resultPanel->exportButton();
@@ -3912,26 +4076,15 @@ bool YQY::loadHdf5Result(const QString& filePath, bool showErrors, bool activate
         if (showErrors)
             QMessageBox::critical(this, QStringLiteral("H5 读取失败"),
                                   QStringLiteral("文件中没有有效的 YQY 计算结果：\n%1").arg(filePath));
-        return false;
+        return fail(QStringLiteral("文件不含有效的YQY结果数据或结果结构不完整"));
     }
     partialResult = partialResult || summary.partialResult;
-    std::vector<Hdf5ResultFrameInfo> indexedFrames;
-    if (!m_resultReader->OpenResultFile(filePath, indexedFrames) || indexedFrames.empty())
-    {
-        if (showErrors)
-            QMessageBox::critical(this, QStringLiteral("H5 索引失败"),
-                                  QStringLiteral("无法建立结果帧索引：\n%1").arg(filePath));
-        return false;
-    }
-
     if (!summary.hasModel)
     {
-        m_resultReader->CloseResultFile();
         if (showErrors)
             QMessageBox::critical(this, QStringLiteral("H5 模型缺失"),
-                                  QStringLiteral("该 H5 文件不包含模型数据，无法可靠显示对应结果：\n%1")
-                                      .arg(filePath));
-        return false;
+                                  QStringLiteral("该 H5 文件不包含模型数据，无法可靠显示对应结果：\n%1").arg(filePath));
+        return fail(QStringLiteral("结果文件缺少嵌入模型"));
     }
 
     QElapsedTimer modelTimer;
@@ -3940,26 +4093,32 @@ bool YQY::loadHdf5Result(const QString& filePath, bool showErrors, bool activate
     Hdf5ModelIO modelReader;
     if (!modelReader.ImportHdf5(filePath, embeddedModel.get()))
     {
-        m_resultReader->CloseResultFile();
         if (showErrors)
             QMessageBox::critical(this, QStringLiteral("H5 模型读取失败"),
                                   QStringLiteral("无法从 H5 文件恢复计算时使用的模型：\n%1").arg(filePath));
-        return false;
+        return fail(QStringLiteral("嵌入模型读取失败"));
     }
 
     const auto currentModel = m_modelController->model();
-    const bool sameModelAsCurrent =
-        ResultFrameUtilities::modelsMatch(currentModel, embeddedModel);
-    const bool shouldActivateEmbeddedModel = activateResultModule
-        || !sameModelAsCurrent;
-    if (shouldActivateEmbeddedModel
-        && m_modelController->adoptModel(embeddedModel, filePath, modelTimer.elapsed()) < 0)
+    const bool sameModelAsCurrent = ResultFrameUtilities::modelsMatch(currentModel, embeddedModel);
+    const bool shouldActivateEmbeddedModel = activateResultModule || !sameModelAsCurrent;
+    if (shouldActivateEmbeddedModel && m_modelController->adoptModel(embeddedModel, filePath, modelTimer.elapsed()) < 0)
     {
-        m_resultReader->CloseResultFile();
         if (showErrors)
             QMessageBox::critical(this, QStringLiteral("H5 模型激活失败"),
                                   QStringLiteral("H5 模型已经读取，但无法切换为当前显示模型。"));
-        return false;
+        return fail(QStringLiteral("嵌入模型无法切换为当前显示模型"));
+    }
+
+    // adoptModel() 同步发出 activeModelChanged；该回调会清理旧的结果上下文。
+    // 所以必须在模型切换完成后才打开本 H5 的结果流，否则首帧显示时读取器已经被关闭。
+    std::vector<Hdf5ResultFrameInfo> indexedFrames;
+    if (!m_resultReader->OpenResultFile(filePath, indexedFrames) || indexedFrames.empty())
+    {
+        if (showErrors)
+            QMessageBox::critical(this, QStringLiteral("H5 索引失败"),
+                                  QStringLiteral("无法建立结果帧索引：\n%1").arg(filePath));
+        return fail(QStringLiteral("结果帧索引无法建立"));
     }
 
     m_resultFilePath = QFileInfo(filePath).absoluteFilePath();
@@ -3970,15 +4129,25 @@ bool YQY::loadHdf5Result(const QString& filePath, bool showErrors, bool activate
         m_resultRanges = {};
     m_cachedResultFrameIndex = -1;
     m_cachedNextResultFrameIndex = -1;
-    Hdf5ResultFrame scaleReferenceFrame;
-    if (m_resultReader->ReadResultFrame(static_cast<int>(m_resultFrames.size()) - 1, scaleReferenceFrame) &&
-        ui.modelViewport->displayResultFrame(scaleReferenceFrame, ModelViewport::ResultField::DisplacementMagnitude,
-                                             0.0, false))
+    if (m_resultRanges.displacementMagnitude.valid)
     {
-        m_resultAutomaticScale = ui.modelViewport->activeDeformationScale();
+        m_resultAutomaticScale =
+            ui.modelViewport->automaticDeformationScale(std::max(0.0, m_resultRanges.displacementMagnitude.maximum));
     }
     else
-        m_resultAutomaticScale = 1.0;
+    {
+        Hdf5ResultFrame scaleReferenceFrame;
+        if (m_resultReader->ReadResultFrame(static_cast<int>(m_resultFrames.size()) - 1, scaleReferenceFrame) &&
+            ui.modelViewport->displayResultFrame(scaleReferenceFrame, ModelViewport::ResultField::DisplacementMagnitude,
+                                                 0.0, false))
+        {
+            m_resultAutomaticScale = ui.modelViewport->activeDeformationScale();
+        }
+        else
+        {
+            m_resultAutomaticScale = 1.0;
+        }
+    }
     m_resultPanel->stopPlayback();
     m_resultFrameSlider->setEnabled(true);
     m_resultFrameSlider->setRange(0, static_cast<int>(m_resultFrames.size()) - 1);
@@ -4099,12 +4268,10 @@ void YQY::displayResultPosition(double framePosition)
         m_resultDeformationLabel->setText(QStringLiteral("--"));
         return;
     }
-    Hdf5ResultFrame frame = interpolation <= 1.0e-9
-        ? m_cachedResultFrame
-        : ResultFrameUtilities::interpolate(
-            m_cachedResultFrame,
-            m_cachedNextResultFrame,
-            interpolation);
+    Hdf5ResultFrame frame =
+        interpolation <= 1.0e-9
+            ? m_cachedResultFrame
+            : ResultFrameUtilities::interpolate(m_cachedResultFrame, m_cachedNextResultFrame, interpolation);
     const auto field = static_cast<ModelViewport::ResultField>(m_resultFieldCombo->currentIndex());
     const Hdf5ResultRange& scalarRange = resultRangeForField(m_resultRanges, field);
     if (scalarRange.valid)
@@ -4137,9 +4304,7 @@ void YQY::clearActiveResultContext()
     if (!m_resultPanel)
         return;
 
-    // A result reader and its playback timer belong to one model only.  Keeping
-    // them alive while another document is active can apply old node IDs and
-    // scalar values to the new geometry.
+    // 结果读取器及播放定时器只属于一个模型；切换文档后继续保留会把旧节点编号和标量应用到新几何体。
     m_resultPanel->stopPlayback();
     m_resultPanel->reader()->CloseResultFile();
     m_resultPanel->frames().clear();
@@ -4202,8 +4367,8 @@ void YQY::handleModelLoaded(int modelId, const QString& filePath, qint64 elapsed
                                     .arg(elapsedMs));
 
     const QString suffix = QFileInfo(filePath).suffix();
-    if (suffix.compare(QStringLiteral("h5"), Qt::CaseInsensitive) != 0
-        && suffix.compare(QStringLiteral("hdf5"), Qt::CaseInsensitive) != 0)
+    if (suffix.compare(QStringLiteral("h5"), Qt::CaseInsensitive) != 0 &&
+        suffix.compare(QStringLiteral("hdf5"), Qt::CaseInsensitive) != 0)
     {
         prepareAnalysisCases(structure, filePath);
     }
@@ -4221,8 +4386,7 @@ void YQY::handleActiveModelChanged(int modelId)
     if (!structure)
         return;
 
-    // Stop and detach the previous model's post-processing before rebuilding the
-    // shared VTK viewport.  The selected model's result file is restored below.
+    // 重建共享 VTK 视口前停止并分离旧模型后处理，随后恢复当前选中模型的结果文件。
     clearActiveResultContext();
     ui.modelViewport->clearResultDisplay();
 
@@ -4251,14 +4415,15 @@ void YQY::handleActiveModelChanged(int modelId)
     const QString resultFilePath = m_resultFilesByModelId.value(modelId);
     if (!resultFilePath.isEmpty())
     {
-        QTimer::singleShot(0, this, [this, modelId, resultFilePath]()
-        {
-            if (m_modelController->activeModelId() == modelId
-                && m_resultPanel->resultFilePath().isEmpty())
-            {
-                loadHdf5Result(resultFilePath, false, false);
-            }
-        });
+        QTimer::singleShot(0, this,
+                           [this, modelId, resultFilePath]()
+                           {
+                               if (m_modelController->activeModelId() == modelId &&
+                                   m_resultPanel->resultFilePath().isEmpty())
+                               {
+                                   loadHdf5Result(resultFilePath, false, false);
+                               }
+                           });
     }
 }
 

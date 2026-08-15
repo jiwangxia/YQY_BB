@@ -16,9 +16,7 @@ void animateTo(QProgressBar* progressBar, int targetValue)
     // A solve may only produce a handful of visible progress events.  Keep one
     // lightweight 60 FPS timer alive per bar and let the displayed value catch
     // up with the latest value instead of restarting an animation on every event.
-    auto* timer = progressBar->findChild<QTimer*>(
-        QStringLiteral("smoothProgressTimer"),
-        Qt::FindDirectChildrenOnly);
+    auto* timer = progressBar->findChild<QTimer*>(QStringLiteral("smoothProgressTimer"), Qt::FindDirectChildrenOnly);
     if (!timer)
     {
         timer = new QTimer(progressBar);
@@ -27,8 +25,7 @@ void animateTo(QProgressBar* progressBar, int targetValue)
         QObject::connect(timer, &QTimer::timeout, progressBar,
                          [progressBar, timer]()
                          {
-                             const int target =
-                                 progressBar->property("smoothTargetValue").toInt();
+                             const int target = progressBar->property("smoothTargetValue").toInt();
                              const int current = progressBar->value();
                              const int distance = target - current;
                              if (distance == 0)
@@ -38,9 +35,8 @@ void animateTo(QProgressBar* progressBar, int targetValue)
                              }
 
                              const int step = qMax(1, qRound(qAbs(distance) * 0.38));
-                             const int next = distance > 0
-                                 ? qMin(target, current + step)
-                                 : qMax(target, current - step);
+                             const int next =
+                                 distance > 0 ? qMin(target, current + step) : qMax(target, current - step);
                              progressBar->setValue(next);
                          });
     }

@@ -5,7 +5,9 @@
 #include <QHeaderView>
 #include <QPushButton>
 #include <QTableWidget>
-SolveTaskManagerDialog::SolveTaskManagerDialog(QWidget* p) : QDialog(p), m_ui(new Ui::SolveTaskManagerDialogClass)
+SolveTaskManagerDialog::SolveTaskManagerDialog(QWidget* p)
+    : QDialog(p)
+    , m_ui(new Ui::SolveTaskManagerDialogClass)
 {
     m_ui->setupUi(this);
     setObjectName(QStringLiteral("solveTaskManagerDialog"));

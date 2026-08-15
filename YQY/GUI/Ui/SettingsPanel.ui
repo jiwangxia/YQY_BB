@@ -47,15 +47,47 @@
          <property name="suffix"><string> 个线程</string></property>
         </widget>
        </item>
-       <item row="2" column="0"><widget class="QLabel" name="gpuSolverLabel"><property name="text"><string>GPU 稀疏求解</string></property></widget></item>
+       <item row="2" column="0"><widget class="QLabel" name="linearSolverModeLabel"><property name="text"><string>线性求解方法</string></property></widget></item>
        <item row="2" column="1">
-        <widget class="QCheckBox" name="gpuSolverCheckBox">
-         <property name="text"><string>大模型自动 GPU</string></property>
-         <property name="toolTip"><string>仅在线性系统达到 10000 自由度时尝试 NVIDIA GPU；小模型继续使用 CPU，不收敛时自动回退 CPU。</string></property>
+        <widget class="QComboBox" name="linearSolverModeCombo">
+         <property name="minimumSize"><size><width>150</width><height>0</height></size></property>
+         <property name="toolTip"><string>LDLT 仅用于对称矩阵；LU、BiCGSTAB 和通用矩阵 cuDSS 可处理非对称矩阵。PARDISO 会由分析流程在对称 LDLT 与非对称 LU 之间选择。自动模式失败时回退，手动模式不回退。</string></property>
+         <item><property name="text"><string>自动选择</string></property></item>
+         <item><property name="text"><string>Eigen LDLT（对称矩阵）</string></property></item>
+         <item><property name="text"><string>Eigen LU（非对称矩阵）</string></property></item>
+         <item><property name="text"><string>oneMKL PARDISO（对称 LDLT / 非对称 LU）</string></property></item>
+         <item><property name="text"><string>CUDA BiCGSTAB（通用非对称迭代法）</string></property></item>
+         <item><property name="text"><string>NVIDIA cuDSS（通用非对称直接法）</string></property></item>
         </widget>
        </item>
-       <item row="3" column="0"><widget class="QLabel" name="nodeLabelModeLabel"><property name="text"><string>节点编号显示</string></property></widget></item>
+       <item row="3" column="0"><widget class="QLabel" name="gpuSolverLabel"><property name="text"><string>GPU 稀疏求解</string></property></widget></item>
        <item row="3" column="1">
+        <widget class="QCheckBox" name="gpuSolverCheckBox">
+         <property name="text"><string>大模型自动 GPU</string></property>
+          <property name="toolTip"><string>仅影响自动模式。达到 10000 自由度时依次尝试 cuDSS 和 CUDA BiCGSTAB，失败后回退 CPU。</string></property>
+        </widget>
+       </item>
+       <item row="4" column="0"><widget class="QLabel" name="resultBatchFramesLabel"><property name="text"><string>结果批量写入</string></property></widget></item>
+       <item row="4" column="1">
+        <widget class="QSpinBox" name="resultBatchFramesSpin">
+         <property name="minimumSize"><size><width>150</width><height>0</height></size></property>
+         <property name="toolTip"><string>每累计指定数量的接受步结果后批量写入 HDF5。1 表示逐帧写入；大模型建议 4～8，小模型建议 8～32。修改后对新启动的任务生效。</string></property>
+         <property name="minimum"><number>1</number></property>
+         <property name="maximum"><number>128</number></property>
+         <property name="value"><number>8</number></property>
+         <property name="suffix"><string> 帧/批</string></property>
+        </widget>
+       </item>
+       <item row="5" column="0"><widget class="QLabel" name="backgroundResultWriteLabel"><property name="text"><string>结果后台写入</string></property></widget></item>
+       <item row="5" column="1">
+        <widget class="QCheckBox" name="backgroundResultWriteCheckBox">
+         <property name="text"><string>求解与写盘并行</string></property>
+         <property name="toolTip"><string>使用单独线程按顺序写入 HDF5，求解线程最多提前两个批次；关闭后恢复同步写入。修改后对新启动的任务生效。</string></property>
+         <property name="checked"><bool>true</bool></property>
+        </widget>
+       </item>
+       <item row="6" column="0"><widget class="QLabel" name="nodeLabelModeLabel"><property name="text"><string>节点编号显示</string></property></widget></item>
+       <item row="6" column="1">
         <widget class="QComboBox" name="nodeLabelModeCombo">
          <property name="minimumSize"><size><width>150</width><height>0</height></size></property>
          <item><property name="text"><string>全部</string></property></item>

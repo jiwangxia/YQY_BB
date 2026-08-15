@@ -34,7 +34,10 @@ public:
         int elementCount = 0;
         int spacerCount = 0;
 
-        bool succeeded() const { return structure && !filePath.isEmpty(); }
+        bool succeeded() const
+        {
+            return structure && !filePath.isEmpty();
+        }
     };
 
     explicit ConductorModule(QWidget* p = nullptr);
@@ -69,7 +72,7 @@ private:
     void initializeStationTable();
     void updateModelModeUi();
     void refreshStationTypes();
-    std::vector<Vector3d> stationCenters(QString& error) const;
+    std::vector<Vector3d> stationCenters(_OUT QString& error) const;
     void updateSpacerUi();
     void updateSpacerPreview();
     void updateEndTopologyUi();

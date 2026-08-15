@@ -15,7 +15,10 @@ class ElementBeam_Simo : public ElementBase
 public:
     ElementBeam_Simo();
 
-	int Get_NodeDOF() const override { return 6; }
+    int Get_NodeDOF() const override
+    {
+        return 6;
+    }
 
     Eigen::Vector3d q0 = Eigen::Vector3d(0.0, 1.0, 0.0);
     Eigen::Matrix3d R0 = Eigen::Matrix3d::Identity();
@@ -36,6 +39,6 @@ private:
     };
 
     GaussState EvaluateGaussState(double coordinate) const;
-    void GetSectionData(_OUT double& area, _OUT double& Iy, _OUT double& Iz, _OUT double& J,
-        _OUT double& young, _OUT double& shear, _OUT double& density) const;
+    void GetSectionData(_OUT double& area, _OUT double& Iy, _OUT double& Iz, _OUT double& J, _OUT double& young,
+                        _OUT double& shear, _OUT double& density) const;
 };

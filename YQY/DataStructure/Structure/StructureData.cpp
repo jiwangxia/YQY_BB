@@ -24,6 +24,7 @@ void StructureData::Clear()
     m_Property.clear();
     m_Constraint.clear();
     m_MPCConstraints.clear();
+    m_RigidBodyInertias.clear();
     m_Load.clear();
     m_AnalysisStep.clear();
     m_ModelSets.clear();
@@ -36,7 +37,8 @@ void StructureData::Clear()
 
 std::shared_ptr<StructureData> StructureData::CloneForAnalysis(QString* errorMessage) const
 {
-    const auto fail = [errorMessage](const QString& message) -> std::shared_ptr<StructureData> {
+    const auto fail = [errorMessage](const QString& message) -> std::shared_ptr<StructureData>
+    {
         if (errorMessage)
             *errorMessage = message;
         qWarning().noquote() << QStringLiteral("计算模型复制失败：") << message;
@@ -104,8 +106,12 @@ std::shared_ptr<StructureData> StructureData::CloneForAnalysis(QString* errorMes
         std::shared_ptr<ElementBase> target;
         if (std::dynamic_pointer_cast<ElementTruss>(source))
             target = std::make_shared<ElementTruss>();
-        else if (std::dynamic_pointer_cast<ElementCable>(source))
-            target = std::make_shared<ElementCable>();
+        else if (const auto cable = std::dynamic_pointer_cast<ElementCable>(source))
+        {
+            auto cableTarget = std::make_shared<ElementCable>();
+            cableTarget->CopyRuntimeState(*cable);
+            target = std::move(cableTarget);
+        }
         else if (const auto beam = std::dynamic_pointer_cast<ElementBeam_CR>(source))
         {
             auto beamTarget = std::make_shared<ElementBeam_CR>();
@@ -172,7 +178,21 @@ std::shared_ptr<StructureData> StructureData::CloneForAnalysis(QString* errorMes
         clone->m_MPCConstraints.emplace(id, std::move(target));
     }
 
-    const auto copyLoadBase = [](const LoadBase& source, LoadBase& target) {
+    for (const auto& [id, source] : m_RigidBodyInertias)
+    {
+        if (!source)
+            return fail(QStringLiteral("刚体集中惯性 %1 为空").arg(id));
+        const auto sourceNode = source->m_pNode.lock();
+        const auto targetNode = sourceNode ? clone->m_Nodes.find(sourceNode->m_Id) : clone->m_Nodes.end();
+        if (!sourceNode || targetNode == clone->m_Nodes.end())
+            return fail(QStringLiteral("刚体集中惯性 %1 的节点引用无效").arg(id));
+        auto target = std::make_shared<RigidBodyInertia>(*source);
+        target->m_pNode = targetNode->second;
+        clone->m_RigidBodyInertias.emplace(id, std::move(target));
+    }
+
+    const auto copyLoadBase = [](const LoadBase& source, LoadBase& target)
+    {
         target.m_Id = source.m_Id;
         target.m_Name = source.m_Name;
         target.m_LoadType = source.m_LoadType;
@@ -258,10 +278,11 @@ std::shared_ptr<StructureData> StructureData::CloneForAnalysis(QString* errorMes
         config.dynamicSolverType = source->m_DynamicSolverType;
         config.initialStaticStepId = source->m_InitialStaticStepId;
         config.adaptiveTssbn = source->m_AdaptiveTssbn;
+        config.structuralDamping = source->m_StructuralDamping.settings;
         config.enableGalloping = source->m_EnableGalloping;
+        config.gallopingAerodynamicTangentMode = source->m_GallopingAerodynamicTangentMode;
         config.gallopingIceThickness = source->m_GallopingIceThickness;
-        config.gallopingInitialAttackDegrees =
-            source->m_GallopingInitialAttackDegrees;
+        config.gallopingInitialAttackDegrees = source->m_GallopingInitialAttackDegrees;
         config.regionScope = source->m_RegionScope;
         config.computeRegionIds = source->m_ComputeRegionIds;
         clone->AddAnalysisStep(config);
@@ -284,8 +305,7 @@ std::shared_ptr<StructureData> StructureData::CloneForAnalysis(QString* errorMes
     return clone;
 }
 
-int StructureData::AddModelSet(const QString& name, ModelSetType type, const std::set<int>& ids,
-    QString* errorMessage)
+int StructureData::AddModelSet(const QString& name, ModelSetType type, const std::set<int>& ids, QString* errorMessage)
 {
     if (ids.empty())
     {
@@ -296,15 +316,14 @@ int StructureData::AddModelSet(const QString& name, ModelSetType type, const std
 
     for (int id : ids)
     {
-        const bool exists = type == ModelSetType::Node
-            ? m_Nodes.find(id) != m_Nodes.cend()
-            : m_Elements.find(id) != m_Elements.cend();
+        const bool exists =
+            type == ModelSetType::Node ? m_Nodes.find(id) != m_Nodes.cend() : m_Elements.find(id) != m_Elements.cend();
         if (!exists)
         {
             if (errorMessage)
                 *errorMessage = QStringLiteral("集合引用了不存在的%1 ID %2。")
-                    .arg(type == ModelSetType::Node ? QStringLiteral("节点") : QStringLiteral("单元"))
-                    .arg(id);
+                                    .arg(type == ModelSetType::Node ? QStringLiteral("节点") : QStringLiteral("单元"))
+                                    .arg(id);
             return 0;
         }
     }
@@ -318,9 +337,8 @@ int StructureData::AddModelSet(const QString& name, ModelSetType type, const std
     return id;
 }
 
-int StructureData::AddComputeRegion(const QString& name, const std::set<int>& nodeIds,
-    const std::set<int>& elementIds, const std::set<int>& sourceSetIds,
-    bool enabled, QString* errorMessage)
+int StructureData::AddComputeRegion(const QString& name, const std::set<int>& nodeIds, const std::set<int>& elementIds,
+                                    const std::set<int>& sourceSetIds, bool enabled, QString* errorMessage)
 {
     std::set<int> effectiveNodeIds = nodeIds;
     std::set<int> effectiveElementIds = elementIds;
@@ -347,8 +365,7 @@ int StructureData::AddComputeRegion(const QString& name, const std::set<int>& no
 
     auto region = std::make_shared<ComputeRegion>();
     region->m_Id = m_ComputeRegions.empty() ? 1 : m_ComputeRegions.rbegin()->first + 1;
-    region->m_Name = name.trimmed().isEmpty()
-        ? QStringLiteral("计算区域-%1").arg(region->m_Id) : name.trimmed();
+    region->m_Name = name.trimmed().isEmpty() ? QStringLiteral("计算区域-%1").arg(region->m_Id) : name.trimmed();
     region->m_Enabled = enabled;
     region->m_SourceSetIds = sourceSetIds;
     region->m_DirectNodeIds = nodeIds;
@@ -416,8 +433,8 @@ int StructureData::AddComputeRegion(const QString& name, const std::set<int>& no
         return 0;
     }
 
-    if (m_ComputeRegions.size() == 1 && m_ComputeRegions.cbegin()->second
-        && m_ComputeRegions.cbegin()->second->m_AutoGenerated)
+    if (m_ComputeRegions.size() == 1 && m_ComputeRegions.cbegin()->second &&
+        m_ComputeRegions.cbegin()->second->m_AutoGenerated)
     {
         m_ComputeRegions.clear();
     }
@@ -438,8 +455,8 @@ int StructureData::AddComputeRegion(const QString& name, const std::set<int>& no
     return newId;
 }
 
-int StructureData::AddComputeRegionFromSets(const QString& name,
-    const std::set<int>& sourceSetIds, bool enabled, QString* errorMessage)
+int StructureData::AddComputeRegionFromSets(const QString& name, const std::set<int>& sourceSetIds, bool enabled,
+                                            QString* errorMessage)
 {
     return AddComputeRegion(name, {}, {}, sourceSetIds, enabled, errorMessage);
 }
@@ -476,8 +493,7 @@ bool StructureData::RebuildAndMergeComputeRegions(QString* errorMessage)
             if (setIt == m_ModelSets.cend() || !setIt->second)
             {
                 if (errorMessage)
-                    *errorMessage = QStringLiteral("计算区域 %1 引用了不存在的集合 %2。")
-                        .arg(regionId).arg(setId);
+                    *errorMessage = QStringLiteral("计算区域 %1 引用了不存在的集合 %2。").arg(regionId).arg(setId);
                 return false;
             }
             if (setIt->second->m_Type == ModelSetType::Node)
@@ -515,8 +531,7 @@ bool StructureData::RebuildAndMergeComputeRegions(QString* errorMessage)
             if (elementIt == m_Elements.cend() || !elementIt->second)
             {
                 if (errorMessage)
-                    *errorMessage = QStringLiteral("计算区域 %1 引用了不存在的单元 %2。")
-                        .arg(regionId).arg(elementId);
+                    *errorMessage = QStringLiteral("计算区域 %1 引用了不存在的单元 %2。").arg(regionId).arg(elementId);
                 return false;
             }
             for (const auto& nodeRef : elementIt->second->m_pNode)
@@ -525,8 +540,8 @@ bool StructureData::RebuildAndMergeComputeRegions(QString* errorMessage)
                 if (!node)
                 {
                     if (errorMessage)
-                        *errorMessage = QStringLiteral("计算区域 %1 的单元 %2 存在失效节点引用。")
-                            .arg(regionId).arg(elementId);
+                        *errorMessage =
+                            QStringLiteral("计算区域 %1 的单元 %2 存在失效节点引用。").arg(regionId).arg(elementId);
                     return false;
                 }
                 region->m_NodeIds.insert(node->m_Id);
@@ -552,22 +567,18 @@ bool StructureData::RebuildAndMergeComputeRegions(QString* errorMessage)
                 if (nodeIds.size() != 2)
                 {
                     if (errorMessage)
-                        *errorMessage = QStringLiteral(
-                            "MPC %1 没有有效的主从节点。").arg(mpcId);
+                        *errorMessage = QStringLiteral("MPC %1 没有有效的主从节点。").arg(mpcId);
                     return false;
                 }
                 const int masterNodeId = nodeIds[0];
                 const int slaveNodeId = nodeIds[1];
-                if (m_Nodes.find(masterNodeId) == m_Nodes.cend()
-                    || m_Nodes.find(slaveNodeId) == m_Nodes.cend())
+                if (m_Nodes.find(masterNodeId) == m_Nodes.cend() || m_Nodes.find(slaveNodeId) == m_Nodes.cend())
                 {
                     if (errorMessage)
-                        *errorMessage = QStringLiteral(
-                            "MPC %1 引用了不存在的节点。").arg(mpcId);
+                        *errorMessage = QStringLiteral("MPC %1 引用了不存在的节点。").arg(mpcId);
                     return false;
                 }
-                if (region->ContainsNode(masterNodeId)
-                    && region->m_NodeIds.insert(slaveNodeId).second)
+                if (region->ContainsNode(masterNodeId) && region->m_NodeIds.insert(slaveNodeId).second)
                 {
                     mpcExpanded = true;
                 }
@@ -588,8 +599,7 @@ bool StructureData::RebuildAndMergeComputeRegions(QString* errorMessage)
                 {
                     const int removedId = rhsIt->first;
                     lhsIt->second->MergeFrom(*rhsIt->second);
-                    lhsIt->second->m_Name = QStringLiteral("%1 + %2")
-                        .arg(lhsIt->second->m_Name, rhsIt->second->m_Name);
+                    lhsIt->second->m_Name = QStringLiteral("%1 + %2").arg(lhsIt->second->m_Name, rhsIt->second->m_Name);
                     rhsIt = m_ComputeRegions.erase(rhsIt);
                     for (auto& [stepId, step] : m_AnalysisStep)
                     {
@@ -623,8 +633,7 @@ bool StructureData::ValidateComputeRegions(QString* errorMessage) const
             if (m_Nodes.find(nodeId) == m_Nodes.cend())
             {
                 if (errorMessage)
-                    *errorMessage = QStringLiteral("计算区域 %1 引用了不存在的节点 %2。")
-                        .arg(lhsIt->first).arg(nodeId);
+                    *errorMessage = QStringLiteral("计算区域 %1 引用了不存在的节点 %2。").arg(lhsIt->first).arg(nodeId);
                 return false;
             }
         }
@@ -640,19 +649,18 @@ bool StructureData::ValidateComputeRegions(QString* errorMessage) const
             if (nodeIds.size() != 2)
             {
                 if (errorMessage)
-                    *errorMessage = QStringLiteral(
-                        "MPC %1 没有有效的主从节点。").arg(mpcId);
+                    *errorMessage = QStringLiteral("MPC %1 没有有效的主从节点。").arg(mpcId);
                 return false;
             }
-            if (region->ContainsNode(nodeIds[0])
-                && !region->ContainsNode(nodeIds[1]))
+            if (region->ContainsNode(nodeIds[0]) && !region->ContainsNode(nodeIds[1]))
             {
                 if (errorMessage)
-                    *errorMessage = QStringLiteral(
-                        "计算区域 %1 包含 MPC %2 的主节点 %3，"
-                        "但没有包含从节点 %4。")
-                        .arg(lhsIt->first).arg(mpcId)
-                        .arg(nodeIds[0]).arg(nodeIds[1]);
+                    *errorMessage = QStringLiteral("计算区域 %1 包含 MPC %2 的主节点 %3，"
+                                                   "但没有包含从节点 %4。")
+                                        .arg(lhsIt->first)
+                                        .arg(mpcId)
+                                        .arg(nodeIds[0])
+                                        .arg(nodeIds[1]);
                 return false;
             }
         }
@@ -662,8 +670,8 @@ bool StructureData::ValidateComputeRegions(QString* errorMessage) const
             if (rhsIt->second && region->Overlaps(*rhsIt->second))
             {
                 if (errorMessage)
-                    *errorMessage = QStringLiteral("计算区域 %1 与 %2 仍有共享节点或单元。")
-                        .arg(lhsIt->first).arg(rhsIt->first);
+                    *errorMessage =
+                        QStringLiteral("计算区域 %1 与 %2 仍有共享节点或单元。").arg(lhsIt->first).arg(rhsIt->first);
                 return false;
             }
         }
@@ -682,8 +690,8 @@ void StructureData::EnsureDefaultAnalysisConfiguration()
                 elementIds.insert(elementId);
         }
         QString ignoredError;
-        const int defaultRegionId = AddComputeRegion(
-            QStringLiteral("默认计算区域"), {}, elementIds, {}, true, &ignoredError);
+        const int defaultRegionId =
+            AddComputeRegion(QStringLiteral("默认计算区域"), {}, elementIds, {}, true, &ignoredError);
         const auto regionIt = m_ComputeRegions.find(defaultRegionId);
         if (regionIt != m_ComputeRegions.end() && regionIt->second)
             regionIt->second->m_AutoGenerated = true;
@@ -711,8 +719,8 @@ std::vector<int> StructureData::ResolveAnalysisStepRegionIds(const AnalysisStep&
     {
         if (!region || !region->m_Enabled)
             continue;
-        if (step.m_RegionScope == AnalysisRegionScope::AllEnabledRegions
-            || step.m_ComputeRegionIds.find(regionId) != step.m_ComputeRegionIds.cend())
+        if (step.m_RegionScope == AnalysisRegionScope::AllEnabledRegions ||
+            step.m_ComputeRegionIds.find(regionId) != step.m_ComputeRegionIds.cend())
         {
             result.push_back(regionId);
         }
@@ -720,14 +728,14 @@ std::vector<int> StructureData::ResolveAnalysisStepRegionIds(const AnalysisStep&
     return result;
 }
 
-std::shared_ptr<StructureData> StructureData::CloneRegionForAnalysis(int regionId,
-    int analysisStepId, QString* errorMessage) const
+std::shared_ptr<StructureData> StructureData::CloneRegionForAnalysis(int regionId, int analysisStepId,
+                                                                     QString* errorMessage) const
 {
     return CloneRegionForAnalysis(regionId, std::set<int>{analysisStepId}, errorMessage);
 }
 
-std::shared_ptr<StructureData> StructureData::CloneRegionForAnalysis(int regionId,
-    const std::set<int>& analysisStepIds, QString* errorMessage) const
+std::shared_ptr<StructureData> StructureData::CloneRegionForAnalysis(int regionId, const std::set<int>& analysisStepIds,
+                                                                     QString* errorMessage) const
 {
     const auto regionIt = m_ComputeRegions.find(regionId);
     if (regionIt == m_ComputeRegions.cend() || !regionIt->second || !regionIt->second->m_Enabled)
@@ -757,21 +765,21 @@ std::shared_ptr<StructureData> StructureData::CloneRegionForAnalysis(int regionI
         return nullptr;
 
     const auto region = regionIt->second;
-    for (auto it = clone->m_Elements.begin(); it != clone->m_Elements.end(); )
+    for (auto it = clone->m_Elements.begin(); it != clone->m_Elements.end();)
     {
         if (region->m_ElementIds.find(it->first) == region->m_ElementIds.cend())
             it = clone->m_Elements.erase(it);
         else
             ++it;
     }
-    for (auto it = clone->m_Nodes.begin(); it != clone->m_Nodes.end(); )
+    for (auto it = clone->m_Nodes.begin(); it != clone->m_Nodes.end();)
     {
         if (region->m_NodeIds.find(it->first) == region->m_NodeIds.cend())
             it = clone->m_Nodes.erase(it);
         else
             ++it;
     }
-    for (auto it = clone->m_Constraint.begin(); it != clone->m_Constraint.end(); )
+    for (auto it = clone->m_Constraint.begin(); it != clone->m_Constraint.end();)
     {
         const auto node = it->second ? it->second->m_pNode.lock() : nullptr;
         if (!node || clone->m_Nodes.find(node->m_Id) == clone->m_Nodes.cend())
@@ -779,8 +787,7 @@ std::shared_ptr<StructureData> StructureData::CloneRegionForAnalysis(int regionI
         else
             ++it;
     }
-    for (auto it = clone->m_MPCConstraints.begin();
-         it != clone->m_MPCConstraints.end(); )
+    for (auto it = clone->m_MPCConstraints.begin(); it != clone->m_MPCConstraints.end();)
     {
         if (!it->second)
         {
@@ -792,8 +799,7 @@ std::shared_ptr<StructureData> StructureData::CloneRegionForAnalysis(int regionI
         if (nodeIds.size() != 2)
         {
             if (errorMessage)
-                *errorMessage = QStringLiteral(
-                    "MPC %1 没有有效的主从节点。").arg(it->first);
+                *errorMessage = QStringLiteral("MPC %1 没有有效的主从节点。").arg(it->first);
             return nullptr;
         }
 
@@ -804,19 +810,24 @@ std::shared_ptr<StructureData> StructureData::CloneRegionForAnalysis(int regionI
             it = clone->m_MPCConstraints.erase(it);
             continue;
         }
-        if (!region->ContainsNode(nodeIds[1])
-            || clone->m_Nodes.find(nodeIds[0]) == clone->m_Nodes.cend()
-            || clone->m_Nodes.find(nodeIds[1]) == clone->m_Nodes.cend())
+        if (!region->ContainsNode(nodeIds[1]) || clone->m_Nodes.find(nodeIds[0]) == clone->m_Nodes.cend() ||
+            clone->m_Nodes.find(nodeIds[1]) == clone->m_Nodes.cend())
         {
             if (errorMessage)
-                *errorMessage = QStringLiteral(
-                    "计算区域 %1 中 MPC %2 的主从节点不完整。")
-                    .arg(regionId).arg(it->first);
+                *errorMessage = QStringLiteral("计算区域 %1 中 MPC %2 的主从节点不完整。").arg(regionId).arg(it->first);
             return nullptr;
         }
         ++it;
     }
-    for (auto it = clone->m_Load.begin(); it != clone->m_Load.end(); )
+    for (auto it = clone->m_RigidBodyInertias.begin(); it != clone->m_RigidBodyInertias.end();)
+    {
+        const auto node = it->second ? it->second->m_pNode.lock() : nullptr;
+        if (!node || clone->m_Nodes.find(node->m_Id) == clone->m_Nodes.cend())
+            it = clone->m_RigidBodyInertias.erase(it);
+        else
+            ++it;
+    }
+    for (auto it = clone->m_Load.begin(); it != clone->m_Load.end();)
     {
         bool keep = static_cast<bool>(it->second);
         if (const auto nodeLoad = std::dynamic_pointer_cast<Force_Node>(it->second))
@@ -834,7 +845,7 @@ std::shared_ptr<StructureData> StructureData::CloneRegionForAnalysis(int regionI
         else
             ++it;
     }
-    for (auto it = clone->m_AnalysisStep.begin(); it != clone->m_AnalysisStep.end(); )
+    for (auto it = clone->m_AnalysisStep.begin(); it != clone->m_AnalysisStep.end();)
     {
         if (analysisStepIds.find(it->first) == analysisStepIds.cend())
             it = clone->m_AnalysisStep.erase(it);
@@ -845,7 +856,7 @@ std::shared_ptr<StructureData> StructureData::CloneRegionForAnalysis(int regionI
             ++it;
         }
     }
-    for (auto it = clone->m_ComputeRegions.begin(); it != clone->m_ComputeRegions.end(); )
+    for (auto it = clone->m_ComputeRegions.begin(); it != clone->m_ComputeRegions.end();)
     {
         if (it->first != regionId)
             it = clone->m_ComputeRegions.erase(it);
@@ -917,8 +928,7 @@ std::shared_ptr<Property> StructureData::Create_Property(int id_material, int id
         auto existingMat = existingProp->m_pMaterial.lock();
         auto existingSec = existingProp->m_pSection.lock();
 
-        if (existingMat && existingSec &&
-            existingMat->m_Id == id_material && existingSec->m_Id == id_section)
+        if (existingMat && existingSec && existingMat->m_Id == id_material && existingSec->m_Id == id_section)
         {
             // 已存在相同组合，直接返回
             return existingProp;
@@ -963,14 +973,14 @@ void StructureData::Add_Property(double E, double density, double Area, double* 
     pMaterial->m_Young = E;
     pMaterial->m_Density = density;
 
-    if (v != nullptr) 
+    if (v != nullptr)
     {
         pMaterial->m_Poisson = *v;
     }
     else
         pMaterial->m_Poisson = 0.0;
 
-    if (S != nullptr) 
+    if (S != nullptr)
     {
         // S 在材料定义中表示极限应力。
         pMaterial->m_MaxStress = *S;
@@ -978,7 +988,7 @@ void StructureData::Add_Property(double E, double density, double Area, double* 
     else
         pMaterial->m_MaxStress = 0.0;
 
-    if (e != nullptr) 
+    if (e != nullptr)
     {
         // 假设m_Expansion是double类型
         pMaterial->m_Expansion = *e;
@@ -1020,7 +1030,7 @@ int StructureData::Add_Constraint(std::vector<int> Nodeid, std::vector<int> dire
             pConstraint->m_pNode = pNode;
             pConstraint->m_Direction = static_cast<EnumKeyword::Direction>(direaction[i]);
             pConstraint->m_Value = value[i];
-            m_Constraint.insert({ pConstraint->m_Id,pConstraint });
+            m_Constraint.insert({pConstraint->m_Id, pConstraint});
         }
     }
     return int(num * Nodeid.size());
@@ -1043,26 +1053,27 @@ void StructureData::AddAnalysisStep(const AnalysisStepConfig& config)
 {
     auto pStep = std::make_shared<AnalysisStep>();
     pStep->m_Id = config.id > 0 ? config.id : static_cast<int>(m_AnalysisStep.size()) + 1;
-    pStep->m_Name = config.name.trimmed().isEmpty()
-        ? QStringLiteral("Step-%1").arg(pStep->m_Id) : config.name.trimmed();
-    pStep->m_Type = config.type;//分析步类型
-    pStep->m_Time = config.totalTime;//总时间
+    pStep->m_Name =
+        config.name.trimmed().isEmpty() ? QStringLiteral("Step-%1").arg(pStep->m_Id) : config.name.trimmed();
+    pStep->m_Type = config.type;      //分析步类型
+    pStep->m_Time = config.totalTime; //总时间
     pStep->m_StepSize = config.stepSize;
     pStep->m_Tolerance = config.tolerance;
     pStep->m_MaxIterations = config.maxIterations;
     pStep->m_DynamicSolverType = config.dynamicSolverType;
-    pStep->m_InitialStaticStepId = pStep->m_Type == EnumKeyword::StepType::DYNAMIC
-        ? config.initialStaticStepId : 0;
+    pStep->m_InitialStaticStepId = pStep->m_Type == EnumKeyword::StepType::DYNAMIC ? config.initialStaticStepId : 0;
     pStep->m_AdaptiveTssbn = config.adaptiveTssbn;
+    pStep->m_StructuralDamping.settings = config.structuralDamping;
     pStep->m_GallopingIceThickness = AeroManager::isSupportedIceThickness(config.gallopingIceThickness)
-        ? config.gallopingIceThickness : AeroManager::supportedIceThicknesses().front();
+                                         ? config.gallopingIceThickness
+                                         : AeroManager::supportedIceThicknesses().front();
     pStep->m_GallopingInitialAttackDegrees =
-        std::isfinite(config.gallopingInitialAttackDegrees)
-        ? config.gallopingInitialAttackDegrees : 45.0;
+        std::isfinite(config.gallopingInitialAttackDegrees) ? config.gallopingInitialAttackDegrees : 45.0;
     pStep->m_RegionScope = config.regionScope;
     pStep->m_ComputeRegionIds = config.computeRegionIds;
     pStep->isDynamic = (config.type == EnumKeyword::StepType::DYNAMIC);
     pStep->m_EnableGalloping = pStep->isDynamic && config.enableGalloping;
+    pStep->m_GallopingAerodynamicTangentMode = config.gallopingAerodynamicTangentMode;
 
     m_AnalysisStep.insert(std::make_pair(pStep->m_Id, pStep));
 }
@@ -1081,12 +1092,11 @@ void StructureData::CleanupModel(double tolerance)
     int nodesAfter = static_cast<int>(m_Nodes.size());
     int elementsAfter = static_cast<int>(m_Elements.size());
 
-    if (nodesBefore != nodesAfter || elementsBefore != elementsAfter)          //清除则显示信息
+    if (nodesBefore != nodesAfter || elementsBefore != elementsAfter) //清除则显示信息
     {
         qDebug().noquote() << QStringLiteral("节点: ") << nodesBefore << QStringLiteral(" -> ") << nodesAfter;
         qDebug().noquote() << QStringLiteral("单元: ") << elementsBefore << QStringLiteral(" -> ") << elementsAfter;
     }
-
 }
 
 //数据优化-----不用看这些代码-------------------
@@ -1099,7 +1109,8 @@ struct TempNode
 
 void StructureData::MergeDuplicateNodes(double tolerance)
 {
-    if (m_Nodes.empty()) return;
+    if (m_Nodes.empty())
+        return;
 
     // Coincident master/slave nodes are meaningful for releases and must
     // remain distinct. Merging either endpoint would destroy the MPC before
@@ -1108,7 +1119,8 @@ void StructureData::MergeDuplicateNodes(double tolerance)
     for (const auto& [mpcId, mpc] : m_MPCConstraints)
     {
         (void)mpcId;
-        if (!mpc) continue;
+        if (!mpc)
+            continue;
         for (const int nodeId : mpc->GetNodeIds())
             mpcNodeIds.insert(nodeId);
     }
@@ -1124,11 +1136,14 @@ void StructureData::MergeDuplicateNodes(double tolerance)
     {
         auto node = pair.second;
         // 计算最小坐标，用于防止哈希溢出
-        if (node->m_X < minX) minX = node->m_X;
-        if (node->m_Y < minY) minY = node->m_Y;
-        if (node->m_Z < minZ) minZ = node->m_Z;
+        if (node->m_X < minX)
+            minX = node->m_X;
+        if (node->m_Y < minY)
+            minY = node->m_Y;
+        if (node->m_Z < minZ)
+            minZ = node->m_Z;
 
-        linearNodes.push_back({ pair.first, node->m_X, node->m_Y, node->m_Z });
+        linearNodes.push_back({pair.first, node->m_X, node->m_Y, node->m_Z});
     }
 
     // 2. 计算 CellSize
@@ -1184,67 +1199,57 @@ void StructureData::MergeDuplicateNodes(double tolerance)
             int originalId1 = linearNodes[idx1].id;
 
             // 如果这个节点已经被合并了，跳过
-            if (nodeIdMapping.count(originalId1)) continue;
+            if (nodeIdMapping.count(originalId1))
+                continue;
 
             const auto& n1 = linearNodes[idx1];
 
-            // 搜索 3x3x3 邻域
-            for (long long dx = -1; dx <= 1; ++dx)
+            // 用单层循环遍历 3x3x3 邻域，避免三层控制流嵌套。
+            for (int neighborIndex = 0; neighborIndex < 27; ++neighborIndex)
             {
-                for (long long dy = -1; dy <= 1; ++dy)
+                const long long dx = neighborIndex / 9 - 1;
+                const long long dy = neighborIndex / 3 % 3 - 1;
+                const long long dz = neighborIndex % 3 - 1;
+                const HashKey neighborKey = std::make_tuple(kx + dx, ky + dy, kz + dz);
+                const auto bucket = buckets.find(neighborKey);
+                if (bucket == buckets.end())
+                    continue;
+
+                for (int idx2 : bucket->second)
                 {
-                    for (long long dz = -1; dz <= 1; ++dz)
-                    {
+                    const int originalId2 = linearNodes[idx2].id;
+                    if (originalId2 <= originalId1)
+                        continue;
+                    if (mpcNodeIds.count(originalId1) != 0 || mpcNodeIds.count(originalId2) != 0)
+                        continue;
+                    if (nodeIdMapping.count(originalId2))
+                        continue;
 
-                        HashKey neighborKey = std::make_tuple(kx + dx, ky + dy, kz + dz);
-                        auto it = buckets.find(neighborKey);
-                        if (it == buckets.end()) continue;
+                    const auto& n2 = linearNodes[idx2];
+                    const double dxx = std::abs(n1.x - n2.x);
+                    const double dyy = std::abs(n1.y - n2.y);
+                    const double dzz = std::abs(n1.z - n2.z);
+                    if (dxx > tolerance || dyy > tolerance || dzz > tolerance)
+                        continue;
+                    if (dxx * dxx + dyy * dyy + dzz * dzz >= tolSq)
+                        continue;
 
-                        for (int idx2 : it->second)
-                        {
-                            int originalId2 = linearNodes[idx2].id;
-
-                            // 确保 id2 > id1，且避免自身比较
-                            if (originalId2 <= originalId1) continue;
-
-                            if (mpcNodeIds.count(originalId1) != 0
-                                || mpcNodeIds.count(originalId2) != 0)
-                                continue;
-
-                            // 如果对方已经被合并，跳过
-                            if (nodeIdMapping.count(originalId2)) continue;
-
-                            const auto& n2 = linearNodes[idx2];
-
-                            // 快速轴比较
-                            double dxx = std::abs(n1.x - n2.x);
-                            if (dxx > tolerance) continue;
-                            double dyy = std::abs(n1.y - n2.y);
-                            if (dyy > tolerance) continue;
-                            double dzz = std::abs(n1.z - n2.z);
-                            if (dzz > tolerance) continue;
-
-                            // 距离平方比较
-                            if (dxx * dxx + dyy * dyy + dzz * dzz < tolSq)
-                            {
-                                nodeIdMapping[originalId2] = originalId1;
-                                nodesToRemove.push_back(originalId2);
-                            }
-                        }
-                    }
+                    nodeIdMapping[originalId2] = originalId1;
+                    nodesToRemove.push_back(originalId2);
                 }
             }
         }
     }
 
-    if (nodesToRemove.empty()) return;
+    if (nodesToRemove.empty())
+        return;
 
     // 6. 更新引用
     auto getNewId = [&](int oldId) -> int
-        {
-            auto it = nodeIdMapping.find(oldId);
-            return (it != nodeIdMapping.end()) ? it->second : oldId;
-        };
+    {
+        auto it = nodeIdMapping.find(oldId);
+        return (it != nodeIdMapping.end()) ? it->second : oldId;
+    };
 
     // 更新单元
     for (auto& elemPair : m_Elements)
@@ -1328,7 +1333,7 @@ struct VectorHash
         for (int i : v)
         {
             // 经典的 hash combine 算法
-            seed ^= std::hash<int>{}(i)+0x9e3779b9 + (seed << 6) + (seed >> 2);
+            seed ^= std::hash<int>{}(i) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
         }
         return seed;
     }
@@ -1336,7 +1341,8 @@ struct VectorHash
 
 void StructureData::RemoveDuplicateElements()
 {
-    if (m_Elements.empty()) return;
+    if (m_Elements.empty())
+        return;
 
     std::unordered_set<std::vector<int>, VectorHash> seenTopologies;
     seenTopologies.reserve(m_Elements.size());
@@ -1378,7 +1384,8 @@ void StructureData::RemoveDuplicateElements()
         }
     }
 
-    if (elementsToRemove.empty()) return;
+    if (elementsToRemove.empty())
+        return;
 
     for (int id : elementsToRemove)
     {
@@ -1388,7 +1395,8 @@ void StructureData::RemoveDuplicateElements()
 
 void StructureData::RemoveOrphanNodes()
 {
-    if (m_Nodes.empty()) return;
+    if (m_Nodes.empty())
+        return;
 
     // 1. 找出当前最大的节点 ID，确定 vector 大小
     int maxNodeId = m_Nodes.rbegin()->first;
@@ -1421,12 +1429,21 @@ void StructureData::RemoveOrphanNodes()
 
     for (const auto& mpcPair : m_MPCConstraints)
     {
-        if (!mpcPair.second) continue;
+        if (!mpcPair.second)
+            continue;
         for (const int nodeId : mpcPair.second->GetNodeIds())
         {
             if (nodeId >= 0 && nodeId <= maxNodeId)
                 isNodeUsed[nodeId] = true;
         }
+    }
+
+    for (const auto& [inertiaId, inertia] : m_RigidBodyInertias)
+    {
+        Q_UNUSED(inertiaId);
+        const auto node = inertia ? inertia->m_pNode.lock() : nullptr;
+        if (node && node->m_Id >= 0 && node->m_Id <= maxNodeId)
+            isNodeUsed[node->m_Id] = true;
     }
 
     // 荷载引用的节点也不能删
@@ -1456,7 +1473,8 @@ void StructureData::RemoveOrphanNodes()
         }
     }
 
-    if (orphanNodes.empty()) return;
+    if (orphanNodes.empty())
+        return;
 
     for (int id : orphanNodes)
     {
@@ -1511,6 +1529,16 @@ void StructureData::RenumberAll()
         ++newId;
     }
     m_MPCConstraints = std::move(newMpcs);
+
+    std::map<int, std::shared_ptr<RigidBodyInertia>> newRigidBodyInertias;
+    newId = 1;
+    for (auto& pair : m_RigidBodyInertias)
+    {
+        pair.second->m_Id = newId;
+        newRigidBodyInertias[newId] = pair.second;
+        ++newId;
+    }
+    m_RigidBodyInertias = std::move(newRigidBodyInertias);
 
     // 重新编号荷载
     std::map<int, std::shared_ptr<LoadBase>> newLoads;

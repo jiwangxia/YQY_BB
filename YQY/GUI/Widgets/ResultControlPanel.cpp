@@ -2,92 +2,108 @@
 #include "Export/Hdf5ModelIO.h"
 #include "ui_ResultControlPanel.h"
 
+#include <array>
 #include <cmath>
 
 #include <QSignalBlocker>
 
 ResultControlPanel::ResultControlPanel(QWidget* parent)
-    : QWidget(parent), m_ui(new Ui::ResultControlPanelClass), m_reader(std::make_unique<Hdf5ModelIO>()),
-      m_playbackTimer(new QTimer(this))
+    : QWidget(parent)
+    , m_ui(new Ui::ResultControlPanelClass)
+    , m_reader(std::make_unique<Hdf5ModelIO>())
+    , m_playbackTimer(new QTimer(this))
 {
     m_ui->setupUi(this);
     m_ui->exportButton->setObjectName(QStringLiteral("exportNodeResultsButton"));
-    const double speeds[] = {0.25, 0.5, 1.0, 2.0, 4.0, 8.0};
-    for (int i = 0; i < 6; ++i)
-        m_ui->speedCombo->setItemData(i, speeds[i]);
+    constexpr std::array playbackSpeeds{0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0};
+    m_ui->speedCombo->clear();
+    for (const double speed : playbackSpeeds)
+    {
+        m_ui->speedCombo->addItem(QStringLiteral("%1×").arg(speed, 0, 'g'), speed);
+    }
+    m_ui->speedCombo->setCurrentIndex(2);
 
     m_playbackTimer->setTimerType(Qt::PreciseTimer);
     m_playbackTimer->setInterval(16);
-    connect(m_playbackTimer, &QTimer::timeout, this, [this]()
-    {
-        if (m_frames.size() < 2)
-            return;
+    connect(m_playbackTimer, &QTimer::timeout, this,
+            [this]()
+            {
+                if (m_frames.size() < 2)
+                    return;
 
-        const double speed = m_ui->speedCombo->currentData().toDouble();
-        constexpr double sourceFrameDurationMs = 80.0;
-        m_playbackPosition += static_cast<double>(m_playbackTimer->interval()) / sourceFrameDurationMs * speed;
-        m_playbackPosition = std::fmod(m_playbackPosition, static_cast<double>(m_frames.size()));
+                const double speed = m_ui->speedCombo->currentData().toDouble();
+                constexpr double sourceFrameDurationMs = 80.0;
+                m_playbackPosition += static_cast<double>(m_playbackTimer->interval()) / sourceFrameDurationMs * speed;
+                m_playbackPosition = std::fmod(m_playbackPosition, static_cast<double>(m_frames.size()));
 
-        const int displayedFrame = static_cast<int>(std::floor(m_playbackPosition));
-        {
-            const QSignalBlocker blocker(m_ui->frameSlider);
-            m_ui->frameSlider->setValue(displayedFrame);
-        }
-        if (m_frameChangedHandler)
-            m_frameChangedHandler(m_playbackPosition);
-    });
-    connect(m_ui->playButton, &QPushButton::clicked, this, [this]()
-    {
-        const bool playing = m_playbackTimer->isActive();
-        if (playing)
-            m_playbackTimer->stop();
-        else
-        {
-            m_playbackPosition = static_cast<double>(m_ui->frameSlider->value());
-            m_playbackTimer->start();
-        }
-        m_ui->playButton->setText(playing ? QStringLiteral("播放") : QStringLiteral("暂停"));
-        if (m_playbackStateChangedHandler)
-            m_playbackStateChangedHandler(!playing);
-    });
-    connect(m_ui->frameSlider, &QSlider::valueChanged, this, [this](int frameIndex)
-    {
-        m_playbackPosition = static_cast<double>(frameIndex);
-        if (m_frameChangedHandler)
-            m_frameChangedHandler(m_playbackPosition);
-    });
+                const int displayedFrame = static_cast<int>(std::floor(m_playbackPosition));
+                {
+                    const QSignalBlocker blocker(m_ui->frameSlider);
+                    m_ui->frameSlider->setValue(displayedFrame);
+                }
+                if (m_frameChangedHandler)
+                    m_frameChangedHandler(m_playbackPosition);
+            });
+    connect(m_ui->playButton, &QPushButton::clicked, this,
+            [this]()
+            {
+                const bool playing = m_playbackTimer->isActive();
+                if (playing)
+                    m_playbackTimer->stop();
+                else
+                {
+                    m_playbackPosition = static_cast<double>(m_ui->frameSlider->value());
+                    m_playbackTimer->start();
+                }
+                m_ui->playButton->setText(playing ? QStringLiteral("播放") : QStringLiteral("暂停"));
+                if (m_playbackStateChangedHandler)
+                    m_playbackStateChangedHandler(!playing);
+            });
+    connect(m_ui->frameSlider, &QSlider::valueChanged, this,
+            [this](int frameIndex)
+            {
+                m_playbackPosition = static_cast<double>(frameIndex);
+                if (m_frameChangedHandler)
+                    m_frameChangedHandler(m_playbackPosition);
+            });
     const auto visualizationChanged = [this]()
     {
         if (m_visualizationChangedHandler)
             m_visualizationChangedHandler();
     };
-    connect(m_ui->fieldCombo, qOverload<int>(&QComboBox::currentIndexChanged), this, [visualizationChanged](int)
-    {
-        visualizationChanged();
-    });
-    connect(m_ui->scaleSpin, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [visualizationChanged](double)
-    {
-        visualizationChanged();
-    });
-    connect(m_ui->originalCheck, &QCheckBox::toggled, this, [visualizationChanged](bool)
-    {
-        visualizationChanged();
-    });
-    connect(m_ui->exportButton, &QPushButton::clicked, this, [this]()
-    {
-        if (m_exportHandler)
-            m_exportHandler();
-    });
-    connect(m_ui->exportElementButton, &QPushButton::clicked, this, [this]()
-    {
-        if (m_elementExportHandler)
-            m_elementExportHandler();
-    });
-    connect(m_ui->exportIterationButton, &QPushButton::clicked, this, [this]()
-    {
-        if (m_iterationExportHandler)
-            m_iterationExportHandler();
-    });
+    connect(m_ui->fieldCombo, qOverload<int>(&QComboBox::currentIndexChanged), this,
+            [visualizationChanged](int)
+            {
+                visualizationChanged();
+            });
+    connect(m_ui->scaleSpin, qOverload<double>(&QDoubleSpinBox::valueChanged), this,
+            [visualizationChanged](double)
+            {
+                visualizationChanged();
+            });
+    connect(m_ui->originalCheck, &QCheckBox::toggled, this,
+            [visualizationChanged](bool)
+            {
+                visualizationChanged();
+            });
+    connect(m_ui->exportButton, &QPushButton::clicked, this,
+            [this]()
+            {
+                if (m_exportHandler)
+                    m_exportHandler();
+            });
+    connect(m_ui->exportElementButton, &QPushButton::clicked, this,
+            [this]()
+            {
+                if (m_elementExportHandler)
+                    m_elementExportHandler();
+            });
+    connect(m_ui->exportIterationButton, &QPushButton::clicked, this,
+            [this]()
+            {
+                if (m_iterationExportHandler)
+                    m_iterationExportHandler();
+            });
 }
 ResultControlPanel::~ResultControlPanel()
 {

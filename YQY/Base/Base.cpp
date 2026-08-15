@@ -1,5 +1,6 @@
 #include "Base.h"
 
-Base::Base() : m_Id(0)
+Base::Base()
+    : m_Id(0)
 {
 }

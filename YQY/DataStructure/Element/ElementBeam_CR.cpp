@@ -41,7 +41,7 @@ void ElementBeam_CR::Get_ke(MatrixXd& ke)
     m_ke = ke;
 }
 
-void ElementBeam_CR::Get_me_Lumped(MatrixXd& me)//集中质量矩阵
+void ElementBeam_CR::Get_me_Lumped(MatrixXd& me) //集中质量矩阵
 {
     MatrixXd consistentMass;
     Get_me_Consistent(consistentMass);
@@ -52,9 +52,8 @@ void ElementBeam_CR::Get_me_Lumped(MatrixXd& me)//集中质量矩阵
     m_me = me;
 }
 
-void ElementBeam_CR::EvaluateDynamicSystem(MatrixXd* massMatrix,
-    VectorXd* inertiaForce, MatrixXd* velocityTangent,
-    MatrixXd* configurationTangent)
+void ElementBeam_CR::EvaluateDynamicSystem(MatrixXd* massMatrix, VectorXd* inertiaForce, MatrixXd* velocityTangent,
+                                           MatrixXd* configurationTangent)
 {
     if (L0 <= 0.0)
         Get_L0();
@@ -67,10 +66,8 @@ void ElementBeam_CR::EvaluateDynamicSystem(MatrixXd* massMatrix,
     if (!pMaterial || !pSection || !pNode0 || !pNode1)
         throw std::runtime_error("ElementBeam_CR dynamic data is incomplete");
 
-    // Le et al. (2012), spatial-spin formulation, Eqs. (34) and (53).
-    // All four dynamic quantities are integrated in one pass so that the
-    // residual and its three tangent parts use exactly the same Gauss-point
-    // rotations, velocities and accelerations.
+    // 采用 Le 等（2012）的空间自旋公式（34）和（53）。四个动力量在一次过程中积分，
+    // 保证残差及其三个切线分量使用完全相同的高斯点转动、速度和加速度。
     const double lineMass = pMaterial->m_Density * pSection->m_Area;
     double Iy = 0.0;
     double Iz = 0.0;
@@ -78,13 +75,11 @@ void ElementBeam_CR::EvaluateDynamicSystem(MatrixXd* massMatrix,
     pSection->Calculate_I(Iy, Iz, J);
 
     Matrix3d materialRotaryInertia = Matrix3d::Zero();
-    materialRotaryInertia(0, 0) =
-        pMaterial->m_Density * (Iy + Iz);
+    materialRotaryInertia(0, 0) = pMaterial->m_Density * (Iy + Iz);
     materialRotaryInertia(1, 1) = pMaterial->m_Density * Iz;
     materialRotaryInertia(2, 2) = pMaterial->m_Density * Iy;
     if ((pSection->m_MassInertiaPerLength.array() > 0.0).all())
-        materialRotaryInertia.diagonal() =
-            pSection->m_MassInertiaPerLength;
+        materialRotaryInertia.diagonal() = pSection->m_MassInertiaPerLength;
 
     MatrixXd assembledMass = MatrixXd::Zero(12, 12);
     MatrixXd assembledGyroscopic = MatrixXd::Zero(12, 12);
@@ -94,10 +89,8 @@ void ElementBeam_CR::EvaluateDynamicSystem(MatrixXd* massMatrix,
     const Matrix3d previousSectionRotation0 = pNode0->m_Rg_n * R0;
     const Matrix3d previousSectionRotation1 = pNode1->m_Rg_n * R0;
     Vector3d previousRelativeRotation;
-    Utility::CR::Extract_RotationVector(
-        previousSectionRotation1
-            * previousSectionRotation0.transpose(),
-        previousRelativeRotation);
+    Utility::CR::Extract_RotationVector(previousSectionRotation1 * previousSectionRotation0.transpose(),
+                                        previousRelativeRotation);
 
     Vector3d nodalVelocity[2];
     Vector3d nodalAcceleration[2];
@@ -108,121 +101,70 @@ void ElementBeam_CR::EvaluateDynamicSystem(MatrixXd* massMatrix,
         const auto& node = nodeIndex == 0 ? pNode0 : pNode1;
         for (int component = 0; component < 3; ++component)
         {
-            nodalVelocity[nodeIndex](component) =
-                node->m_Velocity[component];
-            nodalAcceleration[nodeIndex](component) =
-                node->m_Acceleration[component];
-            nodalAngularVelocity[nodeIndex](component) =
-                node->m_Velocity[component + 3];
-            nodalAngularAcceleration[nodeIndex](component) =
-                node->m_Acceleration[component + 3];
+            nodalVelocity[nodeIndex](component) = node->m_Velocity[component];
+            nodalAcceleration[nodeIndex](component) = node->m_Acceleration[component];
+            nodalAngularVelocity[nodeIndex](component) = node->m_Velocity[component + 3];
+            nodalAngularAcceleration[nodeIndex](component) = node->m_Acceleration[component + 3];
         }
     }
 
-    const double gaussPoints[2] = {
-        -1.0 / std::sqrt(3.0), 1.0 / std::sqrt(3.0)
-    };
+    const double gaussPoints[2] = {-1.0 / std::sqrt(3.0), 1.0 / std::sqrt(3.0)};
     for (double coordinate : gaussPoints)
     {
-        const double N[2] = {
-            0.5 * (1.0 - coordinate),
-            0.5 * (1.0 + coordinate)
-        };
+        const double N[2] = {0.5 * (1.0 - coordinate), 0.5 * (1.0 + coordinate)};
 
         Matrix3d previousRelativeIncrement;
-        Utility::CR::Calculate_RotationMatrix(
-            N[1] * previousRelativeRotation,
-            previousRelativeIncrement);
-        const Matrix3d previousGaussRotation =
-            previousRelativeIncrement * previousSectionRotation0;
+        Utility::CR::Calculate_RotationMatrix(N[1] * previousRelativeRotation, previousRelativeIncrement);
+        const Matrix3d previousGaussRotation = previousRelativeIncrement * previousSectionRotation0;
 
-        const Vector3d incrementalGaussRotation =
-            N[0] * pNode0->m_StepRotation
-            + N[1] * pNode1->m_StepRotation;
+        const Vector3d incrementalGaussRotation = N[0] * pNode0->m_StepRotation + N[1] * pNode1->m_StepRotation;
         Matrix3d incrementalGaussRotationMatrix;
-        Utility::CR::Calculate_RotationMatrix(
-            incrementalGaussRotation,
-            incrementalGaussRotationMatrix);
-        const Matrix3d currentGaussRotation =
-            incrementalGaussRotationMatrix * previousGaussRotation;
+        Utility::CR::Calculate_RotationMatrix(incrementalGaussRotation, incrementalGaussRotationMatrix);
+        const Matrix3d currentGaussRotation = incrementalGaussRotationMatrix * previousGaussRotation;
 
         Matrix3d inverseSpatialSpin;
-        Utility::CR::Calculate_Ts_Inv(
-            incrementalGaussRotation, inverseSpatialSpin);
+        Utility::CR::Calculate_Ts_Inv(incrementalGaussRotation, inverseSpatialSpin);
 
-        const Vector3d translationalAcceleration =
-            N[0] * nodalAcceleration[0]
-            + N[1] * nodalAcceleration[1];
+        const Vector3d translationalAcceleration = N[0] * nodalAcceleration[0] + N[1] * nodalAcceleration[1];
         Vector3d materialAngularVelocity;
         Vector3d materialAngularAcceleration;
-        // Simo and Vu-Quoc interpolation discussed after Eqs. (56)-(57):
-        // interpolate the current nodal spatial quantities, then map the
-        // Gauss-point values to the material frame.  Le et al. report the
-        // same response as the stored Gauss-point update, without adding
-        // element-history variables.
-        const Vector3d spatialAngularVelocity =
-            N[0] * nodalAngularVelocity[0]
-            + N[1] * nodalAngularVelocity[1];
+        // 采用公式（56）和（57）之后讨论的 Simo 与 Vu-Quoc 插值：先插值当前节点空间量，
+        // 再把高斯点值映射到材料坐标系。Le 等指出该方法与存储高斯点更新的响应一致，且无需增加单元历史变量。
+        const Vector3d spatialAngularVelocity = N[0] * nodalAngularVelocity[0] + N[1] * nodalAngularVelocity[1];
         const Vector3d spatialAngularAcceleration =
-            N[0] * nodalAngularAcceleration[0]
-            + N[1] * nodalAngularAcceleration[1];
-        materialAngularVelocity =
-            currentGaussRotation.transpose()
-            * spatialAngularVelocity;
-        materialAngularAcceleration =
-            currentGaussRotation.transpose()
-            * spatialAngularAcceleration;
+            N[0] * nodalAngularAcceleration[0] + N[1] * nodalAngularAcceleration[1];
+        materialAngularVelocity = currentGaussRotation.transpose() * spatialAngularVelocity;
+        materialAngularAcceleration = currentGaussRotation.transpose() * spatialAngularAcceleration;
 
-        const Vector3d materialAngularMomentum =
-            materialRotaryInertia * materialAngularVelocity;
-        const Vector3d materialDynamicMoment =
-            materialRotaryInertia * materialAngularAcceleration
-            + materialAngularVelocity.cross(
-                materialAngularMomentum);
-        const Vector3d spatialDynamicMoment =
-            currentGaussRotation * materialDynamicMoment;
+        const Vector3d materialAngularMomentum = materialRotaryInertia * materialAngularVelocity;
+        const Vector3d materialDynamicMoment = materialRotaryInertia * materialAngularAcceleration +
+                                               materialAngularVelocity.cross(materialAngularMomentum);
+        const Vector3d spatialDynamicMoment = currentGaussRotation * materialDynamicMoment;
 
         Matrix3d angularVelocitySkew;
         Matrix3d dynamicMomentSkew;
-        Utility::CR::SkewSymmetric(
-            materialAngularVelocity, angularVelocitySkew);
-        Utility::CR::SkewSymmetric(
-            materialDynamicMoment, dynamicMomentSkew);
+        Utility::CR::SkewSymmetric(materialAngularVelocity, angularVelocitySkew);
+        Utility::CR::SkewSymmetric(materialDynamicMoment, dynamicMomentSkew);
 
         const Matrix3d rotationalMass =
-            currentGaussRotation * materialRotaryInertia
-            * previousGaussRotation.transpose()
-            * inverseSpatialSpin;
+            currentGaussRotation * materialRotaryInertia * previousGaussRotation.transpose() * inverseSpatialSpin;
         const Matrix3d rotationalGyroscopic =
-            currentGaussRotation
-            * (angularVelocitySkew * materialRotaryInertia
-                - materialRotaryInertia * angularVelocitySkew)
-            * previousGaussRotation.transpose()
-            * inverseSpatialSpin;
-        const Matrix3d rotationalCentrifugal =
-            -currentGaussRotation * dynamicMomentSkew;
+            currentGaussRotation *
+            (angularVelocitySkew * materialRotaryInertia - materialRotaryInertia * angularVelocitySkew) *
+            previousGaussRotation.transpose() * inverseSpatialSpin;
+        const Matrix3d rotationalCentrifugal = -currentGaussRotation * dynamicMomentSkew;
 
         for (int a = 0; a < 2; ++a)
         {
-            assembledInertiaForce.segment<3>(6 * a) +=
-                N[a] * lineMass * translationalAcceleration;
-            assembledInertiaForce.segment<3>(6 * a + 3) +=
-                N[a] * spatialDynamicMoment;
+            assembledInertiaForce.segment<3>(6 * a) += N[a] * lineMass * translationalAcceleration;
+            assembledInertiaForce.segment<3>(6 * a + 3) += N[a] * spatialDynamicMoment;
             for (int b = 0; b < 2; ++b)
             {
                 const double interpolationWeight = N[a] * N[b];
-                assembledMass.block<3, 3>(6 * a, 6 * b) +=
-                    interpolationWeight * lineMass
-                    * Matrix3d::Identity();
-                assembledMass.block<3, 3>(
-                    6 * a + 3, 6 * b + 3) +=
-                    interpolationWeight * rotationalMass;
-                assembledGyroscopic.block<3, 3>(
-                    6 * a + 3, 6 * b + 3) +=
-                    interpolationWeight * rotationalGyroscopic;
-                assembledCentrifugal.block<3, 3>(
-                    6 * a + 3, 6 * b + 3) +=
-                    interpolationWeight * rotationalCentrifugal;
+                assembledMass.block<3, 3>(6 * a, 6 * b) += interpolationWeight * lineMass * Matrix3d::Identity();
+                assembledMass.block<3, 3>(6 * a + 3, 6 * b + 3) += interpolationWeight * rotationalMass;
+                assembledGyroscopic.block<3, 3>(6 * a + 3, 6 * b + 3) += interpolationWeight * rotationalGyroscopic;
+                assembledCentrifugal.block<3, 3>(6 * a + 3, 6 * b + 3) += interpolationWeight * rotationalCentrifugal;
             }
         }
     }
@@ -233,12 +175,9 @@ void ElementBeam_CR::EvaluateDynamicSystem(MatrixXd* massMatrix,
     if (inertiaForce)
         *inertiaForce = integrationScale * assembledInertiaForce;
     if (velocityTangent)
-        *velocityTangent =
-            integrationScale * assembledGyroscopic;
+        *velocityTangent = integrationScale * assembledGyroscopic;
     if (configurationTangent)
-        *configurationTangent =
-            integrationScale * assembledCentrifugal;
-
+        *configurationTangent = integrationScale * assembledCentrifugal;
 }
 
 void ElementBeam_CR::Get_me_Consistent(MatrixXd& me) //一致质量矩阵
@@ -247,31 +186,26 @@ void ElementBeam_CR::Get_me_Consistent(MatrixXd& me) //一致质量矩阵
     m_me = me;
 }
 
-void ElementBeam_CR::GetDynamicContributions(
-    MatrixXd& massMatrix,
-    VectorXd& inertiaForce,
-    MatrixXd& gyroscopicMatrix,
-    MatrixXd& centrifugalMatrix)
+void ElementBeam_CR::GetDynamicContributions(_OUT MatrixXd& massMatrix, _OUT VectorXd& inertiaForce,
+                                             _OUT MatrixXd& gyroscopicMatrix, _OUT MatrixXd& centrifugalMatrix)
 {
-    EvaluateDynamicSystem(
-        &massMatrix, &inertiaForce, &gyroscopicMatrix, &centrifugalMatrix);
+    EvaluateDynamicSystem(&massMatrix, &inertiaForce, &gyroscopicMatrix, &centrifugalMatrix);
     m_me = massMatrix;
 }
 
-void ElementBeam_CR::Get_InertiaForce(VectorXd& inertiaForce)
+void ElementBeam_CR::Get_InertiaForce(_OUT VectorXd& inertiaForce)
 {
     EvaluateDynamicSystem(nullptr, &inertiaForce, nullptr);
 }
 
-void ElementBeam_CR::Get_GyroscopicMatrix(MatrixXd& gyroscopicMatrix)
+void ElementBeam_CR::Get_GyroscopicMatrix(_OUT MatrixXd& gyroscopicMatrix)
 {
     EvaluateDynamicSystem(nullptr, nullptr, &gyroscopicMatrix);
 }
 
-void ElementBeam_CR::Get_CentrifugalMatrix(MatrixXd& centrifugalMatrix)
+void ElementBeam_CR::Get_CentrifugalMatrix(_OUT MatrixXd& centrifugalMatrix)
 {
-    EvaluateDynamicSystem(
-        nullptr, nullptr, nullptr, &centrifugalMatrix);
+    EvaluateDynamicSystem(nullptr, nullptr, nullptr, &centrifugalMatrix);
 }
 
 void ElementBeam_CR::Get_L0()
@@ -302,9 +236,7 @@ void ElementBeam_CR::Get_L0()
     q0 = r2;
 }
 
-void ElementBeam_CR::Assemble(
-    const std::vector<double>& damping,
-    _OUT MatrixXd& ce)
+void ElementBeam_CR::Assemble(const std::vector<double>& damping, _OUT MatrixXd& ce)
 {
     // 非线性速度切线属于惯性残量的运动学贡献，不是可选材料阻尼。
     // 保留该旧入口，并与 Newmark 使用的动力切线保持一致。
@@ -344,16 +276,22 @@ void ElementBeam_CR::Get_kl(const VectorXd& pl, const double& L, _OUT MatrixXd& 
     kl(0, 0) = EA_L;
 
     // 扭转刚度 (绕局部 x 轴)
-    kl(1, 1) = GJ_L; kl(1, 4) = -GJ_L;
-    kl(4, 1) = -GJ_L; kl(4, 4) = GJ_L;
+    kl(1, 1) = GJ_L;
+    kl(1, 4) = -GJ_L;
+    kl(4, 1) = -GJ_L;
+    kl(4, 4) = GJ_L;
 
     // 弯曲刚度 - 局部 xz 平面 (绕局部 y 轴旋转)
-    kl(2, 2) = 4.0 * EIy_L; kl(2, 5) = 2.0 * EIy_L;
-    kl(5, 2) = 2.0 * EIy_L; kl(5, 5) = 4.0 * EIy_L;
+    kl(2, 2) = 4.0 * EIy_L;
+    kl(2, 5) = 2.0 * EIy_L;
+    kl(5, 2) = 2.0 * EIy_L;
+    kl(5, 5) = 4.0 * EIy_L;
 
     // 弯曲刚度 - 局部 xy 平面 (绕局部 z 轴旋转)
-    kl(3, 3) = 4.0 * EIz_L; kl(3, 6) = 2.0 * EIz_L;
-    kl(6, 3) = 2.0 * EIz_L; kl(6, 6) = 4.0 * EIz_L;
+    kl(3, 3) = 4.0 * EIz_L;
+    kl(3, 6) = 2.0 * EIz_L;
+    kl(6, 3) = 2.0 * EIz_L;
+    kl(6, 6) = 4.0 * EIz_L;
 
     // 计算局部内力向量 fl (7 x 1)
     fl = VectorXd::Zero(7);
@@ -374,177 +312,15 @@ void ElementBeam_CR::Get_kl(const VectorXd& pl, const double& L, _OUT MatrixXd& 
     fl(6) = 2.0 * EIz_L * (t31 + 2.0 * t32);
 
     m_Stress = fl(0) / A; // 轴向应力
-
-
-
-
-
-    //kl.setZero(7, 7);
-    //fl.setZero(7);
-
-    //if (pl.size() != 7)
-    //{
-    //    qDebug().noquote() << QStringLiteral("ElementBeam_CR::Get_kl: pl 大小不为 7");
-    //    return;
-    //}
-
-    //if (std::abs(L) < 1e-12)
-    //{
-    //    qDebug().noquote() << QStringLiteral("ElementBeam_CR::Get_kl: 单元长度过小");
-    //    return;
-    //}
-
-    //// 提取 Pl 向量的分量
-    //const double u = pl(0);
-    //const double t11 = pl(1);
-    //const double t21 = pl(2);
-    //const double t31 = pl(3);
-    //const double t12 = pl(4);
-    //const double t22 = pl(5);
-    //const double t32 = pl(6);
-
-    //auto pProperty = m_pProperty.lock();
-    //auto pMaterial = pProperty->m_pMaterial.lock();
-    //auto pSection = pProperty->m_pSection.lock();
-
-    //double A = pSection->m_Area;
-    //double E = pMaterial->m_Young;
-    //double G = E / (2. * (1 + pMaterial->m_Poisson));
-
-    //double Iy = 0.0, Iz = 0.0, J = 0.0;
-    //pSection->Calculate_I(Iy, Iz, J);
-    //const double Io = pSection->Io;
-    //double Irr = pSection->Irr;
-
-    //double L0 = L;
-    //double L2 = L0 * L0;
-    //double L3 = L2 * L0;
-
-    //kl(0, 0) = (A * E) / L0;
-
-    //kl(1, 1) = (30 * G * J * L2 + 45 * E * Irr * (t11 - t12) * (t11 - t12) +
-    //    E * Io * L0 * (L0 * (2 * t21 * t21 - t21 * t22 + 2 * t22 * t22 + 2 * t31 * t31 - t31 * t32 +
-    //        2 * t32 * t32) + 30 * u)) / (30 * L3);
-    //kl(2, 2) = (E * (3600 * Iz + 60 * Io * (t11 - t12) * (t11 - t12) +
-    //    A * L0 * (L0 * (24 * t21 * t21 - 12 * t21 * t22 + 9 * t22 * t22 + 8 * t31 * t31 - 4 * t31 * t32 +
-    //        8 * t32 * t32) + 120 * u))) / (900 * L0);
-
-    //kl(3, 3) = (E * (3600 * Iy + 60 * Io * (t11 - t12) * (t11 - t12) +
-    //    A * L0 * (L0 * (8 * t21 * t21 - 4 * t21 * t22 + 8 * t22 * t22 + 24 * t31 * t31 - 12 * t31 * t32 +
-    //        9 * t32 * t32) + 120 * u))) / (900 * L0);
-
-    //kl(4, 4) = kl(1, 1);
-    //kl(5, 5) = (E * (3600 * Iz + 60 * Io * (t11 - t12) * (t11 - t12) +
-    //    A * L0 * (L0 * (9 * t21 * t21 - 12 * t21 * t22 + 24 * t22 * t22 + 8 * t31 * t31 - 4 * t31 * t32 +
-    //        8 * t32 * t32) + 120 * u))) / (900 * L0);
-
-    //kl(6, 6) = (E * (3600 * Iy + 60 * Io * (t11 - t12) * (t11 - t12) +
-    //    A * L0 * (L0 * (8 * t21 * t21 - 4 * t21 * t22 + 8 * t22 * t22 + 9 * t31 * t31 - 12 * t31 * t32 +
-    //        24 * t32 * t32) + 120 * u))) / (900 * L0);
-
-    //kl(0, 1) = (E * Io * (t11 - t12)) / L2;
-    //kl(1, 0) = kl(0, 1);
-
-    //kl(0, 2) = 1. / 30 * A * E * (4 * t21 - t22);
-    //kl(2, 0) = kl(0, 2);
-
-    //kl(0, 3) = 1. / 30 * A * E * (4 * t31 - t32);
-    //kl(3, 0) = kl(0, 3);
-
-    //kl(0, 4) = (E * Io * (t12 - t11)) / L2;
-    //kl(4, 0) = kl(0, 4);
-    //kl(0, 5) = -(1. / 30) * A * E * (t21 - 4 * t22);
-    //kl(5, 0) = kl(0, 5);
-
-    //kl(0, 6) = -(1. / 30) * A * E * (t31 - 4 * t32);
-    //kl(6, 0) = kl(0, 6);
-    //kl(1, 2) = (E * Io * (t11 - t12) * (4 * t21 - t22)) / (30 * L0);
-    //kl(2, 1) = kl(1, 2);
-
-    //kl(1, 3) = (E * Io * (t11 - t12) * (4 * t31 - t32)) / (30 * L0);
-    //kl(3, 1) = kl(1, 3);
-    //kl(1, 4) = -((G * J) / L0) - (E * (45 * Irr * (t11 - t12) * (t11 - t12) +
-    //    Io * L0 * (L0 * (2 * t21 * t21 - t21 * t22 + 2 * t22 * t22 + 2 * t31 * t31 - t31 * t32 +
-    //        2 * t32 * t32) + 30 * u))) / (30 * L3);
-    //kl(4, 1) = kl(1, 4);
-
-    //kl(1, 5) = -((E * Io * (t11 - t12) * (t21 - 4 * t22)) / (30 * L0));
-    //kl(5, 1) = kl(1, 5);
-
-    //kl(1, 6) = -((E * Io * (t11 - t12) * (t31 - 4 * t32)) / (30 * L0));
-    //kl(6, 1) = kl(1, 6);
-    //kl(2, 3) = 1. / 900 * A * E * L0 * (4 * t21 - t22) * (4 * t31 - t32);
-    //kl(3, 2) = kl(2, 3);
-
-    //kl(2, 4) = -((E * Io * (t11 - t12) * (4 * t21 - t22)) / (30 * L0));
-    //kl(4, 2) = kl(2, 4);
-
-    //kl(2, 5) = (E * (1800 * Iz - 15 * Io * (t11 - t12) * (t11 - t12) -
-    //    A * L0 * (L0 * (6 * t21 * t21 - 18 * t21 * t22 + 6 * t22 * t22 + 2 * t31 * t31 - t31 * t32 +
-    //        2 * t32 * t32) + 30 * u))) / (900 * L0);
-    //kl(5, 2) = kl(2, 5);
-
-    //kl(2, 6) = -(1. / 900) * A * E * L0 * (4 * t21 - t22) * (t31 - 4 * t32);
-    //kl(6, 2) = kl(2, 6);
-
-    //kl(3, 4) = -((E * Io * (t11 - t12) * (4 * t31 - t32)) / (30 * L0));
-    //kl(4, 3) = kl(3, 4);
-
-    //kl(3, 5) = -(1. / 900) * A * E * L0 * (t21 - 4 * t22) * (4 * t31 - t32);
-    //kl(5, 3) = kl(3, 5);
-
-    //kl(3, 6) = (E * (1800 * Iy - 15 * Io * (t11 - t12) * (t11 - t12) -
-    //    A * L0 * (L0 * (2 * t21 * t21 - t21 * t22 + 2 * t22 * t22 +
-    //        6 * (t31 * t31 - 3 * t31 * t32 + t32 * t32)) + 30 * u))) / (900 * L0);
-    //kl(6, 3) = kl(3, 6);
-
-    //kl(4, 5) = (E * Io * (t11 - t12) * (t21 - 4 * t22)) / (30 * L0);
-    //kl(5, 4) = kl(4, 5);
-
-    //kl(4, 6) = (E * Io * (t11 - t12) * (t31 - 4 * t32)) / (30 * L0);
-    //kl(6, 4) = kl(4, 6);
-
-    //kl(5, 6) = 1. / 900 * A * E * L0 * (t21 - 4 * t22) * (t31 - 4 * t32);
-    //kl(6, 5) = kl(5, 6);
-
-
-    ////内力向量计算:
-    //fl(0) = (E * (15 * Io * (t11 - t12) * (t11 - t12) +
-    //    A * L0 * (L0 * (2 * t21 * t21 - t21 * t22 + 2 * t22 * t22 + 2 * t31 * t31 - t31 * t32 +
-    //        2 * t32 * t32) + 30 * u))) / (30 * L2);
-
-    //fl(1) = ((t11 - t12) * (30 * G * J * L2 + 15 * E * Irr * (t11 - t12) * (t11 - t12) +
-    //    E * Io * L0 * (L0 * (2 * t21 * t21 - t21 * t22 + 2 * t22 * t22 + 2 * t31 * t31 - t31 * t32 +
-    //        2 * t32 * t32) + 30 * u))) / (30 * L3);
-
-    //fl(2) = (E * (1800 * Iz * (2 * t21 + t22) + (4 * t21 - t22) * (15 * Io * (t11 - t12) * (t11 - t12) +
-    //    A * L0 * (L0 * (2 * t21 * t21 - t21 * t22 + 2 * t22 * t22 + 2 * t31 * t31 - t31 * t32 +
-    //        2 * t32 * t32) + 30 * u)))) / (900 * L0);
-
-    //fl(3) = (E * (1800 * Iy * (2 * t31 + t32) + (4 * t31 - t32) * (15 * Io * (t11 - t12) * (t11 - t12) +
-    //    A * L0 * (L0 * (2 * t21 * t21 - t21 * t22 + 2 * t22 * t22 + 2 * t31 * t31 - t31 * t32 +
-    //        2 * t32 * t32) + 30 * u)))) / (900 * L0);
-
-    //fl(4) = -fl(1);
-
-    //fl(5) = (E * (1800 * Iz * (t21 + 2 * t22) - (t21 - 4 * t22) * (15 * Io * (t11 - t12) * (t11 - t12) +
-    //    A * L0 * (L0 * (2 * t21 * t21 - t21 * t22 + 2 * t22 * t22 + 2 * t31 * t31 - t31 * t32 +
-    //        2 * t32 * t32) + 30 * u)))) / (900 * L0);
-
-    //fl(6) = (E * (1800 * Iy * (t31 + 2 * t32) - (t31 - 4 * t32) * (15 * Io * (t11 - t12) * (t11 - t12) +
-    //    A * L0 * (L0 * (2 * t21 * t21 - t21 * t22 + 2 * t22 * t22 + 2 * t31 * t31 - t31 * t32 +
-    //        2 * t32 * t32) + 30 * u)))) / (900 * L0);
-
-    //m_Stress = fl(0) / A;
 }
 
-void ElementBeam_CR::ComputeDeformedState(Vector3d& def_p1, Vector3d& def_p2,
-    Matrix3d& Rg_1, Matrix3d& Rg_2,
-    Vector3d& q1, Vector3d& q2, Vector3d& q)
+void ElementBeam_CR::ComputeDeformedState(Vector3d& def_p1, Vector3d& def_p2, Matrix3d& Rg_1, Matrix3d& Rg_2,
+                                          Vector3d& q1, Vector3d& q2, Vector3d& q)
 {
     auto pNode0 = m_pNode[0].lock();
     auto pNode1 = m_pNode[1].lock();
-    if (!pNode0 || !pNode1) return;
+    if (!pNode0 || !pNode1)
+        return;
 
     // 节点初始坐标
     Vector3d init_p1(pNode0->m_X, pNode0->m_Y, pNode0->m_Z);
@@ -577,15 +353,15 @@ void ElementBeam_CR::ComputeDeformedState(Vector3d& def_p1, Vector3d& def_p2,
     q = 0.5 * (q1 + q2);
 }
 
-Matrix3d ElementBeam_CR::ComputeLocalFrame(const Vector3d& def_p1, const Vector3d& def_p2,
-    const Vector3d& q)
+Matrix3d ElementBeam_CR::ComputeLocalFrame(const Vector3d& def_p1, const Vector3d& def_p2, const Vector3d& q)
 {
     Matrix3d Rr;
     Utility::CR::Calculate_Rr(def_p1, def_p2, q, Rr);
     return Rr;
 }
 
-VectorXd ElementBeam_CR::ComputeLocalDeformation(const Vector3d& def_p1, const Vector3d& def_p2, const Matrix3d& Rr, const Matrix3d& Rg_1, const Matrix3d& Rg_2)
+VectorXd ElementBeam_CR::ComputeLocalDeformation(const Vector3d& def_p1, const Vector3d& def_p2, const Matrix3d& Rr,
+                                                 const Matrix3d& Rg_1, const Matrix3d& Rg_2)
 {
     // 当前长度与轴向伸长
     double L = (def_p2 - def_p1).norm();
@@ -607,7 +383,8 @@ VectorXd ElementBeam_CR::ComputeLocalDeformation(const Vector3d& def_p1, const V
     return pl;
 }
 
-void ElementBeam_CR::ComputeMaterialStiffness(const VectorXd& pl, const double& L, MatrixXd& kl, VectorXd& fl, VectorXd& fa, MatrixXd& ka)
+void ElementBeam_CR::ComputeMaterialStiffness(const VectorXd& pl, const double& L, MatrixXd& kl, VectorXd& fl,
+                                              VectorXd& fa, MatrixXd& ka)
 {
     // 局部刚度与内力
     Get_kl(pl, L, kl, fl);
@@ -631,11 +408,10 @@ void ElementBeam_CR::ComputeMaterialStiffness(const VectorXd& pl, const double& 
     ka = Ba.transpose() * kl * Ba + Kh;
 }
 
-void ElementBeam_CR::ComputeGlobalProjection(const Vector3d& def_p1, const Vector3d& def_p2,
-    const Vector3d& q1, const Vector3d& q2,
-    const Matrix3d& Rr, const MatrixXd& ka, const VectorXd& fa,
-    MatrixXd& K_material, VectorXd& fp,
-    MatrixXd& P, MatrixXd& G)
+void ElementBeam_CR::ComputeGlobalProjection(const Vector3d& def_p1, const Vector3d& def_p2, const Vector3d& q1,
+                                             const Vector3d& q2, const Matrix3d& Rr, const MatrixXd& ka,
+                                             const VectorXd& fa, MatrixXd& K_material, VectorXd& fp, MatrixXd& P,
+                                             MatrixXd& G)
 {
     // 组装转换矩阵 E (12x12) 和投影矩阵 P (7x12)、自旋矩阵 G (3x12)
     MatrixXd ET;

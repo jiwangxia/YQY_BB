@@ -11,8 +11,6 @@ public:
     static int RunAdaptive(const QString& outputDirectory);
 
 private:
-    static int RunExample1(
-        const QString& outputDirectory, bool useAdaptiveTssbn);
-    static int Run(
-        const QString& outputDirectory, bool useAdaptiveTssbn);
+    static int RunExample1(const QString& outputDirectory, bool useAdaptiveTssbn);
+    static int Run(const QString& outputDirectory, bool useAdaptiveTssbn);
 };

@@ -37,8 +37,7 @@
 
 namespace
 {
-// VTK bundled HDF5 is built without H5_HAVE_THREADSAFE.  Solver jobs may run
-// concurrently, so every entry into the HDF5 C API must be serialized.
+// VTK 自带的 HDF5 未启用 H5_HAVE_THREADSAFE。求解任务可能并发运行，因此进入 HDF5 C API 时必须串行化。
 QRecursiveMutex g_hdf5ApiMutex;
 
 constexpr int kModelDomainId = 1;
@@ -50,7 +49,7 @@ bool ReadIntAttribute(hid_t object, const char* name, int& value);
 
 QString MakeAsciiTempHdf5FileName()
 {
-    return QDir::temp().filePath("yqy_h5_" + QUuid::createUuid().toString(QUuid::Id128) + ".h5");
+    return QDir::temp().filePath("yqy_h5_" + QUuid::createUuid().toString(QUuid::Id128) + ".tmp");
 }
 
 bool IsAsciiPath(const QString& path)
@@ -69,8 +68,7 @@ QString MakeAsciiTempHdf5FileNameNear(const QString& targetFileName)
     const QString directory = targetInfo.absolutePath();
     if (IsAsciiPath(directory))
     {
-        return QDir(directory).filePath(
-            ".yqy_h5_" + QUuid::createUuid().toString(QUuid::Id128) + ".h5");
+        return QDir(directory).filePath(".yqy_h5_" + QUuid::createUuid().toString(QUuid::Id128) + ".tmp");
     }
     return MakeAsciiTempHdf5FileName();
 }
@@ -93,16 +91,10 @@ bool LinkExistsQuietly(hid_t file, const char* path)
 
 bool HasRequiredInputSchema(hid_t file)
 {
-    static constexpr const char* requiredPaths[] = {
-        "/YQY/INPUT/NODE/GRID",
-        "/YQY/INPUT/MATERIAL/MAT",
-        "/YQY/INPUT/SECTION/SECTION",
-        "/YQY/INPUT/PROPERTY/PROPERTY",
-        "/YQY/INPUT/ELEMENT/ELEMENT",
-        "/YQY/INPUT/CONSTRAINT/SPC",
-        "/YQY/INPUT/LOAD/LOAD",
-        "/YQY/INPUT/ANALYSIS_STEP/STEP"
-    };
+    static constexpr const char* requiredPaths[] = {"/YQY/INPUT/NODE/GRID",       "/YQY/INPUT/MATERIAL/MAT",
+                                                    "/YQY/INPUT/SECTION/SECTION", "/YQY/INPUT/PROPERTY/PROPERTY",
+                                                    "/YQY/INPUT/ELEMENT/ELEMENT", "/YQY/INPUT/CONSTRAINT/SPC",
+                                                    "/YQY/INPUT/LOAD/LOAD",       "/YQY/INPUT/ANALYSIS_STEP/STEP"};
 
     for (const char* path : requiredPaths)
     {
@@ -116,29 +108,27 @@ bool HasRequiredInputSchema(hid_t file)
 
 bool HasRequiredResultSchema(hid_t file)
 {
-    static constexpr const char* requiredPaths[] = {
-        "/YQY/RESULT/DOMAINS",
-        "/YQY/RESULT/NODAL/DISPLACEMENT",
-        "/YQY/RESULT/NODAL/CURRENT_COORDINATE",
-        "/YQY/RESULT/NODAL/VELOCITY",
-        "/YQY/RESULT/NODAL/ACCELERATION",
-        "/YQY/RESULT/NODAL/REACTION_FORCE",
-        "/YQY/RESULT/ELEMENTAL/ELEMENT_FORCE",
-        "/YQY/RESULT/ELEMENTAL/TRUSS_FORCE",
-        "/YQY/RESULT/ELEMENTAL/CABLE_FORCE",
-        "/YQY/RESULT/ELEMENTAL/STRESS",
-        "/YQY/RESULT/ELEMENTAL/STRAIN",
-        "/INDEX/YQY/RESULT/NODAL/DISPLACEMENT",
-        "/INDEX/YQY/RESULT/NODAL/CURRENT_COORDINATE",
-        "/INDEX/YQY/RESULT/NODAL/VELOCITY",
-        "/INDEX/YQY/RESULT/NODAL/ACCELERATION",
-        "/INDEX/YQY/RESULT/NODAL/REACTION_FORCE",
-        "/INDEX/YQY/RESULT/ELEMENTAL/ELEMENT_FORCE",
-        "/INDEX/YQY/RESULT/ELEMENTAL/TRUSS_FORCE",
-        "/INDEX/YQY/RESULT/ELEMENTAL/CABLE_FORCE",
-        "/INDEX/YQY/RESULT/ELEMENTAL/STRESS",
-        "/INDEX/YQY/RESULT/ELEMENTAL/STRAIN"
-    };
+    static constexpr const char* requiredPaths[] = {"/YQY/RESULT/DOMAINS",
+                                                    "/YQY/RESULT/NODAL/DISPLACEMENT",
+                                                    "/YQY/RESULT/NODAL/CURRENT_COORDINATE",
+                                                    "/YQY/RESULT/NODAL/VELOCITY",
+                                                    "/YQY/RESULT/NODAL/ACCELERATION",
+                                                    "/YQY/RESULT/NODAL/REACTION_FORCE",
+                                                    "/YQY/RESULT/ELEMENTAL/ELEMENT_FORCE",
+                                                    "/YQY/RESULT/ELEMENTAL/TRUSS_FORCE",
+                                                    "/YQY/RESULT/ELEMENTAL/CABLE_FORCE",
+                                                    "/YQY/RESULT/ELEMENTAL/STRESS",
+                                                    "/YQY/RESULT/ELEMENTAL/STRAIN",
+                                                    "/INDEX/YQY/RESULT/NODAL/DISPLACEMENT",
+                                                    "/INDEX/YQY/RESULT/NODAL/CURRENT_COORDINATE",
+                                                    "/INDEX/YQY/RESULT/NODAL/VELOCITY",
+                                                    "/INDEX/YQY/RESULT/NODAL/ACCELERATION",
+                                                    "/INDEX/YQY/RESULT/NODAL/REACTION_FORCE",
+                                                    "/INDEX/YQY/RESULT/ELEMENTAL/ELEMENT_FORCE",
+                                                    "/INDEX/YQY/RESULT/ELEMENTAL/TRUSS_FORCE",
+                                                    "/INDEX/YQY/RESULT/ELEMENTAL/CABLE_FORCE",
+                                                    "/INDEX/YQY/RESULT/ELEMENTAL/STRESS",
+                                                    "/INDEX/YQY/RESULT/ELEMENTAL/STRAIN"};
 
     for (const char* path : requiredPaths)
     {
@@ -148,22 +138,20 @@ bool HasRequiredResultSchema(hid_t file)
     }
     int stateVersion = 0;
     int resultVersion = 0;
-    const bool versionOk = ReadIntAttribute(file, "DYNAMIC_STATE_FORMAT_VERSION", stateVersion)
-        && stateVersion >= kDynamicStateFormatVersion
-        && ReadIntAttribute(file, "RESULT_FORMAT_VERSION", resultVersion)
-        && resultVersion >= kResultFormatVersion;
+    const bool versionOk = ReadIntAttribute(file, "DYNAMIC_STATE_FORMAT_VERSION", stateVersion) &&
+                           stateVersion >= kDynamicStateFormatVersion &&
+                           ReadIntAttribute(file, "RESULT_FORMAT_VERSION", resultVersion) &&
+                           resultVersion >= kResultFormatVersion;
     if (!versionOk)
         return false;
 
-    static constexpr const char* requiredRangeAttributes[] = {
-        "RESULT_RANGE_DISPLACEMENT_MAGNITUDE_VALID",
-        "RESULT_RANGE_DISPLACEMENT_X_VALID",
-        "RESULT_RANGE_DISPLACEMENT_Y_VALID",
-        "RESULT_RANGE_DISPLACEMENT_Z_VALID",
-        "RESULT_RANGE_AXIAL_FORCE_VALID",
-        "RESULT_RANGE_STRESS_VALID",
-        "RESULT_RANGE_STRAIN_VALID"
-    };
+    static constexpr const char* requiredRangeAttributes[] = {"RESULT_RANGE_DISPLACEMENT_MAGNITUDE_VALID",
+                                                              "RESULT_RANGE_DISPLACEMENT_X_VALID",
+                                                              "RESULT_RANGE_DISPLACEMENT_Y_VALID",
+                                                              "RESULT_RANGE_DISPLACEMENT_Z_VALID",
+                                                              "RESULT_RANGE_AXIAL_FORCE_VALID",
+                                                              "RESULT_RANGE_STRESS_VALID",
+                                                              "RESULT_RANGE_STRAIN_VALID"};
     for (const char* attribute : requiredRangeAttributes)
     {
         if (H5Aexists(file, attribute) <= 0)
@@ -196,15 +184,14 @@ bool MoveTempFileToTarget(const QString& tempFileName, const QString& targetFile
 
 QString CopyHdf5FileToAsciiTemp(const QString& sourceFileName)
 {
-    // HDF5 is opened through a narrow UTF-8 path.  For the common case where
-    // only the result file name contains Chinese characters, expose the same
-    // NTFS file through a temporary ASCII hard link.  This is O(1) and avoids
-    // copying multi-gigabyte result files for inspect/open/export operations.
+    // HDF5 通过窄 UTF-8 路径打开。若只有结果文件名包含中文，则通过临时 ASCII 硬链接访问同一 NTFS 文件。
+    // 该操作复杂度为 O(1)，可避免在检查、打开和导出时复制数 GB 的结果文件。
     const QFileInfo sourceInfo(sourceFileName);
     if (sourceInfo.exists() && IsAsciiPath(sourceInfo.absolutePath()))
     {
-        const QString linkFileName = QDir(sourceInfo.absolutePath()).filePath(
-            ".yqy_h5_read_" + QUuid::createUuid().toString(QUuid::Id128) + ".h5");
+        const QString linkFileName =
+            QDir(sourceInfo.absolutePath())
+                .filePath(".yqy_h5_read_" + QUuid::createUuid().toString(QUuid::Id128) + ".tmp");
 #ifdef Q_OS_WIN
         const std::wstring nativeLink = QDir::toNativeSeparators(linkFileName).toStdWString();
         const std::wstring nativeSource = QDir::toNativeSeparators(sourceInfo.absoluteFilePath()).toStdWString();
@@ -224,22 +211,25 @@ QString CopyHdf5FileToAsciiTemp(const QString& sourceFileName)
 struct H5Handle
 {
     hid_t id = -1;
-    herr_t(*closeFunc)(hid_t) = nullptr;
+    herr_t (*closeFunc)(hid_t) = nullptr;
 
     H5Handle() = default;
-        H5Handle(hid_t value, herr_t(*func)(hid_t)) : id(value), closeFunc(func)
-        {
-        }
-        ~H5Handle()
-        {
-            reset();
-        }
+    H5Handle(hid_t value, herr_t (*func)(hid_t))
+        : id(value)
+        , closeFunc(func)
+    {
+    }
+    ~H5Handle()
+    {
+        reset();
+    }
 
     H5Handle(const H5Handle&) = delete;
     H5Handle& operator=(const H5Handle&) = delete;
 
     H5Handle(H5Handle&& other) noexcept
-        : id(other.id), closeFunc(other.closeFunc)
+        : id(other.id)
+        , closeFunc(other.closeFunc)
     {
         other.id = -1;
         other.closeFunc = nullptr;
@@ -258,7 +248,7 @@ struct H5Handle
         return *this;
     }
 
-    void reset(hid_t value = -1, herr_t(*func)(hid_t) = nullptr)
+    void reset(hid_t value = -1, herr_t (*func)(hid_t) = nullptr)
     {
         if (id >= 0 && closeFunc)
         {
@@ -268,14 +258,26 @@ struct H5Handle
         closeFunc = func;
     }
 
-        bool valid() const
-        {
-            return id >= 0;
-        }
-        operator hid_t() const
-        {
-            return id;
-        }
+    bool valid() const
+    {
+        return id >= 0;
+    }
+    operator hid_t() const
+    {
+        return id;
+    }
+};
+
+struct ExtendableDataset
+{
+    H5Handle handle;
+    hsize_t size = 0;
+};
+
+struct StreamDatasetPair
+{
+    ExtendableDataset data;
+    ExtendableDataset index;
 };
 
 class H5ReadErrorScope
@@ -388,6 +390,15 @@ struct MPCRecord
     int domainId = kModelDomainId;
 };
 
+struct RigidBodyInertiaRecord
+{
+    int id = 0;
+    int nodeId = 0;
+    double mass = 0.0;
+    double inertia[6] = {};
+    int domainId = kModelDomainId;
+};
+
 struct LoadRecord
 {
     int id = 0;
@@ -406,7 +417,7 @@ struct LoadRecord
 struct WindDirectionRecord
 {
     int loadId = 0;
-    double direction[3] = { 0.0, 1.0, 0.0 };
+    double direction[3] = {0.0, 1.0, 0.0};
     int domainId = kModelDomainId;
 };
 
@@ -469,6 +480,7 @@ struct StepGallopingRecord
     int enabled = 0;
     int iceThickness = 12;
     double initialAttackDegrees = 45.0;
+    int aerodynamicTangentMode = -1;
     int domainId = kModelDomainId;
 };
 
@@ -478,16 +490,27 @@ struct StepTssbnRecord
     double spectralRadiusInfinity = 0.0;
     double minimumTimeStep = 1.0e-6;
     double maximumTimeStep = 0.5;
-    double relativeTolerance = 2.0e-4;
+    double relativeTolerance = 1.0e-3;
     double absoluteTolerance = 1.0e-6;
     double safetyFactor = 0.9;
     double shrinkFactor = 0.8;
     double maximumGrowthFactor = 3.0;
-    int targetNewtonIterations = 16;
+    int targetNewtonIterations = 8;
+    int maximumTotalNewtonIterations = 32;
     double derivativeGain = 0.1;
     double minimumDerivativeFactor = 0.5;
     double maximumDerivativeFactor = 1.5;
     int maximumRejectedAttempts = 24;
+    int domainId = kModelDomainId;
+};
+
+struct StepStructuralDampingRecord
+{
+    int stepId = 0;
+    int enabled = 0;
+    double translationDampingRatio = 0.005;
+    double torsionDampingRatio = 0.038;
+    double maximumFrequencyHz = 3.0;
     int domainId = kModelDomainId;
 };
 
@@ -574,9 +597,7 @@ struct ElementForceRecord
     int domainId = 0;
 };
 
-// Axial-only truss results deliberately use a compact record.  Keeping these
-// separate from beam forces avoids storing five permanently-zero components
-// for every truss in every result frame.
+// 仅含轴力的桁架结果使用紧凑记录；与梁内力分开可避免每一结果帧为每个桁架存储五个恒为零的分量。
 struct TrussForceRecord
 {
     int id = 0;
@@ -584,8 +605,7 @@ struct TrussForceRecord
     double axial = 0.0;
 };
 
-// Cable results reserve torque because the cable formulation is expected to
-// support torsion, while shear forces and bending moments remain inapplicable.
+// 索结果预留扭矩以支持扭转公式，但剪力和弯矩仍不适用。
 struct CableForceRecord
 {
     int id = 0;
@@ -680,10 +700,8 @@ bool WriteStringAttribute(hid_t object, const char* name, const QString& value)
     const size_t size = static_cast<size_t>(bytes.size() + 1);
 
     H5Handle type(H5Tcopy(H5T_C_S1), H5Tclose);
-    if (!type.valid()
-        || H5Tset_size(type, size) < 0
-        || H5Tset_strpad(type, H5T_STR_NULLTERM) < 0
-        || H5Tset_cset(type, H5T_CSET_UTF8) < 0)
+    if (!type.valid() || H5Tset_size(type, size) < 0 || H5Tset_strpad(type, H5T_STR_NULLTERM) < 0 ||
+        H5Tset_cset(type, H5T_CSET_UTF8) < 0)
     {
         return false;
     }
@@ -745,8 +763,7 @@ bool WriteDoubleAttribute(hid_t object, const char* name, double value)
         return false;
     if (H5Aexists(object, name) > 0)
         H5Adelete(object, name);
-    H5Handle attr(H5Acreate2(object, name, H5T_NATIVE_DOUBLE, space,
-        H5P_DEFAULT, H5P_DEFAULT), H5Aclose);
+    H5Handle attr(H5Acreate2(object, name, H5T_NATIVE_DOUBLE, space, H5P_DEFAULT, H5P_DEFAULT), H5Aclose);
     return attr.valid() && H5Awrite(attr, H5T_NATIVE_DOUBLE, &value) >= 0;
 }
 
@@ -780,17 +797,14 @@ bool WriteResultRangeAttributes(hid_t file, const Hdf5ResultRanges& ranges)
         const QByteArray validName = QByteArray("RESULT_RANGE_") + prefix + "_VALID";
         const QByteArray minimumName = QByteArray("RESULT_RANGE_") + prefix + "_MIN";
         const QByteArray maximumName = QByteArray("RESULT_RANGE_") + prefix + "_MAX";
-        return WriteIntAttribute(file, validName.constData(), range.valid ? 1 : 0)
-            && (!range.valid || (WriteDoubleAttribute(file, minimumName.constData(), range.minimum)
-                && WriteDoubleAttribute(file, maximumName.constData(), range.maximum)));
+        return WriteIntAttribute(file, validName.constData(), range.valid ? 1 : 0) &&
+               (!range.valid || (WriteDoubleAttribute(file, minimumName.constData(), range.minimum) &&
+                                 WriteDoubleAttribute(file, maximumName.constData(), range.maximum)));
     };
-    return writeRange("DISPLACEMENT_MAGNITUDE", ranges.displacementMagnitude)
-        && writeRange("DISPLACEMENT_X", ranges.displacementX)
-        && writeRange("DISPLACEMENT_Y", ranges.displacementY)
-        && writeRange("DISPLACEMENT_Z", ranges.displacementZ)
-        && writeRange("AXIAL_FORCE", ranges.axialForce)
-        && writeRange("STRESS", ranges.stress)
-        && writeRange("STRAIN", ranges.strain);
+    return writeRange("DISPLACEMENT_MAGNITUDE", ranges.displacementMagnitude) &&
+           writeRange("DISPLACEMENT_X", ranges.displacementX) && writeRange("DISPLACEMENT_Y", ranges.displacementY) &&
+           writeRange("DISPLACEMENT_Z", ranges.displacementZ) && writeRange("AXIAL_FORCE", ranges.axialForce) &&
+           writeRange("STRESS", ranges.stress) && writeRange("STRAIN", ranges.strain);
 }
 
 bool InsertArray(hid_t type, const char* name, size_t offset, hid_t baseType, hsize_t count)
@@ -806,10 +820,8 @@ bool InsertArray(hid_t type, const char* name, size_t offset, hid_t baseType, hs
 bool InsertFixedString(hid_t type, const char* name, size_t offset, size_t size)
 {
     H5Handle stringType(H5Tcopy(H5T_C_S1), H5Tclose);
-    if (!stringType.valid()
-        || H5Tset_size(stringType, size) < 0
-        || H5Tset_strpad(stringType, H5T_STR_NULLTERM) < 0
-        || H5Tset_cset(stringType, H5T_CSET_UTF8) < 0)
+    if (!stringType.valid() || H5Tset_size(stringType, size) < 0 || H5Tset_strpad(stringType, H5T_STR_NULLTERM) < 0 ||
+        H5Tset_cset(stringType, H5T_CSET_UTF8) < 0)
     {
         return false;
     }
@@ -870,7 +882,7 @@ bool WriteDataset(hid_t file, const char* path, hid_t memoryType, const std::vec
         }
     }
 
-    const hsize_t dims[1] = { static_cast<hsize_t>(records.size()) };
+    const hsize_t dims[1] = {static_cast<hsize_t>(records.size())};
     H5Handle space(H5Screate_simple(1, dims, nullptr), H5Sclose);
     if (!space.valid())
     {
@@ -895,7 +907,7 @@ bool WriteDataset(hid_t file, const char* path, hid_t memoryType, const std::vec
     return H5Dwrite(dataset, memoryType, H5S_ALL, H5S_ALL, H5P_DEFAULT, records.data()) >= 0;
 }
 
-bool CreateExtendableDataset(hid_t file, const char* path, hid_t memoryType)
+H5Handle CreateExtendableDataset(hid_t file, const char* path, hid_t memoryType)
 {
     const QString datasetPath = QString::fromLatin1(path);
     const int lastSlash = datasetPath.lastIndexOf('/');
@@ -904,7 +916,7 @@ bool CreateExtendableDataset(hid_t file, const char* path, hid_t memoryType)
         const QByteArray groupPath = datasetPath.left(lastSlash).toUtf8();
         if (!CreateGroupRecursive(file, groupPath.constData()))
         {
-            return false;
+            return {};
         }
     }
 
@@ -913,71 +925,54 @@ bool CreateExtendableDataset(hid_t file, const char* path, hid_t memoryType)
         H5Ldelete(file, path, H5P_DEFAULT);
     }
 
-    const hsize_t dims[1] = { 0 };
-    const hsize_t maxDims[1] = { H5S_UNLIMITED };
+    const hsize_t dims[1] = {0};
+    const hsize_t maxDims[1] = {H5S_UNLIMITED};
     H5Handle space(H5Screate_simple(1, dims, maxDims), H5Sclose);
     if (!space.valid())
     {
-        return false;
+        return {};
     }
 
     H5Handle plist(H5Pcreate(H5P_DATASET_CREATE), H5Pclose);
     if (!plist.valid())
     {
-        return false;
+        return {};
     }
 
-    const hsize_t chunkDims[1] = { 1024 };
+    const hsize_t chunkDims[1] = {1024};
     if (H5Pset_chunk(plist, 1, chunkDims) < 0)
     {
-        return false;
+        return {};
     }
 
-    H5Handle dataset(H5Dcreate2(file, path, memoryType, space, H5P_DEFAULT, plist, H5P_DEFAULT), H5Dclose);
-    return dataset.valid();
+    return H5Handle(H5Dcreate2(file, path, memoryType, space, H5P_DEFAULT, plist, H5P_DEFAULT), H5Dclose);
 }
 
 template <typename Record>
-bool AppendDataset(hid_t file, const char* path, hid_t memoryType, const std::vector<Record>& records, long long& position)
+bool AppendDataset(_OUT ExtendableDataset& dataset, hid_t memoryType, const std::vector<Record>& records,
+                   _OUT long long& position)
 {
-    H5Handle dataset(H5Dopen2(file, path, H5P_DEFAULT), H5Dclose);
-    if (!dataset.valid())
-    {
+    if (!dataset.handle.valid())
         return false;
-    }
-
-    H5Handle oldSpace(H5Dget_space(dataset), H5Sclose);
-    if (!oldSpace.valid())
-    {
-        return false;
-    }
-
-    hsize_t oldDims[1] = { 0 };
-    if (H5Sget_simple_extent_dims(oldSpace, oldDims, nullptr) < 0)
-    {
-        return false;
-    }
-
-    position = static_cast<long long>(oldDims[0]);
+    position = static_cast<long long>(dataset.size);
     if (records.empty())
-    {
         return true;
-    }
 
-    const hsize_t newDims[1] = { oldDims[0] + static_cast<hsize_t>(records.size()) };
-    if (H5Dset_extent(dataset, newDims) < 0)
+    const hsize_t newSize = dataset.size + static_cast<hsize_t>(records.size());
+    const hsize_t newDims[1] = {newSize};
+    if (H5Dset_extent(dataset.handle, newDims) < 0)
     {
         return false;
     }
 
-    H5Handle fileSpace(H5Dget_space(dataset), H5Sclose);
+    H5Handle fileSpace(H5Dget_space(dataset.handle), H5Sclose);
     if (!fileSpace.valid())
     {
         return false;
     }
 
-    const hsize_t start[1] = { oldDims[0] };
-    const hsize_t count[1] = { static_cast<hsize_t>(records.size()) };
+    const hsize_t start[1] = {dataset.size};
+    const hsize_t count[1] = {static_cast<hsize_t>(records.size())};
     if (H5Sselect_hyperslab(fileSpace, H5S_SELECT_SET, start, nullptr, count, nullptr) < 0)
     {
         return false;
@@ -989,13 +984,17 @@ bool AppendDataset(hid_t file, const char* path, hid_t memoryType, const std::ve
         return false;
     }
 
-    return H5Dwrite(dataset, memoryType, memSpace, fileSpace, H5P_DEFAULT, records.data()) >= 0;
+    if (H5Dwrite(dataset.handle, memoryType, memSpace, fileSpace, H5P_DEFAULT, records.data()) < 0)
+        return false;
+    dataset.size = newSize;
+    return true;
 }
 
 H5Handle CreateGridType()
 {
     H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(GridRecord)), H5Tclose);
-    if (!type.valid()) return {};
+    if (!type.valid())
+        return {};
     H5Tinsert(type, "ID", HOFFSET(GridRecord, id), H5T_NATIVE_INT);
     InsertArray(type, "X", HOFFSET(GridRecord, x), H5T_NATIVE_DOUBLE, 3);
     H5Tinsert(type, "DOF_COUNT", HOFFSET(GridRecord, dofCount), H5T_NATIVE_INT);
@@ -1006,7 +1005,8 @@ H5Handle CreateGridType()
 H5Handle CreateMaterialType()
 {
     H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(MaterialRecord)), H5Tclose);
-    if (!type.valid()) return {};
+    if (!type.valid())
+        return {};
     H5Tinsert(type, "ID", HOFFSET(MaterialRecord, id), H5T_NATIVE_INT);
     H5Tinsert(type, "E", HOFFSET(MaterialRecord, young), H5T_NATIVE_DOUBLE);
     H5Tinsert(type, "NU", HOFFSET(MaterialRecord, poisson), H5T_NATIVE_DOUBLE);
@@ -1020,7 +1020,8 @@ H5Handle CreateMaterialType()
 H5Handle CreateSectionType()
 {
     H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(SectionRecord)), H5Tclose);
-    if (!type.valid()) return {};
+    if (!type.valid())
+        return {};
     H5Tinsert(type, "ID", HOFFSET(SectionRecord, id), H5T_NATIVE_INT);
     H5Tinsert(type, "TYPE", HOFFSET(SectionRecord, type), H5T_NATIVE_INT);
     H5Tinsert(type, "AREA", HOFFSET(SectionRecord, area), H5T_NATIVE_DOUBLE);
@@ -1037,7 +1038,8 @@ H5Handle CreateSectionType()
 H5Handle CreatePropertyType()
 {
     H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(PropertyRecord)), H5Tclose);
-    if (!type.valid()) return {};
+    if (!type.valid())
+        return {};
     H5Tinsert(type, "ID", HOFFSET(PropertyRecord, id), H5T_NATIVE_INT);
     H5Tinsert(type, "MID", HOFFSET(PropertyRecord, materialId), H5T_NATIVE_INT);
     H5Tinsert(type, "SID", HOFFSET(PropertyRecord, sectionId), H5T_NATIVE_INT);
@@ -1048,7 +1050,8 @@ H5Handle CreatePropertyType()
 H5Handle CreateElementType()
 {
     H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(ElementRecord)), H5Tclose);
-    if (!type.valid()) return {};
+    if (!type.valid())
+        return {};
     H5Tinsert(type, "EID", HOFFSET(ElementRecord, id), H5T_NATIVE_INT);
     H5Tinsert(type, "TYPE", HOFFSET(ElementRecord, type), H5T_NATIVE_INT);
     H5Tinsert(type, "PID", HOFFSET(ElementRecord, propertyId), H5T_NATIVE_INT);
@@ -1066,7 +1069,8 @@ H5Handle CreateElementType()
 H5Handle CreateConstraintType()
 {
     H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(ConstraintRecord)), H5Tclose);
-    if (!type.valid()) return {};
+    if (!type.valid())
+        return {};
     H5Tinsert(type, "ID", HOFFSET(ConstraintRecord, id), H5T_NATIVE_INT);
     H5Tinsert(type, "G", HOFFSET(ConstraintRecord, nodeId), H5T_NATIVE_INT);
     H5Tinsert(type, "C", HOFFSET(ConstraintRecord, direction), H5T_NATIVE_INT);
@@ -1078,7 +1082,8 @@ H5Handle CreateConstraintType()
 H5Handle CreateMPCType()
 {
     H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(MPCRecord)), H5Tclose);
-    if (!type.valid()) return {};
+    if (!type.valid())
+        return {};
     H5Tinsert(type, "ID", HOFFSET(MPCRecord, id), H5T_NATIVE_INT);
     H5Tinsert(type, "RELATION_TYPE", HOFFSET(MPCRecord, relationType), H5T_NATIVE_INT);
     H5Tinsert(type, "MASTER_G", HOFFSET(MPCRecord, masterNodeId), H5T_NATIVE_INT);
@@ -1090,10 +1095,24 @@ H5Handle CreateMPCType()
     return type;
 }
 
+H5Handle CreateRigidBodyInertiaType()
+{
+    H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(RigidBodyInertiaRecord)), H5Tclose);
+    if (!type.valid())
+        return {};
+    H5Tinsert(type, "ID", HOFFSET(RigidBodyInertiaRecord, id), H5T_NATIVE_INT);
+    H5Tinsert(type, "G", HOFFSET(RigidBodyInertiaRecord, nodeId), H5T_NATIVE_INT);
+    H5Tinsert(type, "MASS", HOFFSET(RigidBodyInertiaRecord, mass), H5T_NATIVE_DOUBLE);
+    InsertArray(type, "INERTIA", HOFFSET(RigidBodyInertiaRecord, inertia), H5T_NATIVE_DOUBLE, 6);
+    H5Tinsert(type, "DOMAIN_ID", HOFFSET(RigidBodyInertiaRecord, domainId), H5T_NATIVE_INT);
+    return type;
+}
+
 H5Handle CreateLoadType()
 {
     H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(LoadRecord)), H5Tclose);
-    if (!type.valid()) return {};
+    if (!type.valid())
+        return {};
     H5Tinsert(type, "ID", HOFFSET(LoadRecord, id), H5T_NATIVE_INT);
     H5Tinsert(type, "TYPE", HOFFSET(LoadRecord, type), H5T_NATIVE_INT);
     H5Tinsert(type, "TARGET_ID", HOFFSET(LoadRecord, targetId), H5T_NATIVE_INT);
@@ -1111,10 +1130,10 @@ H5Handle CreateLoadType()
 H5Handle CreateWindDirectionType()
 {
     H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(WindDirectionRecord)), H5Tclose);
-    if (!type.valid()) return {};
+    if (!type.valid())
+        return {};
     H5Tinsert(type, "LOAD_ID", HOFFSET(WindDirectionRecord, loadId), H5T_NATIVE_INT);
-    InsertArray(type, "DIRECTION", HOFFSET(WindDirectionRecord, direction),
-        H5T_NATIVE_DOUBLE, 3);
+    InsertArray(type, "DIRECTION", HOFFSET(WindDirectionRecord, direction), H5T_NATIVE_DOUBLE, 3);
     H5Tinsert(type, "DOMAIN_ID", HOFFSET(WindDirectionRecord, domainId), H5T_NATIVE_INT);
     return type;
 }
@@ -1122,7 +1141,8 @@ H5Handle CreateWindDirectionType()
 H5Handle CreateStepType()
 {
     H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(StepRecord)), H5Tclose);
-    if (!type.valid()) return {};
+    if (!type.valid())
+        return {};
     H5Tinsert(type, "ID", HOFFSET(StepRecord, id), H5T_NATIVE_INT);
     H5Tinsert(type, "TYPE", HOFFSET(StepRecord, type), H5T_NATIVE_INT);
     H5Tinsert(type, "IS_DYNAMIC", HOFFSET(StepRecord, isDynamic), H5T_NATIVE_INT);
@@ -1138,7 +1158,8 @@ H5Handle CreateStepType()
 H5Handle CreateModelSetType()
 {
     H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(ModelSetRecord)), H5Tclose);
-    if (!type.valid()) return {};
+    if (!type.valid())
+        return {};
     H5Tinsert(type, "ID", HOFFSET(ModelSetRecord, id), H5T_NATIVE_INT);
     H5Tinsert(type, "TYPE", HOFFSET(ModelSetRecord, type), H5T_NATIVE_INT);
     InsertFixedString(type, "NAME", HOFFSET(ModelSetRecord, name), sizeof(ModelSetRecord::name));
@@ -1149,7 +1170,8 @@ H5Handle CreateModelSetType()
 H5Handle CreateModelSetMemberType()
 {
     H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(ModelSetMemberRecord)), H5Tclose);
-    if (!type.valid()) return {};
+    if (!type.valid())
+        return {};
     H5Tinsert(type, "SET_ID", HOFFSET(ModelSetMemberRecord, setId), H5T_NATIVE_INT);
     H5Tinsert(type, "ENTITY_ID", HOFFSET(ModelSetMemberRecord, entityId), H5T_NATIVE_INT);
     H5Tinsert(type, "DOMAIN_ID", HOFFSET(ModelSetMemberRecord, domainId), H5T_NATIVE_INT);
@@ -1159,7 +1181,8 @@ H5Handle CreateModelSetMemberType()
 H5Handle CreateComputeRegionType()
 {
     H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(ComputeRegionRecord)), H5Tclose);
-    if (!type.valid()) return {};
+    if (!type.valid())
+        return {};
     H5Tinsert(type, "ID", HOFFSET(ComputeRegionRecord, id), H5T_NATIVE_INT);
     H5Tinsert(type, "ENABLED", HOFFSET(ComputeRegionRecord, enabled), H5T_NATIVE_INT);
     H5Tinsert(type, "AUTO_GENERATED", HOFFSET(ComputeRegionRecord, autoGenerated), H5T_NATIVE_INT);
@@ -1171,7 +1194,8 @@ H5Handle CreateComputeRegionType()
 H5Handle CreateRegionLinkType()
 {
     H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(RegionLinkRecord)), H5Tclose);
-    if (!type.valid()) return {};
+    if (!type.valid())
+        return {};
     H5Tinsert(type, "REGION_ID", HOFFSET(RegionLinkRecord, regionId), H5T_NATIVE_INT);
     H5Tinsert(type, "TARGET_ID", HOFFSET(RegionLinkRecord, targetId), H5T_NATIVE_INT);
     H5Tinsert(type, "DOMAIN_ID", HOFFSET(RegionLinkRecord, domainId), H5T_NATIVE_INT);
@@ -1181,11 +1205,11 @@ H5Handle CreateRegionLinkType()
 H5Handle CreateStepMetadataType()
 {
     H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(StepMetadataRecord)), H5Tclose);
-    if (!type.valid()) return {};
+    if (!type.valid())
+        return {};
     H5Tinsert(type, "STEP_ID", HOFFSET(StepMetadataRecord, stepId), H5T_NATIVE_INT);
     H5Tinsert(type, "REGION_SCOPE", HOFFSET(StepMetadataRecord, regionScope), H5T_NATIVE_INT);
-    H5Tinsert(type, "INITIAL_STATIC_STEP_ID",
-        HOFFSET(StepMetadataRecord, initialStaticStepId), H5T_NATIVE_INT);
+    H5Tinsert(type, "INITIAL_STATIC_STEP_ID", HOFFSET(StepMetadataRecord, initialStaticStepId), H5T_NATIVE_INT);
     InsertFixedString(type, "NAME", HOFFSET(StepMetadataRecord, name), sizeof(StepMetadataRecord::name));
     H5Tinsert(type, "DOMAIN_ID", HOFFSET(StepMetadataRecord, domainId), H5T_NATIVE_INT);
     return type;
@@ -1194,58 +1218,64 @@ H5Handle CreateStepMetadataType()
 H5Handle CreateStepGallopingType()
 {
     H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(StepGallopingRecord)), H5Tclose);
-    if (!type.valid()) return {};
+    if (!type.valid())
+        return {};
     H5Tinsert(type, "STEP_ID", HOFFSET(StepGallopingRecord, stepId), H5T_NATIVE_INT);
     H5Tinsert(type, "ENABLED", HOFFSET(StepGallopingRecord, enabled), H5T_NATIVE_INT);
     H5Tinsert(type, "ICE_THICKNESS", HOFFSET(StepGallopingRecord, iceThickness), H5T_NATIVE_INT);
-    H5Tinsert(type, "INITIAL_ATTACK_DEGREES",
-        HOFFSET(StepGallopingRecord, initialAttackDegrees), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "INITIAL_ATTACK_DEGREES", HOFFSET(StepGallopingRecord, initialAttackDegrees), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "AERODYNAMIC_TANGENT_MODE", HOFFSET(StepGallopingRecord, aerodynamicTangentMode), H5T_NATIVE_INT);
     H5Tinsert(type, "DOMAIN_ID", HOFFSET(StepGallopingRecord, domainId), H5T_NATIVE_INT);
     return type;
 }
 
 H5Handle CreateStepTssbnType()
 {
-    H5Handle type(
-        H5Tcreate(H5T_COMPOUND, sizeof(StepTssbnRecord)), H5Tclose);
-    if (!type.valid()) return {};
-    H5Tinsert(type, "STEP_ID",
-        HOFFSET(StepTssbnRecord, stepId), H5T_NATIVE_INT);
-    H5Tinsert(type, "SPECTRAL_RADIUS_INFINITY",
-        HOFFSET(StepTssbnRecord, spectralRadiusInfinity), H5T_NATIVE_DOUBLE);
-    H5Tinsert(type, "MINIMUM_TIME_STEP",
-        HOFFSET(StepTssbnRecord, minimumTimeStep), H5T_NATIVE_DOUBLE);
-    H5Tinsert(type, "MAXIMUM_TIME_STEP",
-        HOFFSET(StepTssbnRecord, maximumTimeStep), H5T_NATIVE_DOUBLE);
-    H5Tinsert(type, "RELATIVE_TOLERANCE",
-        HOFFSET(StepTssbnRecord, relativeTolerance), H5T_NATIVE_DOUBLE);
-    H5Tinsert(type, "ABSOLUTE_TOLERANCE",
-        HOFFSET(StepTssbnRecord, absoluteTolerance), H5T_NATIVE_DOUBLE);
-    H5Tinsert(type, "SAFETY_FACTOR",
-        HOFFSET(StepTssbnRecord, safetyFactor), H5T_NATIVE_DOUBLE);
-    H5Tinsert(type, "SHRINK_FACTOR",
-        HOFFSET(StepTssbnRecord, shrinkFactor), H5T_NATIVE_DOUBLE);
-    H5Tinsert(type, "MAXIMUM_GROWTH_FACTOR",
-        HOFFSET(StepTssbnRecord, maximumGrowthFactor), H5T_NATIVE_DOUBLE);
-    H5Tinsert(type, "TARGET_NEWTON_ITERATIONS",
-        HOFFSET(StepTssbnRecord, targetNewtonIterations), H5T_NATIVE_INT);
-    H5Tinsert(type, "DERIVATIVE_GAIN",
-        HOFFSET(StepTssbnRecord, derivativeGain), H5T_NATIVE_DOUBLE);
-    H5Tinsert(type, "MINIMUM_DERIVATIVE_FACTOR",
-        HOFFSET(StepTssbnRecord, minimumDerivativeFactor), H5T_NATIVE_DOUBLE);
-    H5Tinsert(type, "MAXIMUM_DERIVATIVE_FACTOR",
-        HOFFSET(StepTssbnRecord, maximumDerivativeFactor), H5T_NATIVE_DOUBLE);
-    H5Tinsert(type, "MAXIMUM_REJECTED_ATTEMPTS",
-        HOFFSET(StepTssbnRecord, maximumRejectedAttempts), H5T_NATIVE_INT);
-    H5Tinsert(type, "DOMAIN_ID",
-        HOFFSET(StepTssbnRecord, domainId), H5T_NATIVE_INT);
+    H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(StepTssbnRecord)), H5Tclose);
+    if (!type.valid())
+        return {};
+    H5Tinsert(type, "STEP_ID", HOFFSET(StepTssbnRecord, stepId), H5T_NATIVE_INT);
+    H5Tinsert(type, "SPECTRAL_RADIUS_INFINITY", HOFFSET(StepTssbnRecord, spectralRadiusInfinity), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "MINIMUM_TIME_STEP", HOFFSET(StepTssbnRecord, minimumTimeStep), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "MAXIMUM_TIME_STEP", HOFFSET(StepTssbnRecord, maximumTimeStep), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "RELATIVE_TOLERANCE", HOFFSET(StepTssbnRecord, relativeTolerance), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "ABSOLUTE_TOLERANCE", HOFFSET(StepTssbnRecord, absoluteTolerance), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "SAFETY_FACTOR", HOFFSET(StepTssbnRecord, safetyFactor), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "SHRINK_FACTOR", HOFFSET(StepTssbnRecord, shrinkFactor), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "MAXIMUM_GROWTH_FACTOR", HOFFSET(StepTssbnRecord, maximumGrowthFactor), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "TARGET_NEWTON_ITERATIONS", HOFFSET(StepTssbnRecord, targetNewtonIterations), H5T_NATIVE_INT);
+    H5Tinsert(type, "MAXIMUM_TOTAL_NEWTON_ITERATIONS", HOFFSET(StepTssbnRecord, maximumTotalNewtonIterations),
+              H5T_NATIVE_INT);
+    H5Tinsert(type, "DERIVATIVE_GAIN", HOFFSET(StepTssbnRecord, derivativeGain), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "MINIMUM_DERIVATIVE_FACTOR", HOFFSET(StepTssbnRecord, minimumDerivativeFactor), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "MAXIMUM_DERIVATIVE_FACTOR", HOFFSET(StepTssbnRecord, maximumDerivativeFactor), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "MAXIMUM_REJECTED_ATTEMPTS", HOFFSET(StepTssbnRecord, maximumRejectedAttempts), H5T_NATIVE_INT);
+    H5Tinsert(type, "DOMAIN_ID", HOFFSET(StepTssbnRecord, domainId), H5T_NATIVE_INT);
+    return type;
+}
+
+H5Handle CreateStepStructuralDampingType()
+{
+    H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(StepStructuralDampingRecord)), H5Tclose);
+    if (!type.valid())
+        return {};
+    H5Tinsert(type, "STEP_ID", HOFFSET(StepStructuralDampingRecord, stepId), H5T_NATIVE_INT);
+    H5Tinsert(type, "ENABLED", HOFFSET(StepStructuralDampingRecord, enabled), H5T_NATIVE_INT);
+    H5Tinsert(type, "TRANSLATION_DAMPING_RATIO", HOFFSET(StepStructuralDampingRecord, translationDampingRatio),
+              H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "TORSION_DAMPING_RATIO", HOFFSET(StepStructuralDampingRecord, torsionDampingRatio),
+              H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "MAXIMUM_FREQUENCY_HZ", HOFFSET(StepStructuralDampingRecord, maximumFrequencyHz),
+              H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "DOMAIN_ID", HOFFSET(StepStructuralDampingRecord, domainId), H5T_NATIVE_INT);
     return type;
 }
 
 H5Handle CreateStepRegionLinkType()
 {
     H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(StepRegionLinkRecord)), H5Tclose);
-    if (!type.valid()) return {};
+    if (!type.valid())
+        return {};
     H5Tinsert(type, "STEP_ID", HOFFSET(StepRegionLinkRecord, stepId), H5T_NATIVE_INT);
     H5Tinsert(type, "REGION_ID", HOFFSET(StepRegionLinkRecord, regionId), H5T_NATIVE_INT);
     H5Tinsert(type, "DOMAIN_ID", HOFFSET(StepRegionLinkRecord, domainId), H5T_NATIVE_INT);
@@ -1255,7 +1285,8 @@ H5Handle CreateStepRegionLinkType()
 H5Handle CreateAeroCaseType()
 {
     H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(AeroCaseRecord)), H5Tclose);
-    if (!type.valid()) return {};
+    if (!type.valid())
+        return {};
     H5Tinsert(type, "ID", HOFFSET(AeroCaseRecord, id), H5T_NATIVE_INT);
     H5Tinsert(type, "BUNDLE_COUNT", HOFFSET(AeroCaseRecord, bundleCount), H5T_NATIVE_INT);
     H5Tinsert(type, "WIND_SPEED", HOFFSET(AeroCaseRecord, windSpeed), H5T_NATIVE_INT);
@@ -1273,7 +1304,8 @@ H5Handle CreateAeroCaseType()
 H5Handle CreateAeroCoefficientType()
 {
     H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(AeroCoefficientRecord)), H5Tclose);
-    if (!type.valid()) return {};
+    if (!type.valid())
+        return {};
     H5Tinsert(type, "CASE_ID", HOFFSET(AeroCoefficientRecord, caseId), H5T_NATIVE_INT);
     H5Tinsert(type, "MODEL_INDEX", HOFFSET(AeroCoefficientRecord, modelIndex), H5T_NATIVE_INT);
     H5Tinsert(type, "ANGLE_INDEX", HOFFSET(AeroCoefficientRecord, angleIndex), H5T_NATIVE_INT);
@@ -1288,7 +1320,8 @@ H5Handle CreateAeroCoefficientType()
 H5Handle CreateDomainType()
 {
     H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(DomainRecord)), H5Tclose);
-    if (!type.valid()) return {};
+    if (!type.valid())
+        return {};
     H5Tinsert(type, "ID", HOFFSET(DomainRecord, id), H5T_NATIVE_INT);
     H5Tinsert(type, "STEP_ID", HOFFSET(DomainRecord, stepId), H5T_NATIVE_INT);
     H5Tinsert(type, "INCREMENT", HOFFSET(DomainRecord, increment), H5T_NATIVE_INT);
@@ -1301,7 +1334,8 @@ H5Handle CreateDomainType()
 H5Handle CreateSolverIterationType()
 {
     H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(SolverIterationH5Record)), H5Tclose);
-    if (!type.valid()) return {};
+    if (!type.valid())
+        return {};
     H5Tinsert(type, "STEP_ID", HOFFSET(SolverIterationH5Record, stepId), H5T_NATIVE_INT);
     H5Tinsert(type, "ANALYSIS_TYPE", HOFFSET(SolverIterationH5Record, analysisType), H5T_NATIVE_INT);
     H5Tinsert(type, "TIME", HOFFSET(SolverIterationH5Record, time), H5T_NATIVE_DOUBLE);
@@ -1312,7 +1346,8 @@ H5Handle CreateSolverIterationType()
 H5Handle CreateIndexType()
 {
     H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(IndexRecord)), H5Tclose);
-    if (!type.valid()) return {};
+    if (!type.valid())
+        return {};
     H5Tinsert(type, "DOMAIN_ID", HOFFSET(IndexRecord, domainId), H5T_NATIVE_INT);
     H5Tinsert(type, "POSITION", HOFFSET(IndexRecord, position), H5T_NATIVE_LLONG);
     H5Tinsert(type, "LENGTH", HOFFSET(IndexRecord, length), H5T_NATIVE_LLONG);
@@ -1322,7 +1357,8 @@ H5Handle CreateIndexType()
 H5Handle CreateNodalType()
 {
     H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(NodalRecord)), H5Tclose);
-    if (!type.valid()) return {};
+    if (!type.valid())
+        return {};
     H5Tinsert(type, "ID", HOFFSET(NodalRecord, id), H5T_NATIVE_INT);
     H5Tinsert(type, "X", HOFFSET(NodalRecord, x), H5T_NATIVE_DOUBLE);
     H5Tinsert(type, "Y", HOFFSET(NodalRecord, y), H5T_NATIVE_DOUBLE);
@@ -1337,7 +1373,8 @@ H5Handle CreateNodalType()
 H5Handle CreateElementForceType()
 {
     H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(ElementForceRecord)), H5Tclose);
-    if (!type.valid()) return {};
+    if (!type.valid())
+        return {};
     H5Tinsert(type, "EID", HOFFSET(ElementForceRecord, id), H5T_NATIVE_INT);
     H5Tinsert(type, "AXIAL", HOFFSET(ElementForceRecord, axial), H5T_NATIVE_DOUBLE);
     H5Tinsert(type, "SHEARY", HOFFSET(ElementForceRecord, shearY), H5T_NATIVE_DOUBLE);
@@ -1352,7 +1389,8 @@ H5Handle CreateElementForceType()
 H5Handle CreateTrussForceType()
 {
     H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(TrussForceRecord)), H5Tclose);
-    if (!type.valid()) return {};
+    if (!type.valid())
+        return {};
     H5Tinsert(type, "EID", HOFFSET(TrussForceRecord, id), H5T_NATIVE_INT);
     H5Tinsert(type, "DOMAIN_ID", HOFFSET(TrussForceRecord, domainId), H5T_NATIVE_INT);
     H5Tinsert(type, "AXIAL", HOFFSET(TrussForceRecord, axial), H5T_NATIVE_DOUBLE);
@@ -1362,7 +1400,8 @@ H5Handle CreateTrussForceType()
 H5Handle CreateCableForceType()
 {
     H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(CableForceRecord)), H5Tclose);
-    if (!type.valid()) return {};
+    if (!type.valid())
+        return {};
     H5Tinsert(type, "EID", HOFFSET(CableForceRecord, id), H5T_NATIVE_INT);
     H5Tinsert(type, "DOMAIN_ID", HOFFSET(CableForceRecord, domainId), H5T_NATIVE_INT);
     H5Tinsert(type, "AXIAL", HOFFSET(CableForceRecord, axial), H5T_NATIVE_DOUBLE);
@@ -1373,7 +1412,8 @@ H5Handle CreateCableForceType()
 H5Handle CreateElementStressType()
 {
     H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(ElementStressRecord)), H5Tclose);
-    if (!type.valid()) return {};
+    if (!type.valid())
+        return {};
     H5Tinsert(type, "EID", HOFFSET(ElementStressRecord, id), H5T_NATIVE_INT);
     H5Tinsert(type, "S0", HOFFSET(ElementStressRecord, initStress), H5T_NATIVE_DOUBLE);
     H5Tinsert(type, "S", HOFFSET(ElementStressRecord, currentStress), H5T_NATIVE_DOUBLE);
@@ -1385,7 +1425,8 @@ H5Handle CreateElementStressType()
 H5Handle CreateElementStrainType()
 {
     H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(ElementStrainRecord)), H5Tclose);
-    if (!type.valid()) return {};
+    if (!type.valid())
+        return {};
     H5Tinsert(type, "EID", HOFFSET(ElementStrainRecord, id), H5T_NATIVE_INT);
     H5Tinsert(type, "STRAIN", HOFFSET(ElementStrainRecord, strain), H5T_NATIVE_DOUBLE);
     H5Tinsert(type, "DOMAIN_ID", HOFFSET(ElementStrainRecord, domainId), H5T_NATIVE_INT);
@@ -1394,9 +1435,12 @@ H5Handle CreateElementStrainType()
 
 EnumKeyword::ElementType GetElementType(const std::shared_ptr<ElementBase>& pElement)
 {
-    if (std::dynamic_pointer_cast<ElementTruss>(pElement)) return EnumKeyword::ElementType::T3D2;
-    if (std::dynamic_pointer_cast<ElementCable>(pElement)) return EnumKeyword::ElementType::CABLE;
-    if (std::dynamic_pointer_cast<ElementBeam_CR>(pElement)) return EnumKeyword::ElementType::CR3D;
+    if (std::dynamic_pointer_cast<ElementTruss>(pElement))
+        return EnumKeyword::ElementType::T3D2;
+    if (std::dynamic_pointer_cast<ElementCable>(pElement))
+        return EnumKeyword::ElementType::CABLE;
+    if (std::dynamic_pointer_cast<ElementBeam_CR>(pElement))
+        return EnumKeyword::ElementType::CR3D;
     return EnumKeyword::ElementType::UNKNOWN;
 }
 
@@ -1412,8 +1456,10 @@ QHash<int, EnumKeyword::ElementType> BuildElementTypeMap(const StructureData* pD
 
 EnumKeyword::SectionType GetSectionType(const std::shared_ptr<SectionBase>& pSection)
 {
-    if (std::dynamic_pointer_cast<SectionCircular>(pSection)) return EnumKeyword::SectionType::CIRCULAR;
-    if (std::dynamic_pointer_cast<SectionRectangle>(pSection)) return EnumKeyword::SectionType::RECTANGULAR;
+    if (std::dynamic_pointer_cast<SectionCircular>(pSection))
+        return EnumKeyword::SectionType::CIRCULAR;
+    if (std::dynamic_pointer_cast<SectionRectangle>(pSection))
+        return EnumKeyword::SectionType::RECTANGULAR;
     return EnumKeyword::SectionType::UNKNOWN;
 }
 
@@ -1424,7 +1470,8 @@ std::vector<GridRecord> BuildGridRecords(const StructureData* pData)
     for (const auto& pair : pData->m_Nodes)
     {
         const auto& pNode = pair.second;
-        if (!pNode) continue;
+        if (!pNode)
+            continue;
 
         GridRecord record;
         record.id = pNode->m_Id;
@@ -1444,7 +1491,8 @@ std::vector<MaterialRecord> BuildMaterialRecords(const StructureData* pData)
     for (const auto& pair : pData->m_Material)
     {
         const auto& pMaterial = pair.second;
-        if (!pMaterial) continue;
+        if (!pMaterial)
+            continue;
 
         MaterialRecord record;
         record.id = pMaterial->m_Id;
@@ -1466,7 +1514,8 @@ std::vector<SectionRecord> BuildSectionRecords(const StructureData* pData)
     for (const auto& pair : pData->m_Section)
     {
         const auto& pSection = pair.second;
-        if (!pSection) continue;
+        if (!pSection)
+            continue;
 
         SectionRecord record;
         record.id = pSection->m_Id;
@@ -1495,12 +1544,15 @@ std::vector<PropertyRecord> BuildPropertyRecords(const StructureData* pData)
     for (const auto& pair : pData->m_Property)
     {
         const auto& pProperty = pair.second;
-        if (!pProperty) continue;
+        if (!pProperty)
+            continue;
 
         PropertyRecord record;
         record.id = pProperty->m_Id;
-        if (auto pMaterial = pProperty->m_pMaterial.lock()) record.materialId = pMaterial->m_Id;
-        if (auto pSection = pProperty->m_pSection.lock()) record.sectionId = pSection->m_Id;
+        if (auto pMaterial = pProperty->m_pMaterial.lock())
+            record.materialId = pMaterial->m_Id;
+        if (auto pSection = pProperty->m_pSection.lock())
+            record.sectionId = pSection->m_Id;
         records.push_back(record);
     }
     return records;
@@ -1513,7 +1565,8 @@ std::vector<ElementRecord> BuildElementRecords(const StructureData* pData)
     for (const auto& pair : pData->m_Elements)
     {
         const auto& pElement = pair.second;
-        if (!pElement) continue;
+        if (!pElement)
+            continue;
 
         ElementRecord record;
         record.id = pElement->m_Id;
@@ -1523,14 +1576,17 @@ std::vector<ElementRecord> BuildElementRecords(const StructureData* pData)
         record.wireId = pElement->m_WireId;
         record.aeroBundleCount = pElement->m_AeroBundleCount;
         record.aeroProfileId = pElement->m_AeroProfileId;
-        if (auto pProperty = pElement->m_pProperty.lock()) record.propertyId = pProperty->m_Id;
+        if (auto pProperty = pElement->m_pProperty.lock())
+            record.propertyId = pProperty->m_Id;
         if (pElement->m_pNode.size() > 0)
         {
-            if (auto pNode = pElement->m_pNode[0].lock()) record.nodeIds[0] = pNode->m_Id;
+            if (auto pNode = pElement->m_pNode[0].lock())
+                record.nodeIds[0] = pNode->m_Id;
         }
         if (pElement->m_pNode.size() > 1)
         {
-            if (auto pNode = pElement->m_pNode[1].lock()) record.nodeIds[1] = pNode->m_Id;
+            if (auto pNode = pElement->m_pNode[1].lock())
+                record.nodeIds[1] = pNode->m_Id;
         }
         if (auto pBeam = std::dynamic_pointer_cast<ElementBeam_CR>(pElement))
         {
@@ -1550,11 +1606,13 @@ std::vector<ConstraintRecord> BuildConstraintRecords(const StructureData* pData)
     for (const auto& pair : pData->m_Constraint)
     {
         const auto& pConstraint = pair.second;
-        if (!pConstraint) continue;
+        if (!pConstraint)
+            continue;
 
         ConstraintRecord record;
         record.id = pConstraint->m_Id;
-        if (auto pNode = pConstraint->m_pNode.lock()) record.nodeId = pNode->m_Id;
+        if (auto pNode = pConstraint->m_pNode.lock())
+            record.nodeId = pNode->m_Id;
         record.direction = ToInt(pConstraint->m_Direction);
         record.value = pConstraint->m_Value;
         records.push_back(record);
@@ -1581,34 +1639,61 @@ std::vector<MPCRecord> BuildMPCRecords(const StructureData* pData)
         for (const int direction : mpc->m_SlaveDirections)
             if (direction >= 0 && direction < 6)
                 record.slaveDirectionMask |= (1 << direction);
-        if (const auto distance =
-            std::dynamic_pointer_cast<DistanceMPCConstraint>(mpc))
+        if (const auto distance = std::dynamic_pointer_cast<DistanceMPCConstraint>(mpc))
         {
             record.relationType = 0;
             record.parameters[0] = distance->m_Length;
         }
-        else if (const auto rigid =
-            std::dynamic_pointer_cast<RigidOffsetMPCConstraint>(mpc))
+        else if (const auto rigid = std::dynamic_pointer_cast<RigidOffsetMPCConstraint>(mpc))
         {
             record.relationType = 1;
             record.parameters[0] = rigid->m_Offset.x();
             record.parameters[1] = rigid->m_Offset.y();
             record.parameters[2] = rigid->m_Offset.z();
         }
-        else if (std::dynamic_pointer_cast<
-            PlanarShearReleaseMPCConstraint>(mpc))
+        else if (std::dynamic_pointer_cast<PlanarShearReleaseMPCConstraint>(mpc))
         {
             record.relationType = 2;
         }
-        else if (std::dynamic_pointer_cast<
-            TranslationalTieMPCConstraint>(mpc))
+        else if (std::dynamic_pointer_cast<TranslationalTieMPCConstraint>(mpc))
         {
             record.relationType = 3;
+        }
+        else if (const auto twist = std::dynamic_pointer_cast<AxialTwistTieMPCConstraint>(mpc))
+        {
+            record.relationType = 4;
+            record.parameters[0] = twist->m_Axis.x();
+            record.parameters[1] = twist->m_Axis.y();
+            record.parameters[2] = twist->m_Axis.z();
         }
         else
         {
             continue;
         }
+        records.push_back(record);
+    }
+    return records;
+}
+
+std::vector<RigidBodyInertiaRecord> BuildRigidBodyInertiaRecords(const StructureData* pData)
+{
+    std::vector<RigidBodyInertiaRecord> records;
+    records.reserve(pData->m_RigidBodyInertias.size());
+    for (const auto& [id, inertia] : pData->m_RigidBodyInertias)
+    {
+        const auto node = inertia ? inertia->m_pNode.lock() : nullptr;
+        if (!node)
+            continue;
+        RigidBodyInertiaRecord record;
+        record.id = id;
+        record.nodeId = node->m_Id;
+        record.mass = inertia->m_Mass;
+        record.inertia[0] = inertia->m_RotaryInertia(0, 0);
+        record.inertia[1] = inertia->m_RotaryInertia(1, 1);
+        record.inertia[2] = inertia->m_RotaryInertia(2, 2);
+        record.inertia[3] = inertia->m_RotaryInertia(0, 1);
+        record.inertia[4] = inertia->m_RotaryInertia(0, 2);
+        record.inertia[5] = inertia->m_RotaryInertia(1, 2);
         records.push_back(record);
     }
     return records;
@@ -1621,7 +1706,8 @@ std::vector<LoadRecord> BuildLoadRecords(const StructureData* pData)
     for (const auto& pair : pData->m_Load)
     {
         const auto& pLoad = pair.second;
-        if (!pLoad) continue;
+        if (!pLoad)
+            continue;
 
         LoadRecord record;
         record.id = pLoad->m_Id;
@@ -1642,12 +1728,14 @@ std::vector<LoadRecord> BuildLoadRecords(const StructureData* pData)
 
         if (auto pNodeLoad = std::dynamic_pointer_cast<Force_Node>(pLoad))
         {
-            if (auto pNode = pNodeLoad->m_pNode.lock()) record.targetId = pNode->m_Id;
+            if (auto pNode = pNodeLoad->m_pNode.lock())
+                record.targetId = pNode->m_Id;
             record.value = pNodeLoad->m_Value;
         }
         else if (auto pElementLoad = std::dynamic_pointer_cast<Force_Element>(pLoad))
         {
-            if (auto pElement = pElementLoad->m_pElement.lock()) record.targetId = pElement->m_Id;
+            if (auto pElement = pElementLoad->m_pElement.lock())
+                record.targetId = pElement->m_Id;
             record.value = pElementLoad->m_Value;
         }
         else if (auto pGravity = std::dynamic_pointer_cast<Force_Gravity>(pLoad))
@@ -1688,7 +1776,8 @@ std::vector<StepRecord> BuildStepRecords(const StructureData* pData)
     for (const auto& pair : pData->m_AnalysisStep)
     {
         const auto& pStep = pair.second;
-        if (!pStep) continue;
+        if (!pStep)
+            continue;
 
         StepRecord record;
         record.id = pStep->m_Id;
@@ -1705,7 +1794,7 @@ std::vector<StepRecord> BuildStepRecords(const StructureData* pData)
 }
 
 void BuildModelSetRecords(const StructureData* pData, std::vector<ModelSetRecord>& sets,
-    std::vector<ModelSetMemberRecord>& members)
+                          std::vector<ModelSetMemberRecord>& members)
 {
     for (const auto& [setId, modelSet] : pData->m_ModelSets)
     {
@@ -1730,8 +1819,8 @@ void BuildModelSetRecords(const StructureData* pData, std::vector<ModelSetRecord
 }
 
 void BuildComputeRegionRecords(const StructureData* pData, std::vector<ComputeRegionRecord>& regions,
-    std::vector<RegionLinkRecord>& setLinks, std::vector<RegionLinkRecord>& directNodes,
-    std::vector<RegionLinkRecord>& directElements)
+                               std::vector<RegionLinkRecord>& setLinks, std::vector<RegionLinkRecord>& directNodes,
+                               std::vector<RegionLinkRecord>& directElements)
 {
     for (const auto& [regionId, region] : pData->m_ComputeRegions)
     {
@@ -1762,7 +1851,7 @@ void BuildComputeRegionRecords(const StructureData* pData, std::vector<ComputeRe
 }
 
 void BuildStepMetadataRecords(const StructureData* pData, std::vector<StepMetadataRecord>& metadata,
-    std::vector<StepRegionLinkRecord>& regionLinks)
+                              std::vector<StepRegionLinkRecord>& regionLinks)
 {
     for (const auto& [stepId, step] : pData->m_AnalysisStep)
     {
@@ -1796,26 +1885,25 @@ std::vector<StepGallopingRecord> BuildStepGallopingRecords(const StructureData* 
         record.stepId = stepId;
         record.enabled = step->m_EnableGalloping ? 1 : 0;
         record.iceThickness = step->m_GallopingIceThickness;
-        record.initialAttackDegrees =
-            step->m_GallopingInitialAttackDegrees;
+        record.initialAttackDegrees = step->m_GallopingInitialAttackDegrees;
+        record.aerodynamicTangentMode = static_cast<int>(step->m_GallopingAerodynamicTangentMode);
         records.push_back(record);
     }
     return records;
 }
 
-std::vector<StepTssbnRecord> BuildStepTssbnRecords(
-    const StructureData* pData)
+std::vector<StepTssbnRecord> BuildStepTssbnRecords(const StructureData* pData)
 {
     std::vector<StepTssbnRecord> records;
     records.reserve(pData->m_AnalysisStep.size());
     for (const auto& [stepId, step] : pData->m_AnalysisStep)
     {
-        if (!step) continue;
+        if (!step)
+            continue;
         const auto& settings = step->m_AdaptiveTssbn;
         StepTssbnRecord record;
         record.stepId = stepId;
-        record.spectralRadiusInfinity =
-            settings.spectralRadiusInfinity;
+        record.spectralRadiusInfinity = settings.spectralRadiusInfinity;
         record.minimumTimeStep = settings.minimumTimeStep;
         record.maximumTimeStep = settings.maximumTimeStep;
         record.relativeTolerance = settings.relativeTolerance;
@@ -1823,15 +1911,32 @@ std::vector<StepTssbnRecord> BuildStepTssbnRecords(
         record.safetyFactor = settings.safetyFactor;
         record.shrinkFactor = settings.shrinkFactor;
         record.maximumGrowthFactor = settings.maximumGrowthFactor;
-        record.targetNewtonIterations =
-            settings.targetNewtonIterations;
+        record.targetNewtonIterations = settings.targetNewtonIterations;
+        record.maximumTotalNewtonIterations = settings.maximumTotalNewtonIterations;
         record.derivativeGain = settings.derivativeGain;
-        record.minimumDerivativeFactor =
-            settings.minimumDerivativeFactor;
-        record.maximumDerivativeFactor =
-            settings.maximumDerivativeFactor;
-        record.maximumRejectedAttempts =
-            settings.maximumRejectedAttempts;
+        record.minimumDerivativeFactor = settings.minimumDerivativeFactor;
+        record.maximumDerivativeFactor = settings.maximumDerivativeFactor;
+        record.maximumRejectedAttempts = settings.maximumRejectedAttempts;
+        records.push_back(record);
+    }
+    return records;
+}
+
+std::vector<StepStructuralDampingRecord> BuildStepStructuralDampingRecords(const StructureData* pData)
+{
+    std::vector<StepStructuralDampingRecord> records;
+    records.reserve(pData->m_AnalysisStep.size());
+    for (const auto& [stepId, step] : pData->m_AnalysisStep)
+    {
+        if (!step)
+            continue;
+        const auto& settings = step->m_StructuralDamping.settings;
+        StepStructuralDampingRecord record;
+        record.stepId = stepId;
+        record.enabled = settings.enabled ? 1 : 0;
+        record.translationDampingRatio = settings.translationDampingRatio;
+        record.torsionDampingRatio = settings.torsionDampingRatio;
+        record.maximumFrequencyHz = settings.maximumFrequencyHz;
         records.push_back(record);
     }
     return records;
@@ -1846,13 +1951,9 @@ int GetAeroDataSize(const std::vector<BladeModel>& models)
     return static_cast<int>(models.front().lift.size());
 }
 
-void AppendAeroRecords(int caseId,
-    const AeroCaseKey& key,
-    const std::vector<BladeModel>& models,
-    const std::filesystem::path& sourceFile,
-    const AeroManager& manager,
-    std::vector<AeroCaseRecord>& caseRecords,
-    std::vector<AeroCoefficientRecord>& coefficientRecords)
+void AppendAeroRecords(int caseId, const AeroCaseKey& key, const std::vector<BladeModel>& models,
+                       const std::filesystem::path& sourceFile, const AeroManager& manager,
+                       std::vector<AeroCaseRecord>& caseRecords, std::vector<AeroCoefficientRecord>& coefficientRecords)
 {
     AeroCaseRecord caseRecord;
     caseRecord.id = caseId;
@@ -1872,7 +1973,7 @@ void AppendAeroRecords(int caseId,
     for (int modelIndex = 0; modelIndex < static_cast<int>(models.size()); ++modelIndex)
     {
         const BladeModel& model = models[modelIndex];
-        const size_t dataSize = std::min({ model.lift.size(), model.drag.size(), model.moment.size() });
+        const size_t dataSize = std::min({model.lift.size(), model.drag.size(), model.moment.size()});
         for (size_t angleIndex = 0; angleIndex < dataSize; ++angleIndex)
         {
             AeroCoefficientRecord coefficient;
@@ -1888,35 +1989,24 @@ void AppendAeroRecords(int caseId,
     }
 }
 
-void BuildAeroRecords(const StructureData* pData,
-    std::vector<AeroCaseRecord>& caseRecords,
-    std::vector<AeroCoefficientRecord>& coefficientRecords)
+void BuildAeroRecords(const StructureData* pData, std::vector<AeroCaseRecord>& caseRecords,
+                      std::vector<AeroCoefficientRecord>& coefficientRecords)
 {
     const AeroManager& manager = pData->m_AeroManager;
     int caseId = 1;
 
     for (const auto& pair : manager.getCaseModels())
     {
-        AppendAeroRecords(caseId,
-            pair.first,
-            pair.second,
-            manager.getCaseSourceFile(pair.first),
-            manager,
-            caseRecords,
-            coefficientRecords);
+        AppendAeroRecords(caseId, pair.first, pair.second, manager.getCaseSourceFile(pair.first), manager, caseRecords,
+                          coefficientRecords);
         ++caseId;
     }
 
     if (caseRecords.empty() && !manager.getModels().empty())
     {
         AeroCaseKey currentKey;
-        AppendAeroRecords(caseId,
-            currentKey,
-            manager.getModels(),
-            manager.getCurrentSourceFile(),
-            manager,
-            caseRecords,
-            coefficientRecords);
+        AppendAeroRecords(caseId, currentKey, manager.getModels(), manager.getCurrentSourceFile(), manager, caseRecords,
+                          coefficientRecords);
     }
 }
 
@@ -1938,6 +2028,7 @@ bool WriteInputData(hid_t file, const StructureData* pData)
     H5Handle elementType = CreateElementType();
     H5Handle constraintType = CreateConstraintType();
     H5Handle mpcType = CreateMPCType();
+    H5Handle rigidBodyInertiaType = CreateRigidBodyInertiaType();
     H5Handle loadType = CreateLoadType();
     H5Handle windDirectionType = CreateWindDirectionType();
     H5Handle stepType = CreateStepType();
@@ -1948,6 +2039,7 @@ bool WriteInputData(hid_t file, const StructureData* pData)
     H5Handle stepMetadataType = CreateStepMetadataType();
     H5Handle stepGallopingType = CreateStepGallopingType();
     H5Handle stepTssbnType = CreateStepTssbnType();
+    H5Handle stepStructuralDampingType = CreateStepStructuralDampingType();
     H5Handle stepRegionLinkType = CreateStepRegionLinkType();
     H5Handle aeroCaseType = CreateAeroCaseType();
     H5Handle aeroCoefficientType = CreateAeroCoefficientType();
@@ -1962,56 +2054,44 @@ bool WriteInputData(hid_t file, const StructureData* pData)
     std::vector<AeroCaseRecord> aeroCases;
     std::vector<AeroCoefficientRecord> aeroCoefficients;
     BuildModelSetRecords(pData, modelSets, modelSetMembers);
-    BuildComputeRegionRecords(pData, computeRegions, regionSetLinks,
-        regionDirectNodes, regionDirectElements);
+    BuildComputeRegionRecords(pData, computeRegions, regionSetLinks, regionDirectNodes, regionDirectElements);
     BuildStepMetadataRecords(pData, stepMetadata, stepRegionLinks);
     BuildAeroRecords(pData, aeroCases, aeroCoefficients);
 
-    return gridType.valid()
-        && materialType.valid()
-        && sectionType.valid()
-        && propertyType.valid()
-        && elementType.valid()
-        && constraintType.valid()
-        && mpcType.valid()
-        && loadType.valid()
-        && windDirectionType.valid()
-        && stepType.valid()
-        && modelSetType.valid()
-        && modelSetMemberType.valid()
-        && computeRegionType.valid()
-        && regionLinkType.valid()
-        && stepMetadataType.valid()
-        && stepGallopingType.valid()
-        && stepTssbnType.valid()
-        && stepRegionLinkType.valid()
-        && aeroCaseType.valid()
-        && aeroCoefficientType.valid()
-        && WriteDataset(file, "/YQY/INPUT/NODE/GRID", gridType, BuildGridRecords(pData))
-        && WriteDataset(file, "/YQY/INPUT/MATERIAL/MAT", materialType, BuildMaterialRecords(pData))
-        && WriteDataset(file, "/YQY/INPUT/SECTION/SECTION", sectionType, BuildSectionRecords(pData))
-        && WriteDataset(file, "/YQY/INPUT/PROPERTY/PROPERTY", propertyType, BuildPropertyRecords(pData))
-        && WriteDataset(file, "/YQY/INPUT/ELEMENT/ELEMENT", elementType, BuildElementRecords(pData))
-        && WriteDataset(file, "/YQY/INPUT/CONSTRAINT/SPC", constraintType, BuildConstraintRecords(pData))
-        && WriteDataset(file, "/YQY/INPUT/CONSTRAINT/MPC", mpcType, BuildMPCRecords(pData))
-        && WriteDataset(file, "/YQY/INPUT/LOAD/LOAD", loadType, BuildLoadRecords(pData))
-        && WriteDataset(file, "/YQY/INPUT/LOAD/WIND_DIRECTION", windDirectionType,
-            BuildWindDirectionRecords(pData))
-        && WriteDataset(file, "/YQY/INPUT/ANALYSIS_STEP/STEP", stepType, BuildStepRecords(pData))
-        && WriteDataset(file, "/YQY/INPUT/ANALYSIS_STEP/METADATA", stepMetadataType, stepMetadata)
-        && WriteDataset(file, "/YQY/INPUT/ANALYSIS_STEP/GALLOPING", stepGallopingType,
-            BuildStepGallopingRecords(pData))
-        && WriteDataset(file, "/YQY/INPUT/ANALYSIS_STEP/TSSBN",
-            stepTssbnType, BuildStepTssbnRecords(pData))
-        && WriteDataset(file, "/YQY/INPUT/ANALYSIS_STEP/REGION_LINK", stepRegionLinkType, stepRegionLinks)
-        && WriteDataset(file, "/YQY/INPUT/MODEL_SET/SET", modelSetType, modelSets)
-        && WriteDataset(file, "/YQY/INPUT/MODEL_SET/MEMBER", modelSetMemberType, modelSetMembers)
-        && WriteDataset(file, "/YQY/INPUT/COMPUTE_REGION/REGION", computeRegionType, computeRegions)
-        && WriteDataset(file, "/YQY/INPUT/COMPUTE_REGION/SET_LINK", regionLinkType, regionSetLinks)
-        && WriteDataset(file, "/YQY/INPUT/COMPUTE_REGION/DIRECT_NODE", regionLinkType, regionDirectNodes)
-        && WriteDataset(file, "/YQY/INPUT/COMPUTE_REGION/DIRECT_ELEMENT", regionLinkType, regionDirectElements)
-        && WriteDataset(file, "/YQY/INPUT/AERO/CASE", aeroCaseType, aeroCases)
-        && WriteDataset(file, "/YQY/INPUT/AERO/COEFFICIENT", aeroCoefficientType, aeroCoefficients);
+    return gridType.valid() && materialType.valid() && sectionType.valid() && propertyType.valid() &&
+           elementType.valid() && constraintType.valid() && mpcType.valid() && rigidBodyInertiaType.valid() &&
+           loadType.valid() &&
+           windDirectionType.valid() && stepType.valid() && modelSetType.valid() && modelSetMemberType.valid() &&
+           computeRegionType.valid() && regionLinkType.valid() && stepMetadataType.valid() &&
+           stepGallopingType.valid() && stepTssbnType.valid() && stepStructuralDampingType.valid() &&
+           stepRegionLinkType.valid() && aeroCaseType.valid() && aeroCoefficientType.valid() &&
+           WriteDataset(file, "/YQY/INPUT/NODE/GRID", gridType, BuildGridRecords(pData)) &&
+           WriteDataset(file, "/YQY/INPUT/MATERIAL/MAT", materialType, BuildMaterialRecords(pData)) &&
+           WriteDataset(file, "/YQY/INPUT/SECTION/SECTION", sectionType, BuildSectionRecords(pData)) &&
+           WriteDataset(file, "/YQY/INPUT/PROPERTY/PROPERTY", propertyType, BuildPropertyRecords(pData)) &&
+           WriteDataset(file, "/YQY/INPUT/ELEMENT/ELEMENT", elementType, BuildElementRecords(pData)) &&
+           WriteDataset(file, "/YQY/INPUT/CONSTRAINT/SPC", constraintType, BuildConstraintRecords(pData)) &&
+           WriteDataset(file, "/YQY/INPUT/CONSTRAINT/MPC", mpcType, BuildMPCRecords(pData)) &&
+           WriteDataset(file, "/YQY/INPUT/INERTIA/RIGID_BODY", rigidBodyInertiaType,
+                        BuildRigidBodyInertiaRecords(pData)) &&
+           WriteDataset(file, "/YQY/INPUT/LOAD/LOAD", loadType, BuildLoadRecords(pData)) &&
+           WriteDataset(file, "/YQY/INPUT/LOAD/WIND_DIRECTION", windDirectionType, BuildWindDirectionRecords(pData)) &&
+           WriteDataset(file, "/YQY/INPUT/ANALYSIS_STEP/STEP", stepType, BuildStepRecords(pData)) &&
+           WriteDataset(file, "/YQY/INPUT/ANALYSIS_STEP/METADATA", stepMetadataType, stepMetadata) &&
+           WriteDataset(file, "/YQY/INPUT/ANALYSIS_STEP/GALLOPING", stepGallopingType,
+                        BuildStepGallopingRecords(pData)) &&
+           WriteDataset(file, "/YQY/INPUT/ANALYSIS_STEP/TSSBN", stepTssbnType, BuildStepTssbnRecords(pData)) &&
+           WriteDataset(file, "/YQY/INPUT/ANALYSIS_STEP/STRUCTURAL_DAMPING", stepStructuralDampingType,
+                        BuildStepStructuralDampingRecords(pData)) &&
+           WriteDataset(file, "/YQY/INPUT/ANALYSIS_STEP/REGION_LINK", stepRegionLinkType, stepRegionLinks) &&
+           WriteDataset(file, "/YQY/INPUT/MODEL_SET/SET", modelSetType, modelSets) &&
+           WriteDataset(file, "/YQY/INPUT/MODEL_SET/MEMBER", modelSetMemberType, modelSetMembers) &&
+           WriteDataset(file, "/YQY/INPUT/COMPUTE_REGION/REGION", computeRegionType, computeRegions) &&
+           WriteDataset(file, "/YQY/INPUT/COMPUTE_REGION/SET_LINK", regionLinkType, regionSetLinks) &&
+           WriteDataset(file, "/YQY/INPUT/COMPUTE_REGION/DIRECT_NODE", regionLinkType, regionDirectNodes) &&
+           WriteDataset(file, "/YQY/INPUT/COMPUTE_REGION/DIRECT_ELEMENT", regionLinkType, regionDirectElements) &&
+           WriteDataset(file, "/YQY/INPUT/AERO/CASE", aeroCaseType, aeroCases) &&
+           WriteDataset(file, "/YQY/INPUT/AERO/COEFFICIENT", aeroCoefficientType, aeroCoefficients);
 }
 
 bool WriteResultData(hid_t file, const StructureData* pData)
@@ -2051,8 +2131,8 @@ bool WriteResultData(hid_t file, const StructureData* pData)
     int domainId = 1;
     for (const DataFrame& frame : frames)
     {
-        const bool storesDynamicKinematics = frame.GetAnalysisType()
-            == static_cast<int>(EnumKeyword::StepType::DYNAMIC);
+        const bool storesDynamicKinematics =
+            frame.GetAnalysisType() == static_cast<int>(EnumKeyword::StepType::DYNAMIC);
 
         DomainRecord domain;
         domain.id = domainId;
@@ -2070,23 +2150,24 @@ bool WriteResultData(hid_t file, const StructureData* pData)
         for (const auto& pair : frame.GetNodeDatas())
         {
             const int nodeId = pair.first;
+            const NodeData& nodeData = pair.second;
 
             NodalRecord displacement;
             displacement.id = nodeId;
-            displacement.x = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::U1);
-            displacement.y = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::U2);
-            displacement.z = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::U3);
-            displacement.rx = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::UR1);
-            displacement.ry = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::UR2);
-            displacement.rz = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::UR3);
+            displacement.x = nodeData.GetValue(EnumKeyword::NodeResultType::U1);
+            displacement.y = nodeData.GetValue(EnumKeyword::NodeResultType::U2);
+            displacement.z = nodeData.GetValue(EnumKeyword::NodeResultType::U3);
+            displacement.rx = nodeData.GetValue(EnumKeyword::NodeResultType::UR1);
+            displacement.ry = nodeData.GetValue(EnumKeyword::NodeResultType::UR2);
+            displacement.rz = nodeData.GetValue(EnumKeyword::NodeResultType::UR3);
             displacement.domainId = domainId;
             displacements.push_back(displacement);
 
             NodalRecord currentCoordinate;
             currentCoordinate.id = nodeId;
-            currentCoordinate.x = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::CX);
-            currentCoordinate.y = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::CY);
-            currentCoordinate.z = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::CZ);
+            currentCoordinate.x = nodeData.GetValue(EnumKeyword::NodeResultType::CX);
+            currentCoordinate.y = nodeData.GetValue(EnumKeyword::NodeResultType::CY);
+            currentCoordinate.z = nodeData.GetValue(EnumKeyword::NodeResultType::CZ);
             currentCoordinate.domainId = domainId;
             currentCoordinates.push_back(currentCoordinate);
 
@@ -2094,32 +2175,32 @@ bool WriteResultData(hid_t file, const StructureData* pData)
             {
                 NodalRecord velocity;
                 velocity.id = nodeId;
-                velocity.x = pair.second.GetVelocityComponent(0);
-                velocity.y = pair.second.GetVelocityComponent(1);
-                velocity.z = pair.second.GetVelocityComponent(2);
-                velocity.rx = pair.second.GetVelocityComponent(3);
-                velocity.ry = pair.second.GetVelocityComponent(4);
-                velocity.rz = pair.second.GetVelocityComponent(5);
+                velocity.x = nodeData.GetVelocityComponent(0);
+                velocity.y = nodeData.GetVelocityComponent(1);
+                velocity.z = nodeData.GetVelocityComponent(2);
+                velocity.rx = nodeData.GetVelocityComponent(3);
+                velocity.ry = nodeData.GetVelocityComponent(4);
+                velocity.rz = nodeData.GetVelocityComponent(5);
                 velocity.domainId = domainId;
                 velocities.push_back(velocity);
 
                 NodalRecord acceleration;
                 acceleration.id = nodeId;
-                acceleration.x = pair.second.GetAccelerationComponent(0);
-                acceleration.y = pair.second.GetAccelerationComponent(1);
-                acceleration.z = pair.second.GetAccelerationComponent(2);
-                acceleration.rx = pair.second.GetAccelerationComponent(3);
-                acceleration.ry = pair.second.GetAccelerationComponent(4);
-                acceleration.rz = pair.second.GetAccelerationComponent(5);
+                acceleration.x = nodeData.GetAccelerationComponent(0);
+                acceleration.y = nodeData.GetAccelerationComponent(1);
+                acceleration.z = nodeData.GetAccelerationComponent(2);
+                acceleration.rx = nodeData.GetAccelerationComponent(3);
+                acceleration.ry = nodeData.GetAccelerationComponent(4);
+                acceleration.rz = nodeData.GetAccelerationComponent(5);
                 acceleration.domainId = domainId;
                 accelerations.push_back(acceleration);
             }
 
             NodalRecord reaction;
             reaction.id = nodeId;
-            reaction.x = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::R1);
-            reaction.y = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::R2);
-            reaction.z = frame.GetNodeData(nodeId, EnumKeyword::NodeResultType::R3);
+            reaction.x = nodeData.GetValue(EnumKeyword::NodeResultType::R1);
+            reaction.y = nodeData.GetValue(EnumKeyword::NodeResultType::R2);
+            reaction.z = nodeData.GetValue(EnumKeyword::NodeResultType::R3);
             reaction.domainId = domainId;
             reactions.push_back(reaction);
         }
@@ -2143,52 +2224,59 @@ bool WriteResultData(hid_t file, const StructureData* pData)
         for (const auto& pair : frame.GetElementDatas())
         {
             const int elementId = pair.first;
+            const ElementData& elementData = pair.second;
             const auto elementType = elementTypes.value(elementId, EnumKeyword::ElementType::UNKNOWN);
-            if (elementType == EnumKeyword::ElementType::T3D2)
+            switch (elementType)
             {
-                TrussForceRecord force;
-                force.id = elementId;
-                force.domainId = domainId;
-                force.axial = frame.GetElementData(elementId, EnumKeyword::ElementResultType::AxialForce);
-                trussForces.push_back(force);
-                ++trussLength;
-            }
-            else if (elementType == EnumKeyword::ElementType::CABLE)
-            {
-                CableForceRecord force;
-                force.id = elementId;
-                force.domainId = domainId;
-                force.axial = frame.GetElementData(elementId, EnumKeyword::ElementResultType::AxialForce);
-                force.torque = frame.GetElementData(elementId, EnumKeyword::ElementResultType::Torque);
-                cableForces.push_back(force);
-                ++cableLength;
-            }
-            else
-            {
-                ElementForceRecord force;
-                force.id = elementId;
-                force.axial = frame.GetElementData(elementId, EnumKeyword::ElementResultType::AxialForce);
-                force.shearY = frame.GetElementData(elementId, EnumKeyword::ElementResultType::ShearY);
-                force.shearZ = frame.GetElementData(elementId, EnumKeyword::ElementResultType::ShearZ);
-                force.torque = frame.GetElementData(elementId, EnumKeyword::ElementResultType::Torque);
-                force.momentY = frame.GetElementData(elementId, EnumKeyword::ElementResultType::MomentY);
-                force.momentZ = frame.GetElementData(elementId, EnumKeyword::ElementResultType::MomentZ);
-                force.domainId = domainId;
-                elementForces.push_back(force);
-                ++elementLength;
+                case EnumKeyword::ElementType::T3D2:
+                {
+                    TrussForceRecord force;
+                    force.id = elementId;
+                    force.domainId = domainId;
+                    force.axial = elementData.GetValue(EnumKeyword::ElementResultType::AxialForce);
+                    trussForces.push_back(force);
+                    ++trussLength;
+                    break;
+                }
+                case EnumKeyword::ElementType::CABLE:
+                {
+                    CableForceRecord force;
+                    force.id = elementId;
+                    force.domainId = domainId;
+                    force.axial = elementData.GetValue(EnumKeyword::ElementResultType::AxialForce);
+                    force.torque = elementData.GetValue(EnumKeyword::ElementResultType::Torque);
+                    cableForces.push_back(force);
+                    ++cableLength;
+                    break;
+                }
+                default:
+                {
+                    ElementForceRecord force;
+                    force.id = elementId;
+                    force.axial = elementData.GetValue(EnumKeyword::ElementResultType::AxialForce);
+                    force.shearY = elementData.GetValue(EnumKeyword::ElementResultType::ShearY);
+                    force.shearZ = elementData.GetValue(EnumKeyword::ElementResultType::ShearZ);
+                    force.torque = elementData.GetValue(EnumKeyword::ElementResultType::Torque);
+                    force.momentY = elementData.GetValue(EnumKeyword::ElementResultType::MomentY);
+                    force.momentZ = elementData.GetValue(EnumKeyword::ElementResultType::MomentZ);
+                    force.domainId = domainId;
+                    elementForces.push_back(force);
+                    ++elementLength;
+                    break;
+                }
             }
 
             ElementStressRecord stress;
             stress.id = elementId;
-            stress.initStress = frame.GetElementData(elementId, EnumKeyword::ElementResultType::InitStress);
-            stress.currentStress = frame.GetElementData(elementId, EnumKeyword::ElementResultType::CurrentStress);
-            stress.deltaStress = frame.GetElementData(elementId, EnumKeyword::ElementResultType::DeltaStress);
+            stress.initStress = elementData.GetValue(EnumKeyword::ElementResultType::InitStress);
+            stress.currentStress = elementData.GetValue(EnumKeyword::ElementResultType::CurrentStress);
+            stress.deltaStress = elementData.GetValue(EnumKeyword::ElementResultType::DeltaStress);
             stress.domainId = domainId;
             elementStresses.push_back(stress);
 
             ElementStrainRecord strain;
             strain.id = elementId;
-            strain.strain = frame.GetElementData(elementId, EnumKeyword::ElementResultType::Strain);
+            strain.strain = elementData.GetValue(EnumKeyword::ElementResultType::Strain);
             strain.domainId = domainId;
             elementStrains.push_back(strain);
         }
@@ -2207,7 +2295,7 @@ bool WriteResultData(hid_t file, const StructureData* pData)
     for (const NodalRecord& value : displacements)
     {
         IncludeResultRangeValue(resultRanges.displacementMagnitude,
-            std::sqrt(value.x * value.x + value.y * value.y + value.z * value.z));
+                                std::sqrt(value.x * value.x + value.y * value.y + value.z * value.z));
         IncludeResultRangeValue(resultRanges.displacementX, value.x);
         IncludeResultRangeValue(resultRanges.displacementY, value.y);
         IncludeResultRangeValue(resultRanges.displacementZ, value.z);
@@ -2233,38 +2321,31 @@ bool WriteResultData(hid_t file, const StructureData* pData)
     H5Handle elementStressType = CreateElementStressType();
     H5Handle elementStrainType = CreateElementStrainType();
 
-    return domainType.valid()
-        && iterationType.valid()
-        && indexType.valid()
-        && nodalType.valid()
-        && elementForceType.valid()
-        && trussForceType.valid()
-        && cableForceType.valid()
-        && elementStressType.valid()
-        && elementStrainType.valid()
-        && WriteResultRangeAttributes(file, resultRanges)
-        && WriteDataset(file, "/YQY/RESULT/DOMAINS", domainType, domains)
-        && WriteDataset(file, "/YQY/RESULT/SOLVER_ITERATION", iterationType, iterations)
-        && WriteDataset(file, "/YQY/RESULT/NODAL/DISPLACEMENT", nodalType, displacements)
-        && WriteDataset(file, "/YQY/RESULT/NODAL/CURRENT_COORDINATE", nodalType, currentCoordinates)
-        && WriteDataset(file, "/YQY/RESULT/NODAL/VELOCITY", nodalType, velocities)
-        && WriteDataset(file, "/YQY/RESULT/NODAL/ACCELERATION", nodalType, accelerations)
-        && WriteDataset(file, "/YQY/RESULT/NODAL/REACTION_FORCE", nodalType, reactions)
-        && WriteDataset(file, "/YQY/RESULT/ELEMENTAL/ELEMENT_FORCE", elementForceType, elementForces)
-        && WriteDataset(file, "/YQY/RESULT/ELEMENTAL/TRUSS_FORCE", trussForceType, trussForces)
-        && WriteDataset(file, "/YQY/RESULT/ELEMENTAL/CABLE_FORCE", cableForceType, cableForces)
-        && WriteDataset(file, "/YQY/RESULT/ELEMENTAL/STRESS", elementStressType, elementStresses)
-        && WriteDataset(file, "/YQY/RESULT/ELEMENTAL/STRAIN", elementStrainType, elementStrains)
-        && WriteDataset(file, "/INDEX/YQY/RESULT/NODAL/DISPLACEMENT", indexType, displacementIndex)
-        && WriteDataset(file, "/INDEX/YQY/RESULT/NODAL/CURRENT_COORDINATE", indexType, currentCoordinateIndex)
-        && WriteDataset(file, "/INDEX/YQY/RESULT/NODAL/VELOCITY", indexType, velocityIndex)
-        && WriteDataset(file, "/INDEX/YQY/RESULT/NODAL/ACCELERATION", indexType, accelerationIndex)
-        && WriteDataset(file, "/INDEX/YQY/RESULT/NODAL/REACTION_FORCE", indexType, reactionIndex)
-        && WriteDataset(file, "/INDEX/YQY/RESULT/ELEMENTAL/ELEMENT_FORCE", indexType, elementForceIndex)
-        && WriteDataset(file, "/INDEX/YQY/RESULT/ELEMENTAL/TRUSS_FORCE", indexType, trussForceIndex)
-        && WriteDataset(file, "/INDEX/YQY/RESULT/ELEMENTAL/CABLE_FORCE", indexType, cableForceIndex)
-        && WriteDataset(file, "/INDEX/YQY/RESULT/ELEMENTAL/STRESS", indexType, elementStressIndex)
-        && WriteDataset(file, "/INDEX/YQY/RESULT/ELEMENTAL/STRAIN", indexType, elementStrainIndex);
+    return domainType.valid() && iterationType.valid() && indexType.valid() && nodalType.valid() &&
+           elementForceType.valid() && trussForceType.valid() && cableForceType.valid() && elementStressType.valid() &&
+           elementStrainType.valid() && WriteResultRangeAttributes(file, resultRanges) &&
+           WriteDataset(file, "/YQY/RESULT/DOMAINS", domainType, domains) &&
+           WriteDataset(file, "/YQY/RESULT/SOLVER_ITERATION", iterationType, iterations) &&
+           WriteDataset(file, "/YQY/RESULT/NODAL/DISPLACEMENT", nodalType, displacements) &&
+           WriteDataset(file, "/YQY/RESULT/NODAL/CURRENT_COORDINATE", nodalType, currentCoordinates) &&
+           WriteDataset(file, "/YQY/RESULT/NODAL/VELOCITY", nodalType, velocities) &&
+           WriteDataset(file, "/YQY/RESULT/NODAL/ACCELERATION", nodalType, accelerations) &&
+           WriteDataset(file, "/YQY/RESULT/NODAL/REACTION_FORCE", nodalType, reactions) &&
+           WriteDataset(file, "/YQY/RESULT/ELEMENTAL/ELEMENT_FORCE", elementForceType, elementForces) &&
+           WriteDataset(file, "/YQY/RESULT/ELEMENTAL/TRUSS_FORCE", trussForceType, trussForces) &&
+           WriteDataset(file, "/YQY/RESULT/ELEMENTAL/CABLE_FORCE", cableForceType, cableForces) &&
+           WriteDataset(file, "/YQY/RESULT/ELEMENTAL/STRESS", elementStressType, elementStresses) &&
+           WriteDataset(file, "/YQY/RESULT/ELEMENTAL/STRAIN", elementStrainType, elementStrains) &&
+           WriteDataset(file, "/INDEX/YQY/RESULT/NODAL/DISPLACEMENT", indexType, displacementIndex) &&
+           WriteDataset(file, "/INDEX/YQY/RESULT/NODAL/CURRENT_COORDINATE", indexType, currentCoordinateIndex) &&
+           WriteDataset(file, "/INDEX/YQY/RESULT/NODAL/VELOCITY", indexType, velocityIndex) &&
+           WriteDataset(file, "/INDEX/YQY/RESULT/NODAL/ACCELERATION", indexType, accelerationIndex) &&
+           WriteDataset(file, "/INDEX/YQY/RESULT/NODAL/REACTION_FORCE", indexType, reactionIndex) &&
+           WriteDataset(file, "/INDEX/YQY/RESULT/ELEMENTAL/ELEMENT_FORCE", indexType, elementForceIndex) &&
+           WriteDataset(file, "/INDEX/YQY/RESULT/ELEMENTAL/TRUSS_FORCE", indexType, trussForceIndex) &&
+           WriteDataset(file, "/INDEX/YQY/RESULT/ELEMENTAL/CABLE_FORCE", indexType, cableForceIndex) &&
+           WriteDataset(file, "/INDEX/YQY/RESULT/ELEMENTAL/STRESS", indexType, elementStressIndex) &&
+           WriteDataset(file, "/INDEX/YQY/RESULT/ELEMENTAL/STRAIN", indexType, elementStrainIndex);
 }
 }
 
@@ -2289,10 +2370,81 @@ public:
     QHash<int, IndexRecord> stressIndex;
     QHash<int, IndexRecord> strainIndex;
     Hdf5ResultRanges streamRanges;
+    H5Handle domainType;
+    H5Handle iterationType;
+    H5Handle indexType;
+    H5Handle nodalType;
+    H5Handle elementForceType;
+    H5Handle trussForceType;
+    H5Handle cableForceType;
+    H5Handle elementStressType;
+    H5Handle elementStrainType;
+    ExtendableDataset domainsDataset;
+    ExtendableDataset iterationsDataset;
+    StreamDatasetPair displacementDataset;
+    StreamDatasetPair currentCoordinateDataset;
+    StreamDatasetPair velocityDataset;
+    StreamDatasetPair accelerationDataset;
+    StreamDatasetPair reactionDataset;
+    StreamDatasetPair elementForceDataset;
+    StreamDatasetPair trussForceDataset;
+    StreamDatasetPair cableForceDataset;
+    StreamDatasetPair stressDataset;
+    StreamDatasetPair strainDataset;
+    std::vector<DomainRecord> pendingDomains;
+    std::vector<NodalRecord> pendingDisplacements;
+    std::vector<NodalRecord> pendingCurrentCoordinates;
+    std::vector<NodalRecord> pendingVelocities;
+    std::vector<NodalRecord> pendingAccelerations;
+    std::vector<NodalRecord> pendingReactions;
+    std::vector<ElementForceRecord> pendingElementForces;
+    std::vector<TrussForceRecord> pendingTrussForces;
+    std::vector<CableForceRecord> pendingCableForces;
+    std::vector<ElementStressRecord> pendingElementStresses;
+    std::vector<ElementStrainRecord> pendingElementStrains;
+    std::vector<IndexRecord> pendingDisplacementIndices;
+    std::vector<IndexRecord> pendingCurrentCoordinateIndices;
+    std::vector<IndexRecord> pendingVelocityIndices;
+    std::vector<IndexRecord> pendingAccelerationIndices;
+    std::vector<IndexRecord> pendingReactionIndices;
+    std::vector<IndexRecord> pendingElementForceIndices;
+    std::vector<IndexRecord> pendingTrussForceIndices;
+    std::vector<IndexRecord> pendingCableForceIndices;
+    std::vector<IndexRecord> pendingStressIndices;
+    std::vector<IndexRecord> pendingStrainIndices;
 
     ~Impl()
     {
         CloseResult();
+        ResetStreamResources();
+        file.reset();
+        if (!tempFileName.isEmpty() && tempFileName != targetFileName)
+            QFile::remove(tempFileName);
+    }
+
+    void ResetStreamResources()
+    {
+        domainsDataset = {};
+        iterationsDataset = {};
+        displacementDataset = {};
+        currentCoordinateDataset = {};
+        velocityDataset = {};
+        accelerationDataset = {};
+        reactionDataset = {};
+        elementForceDataset = {};
+        trussForceDataset = {};
+        cableForceDataset = {};
+        stressDataset = {};
+        strainDataset = {};
+        domainType.reset();
+        iterationType.reset();
+        indexType.reset();
+        nodalType.reset();
+        elementForceType.reset();
+        trussForceType.reset();
+        cableForceType.reset();
+        elementStressType.reset();
+        elementStrainType.reset();
     }
 
     void CloseResult()
@@ -2330,8 +2482,7 @@ public:
         }
 
         targetFileName = fileInfo.absoluteFilePath();
-        // Keep the streaming file on the destination volume.  Finalization is
-        // then an atomic same-volume rename instead of a multi-GB C: -> D: copy.
+        // 流式文件保留在目标卷，结束时可执行同卷原子重命名，避免数 GB 的跨卷复制。
         tempFileName = MakeAsciiTempHdf5FileNameNear(targetFileName);
         elementTypes = BuildElementTypeMap(pData);
         streamRanges = {};
@@ -2349,64 +2500,97 @@ public:
             return false;
         }
 
-        const bool attrOk = WriteStringAttribute(file, "FORMAT", "YQY_H5")
-            && WriteStringAttribute(file, "FILE_KIND", "MODEL_RESULT")
-            && WriteIntAttribute(file, "RESULT_COMPLETE", 0)
-            && WriteIntAttribute(file, "DYNAMIC_STATE_FORMAT_VERSION", kDynamicStateFormatVersion)
-            && WriteIntAttribute(file, "RESULT_FORMAT_VERSION", kResultFormatVersion)
-            && WriteStringAttribute(file, "CREATED_TIME", QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss"))
-            && WriteStringAttribute(file, "PROGRAM", "YQY_CAE")
-            && WriteStringAttribute(file, "SOURCE_MODEL", sourceModelName);
+        const bool attrOk =
+            WriteStringAttribute(file, "FORMAT", "YQY_H5") && WriteStringAttribute(file, "FILE_KIND", "MODEL_RESULT") &&
+            WriteIntAttribute(file, "RESULT_COMPLETE", 0) &&
+            WriteIntAttribute(file, "DYNAMIC_STATE_FORMAT_VERSION", kDynamicStateFormatVersion) &&
+            WriteIntAttribute(file, "RESULT_FORMAT_VERSION", kResultFormatVersion) &&
+            WriteStringAttribute(file, "CREATED_TIME", QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss")) &&
+            WriteStringAttribute(file, "PROGRAM", "YQY_CAE") &&
+            WriteStringAttribute(file, "SOURCE_MODEL", sourceModelName);
 
-        return attrOk && WriteInputData(file, pData) && CreateStreamDatasets();
+        const bool initialized = attrOk && WriteInputData(file, pData) &&
+                                 CreateStreamDatasets()
+                                 // 使用初始无效范围标记中断的流式结果，正常结束时覆盖这些范围。
+                                 && WriteResultRangeAttributes(file, streamRanges);
+        if (initialized)
+            H5Fflush(file, H5F_SCOPE_GLOBAL);
+        else
+        {
+            ResetStreamResources();
+            file.reset();
+            QFile::remove(tempFileName);
+            tempFileName.clear();
+            targetFileName.clear();
+        }
+        return initialized;
     }
 
     bool CreateStreamDatasets()
     {
-        H5Handle domainType = CreateDomainType();
-        H5Handle iterationType = CreateSolverIterationType();
-        H5Handle indexType = CreateIndexType();
-        H5Handle nodalType = CreateNodalType();
-        H5Handle elementForceType = CreateElementForceType();
-        H5Handle trussForceType = CreateTrussForceType();
-        H5Handle cableForceType = CreateCableForceType();
-        H5Handle elementStressType = CreateElementStressType();
-        H5Handle elementStrainType = CreateElementStrainType();
+        ResetStreamResources();
+        domainType = CreateDomainType();
+        iterationType = CreateSolverIterationType();
+        indexType = CreateIndexType();
+        nodalType = CreateNodalType();
+        elementForceType = CreateElementForceType();
+        trussForceType = CreateTrussForceType();
+        cableForceType = CreateCableForceType();
+        elementStressType = CreateElementStressType();
+        elementStrainType = CreateElementStrainType();
+        if (!domainType.valid() || !iterationType.valid() || !indexType.valid() || !nodalType.valid() ||
+            !elementForceType.valid() || !trussForceType.valid() || !cableForceType.valid() ||
+            !elementStressType.valid() || !elementStrainType.valid())
+            return false;
 
-        return domainType.valid()
-            && iterationType.valid()
-            && indexType.valid()
-            && nodalType.valid()
-            && elementForceType.valid()
-            && trussForceType.valid()
-            && cableForceType.valid()
-            && elementStressType.valid()
-            && elementStrainType.valid()
-            && CreateExtendableDataset(file, "/YQY/RESULT/DOMAINS", domainType)
-            && CreateExtendableDataset(file, "/YQY/RESULT/SOLVER_ITERATION", iterationType)
-            && CreateExtendableDataset(file, "/YQY/RESULT/NODAL/DISPLACEMENT", nodalType)
-            && CreateExtendableDataset(file, "/YQY/RESULT/NODAL/CURRENT_COORDINATE", nodalType)
-            && CreateExtendableDataset(file, "/YQY/RESULT/NODAL/VELOCITY", nodalType)
-            && CreateExtendableDataset(file, "/YQY/RESULT/NODAL/ACCELERATION", nodalType)
-            && CreateExtendableDataset(file, "/YQY/RESULT/NODAL/REACTION_FORCE", nodalType)
-            && CreateExtendableDataset(file, "/YQY/RESULT/ELEMENTAL/ELEMENT_FORCE", elementForceType)
-            && CreateExtendableDataset(file, "/YQY/RESULT/ELEMENTAL/TRUSS_FORCE", trussForceType)
-            && CreateExtendableDataset(file, "/YQY/RESULT/ELEMENTAL/CABLE_FORCE", cableForceType)
-            && CreateExtendableDataset(file, "/YQY/RESULT/ELEMENTAL/STRESS", elementStressType)
-            && CreateExtendableDataset(file, "/YQY/RESULT/ELEMENTAL/STRAIN", elementStrainType)
-            && CreateExtendableDataset(file, "/INDEX/YQY/RESULT/NODAL/DISPLACEMENT", indexType)
-            && CreateExtendableDataset(file, "/INDEX/YQY/RESULT/NODAL/CURRENT_COORDINATE", indexType)
-            && CreateExtendableDataset(file, "/INDEX/YQY/RESULT/NODAL/VELOCITY", indexType)
-            && CreateExtendableDataset(file, "/INDEX/YQY/RESULT/NODAL/ACCELERATION", indexType)
-            && CreateExtendableDataset(file, "/INDEX/YQY/RESULT/NODAL/REACTION_FORCE", indexType)
-            && CreateExtendableDataset(file, "/INDEX/YQY/RESULT/ELEMENTAL/ELEMENT_FORCE", indexType)
-            && CreateExtendableDataset(file, "/INDEX/YQY/RESULT/ELEMENTAL/TRUSS_FORCE", indexType)
-            && CreateExtendableDataset(file, "/INDEX/YQY/RESULT/ELEMENTAL/CABLE_FORCE", indexType)
-            && CreateExtendableDataset(file, "/INDEX/YQY/RESULT/ELEMENTAL/STRESS", indexType)
-            && CreateExtendableDataset(file, "/INDEX/YQY/RESULT/ELEMENTAL/STRAIN", indexType);
+        domainsDataset.handle = CreateExtendableDataset(file, "/YQY/RESULT/DOMAINS", domainType);
+        iterationsDataset.handle = CreateExtendableDataset(file, "/YQY/RESULT/SOLVER_ITERATION", iterationType);
+        displacementDataset.data.handle = CreateExtendableDataset(file, "/YQY/RESULT/NODAL/DISPLACEMENT", nodalType);
+        currentCoordinateDataset.data.handle =
+            CreateExtendableDataset(file, "/YQY/RESULT/NODAL/CURRENT_COORDINATE", nodalType);
+        velocityDataset.data.handle = CreateExtendableDataset(file, "/YQY/RESULT/NODAL/VELOCITY", nodalType);
+        accelerationDataset.data.handle = CreateExtendableDataset(file, "/YQY/RESULT/NODAL/ACCELERATION", nodalType);
+        reactionDataset.data.handle = CreateExtendableDataset(file, "/YQY/RESULT/NODAL/REACTION_FORCE", nodalType);
+        elementForceDataset.data.handle =
+            CreateExtendableDataset(file, "/YQY/RESULT/ELEMENTAL/ELEMENT_FORCE", elementForceType);
+        trussForceDataset.data.handle =
+            CreateExtendableDataset(file, "/YQY/RESULT/ELEMENTAL/TRUSS_FORCE", trussForceType);
+        cableForceDataset.data.handle =
+            CreateExtendableDataset(file, "/YQY/RESULT/ELEMENTAL/CABLE_FORCE", cableForceType);
+        stressDataset.data.handle = CreateExtendableDataset(file, "/YQY/RESULT/ELEMENTAL/STRESS", elementStressType);
+        strainDataset.data.handle = CreateExtendableDataset(file, "/YQY/RESULT/ELEMENTAL/STRAIN", elementStrainType);
+        displacementDataset.index.handle =
+            CreateExtendableDataset(file, "/INDEX/YQY/RESULT/NODAL/DISPLACEMENT", indexType);
+        currentCoordinateDataset.index.handle =
+            CreateExtendableDataset(file, "/INDEX/YQY/RESULT/NODAL/CURRENT_COORDINATE", indexType);
+        velocityDataset.index.handle = CreateExtendableDataset(file, "/INDEX/YQY/RESULT/NODAL/VELOCITY", indexType);
+        accelerationDataset.index.handle =
+            CreateExtendableDataset(file, "/INDEX/YQY/RESULT/NODAL/ACCELERATION", indexType);
+        reactionDataset.index.handle =
+            CreateExtendableDataset(file, "/INDEX/YQY/RESULT/NODAL/REACTION_FORCE", indexType);
+        elementForceDataset.index.handle =
+            CreateExtendableDataset(file, "/INDEX/YQY/RESULT/ELEMENTAL/ELEMENT_FORCE", indexType);
+        trussForceDataset.index.handle =
+            CreateExtendableDataset(file, "/INDEX/YQY/RESULT/ELEMENTAL/TRUSS_FORCE", indexType);
+        cableForceDataset.index.handle =
+            CreateExtendableDataset(file, "/INDEX/YQY/RESULT/ELEMENTAL/CABLE_FORCE", indexType);
+        stressDataset.index.handle = CreateExtendableDataset(file, "/INDEX/YQY/RESULT/ELEMENTAL/STRESS", indexType);
+        strainDataset.index.handle = CreateExtendableDataset(file, "/INDEX/YQY/RESULT/ELEMENTAL/STRAIN", indexType);
+
+        return domainsDataset.handle.valid() && iterationsDataset.handle.valid() &&
+               displacementDataset.data.handle.valid() && currentCoordinateDataset.data.handle.valid() &&
+               velocityDataset.data.handle.valid() && accelerationDataset.data.handle.valid() &&
+               reactionDataset.data.handle.valid() && elementForceDataset.data.handle.valid() &&
+               trussForceDataset.data.handle.valid() && cableForceDataset.data.handle.valid() &&
+               stressDataset.data.handle.valid() && strainDataset.data.handle.valid() &&
+               displacementDataset.index.handle.valid() && currentCoordinateDataset.index.handle.valid() &&
+               velocityDataset.index.handle.valid() && accelerationDataset.index.handle.valid() &&
+               reactionDataset.index.handle.valid() && elementForceDataset.index.handle.valid() &&
+               trussForceDataset.index.handle.valid() && cableForceDataset.index.handle.valid() &&
+               stressDataset.index.handle.valid() && strainDataset.index.handle.valid();
     }
 
-    bool WriteFrame(int domainId, int stepId, int increment, int analysis, double time, const DataFrame& frame)
+    bool QueueFrame(int domainId, int stepId, int increment, int analysis, double time, const DataFrame& frame)
     {
         if (!file.valid())
         {
@@ -2420,16 +2604,9 @@ public:
         domain.analysis = analysis;
         domain.time = time;
 
-        std::vector<DomainRecord> domains{ domain };
-        H5Handle domainType = CreateDomainType();
-        long long domainPosition = 0;
-        if (!domainType.valid() || !AppendDataset(file, "/YQY/RESULT/DOMAINS", domainType, domains, domainPosition))
-        {
-            return false;
-        }
+        pendingDomains.push_back(domain);
 
-        const bool storesDynamicKinematics = analysis
-            == static_cast<int>(EnumKeyword::StepType::DYNAMIC);
+        const bool storesDynamicKinematics = analysis == static_cast<int>(EnumKeyword::StepType::DYNAMIC);
 
         std::vector<NodalRecord> displacements;
         std::vector<NodalRecord> currentCoordinates;
@@ -2512,35 +2689,41 @@ public:
         {
             const int elementId = pair.first;
             const auto elementType = elementTypes.value(elementId, EnumKeyword::ElementType::UNKNOWN);
-            if (elementType == EnumKeyword::ElementType::T3D2)
+            switch (elementType)
             {
-                TrussForceRecord force;
-                force.id = elementId;
-                force.domainId = domainId;
-                force.axial = frame.GetElementData(elementId, EnumKeyword::ElementResultType::AxialForce);
-                trussForces.push_back(force);
-            }
-            else if (elementType == EnumKeyword::ElementType::CABLE)
-            {
-                CableForceRecord force;
-                force.id = elementId;
-                force.domainId = domainId;
-                force.axial = frame.GetElementData(elementId, EnumKeyword::ElementResultType::AxialForce);
-                force.torque = frame.GetElementData(elementId, EnumKeyword::ElementResultType::Torque);
-                cableForces.push_back(force);
-            }
-            else
-            {
-                ElementForceRecord force;
-                force.id = elementId;
-                force.axial = frame.GetElementData(elementId, EnumKeyword::ElementResultType::AxialForce);
-                force.shearY = frame.GetElementData(elementId, EnumKeyword::ElementResultType::ShearY);
-                force.shearZ = frame.GetElementData(elementId, EnumKeyword::ElementResultType::ShearZ);
-                force.torque = frame.GetElementData(elementId, EnumKeyword::ElementResultType::Torque);
-                force.momentY = frame.GetElementData(elementId, EnumKeyword::ElementResultType::MomentY);
-                force.momentZ = frame.GetElementData(elementId, EnumKeyword::ElementResultType::MomentZ);
-                force.domainId = domainId;
-                elementForces.push_back(force);
+                case EnumKeyword::ElementType::T3D2:
+                {
+                    TrussForceRecord force;
+                    force.id = elementId;
+                    force.domainId = domainId;
+                    force.axial = frame.GetElementData(elementId, EnumKeyword::ElementResultType::AxialForce);
+                    trussForces.push_back(force);
+                    break;
+                }
+                case EnumKeyword::ElementType::CABLE:
+                {
+                    CableForceRecord force;
+                    force.id = elementId;
+                    force.domainId = domainId;
+                    force.axial = frame.GetElementData(elementId, EnumKeyword::ElementResultType::AxialForce);
+                    force.torque = frame.GetElementData(elementId, EnumKeyword::ElementResultType::Torque);
+                    cableForces.push_back(force);
+                    break;
+                }
+                default:
+                {
+                    ElementForceRecord force;
+                    force.id = elementId;
+                    force.axial = frame.GetElementData(elementId, EnumKeyword::ElementResultType::AxialForce);
+                    force.shearY = frame.GetElementData(elementId, EnumKeyword::ElementResultType::ShearY);
+                    force.shearZ = frame.GetElementData(elementId, EnumKeyword::ElementResultType::ShearZ);
+                    force.torque = frame.GetElementData(elementId, EnumKeyword::ElementResultType::Torque);
+                    force.momentY = frame.GetElementData(elementId, EnumKeyword::ElementResultType::MomentY);
+                    force.momentZ = frame.GetElementData(elementId, EnumKeyword::ElementResultType::MomentZ);
+                    force.domainId = domainId;
+                    elementForces.push_back(force);
+                    break;
+                }
             }
 
             ElementStressRecord stress;
@@ -2558,13 +2741,12 @@ public:
             elementStrains.push_back(strain);
         }
 
-        // Accumulate visualization ranges while the frame data is already in
-        // CPU cache.  Opening a completed result can then read 21 tiny scalar
-        // attributes instead of scanning every record in a multi-GB file.
+        // 帧数据位于 CPU 缓存时同步累计可视化范围。打开完整结果时只需读取 21 个标量属性，
+        // 不必扫描数 GB 文件中的每条记录。
         for (const NodalRecord& value : displacements)
         {
             IncludeResultRangeValue(streamRanges.displacementMagnitude,
-                std::sqrt(value.x * value.x + value.y * value.y + value.z * value.z));
+                                    std::sqrt(value.x * value.x + value.y * value.y + value.z * value.z));
             IncludeResultRangeValue(streamRanges.displacementX, value.x);
             IncludeResultRangeValue(streamRanges.displacementY, value.y);
             IncludeResultRangeValue(streamRanges.displacementZ, value.z);
@@ -2580,50 +2762,108 @@ public:
         for (const ElementStrainRecord& value : elementStrains)
             IncludeResultRangeValue(streamRanges.strain, value.strain);
 
-        H5Handle indexType = CreateIndexType();
-        H5Handle nodalType = CreateNodalType();
-        H5Handle elementForceType = CreateElementForceType();
-        H5Handle trussForceType = CreateTrussForceType();
-        H5Handle cableForceType = CreateCableForceType();
-        H5Handle elementStressType = CreateElementStressType();
-        H5Handle elementStrainType = CreateElementStrainType();
-        if (!indexType.valid() || !nodalType.valid() || !elementForceType.valid()
-            || !trussForceType.valid() || !cableForceType.valid()
-            || !elementStressType.valid() || !elementStrainType.valid())
-        {
-            return false;
-        }
-
-        return AppendRecordsWithIndex("/YQY/RESULT/NODAL/DISPLACEMENT", "/INDEX/YQY/RESULT/NODAL/DISPLACEMENT", nodalType, indexType, domainId, displacements)
-            && AppendRecordsWithIndex("/YQY/RESULT/NODAL/CURRENT_COORDINATE", "/INDEX/YQY/RESULT/NODAL/CURRENT_COORDINATE", nodalType, indexType, domainId, currentCoordinates)
-            && AppendRecordsWithIndex("/YQY/RESULT/NODAL/VELOCITY", "/INDEX/YQY/RESULT/NODAL/VELOCITY", nodalType, indexType, domainId, velocities)
-            && AppendRecordsWithIndex("/YQY/RESULT/NODAL/ACCELERATION", "/INDEX/YQY/RESULT/NODAL/ACCELERATION", nodalType, indexType, domainId, accelerations)
-            && AppendRecordsWithIndex("/YQY/RESULT/NODAL/REACTION_FORCE", "/INDEX/YQY/RESULT/NODAL/REACTION_FORCE", nodalType, indexType, domainId, reactions)
-            && AppendRecordsWithIndex("/YQY/RESULT/ELEMENTAL/ELEMENT_FORCE", "/INDEX/YQY/RESULT/ELEMENTAL/ELEMENT_FORCE", elementForceType, indexType, domainId, elementForces)
-            && AppendRecordsWithIndex("/YQY/RESULT/ELEMENTAL/TRUSS_FORCE", "/INDEX/YQY/RESULT/ELEMENTAL/TRUSS_FORCE", trussForceType, indexType, domainId, trussForces)
-            && AppendRecordsWithIndex("/YQY/RESULT/ELEMENTAL/CABLE_FORCE", "/INDEX/YQY/RESULT/ELEMENTAL/CABLE_FORCE", cableForceType, indexType, domainId, cableForces)
-            && AppendRecordsWithIndex("/YQY/RESULT/ELEMENTAL/STRESS", "/INDEX/YQY/RESULT/ELEMENTAL/STRESS", elementStressType, indexType, domainId, elementStresses)
-            && AppendRecordsWithIndex("/YQY/RESULT/ELEMENTAL/STRAIN", "/INDEX/YQY/RESULT/ELEMENTAL/STRAIN", elementStrainType, indexType, domainId, elementStrains);
+        QueueRecordsWithIndex(displacementDataset, domainId, displacements, pendingDisplacements,
+                              pendingDisplacementIndices);
+        QueueRecordsWithIndex(currentCoordinateDataset, domainId, currentCoordinates, pendingCurrentCoordinates,
+                              pendingCurrentCoordinateIndices);
+        QueueRecordsWithIndex(velocityDataset, domainId, velocities, pendingVelocities, pendingVelocityIndices);
+        QueueRecordsWithIndex(accelerationDataset, domainId, accelerations, pendingAccelerations,
+                              pendingAccelerationIndices);
+        QueueRecordsWithIndex(reactionDataset, domainId, reactions, pendingReactions, pendingReactionIndices);
+        QueueRecordsWithIndex(elementForceDataset, domainId, elementForces, pendingElementForces,
+                              pendingElementForceIndices);
+        QueueRecordsWithIndex(trussForceDataset, domainId, trussForces, pendingTrussForces, pendingTrussForceIndices);
+        QueueRecordsWithIndex(cableForceDataset, domainId, cableForces, pendingCableForces, pendingCableForceIndices);
+        QueueRecordsWithIndex(stressDataset, domainId, elementStresses, pendingElementStresses, pendingStressIndices);
+        QueueRecordsWithIndex(strainDataset, domainId, elementStrains, pendingElementStrains, pendingStrainIndices);
+        return true;
     }
 
     template <typename Record>
-    bool AppendRecordsWithIndex(const char* dataPath, const char* indexPath, hid_t dataType, hid_t indexType,
-        int domainId, const std::vector<Record>& records)
+    void QueueRecordsWithIndex(const StreamDatasetPair& datasets, int domainId, const std::vector<Record>& records,
+                               _OUT std::vector<Record>& pendingRecords, _OUT std::vector<IndexRecord>& pendingIndices)
     {
-        long long position = 0;
-        if (!AppendDataset(file, dataPath, dataType, records, position))
-        {
-            return false;
-        }
-
         IndexRecord index;
         index.domainId = domainId;
-        index.position = position;
+        index.position = static_cast<long long>(datasets.data.size + pendingRecords.size());
         index.length = static_cast<long long>(records.size());
+        pendingIndices.push_back(index);
+        pendingRecords.insert(pendingRecords.end(), records.cbegin(), records.cend());
+    }
 
-        std::vector<IndexRecord> indices{ index };
-        long long indexPosition = 0;
-        return AppendDataset(file, indexPath, indexType, indices, indexPosition);
+    void ClearPendingFrames()
+    {
+        pendingDomains.clear();
+        pendingDisplacements.clear();
+        pendingCurrentCoordinates.clear();
+        pendingVelocities.clear();
+        pendingAccelerations.clear();
+        pendingReactions.clear();
+        pendingElementForces.clear();
+        pendingTrussForces.clear();
+        pendingCableForces.clear();
+        pendingElementStresses.clear();
+        pendingElementStrains.clear();
+        pendingDisplacementIndices.clear();
+        pendingCurrentCoordinateIndices.clear();
+        pendingVelocityIndices.clear();
+        pendingAccelerationIndices.clear();
+        pendingReactionIndices.clear();
+        pendingElementForceIndices.clear();
+        pendingTrussForceIndices.clear();
+        pendingCableForceIndices.clear();
+        pendingStressIndices.clear();
+        pendingStrainIndices.clear();
+    }
+
+    bool FlushPendingFrames()
+    {
+        long long position = 0;
+        const bool written = AppendDataset(domainsDataset, domainType, pendingDomains, position) &&
+                             AppendDataset(displacementDataset.data, nodalType, pendingDisplacements, position) &&
+                             AppendDataset(displacementDataset.index, indexType, pendingDisplacementIndices,
+                                           position) &&
+                             AppendDataset(currentCoordinateDataset.data, nodalType, pendingCurrentCoordinates,
+                                           position) &&
+                             AppendDataset(currentCoordinateDataset.index, indexType, pendingCurrentCoordinateIndices,
+                                           position) &&
+                             AppendDataset(velocityDataset.data, nodalType, pendingVelocities, position) &&
+                             AppendDataset(velocityDataset.index, indexType, pendingVelocityIndices, position) &&
+                             AppendDataset(accelerationDataset.data, nodalType, pendingAccelerations, position) &&
+                             AppendDataset(accelerationDataset.index, indexType, pendingAccelerationIndices,
+                                           position) &&
+                             AppendDataset(reactionDataset.data, nodalType, pendingReactions, position) &&
+                             AppendDataset(reactionDataset.index, indexType, pendingReactionIndices, position) &&
+                             AppendDataset(elementForceDataset.data, elementForceType, pendingElementForces,
+                                           position) &&
+                             AppendDataset(elementForceDataset.index, indexType, pendingElementForceIndices,
+                                           position) &&
+                             AppendDataset(trussForceDataset.data, trussForceType, pendingTrussForces, position) &&
+                             AppendDataset(trussForceDataset.index, indexType, pendingTrussForceIndices, position) &&
+                             AppendDataset(cableForceDataset.data, cableForceType, pendingCableForces, position) &&
+                             AppendDataset(cableForceDataset.index, indexType, pendingCableForceIndices, position) &&
+                             AppendDataset(stressDataset.data, elementStressType, pendingElementStresses, position) &&
+                             AppendDataset(stressDataset.index, indexType, pendingStressIndices, position) &&
+                             AppendDataset(strainDataset.data, elementStrainType, pendingElementStrains, position) &&
+                             AppendDataset(strainDataset.index, indexType, pendingStrainIndices, position);
+        ClearPendingFrames();
+        return written;
+    }
+
+    bool WriteFrames(int firstDomainId, const std::vector<DataFrame>& frames)
+    {
+        ClearPendingFrames();
+        for (int frameIndex = 0; frameIndex < static_cast<int>(frames.size()); ++frameIndex)
+        {
+            const DataFrame& frame = frames[static_cast<std::size_t>(frameIndex)];
+            if (!QueueFrame(firstDomainId + frameIndex, frame.GetStepId(), frame.GetIncrement(),
+                            frame.GetAnalysisType(), frame.GetTime(), frame))
+            {
+                ClearPendingFrames();
+                return false;
+            }
+        }
+        return FlushPendingFrames();
     }
 
     bool WriteSolverIterationHistory(const std::vector<SolverIterationRecord>& records)
@@ -2634,28 +2874,32 @@ public:
         h5Records.reserve(records.size());
         for (const SolverIterationRecord& record : records)
             h5Records.push_back({record.stepId, record.analysisType, record.time, record.iterations});
-        H5Handle type = CreateSolverIterationType();
         long long position = 0;
-        return type.valid() && AppendDataset(
-            file, "/YQY/RESULT/SOLVER_ITERATION", type, h5Records, position);
+        return AppendDataset(iterationsDataset, iterationType, h5Records, position);
     }
 
-    void End(bool resultComplete)
+    bool End(bool resultComplete)
     {
+        bool finalized = true;
         if (file.valid())
         {
-            WriteIntAttribute(file, "RESULT_COMPLETE", resultComplete ? 1 : 0);
-            WriteResultRangeAttributes(file, streamRanges);
-            H5Fflush(file, H5F_SCOPE_GLOBAL);
+            finalized = WriteIntAttribute(file, "RESULT_COMPLETE", resultComplete ? 1 : 0) &&
+                        WriteResultRangeAttributes(file, streamRanges) && H5Fflush(file, H5F_SCOPE_GLOBAL) >= 0;
         }
+        ResetStreamResources();
         file.reset();
 
         if (!tempFileName.isEmpty() && !targetFileName.isEmpty())
         {
-            MoveTempFileToTarget(tempFileName, targetFileName);
+            finalized = MoveTempFileToTarget(tempFileName, targetFileName) && finalized;
+        }
+        else
+        {
+            finalized = false;
         }
         tempFileName.clear();
         targetFileName.clear();
+        return finalized;
     }
 };
 
@@ -2676,8 +2920,8 @@ bool Hdf5ModelIO::ExportHdf5(const QString& fileName, const StructureData* pData
     return ExportHdf5(fileName, pData, QString());
 }
 
-bool Hdf5ModelIO::ExportHdf5(const QString& fileName, const StructureData* pData,
-    const QString& sourceModelName, bool resultComplete) const
+bool Hdf5ModelIO::ExportHdf5(const QString& fileName, const StructureData* pData, const QString& sourceModelName,
+                             bool resultComplete) const
 {
     QMutexLocker locker(&g_hdf5ApiMutex);
     if (!pData || fileName.isEmpty())
@@ -2707,14 +2951,13 @@ bool Hdf5ModelIO::ExportHdf5(const QString& fileName, const StructureData* pData
         return false;
     }
 
-    const bool attrOk = WriteStringAttribute(file, "FORMAT", "YQY_H5")
-        && WriteStringAttribute(file, "FILE_KIND", "MODEL_RESULT")
-        && WriteIntAttribute(file, "RESULT_COMPLETE", resultComplete ? 1 : 0)
-        && WriteIntAttribute(file, "DYNAMIC_STATE_FORMAT_VERSION", kDynamicStateFormatVersion)
-        && WriteIntAttribute(file, "RESULT_FORMAT_VERSION", kResultFormatVersion)
-        && WriteStringAttribute(file, "CREATED_TIME", QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss"))
-        && WriteStringAttribute(file, "PROGRAM", "YQY_CAE")
-        && WriteStringAttribute(file, "SOURCE_MODEL", sourceModelName);
+    const bool attrOk =
+        WriteStringAttribute(file, "FORMAT", "YQY_H5") && WriteStringAttribute(file, "FILE_KIND", "MODEL_RESULT") &&
+        WriteIntAttribute(file, "RESULT_COMPLETE", resultComplete ? 1 : 0) &&
+        WriteIntAttribute(file, "DYNAMIC_STATE_FORMAT_VERSION", kDynamicStateFormatVersion) &&
+        WriteIntAttribute(file, "RESULT_FORMAT_VERSION", kResultFormatVersion) &&
+        WriteStringAttribute(file, "CREATED_TIME", QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss")) &&
+        WriteStringAttribute(file, "PROGRAM", "YQY_CAE") && WriteStringAttribute(file, "SOURCE_MODEL", sourceModelName);
 
     const bool dataOk = WriteInputData(file, pData) && WriteResultData(file, pData);
     if (!attrOk || !dataOk)
@@ -2731,7 +2974,7 @@ bool Hdf5ModelIO::ExportHdf5(const QString& fileName, const StructureData* pData
 }
 
 bool Hdf5ModelIO::ExportModelHdf5(const QString& fileName, const StructureData* pData,
-    const QString& sourceModelName) const
+                                  const QString& sourceModelName) const
 {
     QMutexLocker locker(&g_hdf5ApiMutex);
     if (!pData || fileName.isEmpty())
@@ -2754,13 +2997,12 @@ bool Hdf5ModelIO::ExportModelHdf5(const QString& fileName, const StructureData* 
         return false;
     }
 
-    const bool written = WriteStringAttribute(file, "FORMAT", "YQY_H5")
-        && WriteStringAttribute(file, "FILE_KIND", "MODEL")
-        && WriteIntAttribute(file, "RESULT_COMPLETE", 0)
-        && WriteStringAttribute(file, "CREATED_TIME", QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss"))
-        && WriteStringAttribute(file, "PROGRAM", "YQY_CAE")
-        && WriteStringAttribute(file, "SOURCE_MODEL", sourceModelName)
-        && WriteInputData(file, pData);
+    const bool written =
+        WriteStringAttribute(file, "FORMAT", "YQY_H5") && WriteStringAttribute(file, "FILE_KIND", "MODEL") &&
+        WriteIntAttribute(file, "RESULT_COMPLETE", 0) &&
+        WriteStringAttribute(file, "CREATED_TIME", QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss")) &&
+        WriteStringAttribute(file, "PROGRAM", "YQY_CAE") &&
+        WriteStringAttribute(file, "SOURCE_MODEL", sourceModelName) && WriteInputData(file, pData);
     file.reset();
     if (!written)
     {
@@ -2776,10 +3018,19 @@ bool Hdf5ModelIO::BeginResultStream(const QString& fileName, const StructureData
     return m_impl->Begin(fileName, pData, sourceModelName);
 }
 
-bool Hdf5ModelIO::WriteResultFrame(int domainId, int stepId, int increment, int analysis, double time, const DataFrame& frame)
+bool Hdf5ModelIO::WriteResultFrame(int domainId, int stepId, int increment, int analysis, double time,
+                                   const DataFrame& frame)
 {
     QMutexLocker locker(&g_hdf5ApiMutex);
-    return m_impl->WriteFrame(domainId, stepId, increment, analysis, time, frame);
+    if (!m_impl->QueueFrame(domainId, stepId, increment, analysis, time, frame))
+        return false;
+    return m_impl->FlushPendingFrames();
+}
+
+bool Hdf5ModelIO::WriteResultFrames(int firstDomainId, const std::vector<DataFrame>& frames)
+{
+    QMutexLocker locker(&g_hdf5ApiMutex);
+    return m_impl->WriteFrames(firstDomainId, frames);
 }
 
 bool Hdf5ModelIO::WriteSolverIterationHistory(const std::vector<SolverIterationRecord>& records)
@@ -2788,10 +3039,10 @@ bool Hdf5ModelIO::WriteSolverIterationHistory(const std::vector<SolverIterationR
     return m_impl->WriteSolverIterationHistory(records);
 }
 
-void Hdf5ModelIO::EndResultStream(bool resultComplete)
+bool Hdf5ModelIO::EndResultStream(bool resultComplete)
 {
     QMutexLocker locker(&g_hdf5ApiMutex);
-    m_impl->End(resultComplete);
+    return m_impl->End(resultComplete);
 }
 
 namespace
@@ -2811,7 +3062,7 @@ bool ReadDatasetAll(hid_t file, const char* path, hid_t memoryType, std::vector<
         return false;
     }
 
-    hsize_t dims[1] = { 0 };
+    hsize_t dims[1] = {0};
     if (H5Sget_simple_extent_dims(space, dims, nullptr) < 0)
     {
         return false;
@@ -2827,12 +3078,10 @@ bool ReadDatasetAll(hid_t file, const char* path, hid_t memoryType, std::vector<
 }
 
 template <typename Record>
-bool ReadOptionalDatasetAll(hid_t file, const char* path, hid_t memoryType,
-    std::vector<Record>& records)
+bool ReadOptionalDatasetAll(hid_t file, const char* path, hid_t memoryType, std::vector<Record>& records)
 {
     records.clear();
-    return !LinkExistsQuietly(file, path)
-        || ReadDatasetAll(file, path, memoryType, records);
+    return !LinkExistsQuietly(file, path) || ReadDatasetAll(file, path, memoryType, records);
 }
 
 bool ReadInputData(hid_t file, StructureData* data)
@@ -2847,6 +3096,7 @@ bool ReadInputData(hid_t file, StructureData* data)
     H5Handle elementType = CreateElementType();
     H5Handle constraintType = CreateConstraintType();
     H5Handle mpcType = CreateMPCType();
+    H5Handle rigidBodyInertiaType = CreateRigidBodyInertiaType();
     H5Handle loadType = CreateLoadType();
     H5Handle windDirectionType = CreateWindDirectionType();
     H5Handle stepType = CreateStepType();
@@ -2857,16 +3107,17 @@ bool ReadInputData(hid_t file, StructureData* data)
     H5Handle stepMetadataType = CreateStepMetadataType();
     H5Handle stepGallopingType = CreateStepGallopingType();
     H5Handle stepTssbnType = CreateStepTssbnType();
+    H5Handle stepStructuralDampingType = CreateStepStructuralDampingType();
     H5Handle stepRegionLinkType = CreateStepRegionLinkType();
     H5Handle aeroCaseType = CreateAeroCaseType();
     H5Handle aeroCoefficientType = CreateAeroCoefficientType();
-    if (!gridType.valid() || !materialType.valid() || !sectionType.valid() || !propertyType.valid()
-        || !elementType.valid() || !constraintType.valid() || !mpcType.valid()
-        || !loadType.valid() || !windDirectionType.valid() || !stepType.valid()
-        || !modelSetType.valid() || !modelSetMemberType.valid() || !computeRegionType.valid()
-        || !regionLinkType.valid() || !stepMetadataType.valid() || !stepGallopingType.valid()
-        || !stepTssbnType.valid()
-        || !stepRegionLinkType.valid() || !aeroCaseType.valid() || !aeroCoefficientType.valid())
+    if (!gridType.valid() || !materialType.valid() || !sectionType.valid() || !propertyType.valid() ||
+        !elementType.valid() || !constraintType.valid() || !mpcType.valid() || !rigidBodyInertiaType.valid() ||
+        !loadType.valid() ||
+        !windDirectionType.valid() || !stepType.valid() || !modelSetType.valid() || !modelSetMemberType.valid() ||
+        !computeRegionType.valid() || !regionLinkType.valid() || !stepMetadataType.valid() ||
+        !stepGallopingType.valid() || !stepTssbnType.valid() || !stepStructuralDampingType.valid() ||
+        !stepRegionLinkType.valid() || !aeroCaseType.valid() || !aeroCoefficientType.valid())
     {
         return false;
     }
@@ -2878,6 +3129,7 @@ bool ReadInputData(hid_t file, StructureData* data)
     std::vector<ElementRecord> elements;
     std::vector<ConstraintRecord> constraints;
     std::vector<MPCRecord> mpcs;
+    std::vector<RigidBodyInertiaRecord> rigidBodyInertias;
     std::vector<LoadRecord> loads;
     std::vector<WindDirectionRecord> windDirections;
     std::vector<StepRecord> steps;
@@ -2890,36 +3142,38 @@ bool ReadInputData(hid_t file, StructureData* data)
     std::vector<StepMetadataRecord> stepMetadata;
     std::vector<StepGallopingRecord> stepGalloping;
     std::vector<StepTssbnRecord> stepTssbn;
+    std::vector<StepStructuralDampingRecord> stepStructuralDamping;
     std::vector<StepRegionLinkRecord> stepRegionLinks;
     std::vector<AeroCaseRecord> aeroCases;
     std::vector<AeroCoefficientRecord> aeroCoefficients;
-    if (!ReadDatasetAll(file, "/YQY/INPUT/NODE/GRID", gridType, grids)
-        || !ReadDatasetAll(file, "/YQY/INPUT/MATERIAL/MAT", materialType, materials)
-        || !ReadDatasetAll(file, "/YQY/INPUT/SECTION/SECTION", sectionType, sections)
-        || !ReadDatasetAll(file, "/YQY/INPUT/PROPERTY/PROPERTY", propertyType, properties)
-        || !ReadDatasetAll(file, "/YQY/INPUT/ELEMENT/ELEMENT", elementType, elements)
-        || !ReadDatasetAll(file, "/YQY/INPUT/CONSTRAINT/SPC", constraintType, constraints)
-        || !ReadOptionalDatasetAll(file, "/YQY/INPUT/CONSTRAINT/MPC", mpcType, mpcs)
-        || !ReadDatasetAll(file, "/YQY/INPUT/LOAD/LOAD", loadType, loads)
-        || !ReadOptionalDatasetAll(file, "/YQY/INPUT/LOAD/WIND_DIRECTION",
-            windDirectionType, windDirections)
-        || !ReadDatasetAll(file, "/YQY/INPUT/ANALYSIS_STEP/STEP", stepType, steps)
-        || !ReadOptionalDatasetAll(file, "/YQY/INPUT/ANALYSIS_STEP/METADATA", stepMetadataType, stepMetadata)
-        || !ReadOptionalDatasetAll(file, "/YQY/INPUT/ANALYSIS_STEP/GALLOPING",
-            stepGallopingType, stepGalloping)
-        || !ReadOptionalDatasetAll(file, "/YQY/INPUT/ANALYSIS_STEP/TSSBN",
-            stepTssbnType, stepTssbn)
-        || !ReadOptionalDatasetAll(file, "/YQY/INPUT/ANALYSIS_STEP/REGION_LINK", stepRegionLinkType, stepRegionLinks)
-        || !ReadOptionalDatasetAll(file, "/YQY/INPUT/AERO/CASE", aeroCaseType, aeroCases)
-        || !ReadOptionalDatasetAll(file, "/YQY/INPUT/AERO/COEFFICIENT",
-            aeroCoefficientType, aeroCoefficients)
-        || !ReadOptionalDatasetAll(file, "/YQY/INPUT/MODEL_SET/SET", modelSetType, modelSets)
-        || !ReadOptionalDatasetAll(file, "/YQY/INPUT/MODEL_SET/MEMBER", modelSetMemberType, modelSetMembers)
-        || !ReadOptionalDatasetAll(file, "/YQY/INPUT/COMPUTE_REGION/REGION", computeRegionType, computeRegions)
-        || !ReadOptionalDatasetAll(file, "/YQY/INPUT/COMPUTE_REGION/SET_LINK", regionLinkType, regionSetLinks)
-        || !ReadOptionalDatasetAll(file, "/YQY/INPUT/COMPUTE_REGION/DIRECT_NODE", regionLinkType, regionDirectNodes)
-        || !ReadOptionalDatasetAll(file, "/YQY/INPUT/COMPUTE_REGION/DIRECT_ELEMENT", regionLinkType, regionDirectElements)
-        || grids.empty())
+    if (!ReadDatasetAll(file, "/YQY/INPUT/NODE/GRID", gridType, grids) ||
+        !ReadDatasetAll(file, "/YQY/INPUT/MATERIAL/MAT", materialType, materials) ||
+        !ReadDatasetAll(file, "/YQY/INPUT/SECTION/SECTION", sectionType, sections) ||
+        !ReadDatasetAll(file, "/YQY/INPUT/PROPERTY/PROPERTY", propertyType, properties) ||
+        !ReadDatasetAll(file, "/YQY/INPUT/ELEMENT/ELEMENT", elementType, elements) ||
+        !ReadDatasetAll(file, "/YQY/INPUT/CONSTRAINT/SPC", constraintType, constraints) ||
+        !ReadOptionalDatasetAll(file, "/YQY/INPUT/CONSTRAINT/MPC", mpcType, mpcs) ||
+        !ReadOptionalDatasetAll(file, "/YQY/INPUT/INERTIA/RIGID_BODY", rigidBodyInertiaType,
+                                rigidBodyInertias) ||
+        !ReadDatasetAll(file, "/YQY/INPUT/LOAD/LOAD", loadType, loads) ||
+        !ReadOptionalDatasetAll(file, "/YQY/INPUT/LOAD/WIND_DIRECTION", windDirectionType, windDirections) ||
+        !ReadDatasetAll(file, "/YQY/INPUT/ANALYSIS_STEP/STEP", stepType, steps) ||
+        !ReadOptionalDatasetAll(file, "/YQY/INPUT/ANALYSIS_STEP/METADATA", stepMetadataType, stepMetadata) ||
+        !ReadOptionalDatasetAll(file, "/YQY/INPUT/ANALYSIS_STEP/GALLOPING", stepGallopingType, stepGalloping) ||
+        !ReadOptionalDatasetAll(file, "/YQY/INPUT/ANALYSIS_STEP/TSSBN", stepTssbnType, stepTssbn) ||
+        !ReadOptionalDatasetAll(file, "/YQY/INPUT/ANALYSIS_STEP/STRUCTURAL_DAMPING", stepStructuralDampingType,
+                                stepStructuralDamping) ||
+        !ReadOptionalDatasetAll(file, "/YQY/INPUT/ANALYSIS_STEP/REGION_LINK", stepRegionLinkType, stepRegionLinks) ||
+        !ReadOptionalDatasetAll(file, "/YQY/INPUT/AERO/CASE", aeroCaseType, aeroCases) ||
+        !ReadOptionalDatasetAll(file, "/YQY/INPUT/AERO/COEFFICIENT", aeroCoefficientType, aeroCoefficients) ||
+        !ReadOptionalDatasetAll(file, "/YQY/INPUT/MODEL_SET/SET", modelSetType, modelSets) ||
+        !ReadOptionalDatasetAll(file, "/YQY/INPUT/MODEL_SET/MEMBER", modelSetMemberType, modelSetMembers) ||
+        !ReadOptionalDatasetAll(file, "/YQY/INPUT/COMPUTE_REGION/REGION", computeRegionType, computeRegions) ||
+        !ReadOptionalDatasetAll(file, "/YQY/INPUT/COMPUTE_REGION/SET_LINK", regionLinkType, regionSetLinks) ||
+        !ReadOptionalDatasetAll(file, "/YQY/INPUT/COMPUTE_REGION/DIRECT_NODE", regionLinkType, regionDirectNodes) ||
+        !ReadOptionalDatasetAll(file, "/YQY/INPUT/COMPUTE_REGION/DIRECT_ELEMENT", regionLinkType,
+                                regionDirectElements) ||
+        grids.empty())
     {
         return false;
     }
@@ -2954,8 +3208,8 @@ bool ReadInputData(hid_t file, StructureData* data)
     {
         std::shared_ptr<SectionBase> section;
         const auto storedType = static_cast<EnumKeyword::SectionType>(record.type);
-        if (storedType == EnumKeyword::SectionType::RECTANGULAR
-            || (storedType == EnumKeyword::SectionType::UNKNOWN && record.width > 0.0 && record.height > 0.0))
+        if (storedType == EnumKeyword::SectionType::RECTANGULAR ||
+            (storedType == EnumKeyword::SectionType::UNKNOWN && record.width > 0.0 && record.height > 0.0))
         {
             auto rectangle = std::make_shared<SectionRectangle>();
             rectangle->m_Width = record.width;
@@ -3000,22 +3254,22 @@ bool ReadInputData(hid_t file, StructureData* data)
         std::shared_ptr<ElementBase> element;
         switch (static_cast<EnumKeyword::ElementType>(record.type))
         {
-        case EnumKeyword::ElementType::T3D2:
-            element = std::make_shared<ElementTruss>();
-            break;
-        case EnumKeyword::ElementType::CABLE:
-            element = std::make_shared<ElementCable>();
-            break;
-        case EnumKeyword::ElementType::CR3D:
-        {
-            auto beam = std::make_shared<ElementBeam_CR>();
-            beam->q0 = Eigen::Vector3d(record.q0[0], record.q0[1], record.q0[2]);
-            element = std::move(beam);
-            break;
-        }
-        default:
-            element = std::make_shared<ElementTruss>();
-            break;
+            case EnumKeyword::ElementType::T3D2:
+                element = std::make_shared<ElementTruss>();
+                break;
+            case EnumKeyword::ElementType::CABLE:
+                element = std::make_shared<ElementCable>();
+                break;
+            case EnumKeyword::ElementType::CR3D:
+            {
+                auto beam = std::make_shared<ElementBeam_CR>();
+                beam->q0 = Eigen::Vector3d(record.q0[0], record.q0[1], record.q0[2]);
+                element = std::move(beam);
+                break;
+            }
+            default:
+                element = std::make_shared<ElementTruss>();
+                break;
         }
 
         element->m_Id = record.id;
@@ -3055,9 +3309,9 @@ bool ReadInputData(hid_t file, StructureData* data)
 
     for (const ModelSetRecord& record : modelSets)
     {
-        if (record.id <= 0 || restored->m_ModelSets.find(record.id) != restored->m_ModelSets.cend()
-            || (record.type != static_cast<int>(ModelSetType::Node)
-                && record.type != static_cast<int>(ModelSetType::Element)))
+        if (record.id <= 0 || restored->m_ModelSets.find(record.id) != restored->m_ModelSets.cend() ||
+            (record.type != static_cast<int>(ModelSetType::Node) &&
+             record.type != static_cast<int>(ModelSetType::Element)))
         {
             return false;
         }
@@ -3074,8 +3328,8 @@ bool ReadInputData(hid_t file, StructureData* data)
             return false;
         }
         const bool entityExists = setIt->second->m_Type == ModelSetType::Node
-            ? restored->m_Nodes.find(record.entityId) != restored->m_Nodes.cend()
-            : restored->m_Elements.find(record.entityId) != restored->m_Elements.cend();
+                                      ? restored->m_Nodes.find(record.entityId) != restored->m_Nodes.cend()
+                                      : restored->m_Elements.find(record.entityId) != restored->m_Elements.cend();
         if (!entityExists)
         {
             return false;
@@ -3150,15 +3404,32 @@ bool ReadInputData(hid_t file, StructureData* data)
         restored->m_Constraint[record.id] = std::move(constraint);
     }
 
+    for (const RigidBodyInertiaRecord& record : rigidBodyInertias)
+    {
+        const auto node = restored->m_Nodes.find(record.nodeId);
+        if (record.id <= 0 || node == restored->m_Nodes.end() ||
+            restored->m_RigidBodyInertias.find(record.id) != restored->m_RigidBodyInertias.end())
+        {
+            return false;
+        }
+        auto inertia = std::make_shared<RigidBodyInertia>();
+        inertia->m_Id = record.id;
+        inertia->m_pNode = node->second;
+        inertia->m_Mass = record.mass;
+        inertia->m_RotaryInertia << record.inertia[0], record.inertia[3], record.inertia[4], record.inertia[3],
+            record.inertia[1], record.inertia[5], record.inertia[4], record.inertia[5], record.inertia[2];
+        node->second->SetNumDOFs(6);
+        if (!inertia->IsValid())
+            return false;
+        restored->m_RigidBodyInertias.emplace(record.id, std::move(inertia));
+    }
+
     for (const MPCRecord& record : mpcs)
     {
         const auto master = restored->m_Nodes.find(record.masterNodeId);
         const auto slave = restored->m_Nodes.find(record.slaveNodeId);
-        if (record.id <= 0 || master == restored->m_Nodes.cend()
-            || slave == restored->m_Nodes.cend()
-            || master == slave
-            || restored->m_MPCConstraints.find(record.id)
-                != restored->m_MPCConstraints.cend())
+        if (record.id <= 0 || master == restored->m_Nodes.cend() || slave == restored->m_Nodes.cend() ||
+            master == slave || restored->m_MPCConstraints.find(record.id) != restored->m_MPCConstraints.cend())
         {
             return false;
         }
@@ -3186,27 +3457,31 @@ bool ReadInputData(hid_t file, StructureData* data)
             auto rigid = std::make_shared<RigidOffsetMPCConstraint>();
             rigid->m_pMasterNode = master->second;
             rigid->m_pSlaveNode = slave->second;
-            rigid->m_Offset = Eigen::Vector3d(
-                record.parameters[0],
-                record.parameters[1],
-                record.parameters[2]);
+            rigid->m_Offset = Eigen::Vector3d(record.parameters[0], record.parameters[1], record.parameters[2]);
             mpc = std::move(rigid);
         }
         else if (record.relationType == 2)
         {
-            auto release =
-                std::make_shared<PlanarShearReleaseMPCConstraint>();
+            auto release = std::make_shared<PlanarShearReleaseMPCConstraint>();
             release->m_pMasterNode = master->second;
             release->m_pSlaveNode = slave->second;
             mpc = std::move(release);
         }
         else if (record.relationType == 3)
         {
-            auto tie =
-                std::make_shared<TranslationalTieMPCConstraint>();
+            auto tie = std::make_shared<TranslationalTieMPCConstraint>();
             tie->m_pMasterNode = master->second;
             tie->m_pSlaveNode = slave->second;
             mpc = std::move(tie);
+        }
+        else if (record.relationType == 4)
+        {
+            auto twist = std::make_shared<AxialTwistTieMPCConstraint>();
+            twist->m_pMasterNode = master->second;
+            twist->m_pSlaveNode = slave->second;
+            twist->m_Axis = Eigen::Vector3d(record.parameters[0], record.parameters[1], record.parameters[2]);
+            twist->m_SlaveDirection = 3;
+            mpc = std::move(twist);
         }
         else
         {
@@ -3228,44 +3503,44 @@ bool ReadInputData(hid_t file, StructureData* data)
         std::shared_ptr<LoadBase> load;
         switch (static_cast<EnumKeyword::LoadType>(record.type))
         {
-        case EnumKeyword::LoadType::FORCE_NODE:
-        {
-            const auto node = restored->m_Nodes.find(record.targetId);
-            if (node == restored->m_Nodes.end())
-                return false;
-            auto nodeLoad = std::make_shared<Force_Node>();
-            nodeLoad->m_pNode = node->second;
-            nodeLoad->m_Value = record.value;
-            load = std::move(nodeLoad);
-            break;
-        }
-        case EnumKeyword::LoadType::FORCE_ELEMENT:
-        {
-            const auto element = restored->m_Elements.find(record.targetId);
-            if (element == restored->m_Elements.end())
-                return false;
-            auto elementLoad = std::make_shared<Force_Element>();
-            elementLoad->m_pElement = element->second;
-            elementLoad->m_Value = record.value;
-            load = std::move(elementLoad);
-            break;
-        }
-        case EnumKeyword::LoadType::FORCE_GRAVITY:
-        {
-            auto gravity = std::make_shared<Force_Gravity>();
-            gravity->m_g = record.value;
-            load = std::move(gravity);
-            break;
-        }
-        case EnumKeyword::LoadType::FORCE_WIND:
-        {
-            auto wind = std::make_shared<Force_Wind>();
-            wind->m_velocity = record.value;
-            load = std::move(wind);
-            break;
-        }
-        default:
-            continue;
+            case EnumKeyword::LoadType::FORCE_NODE:
+            {
+                const auto node = restored->m_Nodes.find(record.targetId);
+                if (node == restored->m_Nodes.end())
+                    return false;
+                auto nodeLoad = std::make_shared<Force_Node>();
+                nodeLoad->m_pNode = node->second;
+                nodeLoad->m_Value = record.value;
+                load = std::move(nodeLoad);
+                break;
+            }
+            case EnumKeyword::LoadType::FORCE_ELEMENT:
+            {
+                const auto element = restored->m_Elements.find(record.targetId);
+                if (element == restored->m_Elements.end())
+                    return false;
+                auto elementLoad = std::make_shared<Force_Element>();
+                elementLoad->m_pElement = element->second;
+                elementLoad->m_Value = record.value;
+                load = std::move(elementLoad);
+                break;
+            }
+            case EnumKeyword::LoadType::FORCE_GRAVITY:
+            {
+                auto gravity = std::make_shared<Force_Gravity>();
+                gravity->m_g = record.value;
+                load = std::move(gravity);
+                break;
+            }
+            case EnumKeyword::LoadType::FORCE_WIND:
+            {
+                auto wind = std::make_shared<Force_Wind>();
+                wind->m_velocity = record.value;
+                load = std::move(wind);
+                break;
+            }
+            default:
+                continue;
         }
 
         load->m_Id = record.id;
@@ -3296,10 +3571,9 @@ bool ReadInputData(hid_t file, StructureData* data)
     for (const WindDirectionRecord& record : windDirections)
     {
         const auto found = restored->m_Load.find(record.loadId);
-        const auto wind = found == restored->m_Load.cend()
-            ? nullptr : std::dynamic_pointer_cast<Force_Wind>(found->second);
-        const Eigen::Vector3d direction(
-            record.direction[0], record.direction[1], record.direction[2]);
+        const auto wind =
+            found == restored->m_Load.cend() ? nullptr : std::dynamic_pointer_cast<Force_Wind>(found->second);
+        const Eigen::Vector3d direction(record.direction[0], record.direction[1], record.direction[2]);
         if (!wind || !direction.allFinite() || direction.norm() <= 1.0e-12)
             return false;
         wind->m_direction = direction.normalized();
@@ -3316,78 +3590,73 @@ bool ReadInputData(hid_t file, StructureData* data)
         config.stepSize = record.stepSize;
         config.tolerance = record.tolerance;
         config.maxIterations = record.maxIterations;
-        config.dynamicSolverType = static_cast<SolverNameSpace::SolverType>(record.dynamicSolverType);
+        constexpr int legacyTssbnSolverType = 2;
+        config.dynamicSolverType = record.dynamicSolverType == legacyTssbnSolverType
+                                       ? SolverNameSpace::SolverType::AdaptiveTSSBN
+                                       : static_cast<SolverNameSpace::SolverType>(record.dynamicSolverType);
         restored->AddAnalysisStep(config);
     }
 
     for (const StepMetadataRecord& record : stepMetadata)
     {
         const auto stepIt = restored->m_AnalysisStep.find(record.stepId);
-        if (stepIt == restored->m_AnalysisStep.cend() || !stepIt->second
-            || (record.regionScope != static_cast<int>(AnalysisRegionScope::AllEnabledRegions)
-                && record.regionScope != static_cast<int>(AnalysisRegionScope::SelectedRegions)))
+        if (stepIt == restored->m_AnalysisStep.cend() || !stepIt->second ||
+            (record.regionScope != static_cast<int>(AnalysisRegionScope::AllEnabledRegions) &&
+             record.regionScope != static_cast<int>(AnalysisRegionScope::SelectedRegions)))
         {
             return false;
         }
         stepIt->second->m_Name = ReadUtf8String(record.name, sizeof(record.name));
         stepIt->second->m_RegionScope = static_cast<AnalysisRegionScope>(record.regionScope);
-        stepIt->second->m_InitialStaticStepId = stepIt->second->isDynamic
-            ? record.initialStaticStepId : 0;
+        stepIt->second->m_InitialStaticStepId = stepIt->second->isDynamic ? record.initialStaticStepId : 0;
     }
     for (const auto& [stepId, step] : restored->m_AnalysisStep)
     {
         if (!step || step->m_InitialStaticStepId <= 0)
             continue;
         const auto staticIt = restored->m_AnalysisStep.find(step->m_InitialStaticStepId);
-        if (!step->isDynamic || staticIt == restored->m_AnalysisStep.cend()
-            || !staticIt->second
-            || staticIt->second->m_Type != EnumKeyword::StepType::STATIC
-            || staticIt->first >= stepId)
+        if (!step->isDynamic || staticIt == restored->m_AnalysisStep.cend() || !staticIt->second ||
+            staticIt->second->m_Type != EnumKeyword::StepType::STATIC || staticIt->first >= stepId)
             return false;
     }
     for (const StepGallopingRecord& record : stepGalloping)
     {
         const auto stepIt = restored->m_AnalysisStep.find(record.stepId);
-        if (stepIt == restored->m_AnalysisStep.cend() || !stepIt->second
-            || !AeroManager::isSupportedIceThickness(record.iceThickness))
+        if (stepIt == restored->m_AnalysisStep.cend() || !stepIt->second ||
+            !AeroManager::isSupportedIceThickness(record.iceThickness))
         {
             return false;
         }
         stepIt->second->m_GallopingIceThickness = record.iceThickness;
         stepIt->second->m_GallopingInitialAttackDegrees =
-            std::isfinite(record.initialAttackDegrees)
-            ? record.initialAttackDegrees : 45.0;
+            std::isfinite(record.initialAttackDegrees) ? record.initialAttackDegrees : 45.0;
         stepIt->second->m_EnableGalloping = stepIt->second->isDynamic && record.enabled != 0;
+        if (record.aerodynamicTangentMode < static_cast<int>(SolverNameSpace::AerodynamicTangentMode::Disabled) ||
+            record.aerodynamicTangentMode >
+                static_cast<int>(SolverNameSpace::AerodynamicTangentMode::EveryNewtonIteration))
+        {
+            return false;
+        }
+        stepIt->second->m_GallopingAerodynamicTangentMode =
+            static_cast<SolverNameSpace::AerodynamicTangentMode>(record.aerodynamicTangentMode);
     }
     for (const StepTssbnRecord& record : stepTssbn)
     {
         const auto stepIt = restored->m_AnalysisStep.find(record.stepId);
-        if (stepIt == restored->m_AnalysisStep.cend()
-            || !stepIt->second
-            || !std::isfinite(record.spectralRadiusInfinity)
-            || record.spectralRadiusInfinity < 0.0
-            || record.spectralRadiusInfinity > 1.0
-            || !(record.minimumTimeStep > 0.0)
-            || !(record.maximumTimeStep >= record.minimumTimeStep)
-            || !(record.relativeTolerance > 0.0)
-            || !(record.absoluteTolerance > 0.0)
-            || !(record.safetyFactor > 0.0)
-            || record.safetyFactor > 1.0
-            || !(record.shrinkFactor > 0.0)
-            || record.shrinkFactor >= 1.0
-            || record.maximumGrowthFactor < 1.0
-            || record.targetNewtonIterations < 1
-            || record.derivativeGain < 0.0
-            || !(record.minimumDerivativeFactor > 0.0)
-            || record.minimumDerivativeFactor
-                > record.maximumDerivativeFactor
-            || record.maximumRejectedAttempts < 1)
+        if (stepIt == restored->m_AnalysisStep.cend() || !stepIt->second ||
+            !std::isfinite(record.spectralRadiusInfinity) || record.spectralRadiusInfinity < 0.0 ||
+            record.spectralRadiusInfinity > 1.0 || !(record.minimumTimeStep > 0.0) ||
+            !(record.maximumTimeStep >= record.minimumTimeStep) || !(record.relativeTolerance > 0.0) ||
+            !(record.absoluteTolerance > 0.0) || !(record.safetyFactor > 0.0) || record.safetyFactor > 1.0 ||
+            !(record.shrinkFactor > 0.0) || record.shrinkFactor >= 1.0 || record.maximumGrowthFactor < 1.0 ||
+            record.targetNewtonIterations < 1 || record.maximumTotalNewtonIterations < 1 ||
+            record.derivativeGain < 0.0 || !(record.minimumDerivativeFactor > 0.0) ||
+            record.minimumDerivativeFactor > record.maximumDerivativeFactor || record.maximumRejectedAttempts < 1)
         {
             return false;
         }
         auto& settings = stepIt->second->m_AdaptiveTssbn;
-        settings.spectralRadiusInfinity =
-            record.spectralRadiusInfinity;
+        settings.spectralRadiusInfinity = record.spectralRadiusInfinity;
         settings.minimumTimeStep = record.minimumTimeStep;
         settings.maximumTimeStep = record.maximumTimeStep;
         settings.relativeTolerance = record.relativeTolerance;
@@ -3395,21 +3664,36 @@ bool ReadInputData(hid_t file, StructureData* data)
         settings.safetyFactor = record.safetyFactor;
         settings.shrinkFactor = record.shrinkFactor;
         settings.maximumGrowthFactor = record.maximumGrowthFactor;
-        settings.targetNewtonIterations =
-            record.targetNewtonIterations;
+        settings.targetNewtonIterations = record.targetNewtonIterations;
+        settings.maximumTotalNewtonIterations = record.maximumTotalNewtonIterations;
         settings.derivativeGain = record.derivativeGain;
-        settings.minimumDerivativeFactor =
-            record.minimumDerivativeFactor;
-        settings.maximumDerivativeFactor =
-            record.maximumDerivativeFactor;
-        settings.maximumRejectedAttempts =
-            record.maximumRejectedAttempts;
+        settings.minimumDerivativeFactor = record.minimumDerivativeFactor;
+        settings.maximumDerivativeFactor = record.maximumDerivativeFactor;
+        settings.maximumRejectedAttempts = record.maximumRejectedAttempts;
+    }
+    for (const StepStructuralDampingRecord& record : stepStructuralDamping)
+    {
+        const auto stepIt = restored->m_AnalysisStep.find(record.stepId);
+        if (stepIt == restored->m_AnalysisStep.cend() || !stepIt->second ||
+            !std::isfinite(record.translationDampingRatio) || record.translationDampingRatio < 0.0 ||
+            record.translationDampingRatio > 1.0 || !std::isfinite(record.torsionDampingRatio) ||
+            record.torsionDampingRatio < 0.0 || record.torsionDampingRatio > 1.0 ||
+            !std::isfinite(record.maximumFrequencyHz) || record.maximumFrequencyHz <= 0.0)
+        {
+            return false;
+        }
+        auto& settings = stepIt->second->m_StructuralDamping.settings;
+        settings.enabled = stepIt->second->isDynamic && record.enabled != 0;
+        settings.translationDampingRatio = record.translationDampingRatio;
+        settings.torsionDampingRatio = record.torsionDampingRatio;
+        settings.maximumFrequencyHz = record.maximumFrequencyHz;
+        stepIt->second->m_StructuralDamping.Reset();
     }
     for (const StepRegionLinkRecord& record : stepRegionLinks)
     {
         const auto stepIt = restored->m_AnalysisStep.find(record.stepId);
-        if (stepIt == restored->m_AnalysisStep.cend() || !stepIt->second
-            || restored->m_ComputeRegions.find(record.regionId) == restored->m_ComputeRegions.cend())
+        if (stepIt == restored->m_AnalysisStep.cend() || !stepIt->second ||
+            restored->m_ComputeRegions.find(record.regionId) == restored->m_ComputeRegions.cend())
         {
             return false;
         }
@@ -3428,11 +3712,9 @@ bool ReadInputData(hid_t file, StructureData* data)
     std::map<int, std::pair<AeroCaseRecord, std::vector<BladeModel>>> restoredAeroCases;
     for (const AeroCaseRecord& record : aeroCases)
     {
-        const AeroCaseKey key{ record.bundleCount, record.windSpeed, record.iceThickness };
-        if (record.id <= 0 || record.modelCount <= 0 || record.dataSize <= 0
-            || !AeroManager::isSupportedCase(key)
-            || std::abs(record.startAngle) > 1.0e-12
-            || std::abs(record.angleStep - 5.0) > 1.0e-12)
+        const AeroCaseKey key{record.bundleCount, record.windSpeed, record.iceThickness};
+        if (record.id <= 0 || record.modelCount <= 0 || record.dataSize <= 0 || !AeroManager::isSupportedCase(key) ||
+            std::abs(record.startAngle) > 1.0e-12 || std::abs(record.angleStep - 5.0) > 1.0e-12)
         {
             return false;
         }
@@ -3443,8 +3725,7 @@ bool ReadInputData(hid_t file, StructureData* data)
             model.drag.resize(static_cast<std::size_t>(record.dataSize));
             model.moment.resize(static_cast<std::size_t>(record.dataSize));
         }
-        if (!restoredAeroCases.emplace(record.id,
-            std::make_pair(record, std::move(models))).second)
+        if (!restoredAeroCases.emplace(record.id, std::make_pair(record, std::move(models))).second)
         {
             return false;
         }
@@ -3452,19 +3733,17 @@ bool ReadInputData(hid_t file, StructureData* data)
     std::size_t expectedAeroCoefficientCount = 0;
     for (const auto& [caseId, stored] : restoredAeroCases)
     {
-        expectedAeroCoefficientCount += static_cast<std::size_t>(stored.first.modelCount)
-            * static_cast<std::size_t>(stored.first.dataSize);
+        expectedAeroCoefficientCount +=
+            static_cast<std::size_t>(stored.first.modelCount) * static_cast<std::size_t>(stored.first.dataSize);
     }
     if (expectedAeroCoefficientCount != aeroCoefficients.size())
         return false;
     for (const AeroCoefficientRecord& coefficient : aeroCoefficients)
     {
         const auto found = restoredAeroCases.find(coefficient.caseId);
-        if (found == restoredAeroCases.end()
-            || coefficient.modelIndex < 0
-            || coefficient.modelIndex >= found->second.first.modelCount
-            || coefficient.angleIndex < 0
-            || coefficient.angleIndex >= found->second.first.dataSize)
+        if (found == restoredAeroCases.end() || coefficient.modelIndex < 0 ||
+            coefficient.modelIndex >= found->second.first.modelCount || coefficient.angleIndex < 0 ||
+            coefficient.angleIndex >= found->second.first.dataSize)
         {
             return false;
         }
@@ -3478,10 +3757,8 @@ bool ReadInputData(hid_t file, StructureData* data)
     {
         const AeroCaseRecord& record = stored.first;
         const QString sourcePath = ReadUtf8String(record.sourcePath, sizeof(record.sourcePath));
-        restored->m_AeroManager.setCaseData(
-            AeroCaseKey{ record.bundleCount, record.windSpeed, record.iceThickness },
-            std::move(stored.second),
-            std::filesystem::path(sourcePath.toStdWString()));
+        restored->m_AeroManager.setCaseData(AeroCaseKey{record.bundleCount, record.windSpeed, record.iceThickness},
+                                            std::move(stored.second), std::filesystem::path(sourcePath.toStdWString()));
     }
 
     data->Clear();
@@ -3492,6 +3769,7 @@ bool ReadInputData(hid_t file, StructureData* data)
     data->m_Property = std::move(restored->m_Property);
     data->m_Constraint = std::move(restored->m_Constraint);
     data->m_MPCConstraints = std::move(restored->m_MPCConstraints);
+    data->m_RigidBodyInertias = std::move(restored->m_RigidBodyInertias);
     data->m_Load = std::move(restored->m_Load);
     data->m_AnalysisStep = std::move(restored->m_AnalysisStep);
     data->m_ModelSets = std::move(restored->m_ModelSets);
@@ -3501,7 +3779,8 @@ bool ReadInputData(hid_t file, StructureData* data)
 }
 
 template <typename Record>
-bool ReadDatasetBlock(hid_t file, const char* path, hid_t memoryType, long long position, long long length, std::vector<Record>& records)
+bool ReadDatasetBlock(hid_t file, const char* path, hid_t memoryType, long long position, long long length,
+                      std::vector<Record>& records)
 {
     records.clear();
     if (length <= 0)
@@ -3521,8 +3800,8 @@ bool ReadDatasetBlock(hid_t file, const char* path, hid_t memoryType, long long 
         return false;
     }
 
-    const hsize_t start[1] = { static_cast<hsize_t>(position) };
-    const hsize_t count[1] = { static_cast<hsize_t>(length) };
+    const hsize_t start[1] = {static_cast<hsize_t>(position)};
+    const hsize_t count[1] = {static_cast<hsize_t>(length)};
     if (H5Sselect_hyperslab(fileSpace, H5S_SELECT_SET, start, nullptr, count, nullptr) < 0)
     {
         return false;
@@ -3542,26 +3821,46 @@ QString NodeTypeName(EnumKeyword::NodeResultType type)
 {
     switch (type)
     {
-    case EnumKeyword::NodeResultType::U1: return "U1";
-    case EnumKeyword::NodeResultType::U2: return "U2";
-    case EnumKeyword::NodeResultType::U3: return "U3";
-    case EnumKeyword::NodeResultType::MagnitudeU: return "MAG";
-    case EnumKeyword::NodeResultType::CX: return "CX";
-    case EnumKeyword::NodeResultType::CY: return "CY";
-    case EnumKeyword::NodeResultType::CZ: return "CZ";
-    case EnumKeyword::NodeResultType::V1: return "V1";
-    case EnumKeyword::NodeResultType::V2: return "V2";
-    case EnumKeyword::NodeResultType::V3: return "V3";
-    case EnumKeyword::NodeResultType::A1: return "A1";
-    case EnumKeyword::NodeResultType::A2: return "A2";
-    case EnumKeyword::NodeResultType::A3: return "A3";
-    case EnumKeyword::NodeResultType::UR1: return "UR1";
-    case EnumKeyword::NodeResultType::UR2: return "UR2";
-    case EnumKeyword::NodeResultType::UR3: return "UR3";
-    case EnumKeyword::NodeResultType::R1: return "R1";
-    case EnumKeyword::NodeResultType::R2: return "R2";
-    case EnumKeyword::NodeResultType::R3: return "R3";
-    default: return "UNKNOWN";
+        case EnumKeyword::NodeResultType::U1:
+            return "U1";
+        case EnumKeyword::NodeResultType::U2:
+            return "U2";
+        case EnumKeyword::NodeResultType::U3:
+            return "U3";
+        case EnumKeyword::NodeResultType::MagnitudeU:
+            return "MAG";
+        case EnumKeyword::NodeResultType::CX:
+            return "CX";
+        case EnumKeyword::NodeResultType::CY:
+            return "CY";
+        case EnumKeyword::NodeResultType::CZ:
+            return "CZ";
+        case EnumKeyword::NodeResultType::V1:
+            return "V1";
+        case EnumKeyword::NodeResultType::V2:
+            return "V2";
+        case EnumKeyword::NodeResultType::V3:
+            return "V3";
+        case EnumKeyword::NodeResultType::A1:
+            return "A1";
+        case EnumKeyword::NodeResultType::A2:
+            return "A2";
+        case EnumKeyword::NodeResultType::A3:
+            return "A3";
+        case EnumKeyword::NodeResultType::UR1:
+            return "UR1";
+        case EnumKeyword::NodeResultType::UR2:
+            return "UR2";
+        case EnumKeyword::NodeResultType::UR3:
+            return "UR3";
+        case EnumKeyword::NodeResultType::R1:
+            return "R1";
+        case EnumKeyword::NodeResultType::R2:
+            return "R2";
+        case EnumKeyword::NodeResultType::R3:
+            return "R3";
+        default:
+            return "UNKNOWN";
     }
 }
 
@@ -3569,17 +3868,28 @@ QString ElementTypeName(EnumKeyword::ElementResultType type)
 {
     switch (type)
     {
-    case EnumKeyword::ElementResultType::AxialForce: return "AXIAL";
-    case EnumKeyword::ElementResultType::ShearY: return "SHEARY";
-    case EnumKeyword::ElementResultType::ShearZ: return "SHEARZ";
-    case EnumKeyword::ElementResultType::Torque: return "TORQUE";
-    case EnumKeyword::ElementResultType::MomentY: return "MY";
-    case EnumKeyword::ElementResultType::MomentZ: return "MZ";
-    case EnumKeyword::ElementResultType::Strain: return "STRAIN";
-    case EnumKeyword::ElementResultType::InitStress: return "S0";
-    case EnumKeyword::ElementResultType::CurrentStress: return "S";
-    case EnumKeyword::ElementResultType::DeltaStress: return "DS";
-    default: return "UNKNOWN";
+        case EnumKeyword::ElementResultType::AxialForce:
+            return "AXIAL";
+        case EnumKeyword::ElementResultType::ShearY:
+            return "SHEARY";
+        case EnumKeyword::ElementResultType::ShearZ:
+            return "SHEARZ";
+        case EnumKeyword::ElementResultType::Torque:
+            return "TORQUE";
+        case EnumKeyword::ElementResultType::MomentY:
+            return "MY";
+        case EnumKeyword::ElementResultType::MomentZ:
+            return "MZ";
+        case EnumKeyword::ElementResultType::Strain:
+            return "STRAIN";
+        case EnumKeyword::ElementResultType::InitStress:
+            return "S0";
+        case EnumKeyword::ElementResultType::CurrentStress:
+            return "S";
+        case EnumKeyword::ElementResultType::DeltaStress:
+            return "DS";
+        default:
+            return "UNKNOWN";
     }
 }
 
@@ -3588,47 +3898,72 @@ QString FormatBdfValue(double value)
     return QString::number(value, 'E', 8).rightJustified(16, ' ');
 }
 
-double FindNodalValue(int nodeId, EnumKeyword::NodeResultType type,
-    const QHash<int, NodalRecord>& displacements,
-    const QHash<int, NodalRecord>& currentCoordinates,
-    const QHash<int, NodalRecord>& velocities,
-    const QHash<int, NodalRecord>& accelerations,
-    const QHash<int, NodalRecord>& reactions)
+QString FormatBdfTime(double time)
+{
+    QString value = QString::number(time, 'f', 12);
+    while (value.contains('.') && value.endsWith('0'))
+        value.chop(1);
+    if (value.endsWith('.'))
+        value.chop(1);
+    return value.rightJustified(16, ' ');
+}
+
+double FindNodalValue(int nodeId, EnumKeyword::NodeResultType type, const QHash<int, NodalRecord>& displacements,
+                      const QHash<int, NodalRecord>& currentCoordinates, const QHash<int, NodalRecord>& velocities,
+                      const QHash<int, NodalRecord>& accelerations, const QHash<int, NodalRecord>& reactions)
 {
     const NodalRecord zero;
     switch (type)
     {
-    case EnumKeyword::NodeResultType::U1: return displacements.value(nodeId, zero).x;
-    case EnumKeyword::NodeResultType::U2: return displacements.value(nodeId, zero).y;
-    case EnumKeyword::NodeResultType::U3: return displacements.value(nodeId, zero).z;
-    case EnumKeyword::NodeResultType::MagnitudeU:
-    {
-        const auto record = displacements.value(nodeId, zero);
-        return std::sqrt(record.x * record.x + record.y * record.y + record.z * record.z);
-    }
-    case EnumKeyword::NodeResultType::CX: return currentCoordinates.value(nodeId, zero).x;
-    case EnumKeyword::NodeResultType::CY: return currentCoordinates.value(nodeId, zero).y;
-    case EnumKeyword::NodeResultType::CZ: return currentCoordinates.value(nodeId, zero).z;
-    case EnumKeyword::NodeResultType::V1: return velocities.value(nodeId, zero).x;
-    case EnumKeyword::NodeResultType::V2: return velocities.value(nodeId, zero).y;
-    case EnumKeyword::NodeResultType::V3: return velocities.value(nodeId, zero).z;
-    case EnumKeyword::NodeResultType::A1: return accelerations.value(nodeId, zero).x;
-    case EnumKeyword::NodeResultType::A2: return accelerations.value(nodeId, zero).y;
-    case EnumKeyword::NodeResultType::A3: return accelerations.value(nodeId, zero).z;
-    case EnumKeyword::NodeResultType::UR1: return displacements.value(nodeId, zero).rx;
-    case EnumKeyword::NodeResultType::UR2: return displacements.value(nodeId, zero).ry;
-    case EnumKeyword::NodeResultType::UR3: return displacements.value(nodeId, zero).rz;
-    case EnumKeyword::NodeResultType::R1: return reactions.value(nodeId, zero).x;
-    case EnumKeyword::NodeResultType::R2: return reactions.value(nodeId, zero).y;
-    case EnumKeyword::NodeResultType::R3: return reactions.value(nodeId, zero).z;
-    default: return 0.0;
+        case EnumKeyword::NodeResultType::U1:
+            return displacements.value(nodeId, zero).x;
+        case EnumKeyword::NodeResultType::U2:
+            return displacements.value(nodeId, zero).y;
+        case EnumKeyword::NodeResultType::U3:
+            return displacements.value(nodeId, zero).z;
+        case EnumKeyword::NodeResultType::MagnitudeU:
+        {
+            const auto record = displacements.value(nodeId, zero);
+            return std::sqrt(record.x * record.x + record.y * record.y + record.z * record.z);
+        }
+        case EnumKeyword::NodeResultType::CX:
+            return currentCoordinates.value(nodeId, zero).x;
+        case EnumKeyword::NodeResultType::CY:
+            return currentCoordinates.value(nodeId, zero).y;
+        case EnumKeyword::NodeResultType::CZ:
+            return currentCoordinates.value(nodeId, zero).z;
+        case EnumKeyword::NodeResultType::V1:
+            return velocities.value(nodeId, zero).x;
+        case EnumKeyword::NodeResultType::V2:
+            return velocities.value(nodeId, zero).y;
+        case EnumKeyword::NodeResultType::V3:
+            return velocities.value(nodeId, zero).z;
+        case EnumKeyword::NodeResultType::A1:
+            return accelerations.value(nodeId, zero).x;
+        case EnumKeyword::NodeResultType::A2:
+            return accelerations.value(nodeId, zero).y;
+        case EnumKeyword::NodeResultType::A3:
+            return accelerations.value(nodeId, zero).z;
+        case EnumKeyword::NodeResultType::UR1:
+            return displacements.value(nodeId, zero).rx;
+        case EnumKeyword::NodeResultType::UR2:
+            return displacements.value(nodeId, zero).ry;
+        case EnumKeyword::NodeResultType::UR3:
+            return displacements.value(nodeId, zero).rz;
+        case EnumKeyword::NodeResultType::R1:
+            return reactions.value(nodeId, zero).x;
+        case EnumKeyword::NodeResultType::R2:
+            return reactions.value(nodeId, zero).y;
+        case EnumKeyword::NodeResultType::R3:
+            return reactions.value(nodeId, zero).z;
+        default:
+            return 0.0;
     }
 }
 
 double FindElementValue(int elementId, EnumKeyword::ElementResultType type,
-    const QHash<int, ElementForceRecord>& forces,
-    const QHash<int, ElementStressRecord>& stresses,
-    const QHash<int, ElementStrainRecord>& strains)
+                        const QHash<int, ElementForceRecord>& forces, const QHash<int, ElementStressRecord>& stresses,
+                        const QHash<int, ElementStrainRecord>& strains)
 {
     const ElementForceRecord zeroForce;
     const ElementStressRecord zeroStress;
@@ -3636,22 +3971,32 @@ double FindElementValue(int elementId, EnumKeyword::ElementResultType type,
 
     switch (type)
     {
-    case EnumKeyword::ElementResultType::AxialForce: return forces.value(elementId, zeroForce).axial;
-    case EnumKeyword::ElementResultType::ShearY: return forces.value(elementId, zeroForce).shearY;
-    case EnumKeyword::ElementResultType::ShearZ: return forces.value(elementId, zeroForce).shearZ;
-    case EnumKeyword::ElementResultType::Torque: return forces.value(elementId, zeroForce).torque;
-    case EnumKeyword::ElementResultType::MomentY: return forces.value(elementId, zeroForce).momentY;
-    case EnumKeyword::ElementResultType::MomentZ: return forces.value(elementId, zeroForce).momentZ;
-    case EnumKeyword::ElementResultType::Strain: return strains.value(elementId, zeroStrain).strain;
-    case EnumKeyword::ElementResultType::InitStress: return stresses.value(elementId, zeroStress).initStress;
-    case EnumKeyword::ElementResultType::CurrentStress: return stresses.value(elementId, zeroStress).currentStress;
-    case EnumKeyword::ElementResultType::DeltaStress: return stresses.value(elementId, zeroStress).deltaStress;
-    default: return 0.0;
+        case EnumKeyword::ElementResultType::AxialForce:
+            return forces.value(elementId, zeroForce).axial;
+        case EnumKeyword::ElementResultType::ShearY:
+            return forces.value(elementId, zeroForce).shearY;
+        case EnumKeyword::ElementResultType::ShearZ:
+            return forces.value(elementId, zeroForce).shearZ;
+        case EnumKeyword::ElementResultType::Torque:
+            return forces.value(elementId, zeroForce).torque;
+        case EnumKeyword::ElementResultType::MomentY:
+            return forces.value(elementId, zeroForce).momentY;
+        case EnumKeyword::ElementResultType::MomentZ:
+            return forces.value(elementId, zeroForce).momentZ;
+        case EnumKeyword::ElementResultType::Strain:
+            return strains.value(elementId, zeroStrain).strain;
+        case EnumKeyword::ElementResultType::InitStress:
+            return stresses.value(elementId, zeroStress).initStress;
+        case EnumKeyword::ElementResultType::CurrentStress:
+            return stresses.value(elementId, zeroStress).currentStress;
+        case EnumKeyword::ElementResultType::DeltaStress:
+            return stresses.value(elementId, zeroStress).deltaStress;
+        default:
+            return 0.0;
     }
 }
 
-template <typename Record>
-QHash<int, Record> BuildRecordMap(const std::vector<Record>& records)
+template <typename Record> QHash<int, Record> BuildRecordMap(const std::vector<Record>& records)
 {
     QHash<int, Record> result;
     for (const auto& record : records)
@@ -3672,12 +4017,11 @@ QHash<int, IndexRecord> BuildIndexMap(const std::vector<IndexRecord>& records)
 }
 }
 
-bool Hdf5ModelIO::ExportBdfResultFromHdf5(const QString& hdf5FileName,
-    const QString& bdfFileName,
-    const std::vector<int>& nodeIds,
-    const std::vector<EnumKeyword::NodeResultType>& nodeTypes,
-    const std::vector<int>& elementIds,
-    const std::vector<EnumKeyword::ElementResultType>& elementTypes) const
+bool Hdf5ModelIO::ExportBdfResultFromHdf5(const QString& hdf5FileName, const QString& bdfFileName,
+                                          const std::vector<int>& nodeIds,
+                                          const std::vector<EnumKeyword::NodeResultType>& nodeTypes,
+                                          const std::vector<int>& elementIds,
+                                          const std::vector<EnumKeyword::ElementResultType>& elementTypes) const
 {
     QMutexLocker locker(&g_hdf5ApiMutex);
     H5ReadErrorScope errorScope;
@@ -3713,9 +4057,8 @@ bool Hdf5ModelIO::ExportBdfResultFromHdf5(const QString& hdf5FileName,
     H5Handle cableForceType = CreateCableForceType();
     H5Handle elementStressType = CreateElementStressType();
     H5Handle elementStrainType = CreateElementStrainType();
-    if (!domainType.valid() || !indexType.valid() || !nodalType.valid()
-        || !elementForceType.valid() || !trussForceType.valid() || !cableForceType.valid()
-        || !elementStressType.valid() || !elementStrainType.valid())
+    if (!domainType.valid() || !indexType.valid() || !nodalType.valid() || !elementForceType.valid() ||
+        !trussForceType.valid() || !cableForceType.valid() || !elementStressType.valid() || !elementStrainType.valid())
     {
         return ReportHdf5FormatError();
     }
@@ -3732,24 +4075,26 @@ bool Hdf5ModelIO::ExportBdfResultFromHdf5(const QString& hdf5FileName,
     std::vector<IndexRecord> elementStressIndexRecords;
     std::vector<IndexRecord> elementStrainIndexRecords;
 
-    if (!ReadDatasetAll(file, "/YQY/RESULT/DOMAINS", domainType, domains)
-        || !ReadDatasetAll(file, "/INDEX/YQY/RESULT/NODAL/DISPLACEMENT", indexType, displacementIndexRecords)
-        || !ReadDatasetAll(file, "/INDEX/YQY/RESULT/NODAL/CURRENT_COORDINATE", indexType, currentCoordinateIndexRecords)
-        || !ReadDatasetAll(file, "/INDEX/YQY/RESULT/NODAL/VELOCITY", indexType, velocityIndexRecords)
-        || !ReadDatasetAll(file, "/INDEX/YQY/RESULT/NODAL/ACCELERATION", indexType, accelerationIndexRecords)
-        || !ReadDatasetAll(file, "/INDEX/YQY/RESULT/NODAL/REACTION_FORCE", indexType, reactionIndexRecords)
-        || !ReadDatasetAll(file, "/INDEX/YQY/RESULT/ELEMENTAL/ELEMENT_FORCE", indexType, elementForceIndexRecords)
-        || !ReadDatasetAll(file, "/INDEX/YQY/RESULT/ELEMENTAL/TRUSS_FORCE", indexType, trussForceIndexRecords)
-        || !ReadDatasetAll(file, "/INDEX/YQY/RESULT/ELEMENTAL/CABLE_FORCE", indexType, cableForceIndexRecords)
-        || !ReadDatasetAll(file, "/INDEX/YQY/RESULT/ELEMENTAL/STRESS", indexType, elementStressIndexRecords)
-        || !ReadDatasetAll(file, "/INDEX/YQY/RESULT/ELEMENTAL/STRAIN", indexType, elementStrainIndexRecords))
+    if (!ReadDatasetAll(file, "/YQY/RESULT/DOMAINS", domainType, domains) ||
+        !ReadDatasetAll(file, "/INDEX/YQY/RESULT/NODAL/DISPLACEMENT", indexType, displacementIndexRecords) ||
+        !ReadDatasetAll(file, "/INDEX/YQY/RESULT/NODAL/CURRENT_COORDINATE", indexType, currentCoordinateIndexRecords) ||
+        !ReadDatasetAll(file, "/INDEX/YQY/RESULT/NODAL/VELOCITY", indexType, velocityIndexRecords) ||
+        !ReadDatasetAll(file, "/INDEX/YQY/RESULT/NODAL/ACCELERATION", indexType, accelerationIndexRecords) ||
+        !ReadDatasetAll(file, "/INDEX/YQY/RESULT/NODAL/REACTION_FORCE", indexType, reactionIndexRecords) ||
+        !ReadDatasetAll(file, "/INDEX/YQY/RESULT/ELEMENTAL/ELEMENT_FORCE", indexType, elementForceIndexRecords) ||
+        !ReadDatasetAll(file, "/INDEX/YQY/RESULT/ELEMENTAL/TRUSS_FORCE", indexType, trussForceIndexRecords) ||
+        !ReadDatasetAll(file, "/INDEX/YQY/RESULT/ELEMENTAL/CABLE_FORCE", indexType, cableForceIndexRecords) ||
+        !ReadDatasetAll(file, "/INDEX/YQY/RESULT/ELEMENTAL/STRESS", indexType, elementStressIndexRecords) ||
+        !ReadDatasetAll(file, "/INDEX/YQY/RESULT/ELEMENTAL/STRAIN", indexType, elementStrainIndexRecords))
     {
         return ReportHdf5FormatError();
     }
 
-    std::sort(domains.begin(), domains.end(), [](const DomainRecord& lhs, const DomainRecord& rhs) {
-        return lhs.id < rhs.id;
-        });
+    std::sort(domains.begin(), domains.end(),
+              [](const DomainRecord& lhs, const DomainRecord& rhs)
+              {
+                  return lhs.id < rhs.id;
+              });
 
     const QHash<int, IndexRecord> displacementIndex = BuildIndexMap(displacementIndexRecords);
     const QHash<int, IndexRecord> currentCoordinateIndex = BuildIndexMap(currentCoordinateIndexRecords);
@@ -3764,44 +4109,46 @@ bool Hdf5ModelIO::ExportBdfResultFromHdf5(const QString& hdf5FileName,
 
     const auto hasNodeType = [&nodeTypes](std::initializer_list<EnumKeyword::NodeResultType> candidates)
     {
-        return std::any_of(nodeTypes.cbegin(), nodeTypes.cend(), [&candidates](auto value)
-        {
-            return std::find(candidates.begin(), candidates.end(), value) != candidates.end();
-        });
+        return std::any_of(nodeTypes.cbegin(), nodeTypes.cend(),
+                           [&candidates](auto value)
+                           {
+                               return std::find(candidates.begin(), candidates.end(), value) != candidates.end();
+                           });
     };
     const auto hasElementType = [&elementTypes](std::initializer_list<EnumKeyword::ElementResultType> candidates)
     {
-        return std::any_of(elementTypes.cbegin(), elementTypes.cend(), [&candidates](auto value)
-        {
-            return std::find(candidates.begin(), candidates.end(), value) != candidates.end();
-        });
+        return std::any_of(elementTypes.cbegin(), elementTypes.cend(),
+                           [&candidates](auto value)
+                           {
+                               return std::find(candidates.begin(), candidates.end(), value) != candidates.end();
+                           });
     };
-    const bool needDisplacement = !nodeIds.empty() && hasNodeType({
-        EnumKeyword::NodeResultType::U1, EnumKeyword::NodeResultType::U2,
-        EnumKeyword::NodeResultType::U3, EnumKeyword::NodeResultType::MagnitudeU,
-        EnumKeyword::NodeResultType::UR1, EnumKeyword::NodeResultType::UR2,
-        EnumKeyword::NodeResultType::UR3 });
-    const bool needCurrentCoordinate = !nodeIds.empty() && hasNodeType({
-        EnumKeyword::NodeResultType::CX, EnumKeyword::NodeResultType::CY,
-        EnumKeyword::NodeResultType::CZ });
-    const bool needVelocity = !nodeIds.empty() && hasNodeType({
-        EnumKeyword::NodeResultType::V1, EnumKeyword::NodeResultType::V2,
-        EnumKeyword::NodeResultType::V3 });
-    const bool needAcceleration = !nodeIds.empty() && hasNodeType({
-        EnumKeyword::NodeResultType::A1, EnumKeyword::NodeResultType::A2,
-        EnumKeyword::NodeResultType::A3 });
-    const bool needReaction = !nodeIds.empty() && hasNodeType({
-        EnumKeyword::NodeResultType::R1, EnumKeyword::NodeResultType::R2,
-        EnumKeyword::NodeResultType::R3 });
-    const bool needElementForce = !elementIds.empty() && hasElementType({
-        EnumKeyword::ElementResultType::AxialForce, EnumKeyword::ElementResultType::ShearY,
-        EnumKeyword::ElementResultType::ShearZ, EnumKeyword::ElementResultType::Torque,
-        EnumKeyword::ElementResultType::MomentY, EnumKeyword::ElementResultType::MomentZ });
-    const bool needElementStress = !elementIds.empty() && hasElementType({
-        EnumKeyword::ElementResultType::InitStress, EnumKeyword::ElementResultType::CurrentStress,
-        EnumKeyword::ElementResultType::DeltaStress });
-    const bool needElementStrain = !elementIds.empty() && hasElementType({
-        EnumKeyword::ElementResultType::Strain });
+    const bool needDisplacement =
+        !nodeIds.empty() &&
+        hasNodeType({EnumKeyword::NodeResultType::U1, EnumKeyword::NodeResultType::U2, EnumKeyword::NodeResultType::U3,
+                     EnumKeyword::NodeResultType::MagnitudeU, EnumKeyword::NodeResultType::UR1,
+                     EnumKeyword::NodeResultType::UR2, EnumKeyword::NodeResultType::UR3});
+    const bool needCurrentCoordinate =
+        !nodeIds.empty() && hasNodeType({EnumKeyword::NodeResultType::CX, EnumKeyword::NodeResultType::CY,
+                                         EnumKeyword::NodeResultType::CZ});
+    const bool needVelocity =
+        !nodeIds.empty() && hasNodeType({EnumKeyword::NodeResultType::V1, EnumKeyword::NodeResultType::V2,
+                                         EnumKeyword::NodeResultType::V3});
+    const bool needAcceleration =
+        !nodeIds.empty() && hasNodeType({EnumKeyword::NodeResultType::A1, EnumKeyword::NodeResultType::A2,
+                                         EnumKeyword::NodeResultType::A3});
+    const bool needReaction =
+        !nodeIds.empty() && hasNodeType({EnumKeyword::NodeResultType::R1, EnumKeyword::NodeResultType::R2,
+                                         EnumKeyword::NodeResultType::R3});
+    const bool needElementForce =
+        !elementIds.empty() &&
+        hasElementType({EnumKeyword::ElementResultType::AxialForce, EnumKeyword::ElementResultType::ShearY,
+                        EnumKeyword::ElementResultType::ShearZ, EnumKeyword::ElementResultType::Torque,
+                        EnumKeyword::ElementResultType::MomentY, EnumKeyword::ElementResultType::MomentZ});
+    const bool needElementStress = !elementIds.empty() && hasElementType({EnumKeyword::ElementResultType::InitStress,
+                                                                          EnumKeyword::ElementResultType::CurrentStress,
+                                                                          EnumKeyword::ElementResultType::DeltaStress});
+    const bool needElementStrain = !elementIds.empty() && hasElementType({EnumKeyword::ElementResultType::Strain});
 
     QTextStream stream(&outFile);
     stream.setEncoding(QStringConverter::Utf8);
@@ -3846,16 +4193,31 @@ bool Hdf5ModelIO::ExportBdfResultFromHdf5(const QString& hdf5FileName,
         const IndexRecord stressInfo = elementStressIndex.value(domain.id);
         const IndexRecord strainInfo = elementStrainIndex.value(domain.id);
 
-        if ((needDisplacement && !ReadDatasetBlock(file, "/YQY/RESULT/NODAL/DISPLACEMENT", nodalType, displacementInfo.position, displacementInfo.length, displacementRecords))
-            || (needCurrentCoordinate && !ReadDatasetBlock(file, "/YQY/RESULT/NODAL/CURRENT_COORDINATE", nodalType, currentCoordinateInfo.position, currentCoordinateInfo.length, currentCoordinateRecords))
-            || (needVelocity && !ReadDatasetBlock(file, "/YQY/RESULT/NODAL/VELOCITY", nodalType, velocityInfo.position, velocityInfo.length, velocityRecords))
-            || (needAcceleration && !ReadDatasetBlock(file, "/YQY/RESULT/NODAL/ACCELERATION", nodalType, accelerationInfo.position, accelerationInfo.length, accelerationRecords))
-            || (needReaction && !ReadDatasetBlock(file, "/YQY/RESULT/NODAL/REACTION_FORCE", nodalType, reactionInfo.position, reactionInfo.length, reactionRecords))
-            || (needElementForce && !ReadDatasetBlock(file, "/YQY/RESULT/ELEMENTAL/ELEMENT_FORCE", elementForceType, forceInfo.position, forceInfo.length, forceRecords))
-            || (needElementForce && !ReadDatasetBlock(file, "/YQY/RESULT/ELEMENTAL/TRUSS_FORCE", trussForceType, trussForceInfo.position, trussForceInfo.length, trussForceRecords))
-            || (needElementForce && !ReadDatasetBlock(file, "/YQY/RESULT/ELEMENTAL/CABLE_FORCE", cableForceType, cableForceInfo.position, cableForceInfo.length, cableForceRecords))
-            || (needElementStress && !ReadDatasetBlock(file, "/YQY/RESULT/ELEMENTAL/STRESS", elementStressType, stressInfo.position, stressInfo.length, stressRecords))
-            || (needElementStrain && !ReadDatasetBlock(file, "/YQY/RESULT/ELEMENTAL/STRAIN", elementStrainType, strainInfo.position, strainInfo.length, strainRecords)))
+        if ((needDisplacement &&
+             !ReadDatasetBlock(file, "/YQY/RESULT/NODAL/DISPLACEMENT", nodalType, displacementInfo.position,
+                               displacementInfo.length, displacementRecords)) ||
+            (needCurrentCoordinate &&
+             !ReadDatasetBlock(file, "/YQY/RESULT/NODAL/CURRENT_COORDINATE", nodalType, currentCoordinateInfo.position,
+                               currentCoordinateInfo.length, currentCoordinateRecords)) ||
+            (needVelocity && !ReadDatasetBlock(file, "/YQY/RESULT/NODAL/VELOCITY", nodalType, velocityInfo.position,
+                                               velocityInfo.length, velocityRecords)) ||
+            (needAcceleration &&
+             !ReadDatasetBlock(file, "/YQY/RESULT/NODAL/ACCELERATION", nodalType, accelerationInfo.position,
+                               accelerationInfo.length, accelerationRecords)) ||
+            (needReaction && !ReadDatasetBlock(file, "/YQY/RESULT/NODAL/REACTION_FORCE", nodalType,
+                                               reactionInfo.position, reactionInfo.length, reactionRecords)) ||
+            (needElementForce && !ReadDatasetBlock(file, "/YQY/RESULT/ELEMENTAL/ELEMENT_FORCE", elementForceType,
+                                                   forceInfo.position, forceInfo.length, forceRecords)) ||
+            (needElementForce &&
+             !ReadDatasetBlock(file, "/YQY/RESULT/ELEMENTAL/TRUSS_FORCE", trussForceType, trussForceInfo.position,
+                               trussForceInfo.length, trussForceRecords)) ||
+            (needElementForce &&
+             !ReadDatasetBlock(file, "/YQY/RESULT/ELEMENTAL/CABLE_FORCE", cableForceType, cableForceInfo.position,
+                               cableForceInfo.length, cableForceRecords)) ||
+            (needElementStress && !ReadDatasetBlock(file, "/YQY/RESULT/ELEMENTAL/STRESS", elementStressType,
+                                                    stressInfo.position, stressInfo.length, stressRecords)) ||
+            (needElementStrain && !ReadDatasetBlock(file, "/YQY/RESULT/ELEMENTAL/STRAIN", elementStrainType,
+                                                    strainInfo.position, strainInfo.length, strainRecords)))
         {
             return ReportHdf5FormatError();
         }
@@ -3886,12 +4248,13 @@ bool Hdf5ModelIO::ExportBdfResultFromHdf5(const QString& hdf5FileName,
         const QHash<int, ElementStressRecord> stresses = BuildRecordMap(stressRecords);
         const QHash<int, ElementStrainRecord> strains = BuildRecordMap(strainRecords);
 
-        stream << FormatBdfValue(domain.time);
+        stream << FormatBdfTime(domain.time);
         for (int nodeId : nodeIds)
         {
             for (auto type : nodeTypes)
             {
-                stream << FormatBdfValue(FindNodalValue(nodeId, type, displacements, currentCoordinates, velocities, accelerations, reactions));
+                stream << FormatBdfValue(FindNodalValue(nodeId, type, displacements, currentCoordinates, velocities,
+                                                        accelerations, reactions));
             }
         }
         for (int elementId : elementIds)
@@ -3976,16 +4339,16 @@ bool Hdf5ModelIO::InspectHdf5(const QString& fileName, Hdf5ResultSummary& summar
         QFile::remove(tempFileName);
         return ReportHdf5FormatError();
     }
-    const auto datasetLength = [](hid_t fileId, const char* datasetPath) -> qint64 {
+    const auto datasetLength = [](hid_t fileId, const char* datasetPath) -> qint64
+    {
         H5Handle dataset(H5Dopen2(fileId, datasetPath, H5P_DEFAULT), H5Dclose);
         if (!dataset.valid())
             return 0;
         H5Handle space(H5Dget_space(dataset), H5Sclose);
         if (!space.valid())
             return 0;
-        hsize_t dimensions[1] = { 0 };
-        return H5Sget_simple_extent_dims(space, dimensions, nullptr) >= 0
-            ? static_cast<qint64>(dimensions[0]) : 0;
+        hsize_t dimensions[1] = {0};
+        return H5Sget_simple_extent_dims(space, dimensions, nullptr) >= 0 ? static_cast<qint64>(dimensions[0]) : 0;
     };
 
     summary.hasModel = hasModelSchema;
@@ -4003,8 +4366,7 @@ bool Hdf5ModelIO::InspectHdf5(const QString& fileName, Hdf5ResultSummary& summar
     return summary.hasModel || summary.hasResult;
 }
 
-bool Hdf5ModelIO::OpenResultFile(const QString& fileName,
-    std::vector<Hdf5ResultFrameInfo>& frames)
+bool Hdf5ModelIO::OpenResultFile(const QString& fileName, std::vector<Hdf5ResultFrameInfo>& frames)
 {
     QMutexLocker locker(&g_hdf5ApiMutex);
     H5ReadErrorScope errorScope;
@@ -4040,27 +4402,19 @@ bool Hdf5ModelIO::OpenResultFile(const QString& fileName,
     std::vector<IndexRecord> cableForces;
     std::vector<IndexRecord> stresses;
     std::vector<IndexRecord> strains;
-    const bool ok = domainType.valid() && indexType.valid()
-        && ReadDatasetAll(m_impl->resultFile, "/YQY/RESULT/DOMAINS", domainType,
-            m_impl->resultDomains)
-        && ReadDatasetAll(m_impl->resultFile, "/INDEX/YQY/RESULT/NODAL/DISPLACEMENT",
-            indexType, displacement)
-        && ReadDatasetAll(m_impl->resultFile, "/INDEX/YQY/RESULT/NODAL/CURRENT_COORDINATE",
-            indexType, currentCoordinates)
-        && ReadDatasetAll(m_impl->resultFile, "/INDEX/YQY/RESULT/NODAL/VELOCITY",
-            indexType, velocities)
-        && ReadDatasetAll(m_impl->resultFile, "/INDEX/YQY/RESULT/NODAL/ACCELERATION",
-            indexType, accelerations)
-        && ReadDatasetAll(m_impl->resultFile, "/INDEX/YQY/RESULT/ELEMENTAL/ELEMENT_FORCE",
-            indexType, forces)
-        && ReadDatasetAll(m_impl->resultFile, "/INDEX/YQY/RESULT/ELEMENTAL/TRUSS_FORCE",
-            indexType, trussForces)
-        && ReadDatasetAll(m_impl->resultFile, "/INDEX/YQY/RESULT/ELEMENTAL/CABLE_FORCE",
-            indexType, cableForces)
-        && ReadDatasetAll(m_impl->resultFile, "/INDEX/YQY/RESULT/ELEMENTAL/STRESS",
-            indexType, stresses)
-        && ReadDatasetAll(m_impl->resultFile, "/INDEX/YQY/RESULT/ELEMENTAL/STRAIN",
-            indexType, strains);
+    const bool ok =
+        domainType.valid() && indexType.valid() &&
+        ReadDatasetAll(m_impl->resultFile, "/YQY/RESULT/DOMAINS", domainType, m_impl->resultDomains) &&
+        ReadDatasetAll(m_impl->resultFile, "/INDEX/YQY/RESULT/NODAL/DISPLACEMENT", indexType, displacement) &&
+        ReadDatasetAll(m_impl->resultFile, "/INDEX/YQY/RESULT/NODAL/CURRENT_COORDINATE", indexType,
+                       currentCoordinates) &&
+        ReadDatasetAll(m_impl->resultFile, "/INDEX/YQY/RESULT/NODAL/VELOCITY", indexType, velocities) &&
+        ReadDatasetAll(m_impl->resultFile, "/INDEX/YQY/RESULT/NODAL/ACCELERATION", indexType, accelerations) &&
+        ReadDatasetAll(m_impl->resultFile, "/INDEX/YQY/RESULT/ELEMENTAL/ELEMENT_FORCE", indexType, forces) &&
+        ReadDatasetAll(m_impl->resultFile, "/INDEX/YQY/RESULT/ELEMENTAL/TRUSS_FORCE", indexType, trussForces) &&
+        ReadDatasetAll(m_impl->resultFile, "/INDEX/YQY/RESULT/ELEMENTAL/CABLE_FORCE", indexType, cableForces) &&
+        ReadDatasetAll(m_impl->resultFile, "/INDEX/YQY/RESULT/ELEMENTAL/STRESS", indexType, stresses) &&
+        ReadDatasetAll(m_impl->resultFile, "/INDEX/YQY/RESULT/ELEMENTAL/STRAIN", indexType, strains);
     if (!ok || m_impl->resultDomains.empty())
     {
         m_impl->CloseResult();
@@ -4068,7 +4422,10 @@ bool Hdf5ModelIO::OpenResultFile(const QString& fileName,
     }
 
     std::sort(m_impl->resultDomains.begin(), m_impl->resultDomains.end(),
-        [](const DomainRecord& lhs, const DomainRecord& rhs) { return lhs.id < rhs.id; });
+              [](const DomainRecord& lhs, const DomainRecord& rhs)
+              {
+                  return lhs.id < rhs.id;
+              });
     m_impl->displacementIndex = BuildIndexMap(displacement);
     m_impl->currentCoordinateIndex = BuildIndexMap(currentCoordinates);
     m_impl->velocityIndex = BuildIndexMap(velocities);
@@ -4112,20 +4469,18 @@ bool Hdf5ModelIO::ReadResultRanges(Hdf5ResultRanges& ranges) const
         if (!ReadIntAttribute(m_impl->resultFile, validName.constData(), valid))
             return false;
         range.valid = valid != 0;
-        return !range.valid
-            || (ReadDoubleAttribute(m_impl->resultFile, minimumName.constData(), range.minimum)
-                && ReadDoubleAttribute(m_impl->resultFile, maximumName.constData(), range.maximum));
+        return !range.valid || (ReadDoubleAttribute(m_impl->resultFile, minimumName.constData(), range.minimum) &&
+                                ReadDoubleAttribute(m_impl->resultFile, maximumName.constData(), range.maximum));
     };
-    const bool readOk = readCachedRange("DISPLACEMENT_MAGNITUDE", ranges.displacementMagnitude)
-        && readCachedRange("DISPLACEMENT_X", ranges.displacementX)
-        && readCachedRange("DISPLACEMENT_Y", ranges.displacementY)
-        && readCachedRange("DISPLACEMENT_Z", ranges.displacementZ)
-        && readCachedRange("AXIAL_FORCE", ranges.axialForce)
-        && readCachedRange("STRESS", ranges.stress)
-        && readCachedRange("STRAIN", ranges.strain);
-    return readOk && (ranges.displacementMagnitude.valid || ranges.displacementX.valid
-        || ranges.displacementY.valid || ranges.displacementZ.valid
-        || ranges.axialForce.valid || ranges.stress.valid || ranges.strain.valid);
+    const bool readOk = readCachedRange("DISPLACEMENT_MAGNITUDE", ranges.displacementMagnitude) &&
+                        readCachedRange("DISPLACEMENT_X", ranges.displacementX) &&
+                        readCachedRange("DISPLACEMENT_Y", ranges.displacementY) &&
+                        readCachedRange("DISPLACEMENT_Z", ranges.displacementZ) &&
+                        readCachedRange("AXIAL_FORCE", ranges.axialForce) && readCachedRange("STRESS", ranges.stress) &&
+                        readCachedRange("STRAIN", ranges.strain);
+    return readOk &&
+           (ranges.displacementMagnitude.valid || ranges.displacementX.valid || ranges.displacementY.valid ||
+            ranges.displacementZ.valid || ranges.axialForce.valid || ranges.stress.valid || ranges.strain.valid);
 }
 
 bool Hdf5ModelIO::ReadResultFrame(int frameIndex, Hdf5ResultFrame& frame) const
@@ -4133,8 +4488,7 @@ bool Hdf5ModelIO::ReadResultFrame(int frameIndex, Hdf5ResultFrame& frame) const
     QMutexLocker locker(&g_hdf5ApiMutex);
     H5ReadErrorScope errorScope;
     frame = {};
-    if (!m_impl->resultFile.valid() || frameIndex < 0
-        || frameIndex >= static_cast<int>(m_impl->resultDomains.size()))
+    if (!m_impl->resultFile.valid() || frameIndex < 0 || frameIndex >= static_cast<int>(m_impl->resultDomains.size()))
         return false;
 
     const DomainRecord& domain = m_impl->resultDomains[static_cast<std::size_t>(frameIndex)];
@@ -4163,30 +4517,29 @@ bool Hdf5ModelIO::ReadResultFrame(int frameIndex, Hdf5ResultFrame& frame) const
     std::vector<CableForceRecord> cableForces;
     std::vector<ElementStressRecord> stresses;
     std::vector<ElementStrainRecord> strains;
-    if (!nodalType.valid() || !forceType.valid() || !trussForceType.valid() || !cableForceType.valid()
-        || !stressType.valid() || !strainType.valid()
-        || !ReadDatasetBlock(m_impl->resultFile, "/YQY/RESULT/NODAL/DISPLACEMENT",
-            nodalType, displacementInfo.position, displacementInfo.length, displacements)
-        || !ReadDatasetBlock(m_impl->resultFile, "/YQY/RESULT/NODAL/CURRENT_COORDINATE",
-            nodalType, coordinateInfo.position, coordinateInfo.length, coordinates)
-        || !ReadDatasetBlock(m_impl->resultFile, "/YQY/RESULT/NODAL/VELOCITY",
-            nodalType, velocityInfo.position, velocityInfo.length, velocities)
-        || !ReadDatasetBlock(m_impl->resultFile, "/YQY/RESULT/NODAL/ACCELERATION",
-            nodalType, accelerationInfo.position, accelerationInfo.length, accelerations)
-        || !ReadDatasetBlock(m_impl->resultFile, "/YQY/RESULT/ELEMENTAL/ELEMENT_FORCE",
-            forceType, forceInfo.position, forceInfo.length, forces)
-        || !ReadDatasetBlock(m_impl->resultFile, "/YQY/RESULT/ELEMENTAL/TRUSS_FORCE",
-            trussForceType, trussForceInfo.position, trussForceInfo.length, trussForces)
-        || !ReadDatasetBlock(m_impl->resultFile, "/YQY/RESULT/ELEMENTAL/CABLE_FORCE",
-            cableForceType, cableForceInfo.position, cableForceInfo.length, cableForces)
-        || !ReadDatasetBlock(m_impl->resultFile, "/YQY/RESULT/ELEMENTAL/STRESS",
-            stressType, stressInfo.position, stressInfo.length, stresses)
-        || !ReadDatasetBlock(m_impl->resultFile, "/YQY/RESULT/ELEMENTAL/STRAIN",
-            strainType, strainInfo.position, strainInfo.length, strains))
+    if (!nodalType.valid() || !forceType.valid() || !trussForceType.valid() || !cableForceType.valid() ||
+        !stressType.valid() || !strainType.valid() ||
+        !ReadDatasetBlock(m_impl->resultFile, "/YQY/RESULT/NODAL/DISPLACEMENT", nodalType, displacementInfo.position,
+                          displacementInfo.length, displacements) ||
+        !ReadDatasetBlock(m_impl->resultFile, "/YQY/RESULT/NODAL/CURRENT_COORDINATE", nodalType,
+                          coordinateInfo.position, coordinateInfo.length, coordinates) ||
+        !ReadDatasetBlock(m_impl->resultFile, "/YQY/RESULT/NODAL/VELOCITY", nodalType, velocityInfo.position,
+                          velocityInfo.length, velocities) ||
+        !ReadDatasetBlock(m_impl->resultFile, "/YQY/RESULT/NODAL/ACCELERATION", nodalType, accelerationInfo.position,
+                          accelerationInfo.length, accelerations) ||
+        !ReadDatasetBlock(m_impl->resultFile, "/YQY/RESULT/ELEMENTAL/ELEMENT_FORCE", forceType, forceInfo.position,
+                          forceInfo.length, forces) ||
+        !ReadDatasetBlock(m_impl->resultFile, "/YQY/RESULT/ELEMENTAL/TRUSS_FORCE", trussForceType,
+                          trussForceInfo.position, trussForceInfo.length, trussForces) ||
+        !ReadDatasetBlock(m_impl->resultFile, "/YQY/RESULT/ELEMENTAL/CABLE_FORCE", cableForceType,
+                          cableForceInfo.position, cableForceInfo.length, cableForces) ||
+        !ReadDatasetBlock(m_impl->resultFile, "/YQY/RESULT/ELEMENTAL/STRESS", stressType, stressInfo.position,
+                          stressInfo.length, stresses) ||
+        !ReadDatasetBlock(m_impl->resultFile, "/YQY/RESULT/ELEMENTAL/STRAIN", strainType, strainInfo.position,
+                          strainInfo.length, strains))
         return ReportHdf5FormatError();
 
-    frame.info = { domain.id, domain.stepId, domain.increment, domain.analysis,
-        domain.time, domain.loadFactor };
+    frame.info = {domain.id, domain.stepId, domain.increment, domain.analysis, domain.time, domain.loadFactor};
     const QHash<int, NodalRecord> coordinateMap = BuildRecordMap(coordinates);
     const QHash<int, NodalRecord> velocityMap = BuildRecordMap(velocities);
     const QHash<int, NodalRecord> accelerationMap = BuildRecordMap(accelerations);
@@ -4267,8 +4620,7 @@ bool Hdf5ModelIO::ReadResultFrame(int frameIndex, Hdf5ResultFrame& frame) const
     return true;
 }
 
-bool Hdf5ModelIO::RestoreLastDynamicState(
-    const QString& fileName, StructureData* pData, double* time, int* stepId)
+bool Hdf5ModelIO::RestoreLastDynamicState(const QString& fileName, StructureData* pData, double* time, int* stepId)
 {
     if (!pData)
         return false;
@@ -4280,8 +4632,7 @@ bool Hdf5ModelIO::RestoreLastDynamicState(
     int dynamicFrameIndex = -1;
     for (int index = static_cast<int>(frames.size()) - 1; index >= 0; --index)
     {
-        if (frames[static_cast<std::size_t>(index)].analysis
-            == static_cast<int>(EnumKeyword::StepType::DYNAMIC))
+        if (frames[static_cast<std::size_t>(index)].analysis == static_cast<int>(EnumKeyword::StepType::DYNAMIC))
         {
             dynamicFrameIndex = index;
             break;
@@ -4315,13 +4666,10 @@ bool Hdf5ModelIO::RestoreLastDynamicState(
 
         if (dofCount >= 6)
         {
-            const Eigen::Vector3d rotation(
-                result.displacement[3], result.displacement[4], result.displacement[5]);
+            const Eigen::Vector3d rotation(result.displacement[3], result.displacement[4], result.displacement[5]);
             Utility::CR::Calculate_RotationMatrix(rotation, node->m_Rg);
-            const Eigen::Vector3d spatialOmega(
-                result.velocity[3], result.velocity[4], result.velocity[5]);
-            const Eigen::Vector3d spatialAlpha(
-                result.acceleration[3], result.acceleration[4], result.acceleration[5]);
+            const Eigen::Vector3d spatialOmega(result.velocity[3], result.velocity[4], result.velocity[5]);
+            const Eigen::Vector3d spatialAlpha(result.acceleration[3], result.acceleration[4], result.acceleration[5]);
             node->m_OmegaMaterial = node->m_Rg.transpose() * spatialOmega;
             node->m_AlphaMaterial = node->m_Rg.transpose() * spatialAlpha;
         }
@@ -4352,8 +4700,7 @@ bool Hdf5ModelIO::ReadSolverIterationHistory(std::vector<SolverIterationRecord>&
         return false;
     H5Handle type = CreateSolverIterationType();
     std::vector<SolverIterationH5Record> h5Records;
-    if (!type.valid() || !ReadDatasetAll(
-        m_impl->resultFile, "/YQY/RESULT/SOLVER_ITERATION", type, h5Records))
+    if (!type.valid() || !ReadDatasetAll(m_impl->resultFile, "/YQY/RESULT/SOLVER_ITERATION", type, h5Records))
     {
         return false;
     }

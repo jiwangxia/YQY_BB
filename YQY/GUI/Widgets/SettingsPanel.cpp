@@ -37,6 +37,21 @@ QCheckBox* SettingsPanel::gpuSolverCheckBox() const
     return m_ui->gpuSolverCheckBox;
 }
 
+QComboBox* SettingsPanel::linearSolverModeCombo() const
+{
+    return m_ui->linearSolverModeCombo;
+}
+
+QSpinBox* SettingsPanel::resultBatchFramesSpin() const
+{
+    return m_ui->resultBatchFramesSpin;
+}
+
+QCheckBox* SettingsPanel::backgroundResultWriteCheckBox() const
+{
+    return m_ui->backgroundResultWriteCheckBox;
+}
+
 QComboBox* SettingsPanel::nodeLabelModeCombo() const
 {
     return m_ui->nodeLabelModeCombo;
