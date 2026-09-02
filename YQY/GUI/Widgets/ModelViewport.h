@@ -123,6 +123,7 @@ private:
     void rebuildSolidGeometry();
     void updateNodeDisplaySize();
     void performSelectionAt(double widgetX, double widgetY);
+    bool setRotationCenterAt(double widgetX, double widgetY);
     bool ensureRotationCenter(double center[3]);
     void updateRotationCenterToViewportCenter(bool snapToGeometry);
     void updateRotationCenterIndicator();
@@ -147,6 +148,14 @@ private:
     std::vector<int> m_cellElementIds;
     std::vector<int> m_solidCellElementIds;
     std::unordered_map<int, vtkIdType> m_nodePointIds;
+    struct SpringPointReference
+    {
+        vtkIdType pointId = -1;
+        int firstNodeId = -1;
+        int secondNodeId = -1;
+        double secondNodeWeight = 0.0;
+    };
+    std::vector<SpringPointReference> m_springPointReferences;
     std::vector<std::array<double, 3>> m_elementLabelPositions;
     std::unordered_map<int, std::array<double, 3>> m_originalNodeCoordinates;
     double m_activeDeformationScale = 1.0;

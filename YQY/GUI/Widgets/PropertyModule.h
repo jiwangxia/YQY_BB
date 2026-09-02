@@ -18,6 +18,7 @@ public:
     QTableWidget* sectionTable() const;
     QTreeWidget* materialTree() const;
     QTreeWidget* sectionTree() const;
+    QTreeWidget* springBehaviorTree() const;
     QPushButton* refreshButton() const;
     QPushButton* applyButton() const;
 

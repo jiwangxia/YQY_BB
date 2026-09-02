@@ -1,8 +1,10 @@
 #include "ApplicationPaths.h"
 
 #include <QCoreApplication>
+#include <QCryptographicHash>
 #include <QDir>
 #include <QFileInfo>
+#include <QStandardPaths>
 
 static QString existingDirectory(const QStringList& candidates, const QString& fallback)
 {
@@ -33,8 +35,53 @@ static QStringList sourceDirectoryCandidates(const QString& projectRelativePath)
 {
     return {QDir(sourceDirectory()).absoluteFilePath(projectRelativePath)};
 }
+
+static QString createDirectory(const QString& directory)
+{
+    QDir().mkpath(directory);
+    return QDir(directory).absolutePath();
+}
+
+static QString projectDirectory(const QString& sourceModelFile)
+{
+    const QFileInfo sourceInfo(sourceModelFile);
+    const QString name = sourceInfo.completeBaseName().trimmed().isEmpty() ? QStringLiteral("未命名模型")
+                                                                             : sourceInfo.completeBaseName().trimmed();
+    const QByteArray key = QCryptographicHash::hash(sourceInfo.absoluteFilePath().toUtf8(), QCryptographicHash::Sha1)
+                               .toHex()
+                               .left(10);
+    return QDir(ApplicationPaths::workspaceRootDirectory())
+        .absoluteFilePath(QStringLiteral("Projects/%1_%2").arg(name, QString::fromLatin1(key)));
+}
+
+static QString projectDirectoryForResult(const QString& resultFile)
+{
+    const QFileInfo resultInfo(resultFile);
+    const QDir resultDirectory = resultInfo.absoluteDir();
+    if (resultDirectory.dirName().compare(QStringLiteral("Results"), Qt::CaseInsensitive) != 0)
+        return QString();
+
+    const QDir projectDirectory = QDir(resultDirectory.absoluteFilePath(QStringLiteral("..")));
+    const QDir projectsDirectory = QDir(projectDirectory.absoluteFilePath(QStringLiteral("..")));
+    const QDir workspaceDirectory = QDir(projectsDirectory.absoluteFilePath(QStringLiteral("..")));
+    if (projectsDirectory.dirName() != QStringLiteral("Projects") ||
+        workspaceDirectory.absolutePath() != QDir(ApplicationPaths::workspaceRootDirectory()).absolutePath())
+    {
+        return QString();
+    }
+    return projectDirectory.absolutePath();
+}
+
 namespace ApplicationPaths
 {
+QString workspaceRootDirectory()
+{
+    QString root = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    if (root.isEmpty())
+        root = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    return createDirectory(QDir(root).absoluteFilePath(QStringLiteral("YQY")));
+}
+
 QString importFileDirectory()
 {
     return existingDirectory(sourceDirectoryCandidates(QStringLiteral("Import/ImportFile")), QDir::currentPath());
@@ -46,31 +93,33 @@ QString aerodynamicDataDirectory()
                              QDir::currentPath());
 }
 
-QString hdf5ResultDirectory()
+QString hdf5ResultDirectory(const QString& sourceModelFile)
 {
-    const QString directory = QDir(sourceDirectory()).absoluteFilePath(QStringLiteral("Export/ExportH5"));
-    QDir().mkpath(directory);
-    return QDir(directory).absolutePath();
+    const QString baseDirectory = sourceModelFile.trimmed().isEmpty() ? workspaceRootDirectory()
+                                                                        : projectDirectory(sourceModelFile);
+    return createDirectory(QDir(baseDirectory).absoluteFilePath(QStringLiteral("Results")));
 }
 
-QString resultExportDirectory()
+QString resultExportDirectory(const QString& resultFile)
 {
-    const QString directory = QDir(sourceDirectory()).absoluteFilePath(QStringLiteral("Export/ExportFile"));
-    QDir().mkpath(directory);
-    return QDir(directory).absolutePath();
+    const QString projectPath = projectDirectoryForResult(resultFile);
+    const QString baseDirectory = projectPath.isEmpty() ? workspaceRootDirectory() : projectPath;
+    return createDirectory(QDir(baseDirectory).absoluteFilePath(QStringLiteral("Exports")));
 }
 
-QString iterationResultDirectory()
+QString iterationResultDirectory(const QString& resultFile)
 {
-    const QStringList candidates = sourceDirectoryCandidates(QStringLiteral("Export/ExportIteration"));
-    for (const QString& candidate : candidates)
-    {
-        const QFileInfo parentInfo(QDir(candidate).absoluteFilePath(QStringLiteral("..")));
-        if (QDir(candidate).exists() || (parentInfo.isDir() && QDir().mkpath(candidate)))
-        {
-            return QDir(candidate).absolutePath();
-        }
-    }
-    return QDir::currentPath();
+    return createDirectory(QDir(resultExportDirectory(resultFile)).absoluteFilePath(QStringLiteral("Iteration")));
+}
+
+QString generatedModelDirectory()
+{
+    return createDirectory(QDir(workspaceRootDirectory()).absoluteFilePath(QStringLiteral("GeneratedModels")));
+}
+
+QString verificationOutputDirectory(const QString& verificationName)
+{
+    return createDirectory(
+        QDir(workspaceRootDirectory()).absoluteFilePath(QStringLiteral("Verification/%1").arg(verificationName)));
 }
 }

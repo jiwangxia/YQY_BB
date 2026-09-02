@@ -9,6 +9,9 @@
 #include "DataStructure/Element/ElementTruss.h"
 #include "DataStructure/Element/ElementCable.h"
 #include "DataStructure/Element/ElementBeam_CR.h"
+#include "DataStructure/Element/ElementSpring1.h"
+#include "DataStructure/Element/ElementSpring2.h"
+#include "DataStructure/Element/ElementSpringA.h"
 #include "DataStructure/Property/Property.h"
 #include "DataStructure/Constraint/Constraint.h"
 #include "DataStructure/Constraint/NonlinearMPCConstraint.h"
@@ -47,6 +50,7 @@ public:
     std::map<int, std::shared_ptr<Material>> m_Material;                     ///< 材料集合
     std::map<int, std::shared_ptr<SectionBase>> m_Section;                   ///< 截面集合
     std::map<int, std::shared_ptr<Property>> m_Property;                     ///< 属性集合
+    std::map<int, std::shared_ptr<SpringBehavior>> m_SpringBehaviors;        ///< 弹簧力-位移行为集合
     std::map<int, std::shared_ptr<Constraint>> m_Constraint;                 ///< 约束集合
     std::map<int, std::shared_ptr<NonlinearMPCConstraint>> m_MPCConstraints; ///< 主从约束集合
     std::map<int, std::shared_ptr<RigidBodyInertia>> m_RigidBodyInertias;    ///< 节点刚体集中惯性集合
@@ -98,6 +102,51 @@ public:
      */
     std::shared_ptr<Property> FindProperty(int id);
     /// @}
+
+    const std::map<int, std::shared_ptr<Node>>& Nodes() const
+    {
+        return m_Nodes;
+    }
+    const std::map<int, std::shared_ptr<ElementBase>>& Elements() const
+    {
+        return m_Elements;
+    }
+    const std::map<int, std::shared_ptr<AnalysisStep>>& AnalysisSteps() const
+    {
+        return m_AnalysisStep;
+    }
+    const std::map<int, std::shared_ptr<Material>>& Materials() const
+    {
+        return m_Material;
+    }
+    const std::map<int, std::shared_ptr<SectionBase>>& Sections() const
+    {
+        return m_Section;
+    }
+    const std::map<int, std::shared_ptr<Property>>& Properties() const
+    {
+        return m_Property;
+    }
+    const std::map<int, std::shared_ptr<Constraint>>& Constraints() const
+    {
+        return m_Constraint;
+    }
+    const std::map<int, std::shared_ptr<NonlinearMPCConstraint>>& MPCConstraints() const
+    {
+        return m_MPCConstraints;
+    }
+    const std::map<int, std::shared_ptr<LoadBase>>& Loads() const
+    {
+        return m_Load;
+    }
+    const std::map<int, std::shared_ptr<ModelSet>>& ModelSets() const
+    {
+        return m_ModelSets;
+    }
+    const std::map<int, std::shared_ptr<ComputeRegion>>& ComputeRegions() const
+    {
+        return m_ComputeRegions;
+    }
 
     /**
      * @brief 创建属性对象
@@ -177,10 +226,9 @@ private:
      * @brief 重新编号所有数据
      */
     void RenumberAll();
-
-public:
     Outputter m_Outputter; // 分析结果输出
 
+public:
     /**
      * @brief 获取输出
      */

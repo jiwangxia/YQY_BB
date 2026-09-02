@@ -3,7 +3,7 @@
 #include "Application/ApplicationPaths.h"
 #include "DataStructure/AnalysisStep/AnalysisStep.h"
 #include "DataStructure/Structure/StructureData.h"
-#include "Export/Hdf5ModelIO.h"
+#include "Export/Hdf5ResultReader.h"
 #include "Solver/AnalysisSolve.h"
 
 #include <QDateTime>
@@ -26,7 +26,7 @@ QString hdf5OutputDirectory(const StructureData& model)
     if (!configuredFileName.isEmpty())
         return QFileInfo(configuredFileName).absoluteDir().absolutePath();
 
-    return ApplicationPaths::hdf5ResultDirectory();
+    return ApplicationPaths::hdf5ResultDirectory(model.m_OutputControl.m_SourceModelName);
 }
 }
 
@@ -603,9 +603,9 @@ void SolveTaskController::finishTask(int taskId, Status status, const QString& m
                                 resultFile.size() != task->previousOutputSize);
     if (outputWasUpdated)
     {
-        Hdf5ModelIO reader;
+        Hdf5ResultReader reader;
         std::vector<Hdf5ResultFrameInfo> frames;
-        if (reader.OpenResultFile(task->info.outputFile, frames) && !frames.empty())
+        if (reader.open(task->info.outputFile, frames) && !frames.empty())
         {
             task->info.hasUsableResult = true;
             task->info.partialResult = status != Status::Completed;

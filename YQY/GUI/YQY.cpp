@@ -1,7 +1,9 @@
 #include "YQY.h"
 
 #include "Controllers/ModelController.h"
+#include "Controllers/ResultDataController.h"
 #include "Controllers/SolveTaskController.h"
+#include "Controllers/WorkspaceController.h"
 #include "Widgets/ModelViewport.h"
 #include "Widgets/NavigationButton.h"
 #include "Widgets/SettingsPanel.h"
@@ -16,14 +18,19 @@
 #include "Dialogs/PropertyLibraryDialog.h"
 #include "Dialogs/NodeResultExportDialog.h"
 #include "Dialogs/ElementResultExportDialog.h"
-#include "Dialogs/ModelImportFileDialog.h"
+#include "Dialogs/FileDialogService.h"
 #include "Application/ApplicationPaths.h"
 #include "Solver/AssemblySettings.h"
 #include "Solver/GpuSettings.h"
 #include "Solver/LinearSolverSettings.h"
 #include "Export/ResultOutputSettings.h"
 #include "DataStructure/Structure/StructureData.h"
-#include "Export/Hdf5ModelIO.h"
+#include "DataStructure/Element/ElementSpring1.h"
+#include "DataStructure/Element/ElementSpring2.h"
+#include "DataStructure/Element/ElementSpringA.h"
+#include "Export/Hdf5ModelSerializer.h"
+#include "Export/Hdf5ResultReader.h"
+#include "Export/ResultExporter.h"
 #include "Export/Outputter.h"
 #include "Export/ResultFrameUtilities.h"
 #include "DataStructure/Material/Material.h"
@@ -35,9 +42,9 @@
 #include <cmath>
 #include <QComboBox>
 #include <QCheckBox>
-#include <QFileDialog>
 #include <QFileInfo>
 #include <QMessageBox>
+#include <QtSvg/QSvgRenderer>
 
 #ifdef Q_OS_WIN
 #ifndef NOMINMAX
@@ -116,6 +123,7 @@ enum class TreeGlyph
     Elements,
     Material,
     Section,
+    SpringBehavior,
     ElementTypes,
     Truss,
     Cable,
@@ -207,6 +215,26 @@ constexpr auto CaptionTextColorProperty = "yqyCaptionTextColor";
 constexpr auto WindowBorderColorProperty = "yqyWindowBorderColor";
 
 #ifdef Q_OS_WIN
+void applyWindowsWindowIcon(QWidget* widget)
+{
+    if (!widget || !widget->isWindow())
+        return;
+
+    constexpr int applicationIconResourceId = 101;
+    const HINSTANCE moduleHandle = GetModuleHandleW(nullptr);
+    const HICON smallIcon = static_cast<HICON>(
+        LoadImageW(moduleHandle, MAKEINTRESOURCEW(applicationIconResourceId), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON),
+                   GetSystemMetrics(SM_CYSMICON), LR_SHARED));
+    const HICON largeIcon = static_cast<HICON>(
+        LoadImageW(moduleHandle, MAKEINTRESOURCEW(applicationIconResourceId), IMAGE_ICON, GetSystemMetrics(SM_CXICON),
+                   GetSystemMetrics(SM_CYICON), LR_SHARED));
+    const HWND windowHandle = reinterpret_cast<HWND>(widget->winId());
+    if (smallIcon)
+        SendMessageW(windowHandle, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(smallIcon));
+    if (largeIcon)
+        SendMessageW(windowHandle, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(largeIcon));
+}
+
 void applyWindowsTitleBarTheme(QWidget* widget)
 {
     if (!widget || !widget->isWindow() || widget->windowType() == Qt::Popup || widget->windowType() == Qt::ToolTip)
@@ -246,6 +274,10 @@ void applyWindowsTitleBarTheme(QWidget* widget)
     setWindowAttribute(windowHandle, DwmwaTextColor, &captionTextColor, sizeof(captionTextColor));
 }
 #else
+void applyWindowsWindowIcon(QWidget*)
+{
+}
+
 void applyWindowsTitleBarTheme(QWidget*)
 {
 }
@@ -560,6 +592,27 @@ QIcon toolbarIcon(ToolbarGlyph glyph, const QColor& color, const QColor& accent)
     return icon;
 }
 
+QIcon svgToolbarIcon(const QString& resourcePath)
+{
+    QSvgRenderer renderer(resourcePath);
+    if (!renderer.isValid())
+        return {};
+
+    constexpr int iconExtent = 96;
+    QPixmap pixmap(iconExtent, iconExtent);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    renderer.render(&painter, QRectF(0, 0, iconExtent, iconExtent));
+
+    QIcon icon;
+    icon.addPixmap(pixmap, QIcon::Normal, QIcon::Off);
+    icon.addPixmap(pixmap, QIcon::Normal, QIcon::On);
+    icon.addPixmap(pixmap, QIcon::Disabled, QIcon::Off);
+    icon.addPixmap(pixmap, QIcon::Disabled, QIcon::On);
+    return icon;
+}
+
 QPixmap renderNavigationGlyph(NavigationGlyph glyph, const QColor& color, const QColor& accent)
 {
     // 保持普通高分辨率位图，由 QIcon 完成最终 DPI 缩放，避免侧栏出现双重设备像素比裁剪。
@@ -847,6 +900,16 @@ QIcon treeIcon(TreeGlyph glyph, const QColor& color, const QColor& accent)
             painter.drawRect(QRectF(6.5, 5, 3, 6));
             painter.drawRoundedRect(QRectF(2, 11, 12, 3), 0.8, 0.8);
             break;
+        case TreeGlyph::SpringBehavior:
+            painter.drawLine(QPointF(2, 2), QPointF(2, 14));
+            painter.drawLine(QPointF(2, 14), QPointF(14, 14));
+            painter.setPen(QPen(accent, 1.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            painter.drawPolyline(
+                QPolygonF{QPointF(3.5, 12), QPointF(6, 9.5), QPointF(8, 10), QPointF(10.5, 5.5), QPointF(13, 3.5)});
+            painter.setBrush(accent);
+            painter.drawEllipse(QPointF(3.5, 12), 1.0, 1.0);
+            painter.drawEllipse(QPointF(13, 3.5), 1.0, 1.0);
+            break;
         case TreeGlyph::ElementTypes:
             painter.drawPolygon(QPolygonF{QPointF(2, 5), QPointF(4, 2), QPointF(6, 5)});
             painter.drawArc(QRectF(2, 6, 4, 4), 0, 180 * 16);
@@ -1046,8 +1109,8 @@ QString buildStyleSheet(const ThemeColors& c)
     QString style = QStringLiteral(R"QSS(
 * { font-family: "Microsoft YaHei UI", "Segoe UI"; font-size: 13px; color: $TEXT; outline: none; }
 QMainWindow, #centralWidget { background: $ROOT; }
-QDialog, QMessageBox, QFileDialog { background: $PANEL; color: $TEXT; }
-QDialog QWidget, QMessageBox QWidget, QFileDialog QWidget { color: $TEXT; }
+QDialog, QMessageBox { background: $PANEL; color: $TEXT; }
+QDialog QWidget, QMessageBox QWidget { color: $TEXT; }
 QDialogButtonBox { background: transparent; border: none; }
 QMessageBox QLabel,
 QMessageBox QLabel#qt_msgbox_label,
@@ -1132,7 +1195,9 @@ QComboBox { selection-background-color: $ACCENT_SOFT; selection-color: $TEXT; }
 QLineEdit:hover, QComboBox:hover, QDoubleSpinBox:hover, QSpinBox:hover { border-color: $ACCENT2; }
 QLineEdit:focus, QComboBox:focus, QDoubleSpinBox:focus, QSpinBox:focus { border: 1px solid $ACCENT; background: $ELEVATED; }
 QComboBox::drop-down { border: none; width: 28px; }
-QComboBox::down-arrow { image: url(:/YQY/icon_chevron_down.svg); width: 12px; height: 12px; margin-right: 8px; }
+ResultSelectionComboBox::down-arrow,
+ResultScaleSpinBox::up-arrow,
+ResultScaleSpinBox::down-arrow { image: none; }
 QComboBoxPrivateContainer {
     background: $ELEVATED;
     border: 1px solid $BORDER_STRONG;
@@ -1192,12 +1257,6 @@ QDoubleSpinBox::down-button, QSpinBox::down-button {
 }
 QDoubleSpinBox::up-button:hover, QSpinBox::up-button:hover,
 QDoubleSpinBox::down-button:hover, QSpinBox::down-button:hover { background: $ACCENT_SOFT; }
-QDoubleSpinBox::up-arrow, QSpinBox::up-arrow {
-    image: url(:/YQY/icon_chevron_up.svg); width: 10px; height: 10px;
-}
-QDoubleSpinBox::down-arrow, QSpinBox::down-arrow {
-    image: url(:/YQY/icon_chevron_down.svg); width: 10px; height: 10px;
-}
 
 QMenu {
     background: $ELEVATED; color: $TEXT; border: 1px solid $BORDER_STRONG; border-radius: 7px; padding: 5px;
@@ -1313,6 +1372,9 @@ QTableCornerButton::section { background: $PANEL; border: none; border-bottom: 1
 #propertyPage { background: $PANEL; }
 #propertyTabs::pane { background: $FIELD; border: 1px solid $BORDER; border-radius: 9px; }
 #propertyTabs QTabBar::tab:selected { color: $TEXT; border-bottom: 2px solid $ACCENT2; }
+)QSS");
+
+    style += QStringLiteral(R"QSS(
 
 /* The conductor page is created at runtime, so every background layer must
    explicitly participate in the active theme instead of using the OS palette. */
@@ -1406,13 +1468,6 @@ QToolTip, QLabel#qtooltip_label {
 }
 )QSS");
 
-    // 文件对话框导航按钮与普通文字按钮分开设置，其图标需要正方形绘制区域，不能使用文字按钮的水平内边距。
-    style += QStringLiteral(R"QSS(
-QFileDialog QToolButton { background: $ELEVATED; border: 1px solid $BORDER_STRONG; border-radius: 6px; padding: 0; min-width: 34px; max-width: 34px; min-height: 30px; max-height: 30px; icon-size: 20px; }
-QFileDialog QToolButton:hover { background: $ACCENT_SOFT; border-color: $ACCENT2; }
-QFileDialog QToolButton:pressed { background: $FIELD; border-color: $ACCENT; padding: 0; }
-)QSS");
-
     style.replace(QStringLiteral("$ROOT"), c.rootBackground);
     style.replace(QStringLiteral("$HEADER"), c.header);
     style.replace(QStringLiteral("$NAV"), c.navigation);
@@ -1436,8 +1491,12 @@ YQY::YQY(QWidget* parent)
     : QMainWindow(parent)
     , m_modelController(new ModelController(this))
     , m_solveTaskController(new SolveTaskController(this))
+    , m_resultDataController(std::make_unique<ResultDataController>())
+    , m_workspaceController(std::make_unique<WorkspaceController>())
 {
     ui.setupUi(this);
+    setWindowIcon(QApplication::windowIcon());
+    applyWindowsWindowIcon(this);
     if (!qApp->findChild<QObject*>(QStringLiteral("popupThemeFilter")))
     {
         auto* popupThemeFilter = new PopupThemeFilter(qApp);
@@ -1747,7 +1806,7 @@ bool YQY::saveNodeExportPreview(const QString& filePath)
     if (!structure || resultFilePath.isEmpty())
         return false;
     QSet<int> availableNodes;
-    for (const auto& [nodeId, node] : structure->m_Nodes)
+    for (const auto& [nodeId, node] : structure->Nodes())
     {
         if (node)
             availableNodes.insert(nodeId);
@@ -1839,6 +1898,8 @@ void YQY::initializePropertyModule()
     connect(m_propertyModule->applyButton(), &QPushButton::clicked, this, &YQY::applyModelPropertyEdits);
     connect(m_propertyModule->materialTree(), &QTreeWidget::itemDoubleClicked, this, &YQY::editPropertyItem);
     connect(m_propertyModule->sectionTree(), &QTreeWidget::itemDoubleClicked, this, &YQY::editPropertyItem);
+    connect(m_propertyModule->springBehaviorTree(), &QTreeWidget::itemDoubleClicked, this, &YQY::editPropertyItem);
+    connect(ui.modelDataTree, &QTreeWidget::itemDoubleClicked, this, &YQY::editPropertyItem);
 }
 
 void YQY::refreshPropertyModule()
@@ -1847,9 +1908,11 @@ void YQY::refreshPropertyModule()
     auto* m_sectionTable = m_propertyModule ? m_propertyModule->sectionTable() : nullptr;
     auto* m_materialPropertyTree = m_propertyModule ? m_propertyModule->materialTree() : nullptr;
     auto* m_sectionPropertyTree = m_propertyModule ? m_propertyModule->sectionTree() : nullptr;
+    auto* m_springBehaviorTree = m_propertyModule ? m_propertyModule->springBehaviorTree() : nullptr;
     auto* m_propertyTabs = m_propertyModule ? m_propertyModule->tabs() : nullptr;
     auto* m_applyPropertyButton = m_propertyModule ? m_propertyModule->applyButton() : nullptr;
-    if (!m_materialTable || !m_sectionTable || !m_materialPropertyTree || !m_sectionPropertyTree)
+    if (!m_materialTable || !m_sectionTable || !m_materialPropertyTree || !m_sectionPropertyTree ||
+        !m_springBehaviorTree || !m_propertyTabs || !m_applyPropertyButton)
         return;
     const QSignalBlocker materialBlocker(m_materialTable);
     const QSignalBlocker sectionBlocker(m_sectionTable);
@@ -1857,8 +1920,10 @@ void YQY::refreshPropertyModule()
     m_sectionTable->setRowCount(0);
     m_materialPropertyTree->clear();
     m_sectionPropertyTree->clear();
+    m_springBehaviorTree->clear();
     int materialItemCount = 0;
     int sectionItemCount = 0;
+    int springBehaviorItemCount = 0;
 
     auto* defaultMaterialGroup = new QTreeWidgetItem(m_materialPropertyTree, {QStringLiteral("默认属性库")});
     auto* defaultSectionGroup = new QTreeWidgetItem(m_sectionPropertyTree, {QStringLiteral("默认属性库")});
@@ -1914,12 +1979,13 @@ void YQY::refreshPropertyModule()
         if (!structure)
             continue;
         const QString modelName = QFileInfo(m_modelController->filePath(modelId)).fileName();
-        auto* materialGroup =
-            new QTreeWidgetItem(m_materialPropertyTree, {QStringLiteral("模型 %1 · %2").arg(modelId).arg(modelName)});
-        auto* sectionGroup =
-            new QTreeWidgetItem(m_sectionPropertyTree, {QStringLiteral("模型 %1 · %2").arg(modelId).arg(modelName)});
-        setTreeGlyph(materialGroup, TreeGlyph::Model);
-        setTreeGlyph(sectionGroup, TreeGlyph::Model);
+        QTreeWidgetItem* materialGroup = nullptr;
+        if (!structure->m_Material.empty())
+        {
+            materialGroup = new QTreeWidgetItem(
+                m_materialPropertyTree, {QStringLiteral("模型 %1 · %2").arg(modelId).arg(modelName)});
+            setTreeGlyph(materialGroup, TreeGlyph::Model);
+        }
         for (const auto& [materialId, material] : structure->m_Material)
         {
             if (!material)
@@ -1947,6 +2013,13 @@ void YQY::refreshPropertyModule()
             ++materialItemCount;
         }
 
+        QTreeWidgetItem* sectionGroup = nullptr;
+        if (!structure->m_Section.empty())
+        {
+            sectionGroup = new QTreeWidgetItem(
+                m_sectionPropertyTree, {QStringLiteral("模型 %1 · %2").arg(modelId).arg(modelName)});
+            setTreeGlyph(sectionGroup, TreeGlyph::Model);
+        }
         for (const auto& [sectionId, section] : structure->m_Section)
         {
             if (!section)
@@ -1979,14 +2052,37 @@ void YQY::refreshPropertyModule()
             setTreeGlyph(item, TreeGlyph::Section);
             ++sectionItemCount;
         }
+
+        if (!structure->m_SpringBehaviors.empty())
+        {
+            auto* behaviorGroup = new QTreeWidgetItem(
+                m_springBehaviorTree, {QStringLiteral("模型 %1 · %2").arg(modelId).arg(modelName)});
+            setTreeGlyph(behaviorGroup, TreeGlyph::Model);
+            for (const auto& [behaviorId, behavior] : structure->m_SpringBehaviors)
+            {
+                if (!behavior)
+                    continue;
+                auto* item = new QTreeWidgetItem(
+                    behaviorGroup, {QStringLiteral("行为 %1 · 力-位移点 %2").arg(behaviorId).arg(behavior->m_Points.size())});
+                item->setToolTip(0, QStringLiteral("双击查看力-位移数据"));
+                item->setData(0, Qt::UserRole, 5);
+                item->setData(0, Qt::UserRole + 1, modelId);
+                item->setData(0, Qt::UserRole + 2, behaviorId);
+                setTreeGlyph(item, TreeGlyph::SpringBehavior);
+                ++springBehaviorItemCount;
+            }
+        }
     }
     m_materialPropertyTree->expandAll();
     m_sectionPropertyTree->expandAll();
+    m_springBehaviorTree->expandAll();
     const ThemeColors propertyColors = themeColors(ui.themeComboBox->currentIndex());
     applyTreeIcons(m_materialPropertyTree, QColor(propertyColors.text), QColor(propertyColors.accentSecond));
     applyTreeIcons(m_sectionPropertyTree, QColor(propertyColors.text), QColor(propertyColors.accentSecond));
+    applyTreeIcons(m_springBehaviorTree, QColor(propertyColors.text), QColor(propertyColors.accentSecond));
     m_propertyTabs->setTabText(0, QStringLiteral("材料 (%1)").arg(materialItemCount));
     m_propertyTabs->setTabText(1, QStringLiteral("截面 (%1)").arg(sectionItemCount));
+    m_propertyTabs->setTabText(2, QStringLiteral("弹簧行为 (%1)").arg(springBehaviorItemCount));
     m_applyPropertyButton->setEnabled(m_materialTable->rowCount() > 0 || m_sectionTable->rowCount() > 0);
 }
 
@@ -1995,10 +2091,41 @@ void YQY::editPropertyItem(QTreeWidgetItem* item, int)
     if (!item)
         return;
     const int kind = item->data(0, Qt::UserRole).toInt();
+    if (kind == 5)
+    {
+        const int modelId = item->data(0, Qt::UserRole + 1).toInt();
+        const int behaviorId = item->data(0, Qt::UserRole + 2).toInt();
+        const auto structure = m_modelController->model(modelId);
+        const auto found = structure ? structure->m_SpringBehaviors.find(behaviorId)
+                                     : std::map<int, std::shared_ptr<SpringBehavior>>::iterator{};
+        if (!structure || found == structure->m_SpringBehaviors.end() || !found->second)
+            return;
+
+        QStringList points;
+        for (const SpringForceDisplacementPoint& point : found->second->m_Points)
+        {
+            points.append(QStringLiteral("力 = %1，位移 = %2")
+                              .arg(point.force, 0, 'g', 12)
+                              .arg(point.displacement, 0, 'g', 12));
+        }
+        QMessageBox dialog(QMessageBox::Information, QStringLiteral("弹簧行为 %1").arg(behaviorId),
+                           QStringLiteral("模型：%1\n\n力-位移数据：\n%2")
+                               .arg(QFileInfo(m_modelController->filePath(modelId)).fileName())
+                               .arg(points.isEmpty() ? QStringLiteral("--") : points.join(QStringLiteral("\n"))),
+                           QMessageBox::Ok, this);
+        const ThemeColors dialogColors = themeColors(ui.themeComboBox->currentIndex());
+        dialog.setWindowIcon(treeIcon(TreeGlyph::SpringBehavior, QColor(dialogColors.text),
+                                      QColor(dialogColors.accentSecond)));
+        dialog.exec();
+        return;
+    }
     if (kind < 1 || kind > 4)
         return;
 
     PropertyItemEditorDialog dialog(this);
+    const ThemeColors dialogColors = themeColors(ui.themeComboBox->currentIndex());
+    const TreeGlyph dialogGlyph = (kind == 1 || kind == 2) ? TreeGlyph::Material : TreeGlyph::Section;
+    dialog.setWindowIcon(treeIcon(dialogGlyph, QColor(dialogColors.text), QColor(dialogColors.accentSecond)));
 
     if (kind == 1 || kind == 2)
     {
@@ -2414,8 +2541,7 @@ void YQY::showPropertyLibrary()
 
 void YQY::createConductorModel()
 {
-    const QString generatedDirectory =
-        QDir(ApplicationPaths::importFileDirectory()).absoluteFilePath(QStringLiteral("Generated"));
+    const QString generatedDirectory = ApplicationPaths::generatedModelDirectory();
     if (!m_propertyLibrary)
     {
         QMessageBox::critical(this, QStringLiteral("创建导线模型"), QStringLiteral("启动属性库不可用。"));
@@ -2640,7 +2766,7 @@ void YQY::updateToolbarIcons(int themeIndex)
         {ui.fitViewButton, QStringLiteral(":/YQY/icon_scale.svg")},
         {ui.startSolveButton, QStringLiteral(":/YQY/icon_solve.svg")}};
     for (const auto& [button, resourcePath] : toolbarButtons)
-        button->setIcon(QIcon(resourcePath));
+        button->setIcon(svgToolbarIcon(resourcePath));
 
     const QList<QPair<NavigationButton*, NavigationGlyph>> navigationButtons = {
         {ui.propertyButton, NavigationGlyph::Properties}, {ui.conductorButton, NavigationGlyph::Conductor},
@@ -2835,7 +2961,7 @@ void YQY::initializeInteractions()
                         QFileInfo(info.outputFile).absoluteFilePath())
                 {
                     // 结果读取器仍通过 ASCII 硬链接占用同一 NTFS 文件时，Windows 无法替换该 H5 文件。
-                    m_resultFilesByModelId.remove(m_modelController->activeModelId());
+                    m_workspaceController->removeModel(m_modelController->activeModelId());
                     clearActiveResultContext();
                 }
                 if (info.status == SolveTaskController::Status::Completed ||
@@ -2858,10 +2984,10 @@ void YQY::initializeInteractions()
     connect(ui.importButton, &QPushButton::clicked, this,
             [this]()
             {
-                ModelImportFileDialog dialog(ApplicationPaths::importFileDirectory(), this);
-                if (dialog.exec() != QDialog::Accepted)
-                    return;
-                const QStringList paths = dialog.selectedFiles();
+                const QStringList paths = FileDialogService::selectOpenFiles(
+                    this, QStringLiteral("导入模型"), ApplicationPaths::importFileDirectory(),
+                    QStringLiteral("模型文件 (*.bdf);;H5模型文件 (*.h5 *.hdf5);;杆塔模型文件 (*.txt);;ABAQUS文件 (*.inp)"),
+                    QStringLiteral("modelImport"));
                 if (paths.isEmpty())
                     return;
                 const int accepted = m_modelController->loadModels(paths);
@@ -2897,7 +3023,7 @@ void YQY::initializeInteractions()
                         break;
                     }
                 }
-                m_resultFilesByModelId.remove(modelId);
+                m_workspaceController->removeModel(modelId);
                 refreshModulePages();
             });
     connect(m_modelController, &ModelController::busyChanged, this,
@@ -2913,7 +3039,7 @@ void YQY::initializeInteractions()
                 const QSignalBlocker blocker(ui.documentTabBar);
                 while (ui.documentTabBar->count() > 0)
                     ui.documentTabBar->removeTab(0);
-                m_resultFilesByModelId.clear();
+                m_workspaceController->clear();
                 ui.modelViewport->clearModel();
                 ui.modelDataTree->clear();
                 new QTreeWidgetItem(ui.modelDataTree, {QStringLiteral("尚未加载模型")});
@@ -3057,23 +3183,31 @@ void YQY::refreshModulePages()
 
     ui.modelFileValue->setText(hasModel ? QFileInfo(m_modelController->filePath()).fileName()
                                         : QStringLiteral("尚未加载模型"));
-    ui.modelNodeValue->setText(hasModel ? QStringLiteral("节点 %1").arg(structure->m_Nodes.size())
+    ui.modelNodeValue->setText(hasModel ? QStringLiteral("节点 %1").arg(structure->Nodes().size())
                                         : QStringLiteral("节点 --"));
-    ui.modelElementValue->setText(hasModel ? QStringLiteral("单元 %1").arg(structure->m_Elements.size())
+    ui.modelElementValue->setText(hasModel ? QStringLiteral("单元 %1").arg(structure->Elements().size())
                                            : QStringLiteral("单元 --"));
-    ui.modelPropertyValue->setText(
-        hasModel
-            ? QStringLiteral("材料 %1 · 截面 %2").arg(structure->m_Material.size()).arg(structure->m_Section.size())
-            : QStringLiteral("材料 -- · 截面 --"));
+    QStringList modelDataSummary;
+    if (hasModel)
+    {
+        if (!structure->m_Material.empty())
+            modelDataSummary.append(QStringLiteral("材料 %1").arg(structure->m_Material.size()));
+        if (!structure->m_Section.empty())
+            modelDataSummary.append(QStringLiteral("截面 %1").arg(structure->m_Section.size()));
+        if (!structure->m_SpringBehaviors.empty())
+            modelDataSummary.append(QStringLiteral("弹簧行为 %1").arg(structure->m_SpringBehaviors.size()));
+    }
+    ui.modelPropertyValue->setText(hasModel ? modelDataSummary.join(QStringLiteral(" · "))
+                                            : QStringLiteral("材料 -- · 截面 --"));
     ui.modelFitButton->setEnabled(hasModel);
 
     ui.analysisTree->clear();
     if (hasModel)
     {
         auto* steps =
-            new QTreeWidgetItem(ui.analysisTree, {QStringLiteral("分析步  %1").arg(structure->m_AnalysisStep.size())});
+            new QTreeWidgetItem(ui.analysisTree, {QStringLiteral("分析步  %1").arg(structure->AnalysisSteps().size())});
         setTreeGlyph(steps, TreeGlyph::AnalysisSteps);
-        for (const auto& [stepId, step] : structure->m_AnalysisStep)
+        for (const auto& [stepId, step] : structure->AnalysisSteps())
         {
             const QString stepName = step && !step->m_Name.trimmed().isEmpty() ? step->m_Name.trimmed()
                                                                                : QStringLiteral("Step-%1").arg(stepId);
@@ -3135,9 +3269,9 @@ void YQY::refreshModulePages()
     const ThemeColors treeColors = themeColors(ui.themeComboBox->currentIndex());
     applyTreeIcons(ui.analysisTree, QColor(treeColors.text), QColor(treeColors.accentSecond));
 
-    const bool canSolve = hasModel && !structure->m_AnalysisStep.empty();
+    const bool canSolve = hasModel && !structure->AnalysisSteps().empty();
     ui.solveReadinessLabel->setText(
-        canSolve   ? QStringLiteral("模型已就绪，共 %1 个分析步").arg(structure->m_AnalysisStep.size())
+        canSolve   ? QStringLiteral("模型已就绪，共 %1 个分析步").arg(structure->AnalysisSteps().size())
         : hasModel ? QStringLiteral("当前模型没有可运行的分析步")
                    : QStringLiteral("请先加载包含分析步的模型"));
     ui.solvePageStartButton->setEnabled(canSolve);
@@ -3200,7 +3334,7 @@ void YQY::openComputeRegionManager()
     ComputeRegionManagerDialog manager(structure, this);
     manager.exec();
     QSet<int> affectedStepIds;
-    for (const auto& [stepId, step] : structure->m_AnalysisStep)
+    for (const auto& [stepId, step] : structure->AnalysisSteps())
     {
         if (step)
             affectedStepIds.insert(stepId);
@@ -3225,7 +3359,7 @@ void YQY::refreshAnalysisEditor()
     constraintsButton->setEnabled(enabled);
     mpcsButton->setEnabled(enabled);
     regionsButton->setEnabled(enabled);
-    stepsButton->setText(QStringLiteral("分析步 · %1").arg(structure ? structure->m_AnalysisStep.size() : 0));
+    stepsButton->setText(QStringLiteral("分析步 · %1").arg(structure ? structure->AnalysisSteps().size() : 0));
     loadsButton->setText(QStringLiteral("荷载 · %1").arg(structure ? structure->m_Load.size() : 0));
     constraintsButton->setText(QStringLiteral("约束 · %1").arg(structure ? structure->m_Constraint.size() : 0));
     mpcsButton->setText(QStringLiteral("MPC · %1").arg(structure ? structure->m_MPCConstraints.size() : 0));
@@ -3313,7 +3447,7 @@ void YQY::handleAnalysisResourcesChanged(const QSet<int>& affectedStepIds)
                                                "当前共 %3 个分析步、%4 个荷载、%5 个约束、%6 个 MPC")
                                     .arg(affectedStepIds.size())
                                     .arg(preparedCount)
-                                    .arg(structure->m_AnalysisStep.size())
+                                    .arg(structure->AnalysisSteps().size())
                                     .arg(structure->m_Load.size())
                                     .arg(structure->m_Constraint.size())
                                     .arg(structure->m_MPCConstraints.size()));
@@ -3369,7 +3503,7 @@ void YQY::prepareAnalysisCases(const std::shared_ptr<StructureData>& structure, 
         m_solveTaskController->prepare(structure, sourceFile, onlyStepId);
         return;
     }
-    for (const auto& [stepId, step] : structure->m_AnalysisStep)
+    for (const auto& [stepId, step] : structure->AnalysisSteps())
     {
         if (step)
             m_solveTaskController->prepare(structure, sourceFile, stepId);
@@ -3379,7 +3513,7 @@ void YQY::prepareAnalysisCases(const std::shared_ptr<StructureData>& structure, 
 void YQY::submitSolveTask()
 {
     const auto structure = m_modelController->model();
-    if (!structure || structure->m_AnalysisStep.empty())
+    if (!structure || structure->AnalysisSteps().empty())
     {
         QMessageBox::information(this, QStringLiteral("无法提交"), QStringLiteral("请先加载包含分析步的模型。"));
         return;
@@ -3795,16 +3929,11 @@ void YQY::updateTaskMonitor(int taskId)
 
 void YQY::openHdf5Result()
 {
-    const QString initialDirectory = ApplicationPaths::hdf5ResultDirectory();
+    const QString initialDirectory = ApplicationPaths::hdf5ResultDirectory(m_modelController->filePath());
 
-    ModelImportFileDialog dialog(initialDirectory, QStringLiteral("打开 H5 结果文件"),
-                                 QStringLiteral("HDF5 结果文件 (*.h5 *.hdf5);;所有文件 (*.*)"),
-                                 QFileDialog::ExistingFiles, this);
-
-    if (dialog.exec() != QDialog::Accepted)
-        return;
-
-    const QStringList selectedFiles = dialog.selectedFiles();
+    const QStringList selectedFiles = FileDialogService::selectOpenFiles(
+        this, QStringLiteral("打开 H5 结果文件"), initialDirectory,
+        QStringLiteral("HDF5 结果文件 (*.h5 *.hdf5);;所有文件 (*.*)"), QStringLiteral("hdf5ResultImport"));
     if (selectedFiles.isEmpty())
         return;
 
@@ -3850,7 +3979,7 @@ void YQY::exportNodeResults()
     }
 
     QSet<int> availableNodes;
-    for (const auto& [nodeId, node] : structure->m_Nodes)
+    for (const auto& [nodeId, node] : structure->Nodes())
     {
         if (node)
             availableNodes.insert(nodeId);
@@ -3915,8 +4044,8 @@ void YQY::exportNodeResults()
     watcher->setFuture(QtConcurrent::run(
         [sourceFile, outputFile, nodeIds, resultTypes]()
         {
-            Hdf5ModelIO exporter;
-            return exporter.ExportBdfResultFromHdf5(sourceFile, outputFile, nodeIds, resultTypes, {}, {});
+            ResultExporter exporter;
+            return exporter.exportBdf(sourceFile, outputFile, nodeIds, resultTypes, {}, {});
         }));
 }
 
@@ -3936,7 +4065,7 @@ void YQY::exportElementResults()
     }
 
     QSet<int> availableElements;
-    for (const auto& [elementId, element] : structure->m_Elements)
+    for (const auto& [elementId, element] : structure->Elements())
         if (element)
             availableElements.insert(elementId);
     ElementResultExportDialog dialog(resultFilePath, availableElements, this);
@@ -3993,8 +4122,8 @@ void YQY::exportElementResults()
     watcher->setFuture(QtConcurrent::run(
         [sourceFile, outputFile, elementIds, resultTypes]()
         {
-            Hdf5ModelIO exporter;
-            return exporter.ExportBdfResultFromHdf5(sourceFile, outputFile, {}, {}, elementIds, resultTypes);
+            ResultExporter exporter;
+            return exporter.exportBdf(sourceFile, outputFile, {}, {}, elementIds, resultTypes);
         }));
 }
 
@@ -4007,11 +4136,11 @@ void YQY::exportIterationHistory()
         return;
     }
 
-    Hdf5ModelIO reader;
+    Hdf5ResultReader reader;
     std::vector<Hdf5ResultFrameInfo> frames;
     std::vector<SolverIterationRecord> records;
-    const bool readOk = reader.OpenResultFile(sourceFile, frames) && reader.ReadSolverIterationHistory(records);
-    reader.CloseResultFile();
+    const bool readOk = reader.open(sourceFile, frames) && reader.readIterationHistory(records);
+    reader.close();
     if (!readOk || records.empty())
     {
         QMessageBox::information(this, QStringLiteral("暂无迭代步"),
@@ -4020,10 +4149,10 @@ void YQY::exportIterationHistory()
     }
 
     const QString defaultOutputFile =
-        QDir(ApplicationPaths::iterationResultDirectory()).absoluteFilePath(QStringLiteral("IterationStep.bdf"));
-    QString outputFile = QFileDialog::getSaveFileName(this, QStringLiteral("保存迭代步"), defaultOutputFile,
-                                                      QStringLiteral("BDF 文件 (*.bdf);;所有文件 (*.*)"), nullptr,
-                                                      QFileDialog::DontUseNativeDialog);
+        QDir(ApplicationPaths::iterationResultDirectory(sourceFile)).absoluteFilePath(QStringLiteral("IterationStep.bdf"));
+    QString outputFile = FileDialogService::selectSaveFile(this, QStringLiteral("保存迭代步"), defaultOutputFile,
+                                                            QStringLiteral("BDF 文件 (*.bdf);;所有文件 (*.*)"),
+                                                            QStringLiteral("iterationResultExport"));
     if (outputFile.isEmpty())
         return;
     if (QFileInfo(outputFile).suffix().isEmpty())
@@ -4065,13 +4194,12 @@ bool YQY::loadHdf5Result(const QString& filePath, bool showErrors, bool activate
     auto* m_exportNodeResultsButton = m_resultPanel->exportButton();
     auto* m_exportElementResultsButton = m_resultPanel->exportElementButton();
     auto* m_exportIterationButton = m_resultPanel->exportIterationButton();
-    auto* m_resultReader = m_resultPanel->reader();
     auto& m_resultFrames = m_resultPanel->frames();
     auto& m_resultFilePath = m_resultPanel->resultFilePath();
     auto& m_resultIsPartial = m_resultPanel->partialResult();
     auto& m_resultAutomaticScale = m_resultPanel->automaticScale();
     Hdf5ResultSummary summary;
-    if (!m_resultReader->InspectHdf5(filePath, summary) || !summary.hasResult)
+    if (!m_resultDataController->inspect(filePath, summary) || !summary.hasResult)
     {
         if (showErrors)
             QMessageBox::critical(this, QStringLiteral("H5 读取失败"),
@@ -4090,8 +4218,8 @@ bool YQY::loadHdf5Result(const QString& filePath, bool showErrors, bool activate
     QElapsedTimer modelTimer;
     modelTimer.start();
     auto embeddedModel = std::make_shared<StructureData>();
-    Hdf5ModelIO modelReader;
-    if (!modelReader.ImportHdf5(filePath, embeddedModel.get()))
+    Hdf5ModelSerializer modelReader;
+    if (!modelReader.importModel(filePath, embeddedModel.get()))
     {
         if (showErrors)
             QMessageBox::critical(this, QStringLiteral("H5 模型读取失败"),
@@ -4113,7 +4241,7 @@ bool YQY::loadHdf5Result(const QString& filePath, bool showErrors, bool activate
     // adoptModel() 同步发出 activeModelChanged；该回调会清理旧的结果上下文。
     // 所以必须在模型切换完成后才打开本 H5 的结果流，否则首帧显示时读取器已经被关闭。
     std::vector<Hdf5ResultFrameInfo> indexedFrames;
-    if (!m_resultReader->OpenResultFile(filePath, indexedFrames) || indexedFrames.empty())
+    if (!m_resultDataController->open(filePath, indexedFrames, m_resultRanges))
     {
         if (showErrors)
             QMessageBox::critical(this, QStringLiteral("H5 索引失败"),
@@ -4122,13 +4250,9 @@ bool YQY::loadHdf5Result(const QString& filePath, bool showErrors, bool activate
     }
 
     m_resultFilePath = QFileInfo(filePath).absoluteFilePath();
-    m_resultFilesByModelId.insert(m_modelController->activeModelId(), m_resultFilePath);
+    m_workspaceController->associateResult(m_modelController->activeModelId(), m_resultFilePath);
     m_resultIsPartial = partialResult;
     m_resultFrames = std::move(indexedFrames);
-    if (!m_resultReader->ReadResultRanges(m_resultRanges))
-        m_resultRanges = {};
-    m_cachedResultFrameIndex = -1;
-    m_cachedNextResultFrameIndex = -1;
     if (m_resultRanges.displacementMagnitude.valid)
     {
         m_resultAutomaticScale =
@@ -4137,7 +4261,7 @@ bool YQY::loadHdf5Result(const QString& filePath, bool showErrors, bool activate
     else
     {
         Hdf5ResultFrame scaleReferenceFrame;
-        if (m_resultReader->ReadResultFrame(static_cast<int>(m_resultFrames.size()) - 1, scaleReferenceFrame) &&
+        if (m_resultDataController->readFrame(static_cast<int>(m_resultFrames.size()) - 1, scaleReferenceFrame) &&
             ui.modelViewport->displayResultFrame(scaleReferenceFrame, ModelViewport::ResultField::DisplacementMagnitude,
                                                  0.0, false))
         {
@@ -4194,8 +4318,8 @@ bool YQY::loadHdf5Result(const QString& filePath, bool showErrors, bool activate
     if (shouldActivateEmbeddedModel)
     {
         ui.logEdit->appendPlainText(QStringLiteral("[INFO] 已切换到 H5 内嵌模型：节点 %1，单元 %2")
-                                        .arg(embeddedModel->m_Nodes.size())
-                                        .arg(embeddedModel->m_Elements.size()));
+                                        .arg(embeddedModel->Nodes().size())
+                                        .arg(embeddedModel->Elements().size()));
     }
     if (activateResultModule)
         switchModule(Module::Result);
@@ -4214,32 +4338,6 @@ bool YQY::loadHdf5Result(const QString& filePath, bool showErrors, bool activate
 void YQY::displayResultFrame(int frameIndex)
 {
     displayResultPosition(static_cast<double>(frameIndex));
-}
-
-bool YQY::cacheResultFramePair(int firstIndex, int secondIndex)
-{
-    auto* resultReader = m_resultPanel->reader();
-    if (m_cachedResultFrameIndex != firstIndex)
-    {
-        if (m_cachedNextResultFrameIndex == firstIndex)
-        {
-            std::swap(m_cachedResultFrameIndex, m_cachedNextResultFrameIndex);
-            std::swap(m_cachedResultFrame, m_cachedNextResultFrame);
-        }
-        else if (!resultReader->ReadResultFrame(firstIndex, m_cachedResultFrame))
-        {
-            return false;
-        }
-        m_cachedResultFrameIndex = firstIndex;
-    }
-
-    if (m_cachedNextResultFrameIndex != secondIndex)
-    {
-        if (!resultReader->ReadResultFrame(secondIndex, m_cachedNextResultFrame))
-            return false;
-        m_cachedNextResultFrameIndex = secondIndex;
-    }
-    return true;
 }
 
 void YQY::displayResultPosition(double framePosition)
@@ -4261,7 +4359,9 @@ void YQY::displayResultPosition(double framePosition)
     const int frameIndex = static_cast<int>(std::floor(framePosition));
     const int nextFrameIndex = (frameIndex + 1) % static_cast<int>(m_resultFrames.size());
     const double interpolation = framePosition - static_cast<double>(frameIndex);
-    if (!cacheResultFramePair(frameIndex, nextFrameIndex))
+    Hdf5ResultFrame currentFrame;
+    Hdf5ResultFrame nextFrame;
+    if (!m_resultDataController->readFramePair(frameIndex, nextFrameIndex, currentFrame, nextFrame))
     {
         m_resultFrameLabel->setText(QStringLiteral("第 %1 帧读取失败").arg(frameIndex + 1));
         m_resultTimeLabel->setText(QStringLiteral("--"));
@@ -4270,9 +4370,16 @@ void YQY::displayResultPosition(double framePosition)
     }
     Hdf5ResultFrame frame =
         interpolation <= 1.0e-9
-            ? m_cachedResultFrame
-            : ResultFrameUtilities::interpolate(m_cachedResultFrame, m_cachedNextResultFrame, interpolation);
-    const auto field = static_cast<ModelViewport::ResultField>(m_resultFieldCombo->currentIndex());
+            ? currentFrame
+            : ResultFrameUtilities::interpolate(currentFrame, nextFrame, interpolation);
+    constexpr std::array resultFields = {ModelViewport::ResultField::DisplacementMagnitude,
+                                         ModelViewport::ResultField::AxialForce,
+                                         ModelViewport::ResultField::Stress,
+                                         ModelViewport::ResultField::Strain};
+    const int fieldIndex = m_resultFieldCombo->currentIndex();
+    if (fieldIndex < 0 || fieldIndex >= static_cast<int>(resultFields.size()))
+        return;
+    const ModelViewport::ResultField field = resultFields[static_cast<std::size_t>(fieldIndex)];
     const Hdf5ResultRange& scalarRange = resultRangeForField(m_resultRanges, field);
     if (scalarRange.valid)
         ui.modelViewport->setResultScalarRange(scalarRange.minimum, scalarRange.maximum);
@@ -4306,14 +4413,12 @@ void YQY::clearActiveResultContext()
 
     // 结果读取器及播放定时器只属于一个模型；切换文档后继续保留会把旧节点编号和标量应用到新几何体。
     m_resultPanel->stopPlayback();
-    m_resultPanel->reader()->CloseResultFile();
+    m_resultDataController->close();
     m_resultPanel->frames().clear();
     m_resultPanel->resultFilePath().clear();
     m_resultPanel->partialResult() = false;
     m_resultPanel->automaticScale() = 1.0;
     m_resultRanges = {};
-    m_cachedResultFrameIndex = -1;
-    m_cachedNextResultFrameIndex = -1;
 
     {
         const QSignalBlocker blocker(m_resultPanel->frameSlider());
@@ -4360,8 +4465,8 @@ void YQY::handleModelLoaded(int modelId, const QString& filePath, qint64 elapsed
     updateLoadStatistics();
     ui.logEdit->appendPlainText(QStringLiteral("[模型读取] 成功：%1").arg(filePath));
     ui.logEdit->appendPlainText(QStringLiteral("           数据：节点 %1，单元 %2，材料 %3，截面 %4；耗时 %5 ms")
-                                    .arg(structure->m_Nodes.size())
-                                    .arg(structure->m_Elements.size())
+                                    .arg(structure->Nodes().size())
+                                    .arg(structure->Elements().size())
                                     .arg(structure->m_Material.size())
                                     .arg(structure->m_Section.size())
                                     .arg(elapsedMs));
@@ -4374,8 +4479,8 @@ void YQY::handleModelLoaded(int modelId, const QString& filePath, qint64 elapsed
     }
 
     setWorkspaceMessage(QStringLiteral("模型加载完成 · %1 个节点 · %2 个单元 · %3 ms")
-                            .arg(structure->m_Nodes.size())
-                            .arg(structure->m_Elements.size())
+                            .arg(structure->Nodes().size())
+                            .arg(structure->Elements().size())
                             .arg(elapsedMs));
 }
 
@@ -4412,7 +4517,7 @@ void YQY::handleActiveModelChanged(int modelId)
                             .arg(QFileInfo(m_modelController->filePath(modelId)).fileName())
                             .arg(m_modelController->modelCount()));
 
-    const QString resultFilePath = m_resultFilesByModelId.value(modelId);
+    const QString resultFilePath = m_workspaceController->resultForModel(modelId);
     if (!resultFilePath.isEmpty())
     {
         QTimer::singleShot(0, this,
@@ -4453,20 +4558,80 @@ void YQY::populateModelDataTree(const QString& fileName)
 
     auto* model = new QTreeWidgetItem(ui.modelDataTree, {fileName});
     setTreeGlyph(model, TreeGlyph::Model);
-    auto* nodes = new QTreeWidgetItem(model, {QStringLiteral("节点  %1").arg(structure->m_Nodes.size())});
+    auto* nodes = new QTreeWidgetItem(model, {QStringLiteral("节点  %1").arg(structure->Nodes().size())});
     setTreeGlyph(nodes, TreeGlyph::Nodes);
-    auto* elements = new QTreeWidgetItem(model, {QStringLiteral("单元  %1").arg(structure->m_Elements.size())});
+    auto* elements = new QTreeWidgetItem(model, {QStringLiteral("单元  %1").arg(structure->Elements().size())});
     setTreeGlyph(elements, TreeGlyph::Elements);
-    auto* materials = new QTreeWidgetItem(model, {QStringLiteral("材料  %1").arg(structure->m_Material.size())});
-    setTreeGlyph(materials, TreeGlyph::Material);
-    auto* sections = new QTreeWidgetItem(model, {QStringLiteral("截面  %1").arg(structure->m_Section.size())});
-    setTreeGlyph(sections, TreeGlyph::Section);
+    const int modelId = m_modelController->activeModelId();
+    QTreeWidgetItem* materials = nullptr;
+    if (!structure->Materials().empty())
+    {
+        materials = new QTreeWidgetItem(model, {QStringLiteral("材料  %1").arg(structure->Materials().size())});
+        setTreeGlyph(materials, TreeGlyph::Material);
+        for (const auto& [materialId, material] : structure->Materials())
+        {
+            if (!material)
+                continue;
+            auto* item = new QTreeWidgetItem(materials, {QStringLiteral("材料 ID %1 · E=%2 · ρ=%3")
+                                                                 .arg(materialId)
+                                                                 .arg(material->m_Young, 0, 'g', 5)
+                                                                 .arg(material->m_Density, 0, 'g', 5)});
+            item->setToolTip(0, QStringLiteral("双击查看或修改材料参数"));
+            item->setData(0, Qt::UserRole, 2);
+            item->setData(0, Qt::UserRole + 1, modelId);
+            item->setData(0, Qt::UserRole + 2, materialId);
+            setTreeGlyph(item, TreeGlyph::Material);
+        }
+    }
+    QTreeWidgetItem* sections = nullptr;
+    if (!structure->Sections().empty())
+    {
+        sections = new QTreeWidgetItem(model, {QStringLiteral("截面  %1").arg(structure->Sections().size())});
+        setTreeGlyph(sections, TreeGlyph::Section);
+        for (const auto& [sectionId, section] : structure->Sections())
+        {
+            if (!section)
+                continue;
+            const auto rectangle = std::dynamic_pointer_cast<SectionRectangle>(section);
+            const auto circular = std::dynamic_pointer_cast<SectionCircular>(section);
+            const QString type = rectangle  ? QStringLiteral("矩形")
+                                 : circular ? QStringLiteral("圆形")
+                                            : QStringLiteral("通用");
+            auto* item = new QTreeWidgetItem(
+                sections, {QStringLiteral("截面 ID %1 · %2 · A=%3").arg(sectionId).arg(type).arg(section->m_Area, 0, 'g', 6)});
+            item->setToolTip(0, QStringLiteral("双击查看或修改截面参数"));
+            item->setData(0, Qt::UserRole, 4);
+            item->setData(0, Qt::UserRole + 1, modelId);
+            item->setData(0, Qt::UserRole + 2, sectionId);
+            setTreeGlyph(item, TreeGlyph::Section);
+        }
+    }
+    if (!structure->m_SpringBehaviors.empty())
+    {
+        auto* behaviors =
+            new QTreeWidgetItem(model, {QStringLiteral("弹簧行为  %1").arg(structure->m_SpringBehaviors.size())});
+        setTreeGlyph(behaviors, TreeGlyph::SpringBehavior);
+        for (const auto& [behaviorId, behavior] : structure->m_SpringBehaviors)
+        {
+            const int pointCount = behavior ? static_cast<int>(behavior->m_Points.size()) : 0;
+            auto* item = new QTreeWidgetItem(
+                behaviors, {QStringLiteral("行为 %1  ·  力-位移点 %2").arg(behaviorId).arg(pointCount)});
+            item->setToolTip(0, QStringLiteral("双击查看力-位移数据"));
+            item->setData(0, Qt::UserRole, 5);
+            item->setData(0, Qt::UserRole + 1, modelId);
+            item->setData(0, Qt::UserRole + 2, behaviorId);
+            setTreeGlyph(item, TreeGlyph::SpringBehavior);
+        }
+    }
 
     int trussCount = 0;
     int cableCount = 0;
     int beamCount = 0;
+    int spring1Count = 0;
+    int spring2Count = 0;
+    int springACount = 0;
     int otherCount = 0;
-    for (const auto& [elementId, element] : structure->m_Elements)
+    for (const auto& [elementId, element] : structure->Elements())
     {
         Q_UNUSED(elementId);
         if (dynamic_cast<ElementTruss*>(element.get()))
@@ -4475,6 +4640,12 @@ void YQY::populateModelDataTree(const QString& fileName)
             ++cableCount;
         else if (dynamic_cast<ElementBeam_CR*>(element.get()))
             ++beamCount;
+        else if (dynamic_cast<ElementSpring1*>(element.get()))
+            ++spring1Count;
+        else if (dynamic_cast<ElementSpring2*>(element.get()))
+            ++spring2Count;
+        else if (dynamic_cast<ElementSpringA*>(element.get()))
+            ++springACount;
         else
             ++otherCount;
     }
@@ -4496,6 +4667,21 @@ void YQY::populateModelDataTree(const QString& fileName)
         auto* item = new QTreeWidgetItem(elementTypes, {QStringLiteral("CR3D  %1").arg(beamCount)});
         setTreeGlyph(item, TreeGlyph::Beam);
     }
+    if (spring1Count > 0)
+    {
+        auto* item = new QTreeWidgetItem(elementTypes, {QStringLiteral("SPRING1  %1").arg(spring1Count)});
+        setTreeGlyph(item, TreeGlyph::Other);
+    }
+    if (spring2Count > 0)
+    {
+        auto* item = new QTreeWidgetItem(elementTypes, {QStringLiteral("SPRING2  %1").arg(spring2Count)});
+        setTreeGlyph(item, TreeGlyph::Other);
+    }
+    if (springACount > 0)
+    {
+        auto* item = new QTreeWidgetItem(elementTypes, {QStringLiteral("SPRINGA  %1").arg(springACount)});
+        setTreeGlyph(item, TreeGlyph::Other);
+    }
     if (otherCount > 0)
     {
         auto* item = new QTreeWidgetItem(elementTypes, {QStringLiteral("OTHER  %1").arg(otherCount)});
@@ -4506,6 +4692,10 @@ void YQY::populateModelDataTree(const QString& fileName)
     applyTreeIcons(ui.modelDataTree, QColor(colors.text), QColor(colors.accentSecond));
 
     ui.modelDataTree->expandItem(model);
+    if (materials)
+        ui.modelDataTree->expandItem(materials);
+    if (sections)
+        ui.modelDataTree->expandItem(sections);
     ui.modelDataTree->expandItem(elementTypes);
     ui.modelDataTree->setCurrentItem(model);
 }
@@ -4580,6 +4770,12 @@ void YQY::showElementProperties(int elementId)
         typeName = QStringLiteral("CABLE");
     else if (dynamic_cast<ElementBeam_CR*>(element.get()))
         typeName = QStringLiteral("CR3D");
+    else if (dynamic_cast<ElementSpring1*>(element.get()))
+        typeName = QStringLiteral("SPRING1（对地固定方向弹簧）");
+    else if (dynamic_cast<ElementSpring2*>(element.get()))
+        typeName = QStringLiteral("SPRING2（两节点固定方向弹簧）");
+    else if (dynamic_cast<ElementSpringA*>(element.get()))
+        typeName = QStringLiteral("SPRINGA（两节点随动轴向弹簧）");
 
     QStringList nodeIds;
     for (const auto& weakNode : element->m_pNode)
@@ -4587,6 +4783,62 @@ void YQY::showElementProperties(int elementId)
         const auto node = weakNode.lock();
         if (node)
             nodeIds << QString::number(node->m_Id);
+    }
+
+    if (const auto spring = dynamic_cast<ElementSpringBase*>(element.get()))
+    {
+        QString behaviorId = QStringLiteral("--");
+        QStringList behaviorPoints;
+        double tangent = 0.0;
+        if (const auto behavior = spring->m_pSpringBehavior.lock())
+        {
+            behaviorId = QString::number(behavior->m_Id);
+            for (const SpringForceDisplacementPoint& point : behavior->m_Points)
+            {
+                behaviorPoints.append(QStringLiteral("(%1, %2)")
+                                          .arg(point.force, 0, 'g', 8)
+                                          .arg(point.displacement, 0, 'g', 8));
+            }
+            tangent = spring->GetCurrentTangent();
+        }
+
+        QString directionText;
+        if (const auto spring1 = dynamic_cast<ElementSpring1*>(element.get()))
+            directionText = QStringLiteral("节点 DOF：%1（%2）")
+                                .arg(spring1->m_DOF)
+                                .arg(spring1->m_DOF < 3 ? QStringLiteral("平动") : QStringLiteral("转动"));
+        else if (const auto spring2 = dynamic_cast<ElementSpring2*>(element.get()))
+        {
+            directionText = QStringLiteral("节点1 DOF：%1（%2），节点2 DOF：%3（%4）")
+                                .arg(spring2->m_FirstDOF)
+                                .arg(spring2->m_FirstDOF < 3 ? QStringLiteral("平动") : QStringLiteral("转动"))
+                                .arg(spring2->m_SecondDOF)
+                                .arg(spring2->m_SecondDOF < 3 ? QStringLiteral("平动") : QStringLiteral("转动"));
+        }
+        else
+            directionText = QStringLiteral("当前长度：%1").arg(element->L, 0, 'g', 12);
+
+        m_selectedNodeId = -1;
+        ui.monitorTabs->setCurrentWidget(ui.logPage);
+        ui.logEdit->appendPlainText(QStringLiteral("\n[选择] 单元 %1\n"
+                                                   "  类型：%2\n"
+                                                   "  关联节点：%3\n"
+                                                   "  %4\n"
+                                                   "  弹簧行为：%5\n"
+                                                   "  当前相对位移：%6，当前弹簧力：%7，当前切线刚度：%8\n"
+                                                   "  力-相对位移点（力, 位移）：%9")
+                                        .arg(elementId)
+                                        .arg(typeName)
+                                        .arg(nodeIds.isEmpty() ? QStringLiteral("--") : nodeIds.join(QStringLiteral(", ")))
+                                        .arg(directionText)
+                                        .arg(behaviorId)
+                                        .arg(spring->m_CurrentRelativeDisplacement, 0, 'g', 12)
+                                        .arg(spring->m_CurrentForce, 0, 'g', 12)
+                                        .arg(tangent, 0, 'g', 12)
+                                        .arg(behaviorPoints.isEmpty() ? QStringLiteral("--")
+                                                                      : behaviorPoints.join(QStringLiteral("，"))));
+        setWorkspaceMessage(QStringLiteral("已选择弹簧单元 %1").arg(elementId));
+        return;
     }
 
     QString propertyId = QStringLiteral("--");

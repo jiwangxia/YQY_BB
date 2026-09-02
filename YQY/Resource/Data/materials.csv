@@ -1,4 +1,4 @@
-# id,category,name,E(Pa),poisson,density(kg/m3),maxStress(Pa),expansion(1/K)
+﻿# id,category,name,E(Pa),poisson,density(kg/m3),maxStress(Pa),expansion(1/K)
 1,导线,LGJ-300/40,7.30e10,0.30,3342,2.58e8,1.96e-5
 2,导线,LGJ-400/50,6.90e10,0.30,3261,2.24e8,1.95e-5
 3,导线,JL1/G3A-1250/70,6.30e10,0.30,2853,1.37e8,2.09e-5

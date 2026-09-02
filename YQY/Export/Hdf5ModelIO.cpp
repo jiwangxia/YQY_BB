@@ -2,9 +2,13 @@
 
 #include "DataStructure/Structure/StructureData.h"
 #include "DataStructure/Node/Node.h"
+#include "DataStructure/Element/ElementSpring1.h"
+#include "DataStructure/Element/ElementSpring2.h"
+#include "DataStructure/Element/ElementSpringA.h"
 #include "DataStructure/Aerodynamics/AeroManager.h"
 #include "Export/Outputter.h"
 #include "Utility/CR.h"
+#include "Utility/ResultTextFormat.h"
 
 #ifndef H5_BUILT_AS_DYNAMIC_LIB
 #define H5_BUILT_AS_DYNAMIC_LIB
@@ -387,6 +391,14 @@ struct MPCRecord
     int slaveDirectionMask = 0;
     int stepId = 0;
     double parameters[3] = {};
+    int domainId = kModelDomainId;
+};
+
+struct SpringBehaviorPointRecord
+{
+    int behaviorId = 0;
+    double force = 0.0;
+    double displacement = 0.0;
     int domainId = kModelDomainId;
 };
 
@@ -1095,6 +1107,18 @@ H5Handle CreateMPCType()
     return type;
 }
 
+H5Handle CreateSpringBehaviorPointType()
+{
+    H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(SpringBehaviorPointRecord)), H5Tclose);
+    if (!type.valid())
+        return {};
+    H5Tinsert(type, "BEHAVIOR_ID", HOFFSET(SpringBehaviorPointRecord, behaviorId), H5T_NATIVE_INT);
+    H5Tinsert(type, "FORCE", HOFFSET(SpringBehaviorPointRecord, force), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "DISPLACEMENT", HOFFSET(SpringBehaviorPointRecord, displacement), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "DOMAIN_ID", HOFFSET(SpringBehaviorPointRecord, domainId), H5T_NATIVE_INT);
+    return type;
+}
+
 H5Handle CreateRigidBodyInertiaType()
 {
     H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(RigidBodyInertiaRecord)), H5Tclose);
@@ -1441,6 +1465,12 @@ EnumKeyword::ElementType GetElementType(const std::shared_ptr<ElementBase>& pEle
         return EnumKeyword::ElementType::CABLE;
     if (std::dynamic_pointer_cast<ElementBeam_CR>(pElement))
         return EnumKeyword::ElementType::CR3D;
+    if (std::dynamic_pointer_cast<ElementSpring1>(pElement))
+        return EnumKeyword::ElementType::SPRING1;
+    if (std::dynamic_pointer_cast<ElementSpring2>(pElement))
+        return EnumKeyword::ElementType::SPRING2;
+    if (std::dynamic_pointer_cast<ElementSpringA>(pElement))
+        return EnumKeyword::ElementType::SPRINGA;
     return EnumKeyword::ElementType::UNKNOWN;
 }
 
@@ -1594,6 +1624,18 @@ std::vector<ElementRecord> BuildElementRecords(const StructureData* pData)
             record.q0[1] = pBeam->q0.y();
             record.q0[2] = pBeam->q0.z();
         }
+        if (const auto spring = std::dynamic_pointer_cast<ElementSpringBase>(pElement))
+        {
+            if (const auto behavior = spring->m_pSpringBehavior.lock())
+                record.q0[0] = behavior->m_Id;
+            if (const auto spring1 = std::dynamic_pointer_cast<ElementSpring1>(pElement))
+                record.q0[1] = spring1->m_DOF;
+            if (const auto spring2 = std::dynamic_pointer_cast<ElementSpring2>(pElement))
+            {
+                record.q0[1] = spring2->m_FirstDOF;
+                record.q0[2] = spring2->m_SecondDOF;
+            }
+        }
         records.push_back(record);
     }
     return records;
@@ -1695,6 +1737,19 @@ std::vector<RigidBodyInertiaRecord> BuildRigidBodyInertiaRecords(const Structure
         record.inertia[4] = inertia->m_RotaryInertia(0, 2);
         record.inertia[5] = inertia->m_RotaryInertia(1, 2);
         records.push_back(record);
+    }
+    return records;
+}
+
+std::vector<SpringBehaviorPointRecord> BuildSpringBehaviorPointRecords(const StructureData* pData)
+{
+    std::vector<SpringBehaviorPointRecord> records;
+    for (const auto& [behaviorId, behavior] : pData->m_SpringBehaviors)
+    {
+        if (!behavior)
+            continue;
+        for (const SpringForceDisplacementPoint& point : behavior->m_Points)
+            records.push_back({behaviorId, point.force, point.displacement});
     }
     return records;
 }
@@ -2026,6 +2081,7 @@ bool WriteInputData(hid_t file, const StructureData* pData)
     H5Handle sectionType = CreateSectionType();
     H5Handle propertyType = CreatePropertyType();
     H5Handle elementType = CreateElementType();
+    H5Handle springBehaviorPointType = CreateSpringBehaviorPointType();
     H5Handle constraintType = CreateConstraintType();
     H5Handle mpcType = CreateMPCType();
     H5Handle rigidBodyInertiaType = CreateRigidBodyInertiaType();
@@ -2059,7 +2115,8 @@ bool WriteInputData(hid_t file, const StructureData* pData)
     BuildAeroRecords(pData, aeroCases, aeroCoefficients);
 
     return gridType.valid() && materialType.valid() && sectionType.valid() && propertyType.valid() &&
-           elementType.valid() && constraintType.valid() && mpcType.valid() && rigidBodyInertiaType.valid() &&
+           elementType.valid() && springBehaviorPointType.valid() && constraintType.valid() && mpcType.valid() &&
+           rigidBodyInertiaType.valid() &&
            loadType.valid() &&
            windDirectionType.valid() && stepType.valid() && modelSetType.valid() && modelSetMemberType.valid() &&
            computeRegionType.valid() && regionLinkType.valid() && stepMetadataType.valid() &&
@@ -2070,6 +2127,8 @@ bool WriteInputData(hid_t file, const StructureData* pData)
            WriteDataset(file, "/YQY/INPUT/SECTION/SECTION", sectionType, BuildSectionRecords(pData)) &&
            WriteDataset(file, "/YQY/INPUT/PROPERTY/PROPERTY", propertyType, BuildPropertyRecords(pData)) &&
            WriteDataset(file, "/YQY/INPUT/ELEMENT/ELEMENT", elementType, BuildElementRecords(pData)) &&
+           WriteDataset(file, "/YQY/INPUT/SPRING/BEHAVIOR", springBehaviorPointType,
+                        BuildSpringBehaviorPointRecords(pData)) &&
            WriteDataset(file, "/YQY/INPUT/CONSTRAINT/SPC", constraintType, BuildConstraintRecords(pData)) &&
            WriteDataset(file, "/YQY/INPUT/CONSTRAINT/MPC", mpcType, BuildMPCRecords(pData)) &&
            WriteDataset(file, "/YQY/INPUT/INERTIA/RIGID_BODY", rigidBodyInertiaType,
@@ -3094,6 +3153,7 @@ bool ReadInputData(hid_t file, StructureData* data)
     H5Handle sectionType = CreateSectionType();
     H5Handle propertyType = CreatePropertyType();
     H5Handle elementType = CreateElementType();
+    H5Handle springBehaviorPointType = CreateSpringBehaviorPointType();
     H5Handle constraintType = CreateConstraintType();
     H5Handle mpcType = CreateMPCType();
     H5Handle rigidBodyInertiaType = CreateRigidBodyInertiaType();
@@ -3112,7 +3172,8 @@ bool ReadInputData(hid_t file, StructureData* data)
     H5Handle aeroCaseType = CreateAeroCaseType();
     H5Handle aeroCoefficientType = CreateAeroCoefficientType();
     if (!gridType.valid() || !materialType.valid() || !sectionType.valid() || !propertyType.valid() ||
-        !elementType.valid() || !constraintType.valid() || !mpcType.valid() || !rigidBodyInertiaType.valid() ||
+        !elementType.valid() || !springBehaviorPointType.valid() || !constraintType.valid() || !mpcType.valid() ||
+        !rigidBodyInertiaType.valid() ||
         !loadType.valid() ||
         !windDirectionType.valid() || !stepType.valid() || !modelSetType.valid() || !modelSetMemberType.valid() ||
         !computeRegionType.valid() || !regionLinkType.valid() || !stepMetadataType.valid() ||
@@ -3127,6 +3188,7 @@ bool ReadInputData(hid_t file, StructureData* data)
     std::vector<SectionRecord> sections;
     std::vector<PropertyRecord> properties;
     std::vector<ElementRecord> elements;
+    std::vector<SpringBehaviorPointRecord> springBehaviorPoints;
     std::vector<ConstraintRecord> constraints;
     std::vector<MPCRecord> mpcs;
     std::vector<RigidBodyInertiaRecord> rigidBodyInertias;
@@ -3151,6 +3213,7 @@ bool ReadInputData(hid_t file, StructureData* data)
         !ReadDatasetAll(file, "/YQY/INPUT/SECTION/SECTION", sectionType, sections) ||
         !ReadDatasetAll(file, "/YQY/INPUT/PROPERTY/PROPERTY", propertyType, properties) ||
         !ReadDatasetAll(file, "/YQY/INPUT/ELEMENT/ELEMENT", elementType, elements) ||
+        !ReadOptionalDatasetAll(file, "/YQY/INPUT/SPRING/BEHAVIOR", springBehaviorPointType, springBehaviorPoints) ||
         !ReadDatasetAll(file, "/YQY/INPUT/CONSTRAINT/SPC", constraintType, constraints) ||
         !ReadOptionalDatasetAll(file, "/YQY/INPUT/CONSTRAINT/MPC", mpcType, mpcs) ||
         !ReadOptionalDatasetAll(file, "/YQY/INPUT/INERTIA/RIGID_BODY", rigidBodyInertiaType,
@@ -3249,6 +3312,19 @@ bool ReadInputData(hid_t file, StructureData* data)
         restored->m_Property[record.id] = std::move(property);
     }
 
+    for (const SpringBehaviorPointRecord& record : springBehaviorPoints)
+    {
+        if (record.behaviorId <= 0)
+            return false;
+        auto& behavior = restored->m_SpringBehaviors[record.behaviorId];
+        if (!behavior)
+        {
+            behavior = std::make_shared<SpringBehavior>();
+            behavior->m_Id = record.behaviorId;
+        }
+        behavior->m_Points.push_back({record.force, record.displacement});
+    }
+
     for (const ElementRecord& record : elements)
     {
         std::shared_ptr<ElementBase> element;
@@ -3267,6 +3343,24 @@ bool ReadInputData(hid_t file, StructureData* data)
                 element = std::move(beam);
                 break;
             }
+            case EnumKeyword::ElementType::SPRING1:
+            {
+                auto spring = std::make_shared<ElementSpring1>();
+                spring->m_DOF = static_cast<int>(record.q0[1]);
+                element = std::move(spring);
+                break;
+            }
+            case EnumKeyword::ElementType::SPRING2:
+            {
+                auto spring = std::make_shared<ElementSpring2>();
+                spring->m_FirstDOF = static_cast<int>(record.q0[1]);
+                spring->m_SecondDOF = static_cast<int>(record.q0[2]);
+                element = std::move(spring);
+                break;
+            }
+            case EnumKeyword::ElementType::SPRINGA:
+                element = std::make_shared<ElementSpringA>();
+                break;
             default:
                 element = std::make_shared<ElementTruss>();
                 break;
@@ -3278,11 +3372,10 @@ bool ReadInputData(hid_t file, StructureData* data)
         element->m_WireId = record.wireId;
         element->m_AeroBundleCount = record.aeroBundleCount;
         element->m_AeroProfileId = record.aeroProfileId;
-        if (element->m_pNode.size() < 2)
-        {
-            element->m_pNode.resize(2);
-        }
-        for (size_t nodeIndex = 0; nodeIndex < 2; ++nodeIndex)
+        const size_t nodeCount = std::dynamic_pointer_cast<ElementSpring1>(element) ? 1 : 2;
+        if (static_cast<std::size_t>(element->m_pNode.size()) < nodeCount)
+            element->m_pNode.resize(nodeCount);
+        for (size_t nodeIndex = 0; nodeIndex < nodeCount; ++nodeIndex)
         {
             const int nodeId = record.nodeIds[nodeIndex];
             const auto node = restored->m_Nodes.find(nodeId);
@@ -3297,13 +3390,32 @@ bool ReadInputData(hid_t file, StructureData* data)
                 return false;
             element->m_pProperty = property->second;
         }
-        const auto firstNode = element->m_pNode[0].lock();
-        const auto secondNode = element->m_pNode[1].lock();
-        const double dx = secondNode->m_X - firstNode->m_X;
-        const double dy = secondNode->m_Y - firstNode->m_Y;
-        const double dz = secondNode->m_Z - firstNode->m_Z;
-        element->L0 = std::sqrt(dx * dx + dy * dy + dz * dz);
-        element->L = element->L0;
+        if (const auto spring = std::dynamic_pointer_cast<ElementSpringBase>(element))
+        {
+            const auto behavior = restored->m_SpringBehaviors.find(static_cast<int>(record.q0[0]));
+            if (behavior == restored->m_SpringBehaviors.end() || !behavior->second)
+                return false;
+            spring->m_pSpringBehavior = behavior->second;
+        }
+        if (const auto spring1 = std::dynamic_pointer_cast<ElementSpring1>(element); spring1 && spring1->m_DOF >= 3)
+            element->m_pNode[0].lock()->SetNumDOFs(6);
+        if (const auto spring2 = std::dynamic_pointer_cast<ElementSpring2>(element))
+        {
+            if (spring2->m_FirstDOF >= 3)
+                element->m_pNode[0].lock()->SetNumDOFs(6);
+            if (spring2->m_SecondDOF >= 3)
+                element->m_pNode[1].lock()->SetNumDOFs(6);
+        }
+        if (nodeCount == 2)
+        {
+            const auto firstNode = element->m_pNode[0].lock();
+            const auto secondNode = element->m_pNode[1].lock();
+            const double dx = secondNode->m_X - firstNode->m_X;
+            const double dy = secondNode->m_Y - firstNode->m_Y;
+            const double dz = secondNode->m_Z - firstNode->m_Z;
+            element->L0 = std::sqrt(dx * dx + dy * dy + dz * dz);
+            element->L = element->L0;
+        }
         restored->m_Elements[record.id] = std::move(element);
     }
 
@@ -3895,7 +4007,7 @@ QString ElementTypeName(EnumKeyword::ElementResultType type)
 
 QString FormatBdfValue(double value)
 {
-    return QString::number(value, 'E', 8).rightJustified(16, ' ');
+    return ResultTextFormat::FormatPlainResultValue(value);
 }
 
 QString FormatBdfTime(double time)
@@ -4695,6 +4807,8 @@ bool Hdf5ModelIO::RestoreLastDynamicState(const QString& fileName, StructureData
 
 bool Hdf5ModelIO::ReadSolverIterationHistory(std::vector<SolverIterationRecord>& records) const
 {
+    QMutexLocker locker(&g_hdf5ApiMutex);
+    H5ReadErrorScope errorScope;
     records.clear();
     if (!m_impl->resultFile.valid())
         return false;

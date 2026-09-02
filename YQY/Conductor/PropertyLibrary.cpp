@@ -27,7 +27,9 @@ QStringList dataRows(const QString& resourcePath, QString& error)
     stream.setEncoding(QStringConverter::Utf8);
     while (!stream.atEnd())
     {
-        const QString row = stream.readLine().trimmed();
+        QString row = stream.readLine().trimmed();
+        if (!rows.size() && !row.isEmpty() && row.front() == QChar::ByteOrderMark)
+            row.remove(0, 1);
         if (!row.isEmpty() && !row.startsWith(QLatin1Char('#')))
             rows.push_back(row);
     }

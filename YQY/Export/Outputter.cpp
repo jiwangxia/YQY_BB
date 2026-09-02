@@ -1,7 +1,10 @@
 #include "Outputter.h"
+#include "DataStructure/Element/ElementSpringBase.h"
 #include "DataStructure/Structure/StructureData.h"
 #include "Export/Hdf5ModelIO.h"
+#include "Export/Hdf5ResultWriter.h"
 #include "Export/ResultOutputSettings.h"
+#include "Utility/ResultTextFormat.h"
 #include <QDebug>
 #include <QFile>
 #include <QTextStream>
@@ -246,6 +249,18 @@ void ElementData::ExtractFromElement(const ElementBase* pElement)
     m_currentStress = pElement->m_Stress;
     m_deltaStress = m_currentStress - m_initStress;
 
+    if (const auto spring = dynamic_cast<const ElementSpringBase*>(pElement))
+    {
+        // 弹簧没有截面面积；Abaqus 的 S11 对弹簧表示力，统一映射到已有的轴力结果。
+        // 结果帧保存时基于当前节点位移重新计算，避免克隆模型合并结果时保留旧的缓存值。
+        auto* mutableSpring = const_cast<ElementSpringBase*>(spring);
+        MatrixXd stiffness;
+        mutableSpring->Get_ke(stiffness);
+        m_axialForce = mutableSpring->m_CurrentForce;
+        m_relativeDisplacement = mutableSpring->m_CurrentRelativeDisplacement;
+        return;
+    }
+
     auto pProperty = pElement->m_pProperty.lock();
     if (!pProperty)
         return;
@@ -291,6 +306,8 @@ double ElementData::GetValue(EnumKeyword::ElementResultType type) const
             return m_currentStress;
         case EnumKeyword::ElementResultType::DeltaStress:
             return m_deltaStress;
+        case EnumKeyword::ElementResultType::RelativeDisplacement:
+            return m_relativeDisplacement;
         default:
             return 0.0;
     }
@@ -468,10 +485,10 @@ public:
     }
 };
 
-// 辅助格式化函数：使用智能格式
+// 节点和单元结果统一使用普通小数输出，避免科学计数法。
 static QString FormatValue(double val, int width = 16)
 {
-    return OutputFormatter::Format(val, OutputFormatter::SmartFormat, width, 8);
+    return ResultTextFormat::FormatPlainResultValue(val, width);
 }
 
 static QString FormatTimeValue(double time, int width = 16)
@@ -621,8 +638,8 @@ bool Outputter::BeginHdf5ResultStream(const QString& fileName, StructureData* pD
 {
     EndHdf5ResultStream(false);
 
-    m_hdf5Stream = std::make_unique<Hdf5ModelIO>();
-    if (!m_hdf5Stream->BeginResultStream(fileName, pData, sourceModelName))
+    m_hdf5Stream = std::make_unique<Hdf5ResultWriter>();
+    if (!m_hdf5Stream->begin(fileName, pData, sourceModelName))
     {
         m_hdf5Stream.reset();
         return false;
@@ -650,9 +667,9 @@ bool Outputter::EndHdf5ResultStream(bool resultComplete)
         const bool pendingFramesSubmitted = FlushHdf5ResultFrames();
         const bool writerStopped = StopHdf5Writer();
         const bool framesWritten = pendingFramesSubmitted && writerStopped;
-        const bool iterationsWritten = m_hdf5Stream->WriteSolverIterationHistory(m_solverIterationRecords);
+        const bool iterationsWritten = m_hdf5Stream->writeIterationHistory(m_solverIterationRecords);
         const bool streamComplete = resultComplete && framesWritten && iterationsWritten;
-        const bool finalized = m_hdf5Stream->EndResultStream(streamComplete);
+        const bool finalized = m_hdf5Stream->end(streamComplete);
         m_hdf5Stream.reset();
         m_hdf5PendingFrames.clear();
         m_hdf5BackgroundWrite = false;
@@ -678,7 +695,7 @@ bool Outputter::FlushHdf5ResultFrames()
 
     if (!m_hdf5BackgroundWrite)
     {
-        const bool written = m_hdf5Stream->WriteResultFrames(batch.firstDomainId, batch.frames);
+        const bool written = m_hdf5Stream->writeFrames(batch.firstDomainId, batch.frames);
         std::lock_guard<std::mutex> lock(m_hdf5QueueMutex);
         m_hdf5StreamWriteOk = m_hdf5StreamWriteOk && written;
         return written;
@@ -751,7 +768,7 @@ void Outputter::RunHdf5Writer()
         }
         m_hdf5QueueCondition.notify_all();
 
-        const bool written = m_hdf5Stream->WriteResultFrames(batch.firstDomainId, batch.frames);
+        const bool written = m_hdf5Stream->writeFrames(batch.firstDomainId, batch.frames);
         if (written)
             continue;
 
@@ -925,6 +942,8 @@ QString Outputter::GetTypeName(EnumKeyword::ElementResultType type)
             return "S";
         case EnumKeyword::ElementResultType::DeltaStress:
             return "DS";
+        case EnumKeyword::ElementResultType::RelativeDisplacement:
+            return "REL_DISP";
         default:
             return "UNKNOWN";
     }
@@ -1101,6 +1120,25 @@ bool Outputter::SaveBdfModel(const QString& fileName, StructureData* pData)
                        << FmtDouble(pBeam->q0.z());
             }
             stream << "\n";
+        }
+    }
+
+    std::vector<std::shared_ptr<ElementBase>> aerodynamicElements;
+    for (const auto& [elementId, element] : pData->m_Elements)
+    {
+        Q_UNUSED(elementId);
+        if (element && element->HasAerodynamicLoad())
+            aerodynamicElements.push_back(element);
+    }
+    if (!aerodynamicElements.empty())
+    {
+        stream << "\n*AERO_ELEMENT, " << aerodynamicElements.size() << "\n";
+        stream << "** ElementID  Role  WireID  BundleCount  ProfileID\n";
+        for (const auto& element : aerodynamicElements)
+        {
+            stream << FmtInt(mapId(elementIdMap, element->m_Id), 10, true) << " "
+                   << FmtInt(static_cast<int>(element->m_Role)) << " " << FmtInt(element->m_WireId) << " "
+                   << FmtInt(element->m_AeroBundleCount) << " " << FmtInt(element->m_AeroProfileId) << "\n";
         }
     }
 

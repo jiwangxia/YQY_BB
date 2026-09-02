@@ -11,6 +11,7 @@ PropertyModule::PropertyModule(QWidget* p)
 {
     m_ui->setupUi(this);
     setObjectName(QStringLiteral("propertyPage"));
+    m_ui->rootLayout->setStretch(1, 1);
     m_ui->propertyTabs->tabBar()->setExpanding(false);
     m_ui->propertyTabs->tabBar()->setUsesScrollButtons(true);
     for (auto* t : {m_ui->materialTable, m_ui->sectionTable})
@@ -67,6 +68,12 @@ QTreeWidget* PropertyModule::sectionTree() const
 {
     return m_ui->sectionTree;
 }
+
+QTreeWidget* PropertyModule::springBehaviorTree() const
+{
+    return m_ui->springBehaviorTree;
+}
+
 QPushButton* PropertyModule::refreshButton() const
 {
     return m_ui->refreshButton;

@@ -3,7 +3,6 @@
 #include "Export/Hdf5ResultData.h"
 
 #include <functional>
-#include <memory>
 #include <vector>
 #include <QWidget>
 class QCheckBox;
@@ -13,7 +12,6 @@ class QLabel;
 class QPushButton;
 class QSlider;
 class QTimer;
-class Hdf5ModelIO;
 namespace Ui
 {
 class ResultControlPanelClass;
@@ -35,7 +33,6 @@ public:
     QPushButton* exportButton() const;
     QPushButton* exportElementButton() const;
     QPushButton* exportIterationButton() const;
-    Hdf5ModelIO* reader() const;
     std::vector<Hdf5ResultFrameInfo>& frames();
     const std::vector<Hdf5ResultFrameInfo>& frames() const;
     QString& resultFilePath();
@@ -53,12 +50,12 @@ public:
 
 private:
     Ui::ResultControlPanelClass* m_ui = nullptr;
-    std::unique_ptr<Hdf5ModelIO> m_reader;
     std::vector<Hdf5ResultFrameInfo> m_frames;
     QString m_resultFilePath;
     bool m_partialResult = false;
     double m_automaticScale = 1.0;
     double m_playbackPosition = 0.0;
+    double m_playbackTime = 0.0;
     QTimer* m_playbackTimer = nullptr;
     std::function<void(double)> m_frameChangedHandler;
     std::function<void()> m_visualizationChangedHandler;

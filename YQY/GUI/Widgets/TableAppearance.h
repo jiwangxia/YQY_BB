@@ -4,6 +4,7 @@
 #include <QStyledItemDelegate>
 #include <QTableView>
 
+// 将表格单元格文本居中显示的委托。
 class CenteredTableItemDelegate final : public QStyledItemDelegate
 {
 public:
@@ -19,6 +20,7 @@ public:
     }
 };
 
+// 统一设置表头和单元格的居中显示。
 inline void applyCenteredTableAppearance(QTableView* table)
 {
     if (!table)

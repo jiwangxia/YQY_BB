@@ -10,7 +10,9 @@ const QMap<QString, EnumKeyword::KeyData> EnumKeyword::MapKeyData = { //读取�
     {"MPC", EnumKeyword::KeyData::MPC},
     {"LOAD", EnumKeyword::KeyData::LOAD},
     {"STRESS", EnumKeyword::KeyData::STRESS},
-    {"ANALYSIS_STEP", EnumKeyword::KeyData::ANALYSIS_STEP}};
+    {"ANALYSIS_STEP", EnumKeyword::KeyData::ANALYSIS_STEP},
+    {"AERO_ELEMENT", EnumKeyword::KeyData::AERO_ELEMENT},
+    {"SPRING", EnumKeyword::KeyData::SPRING}};
 
 const QMap<QString, EnumKeyword::Direction> EnumKeyword::MapDirection = {
     {"X", EnumKeyword::Direction::X},   {"Y", EnumKeyword::Direction::Y},   {"Z", EnumKeyword::Direction::Z},
@@ -20,6 +22,9 @@ const QMap<QString, EnumKeyword::ElementType> EnumKeyword::MapElementType = {
     {"T3D2", EnumKeyword::ElementType::T3D2},
     {"CABLE", EnumKeyword::ElementType::CABLE},
     {"CR3D", EnumKeyword::ElementType::CR3D},
+    {"SPRING1", EnumKeyword::ElementType::SPRING1},
+    {"SPRING2", EnumKeyword::ElementType::SPRING2},
+    {"SPRINGA", EnumKeyword::ElementType::SPRINGA},
 
 };
 

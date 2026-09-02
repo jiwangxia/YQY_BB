@@ -57,7 +57,6 @@
               <item><widget class="QTreeWidget" name="modelDataTree"><property name="headerHidden"><bool>true</bool></property><property name="indentation"><number>18</number></property><property name="animated"><bool>true</bool></property><column><property name="text"><string notr="true">1</string></property></column></widget></item>
               <item><widget class="QPushButton" name="modelImportButton"><property name="text"><string>导入模型</string></property></widget></item>
               <item><widget class="QPushButton" name="modelFitButton"><property name="text"><string>适应窗口</string></property></widget></item>
-              <item><spacer name="modelModuleSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint"><size><width>20</width><height>80</height></size></property></spacer></item>
              </layout>
             </widget>
             <widget class="QWidget" name="analysisModulePage">

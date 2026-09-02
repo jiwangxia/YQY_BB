@@ -1,10 +1,13 @@
 #include "Widgets/ModelViewport.h"
 
 #include "DataStructure/Structure/StructureData.h"
+#include "DataStructure/Element/ElementSpring1.h"
+#include "DataStructure/Element/ElementSpring2.h"
+#include "DataStructure/Element/ElementSpringA.h"
 #include "DataStructure/Section/SectionCircular.h"
 #include "DataStructure/Section/SectionRectangle.h"
 #include "DataStructure/Section/Section_Ice.h"
-#include "Export/Hdf5ModelIO.h"
+#include "Export/Hdf5ResultData.h"
 
 #include <QLabel>
 #include <QContextMenuEvent>
@@ -443,12 +446,14 @@ ModelViewport::ModelViewport(QWidget* parent)
 
     m_elementActor->SetMapper(m_elementMapper);
     m_elementActor->GetProperty()->SetLineWidth(2.0);
+    m_elementActor->GetProperty()->RenderLinesAsTubesOn();
     m_originalElementMapper->SetInputData(m_originalElementData);
     m_originalElementMapper->ScalarVisibilityOff();
     m_originalElementActor->SetMapper(m_originalElementMapper);
     m_originalElementActor->GetProperty()->SetColor(0.55, 0.58, 0.62);
     m_originalElementActor->GetProperty()->SetOpacity(0.45);
     m_originalElementActor->GetProperty()->SetLineWidth(1.0);
+    m_originalElementActor->GetProperty()->RenderLinesAsTubesOn();
     m_originalElementActor->SetVisibility(false);
     m_originalElementActor->PickableOff();
     m_solidMapper->SetInputData(m_solidData);
@@ -494,7 +499,17 @@ ModelViewport::ModelViewport(QWidget* parent)
     m_resultScalarBar->SetNumberOfLabels(7);
     m_resultScalarBar->SetLabelFormat("%.5g");
     m_resultScalarBar->SetBarRatio(0.20);
-    m_resultScalarBar->SetTitleRatio(0.16);
+    m_resultScalarBar->UnconstrainedFontSizeOn();
+    m_resultScalarBar->GetTitleTextProperty()->SetFontFamilyToArial();
+    m_resultScalarBar->GetTitleTextProperty()->SetFontSize(18);
+    m_resultScalarBar->GetTitleTextProperty()->BoldOff();
+    m_resultScalarBar->GetTitleTextProperty()->ItalicOff();
+    m_resultScalarBar->GetTitleTextProperty()->ShadowOff();
+    m_resultScalarBar->GetLabelTextProperty()->SetFontFamilyToArial();
+    m_resultScalarBar->GetLabelTextProperty()->SetFontSize(14);
+    m_resultScalarBar->GetLabelTextProperty()->BoldOff();
+    m_resultScalarBar->GetLabelTextProperty()->ItalicOff();
+    m_resultScalarBar->GetLabelTextProperty()->ShadowOff();
     m_resultScalarBar->SetMaximumWidthInPixels(112);
     m_resultScalarBar->SetWidth(0.085);
     m_resultScalarBar->SetHeight(0.68);
@@ -536,7 +551,7 @@ ModelViewport::ModelViewport(QWidget* parent)
 
 void ModelViewport::displayModel(const std::shared_ptr<StructureData>& structure, bool resetCamera)
 {
-    if (!structure || structure->m_Nodes.empty())
+    if (!structure || structure->Nodes().empty())
     {
         clearModel();
         return;
@@ -571,12 +586,13 @@ void ModelViewport::displayModel(const std::shared_ptr<StructureData>& structure
 
     vtkNew<vtkPoints> points;
     points->SetDataTypeToDouble();
-    points->Allocate(static_cast<vtkIdType>(structure->m_Nodes.size()));
+    points->Allocate(static_cast<vtkIdType>(structure->Nodes().size()));
     std::unordered_map<const Node*, vtkIdType> pointIds;
-    pointIds.reserve(structure->m_Nodes.size());
+    pointIds.reserve(structure->Nodes().size());
     m_nodePointIds.clear();
-    m_nodePointIds.reserve(structure->m_Nodes.size());
-    for (const auto& [nodeId, node] : structure->m_Nodes)
+    m_springPointReferences.clear();
+    m_nodePointIds.reserve(structure->Nodes().size());
+    for (const auto& [nodeId, node] : structure->Nodes())
     {
         if (!node)
             continue;
@@ -587,13 +603,127 @@ void ModelViewport::displayModel(const std::shared_ptr<StructureData>& structure
         m_pointNodeIds.push_back(nodeId);
     }
 
+    vtkNew<vtkPoints> nodePoints;
+    nodePoints->DeepCopy(points);
+
+    double bounds[6] = {};
+    points->GetBounds(bounds);
+    const double diagonal = std::sqrt((bounds[1] - bounds[0]) * (bounds[1] - bounds[0]) +
+                                      (bounds[3] - bounds[2]) * (bounds[3] - bounds[2]) +
+                                      (bounds[5] - bounds[4]) * (bounds[5] - bounds[4]));
+    const double groundSpringLength = std::max(diagonal * 0.08, 0.08);
+
     vtkNew<vtkCellArray> lines;
-    m_elementLabelPositions.reserve(structure->m_Elements.size());
-    lines->AllocateEstimate(static_cast<vtkIdType>(structure->m_Elements.size()), 2);
-    for (const auto& [elementId, element] : structure->m_Elements)
+    m_elementLabelPositions.reserve(structure->Elements().size());
+    lines->AllocateEstimate(static_cast<vtkIdType>(structure->Elements().size()), 2);
+    const auto addSpringPolyline = [&points, &lines, this](int elementId, const std::array<double, 3>& first,
+                                                            const std::array<double, 3>& second, int firstNodeId,
+                                                            int secondNodeId)
+    {
+        std::array<double, 3> direction = {second[0] - first[0], second[1] - first[1], second[2] - first[2]};
+        const double length = std::sqrt(direction[0] * direction[0] + direction[1] * direction[1] +
+                                        direction[2] * direction[2]);
+        if (length <= 1.0e-12)
+            return false;
+        for (double& value : direction)
+            value /= length;
+
+        std::array<double, 3> reference = std::abs(direction[2]) < 0.8 ? std::array<double, 3>{0.0, 0.0, 1.0}
+                                                                        : std::array<double, 3>{0.0, 1.0, 0.0};
+        std::array<double, 3> normal = {direction[1] * reference[2] - direction[2] * reference[1],
+                                        direction[2] * reference[0] - direction[0] * reference[2],
+                                        direction[0] * reference[1] - direction[1] * reference[0]};
+        const double normalLength = std::sqrt(normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]);
+        for (double& value : normal)
+            value /= normalLength;
+
+        const std::array<double, 3> binormal = {direction[1] * normal[2] - direction[2] * normal[1],
+                                                direction[2] * normal[0] - direction[0] * normal[2],
+                                                direction[0] * normal[1] - direction[1] * normal[0]};
+        constexpr int coilTurns = 3;
+        constexpr int segmentsPerTurn = 48;
+        constexpr int coilSegments = coilTurns * segmentsPerTurn;
+        constexpr double coilStart = 0.12;
+        constexpr double coilLength = 0.76;
+        constexpr double twoPi = 6.28318530717958647692;
+        const double coilRadius = length * 0.08;
+        std::vector<vtkIdType> ids;
+        ids.reserve(coilSegments + 3);
+        const auto addPoint = [&points, &ids, this, firstNodeId, secondNodeId](const std::array<double, 3>& point,
+                                                                                 double secondNodeWeight)
+        {
+            const vtkIdType pointId = points->InsertNextPoint(point.data());
+            ids.push_back(pointId);
+            m_springPointReferences.push_back({pointId, firstNodeId, secondNodeId, secondNodeWeight});
+        };
+        addPoint(first, 0.0);
+        for (int index = 0; index <= coilSegments; ++index)
+        {
+            const double ratio = coilStart + coilLength * static_cast<double>(index) / coilSegments;
+            const double angle = twoPi * coilTurns * static_cast<double>(index) / coilSegments;
+            const double normalOffset = coilRadius * std::cos(angle);
+            const double binormalOffset = coilRadius * std::sin(angle);
+            const std::array<double, 3> point = {
+                first[0] + direction[0] * length * ratio + normal[0] * normalOffset + binormal[0] * binormalOffset,
+                first[1] + direction[1] * length * ratio + normal[1] * normalOffset + binormal[1] * binormalOffset,
+                first[2] + direction[2] * length * ratio + normal[2] * normalOffset + binormal[2] * binormalOffset};
+            addPoint(point, ratio);
+        }
+        addPoint(second, 1.0);
+        lines->InsertNextCell(static_cast<vtkIdType>(ids.size()), ids.data());
+        m_cellElementIds.push_back(elementId);
+        m_elementLabelPositions.push_back(
+            {0.5 * (first[0] + second[0]), 0.5 * (first[1] + second[1]), 0.5 * (first[2] + second[2])});
+        return true;
+    };
+    for (const auto& [elementId, element] : structure->Elements())
     {
         if (!element)
             continue;
+
+        if (const auto spring1 = dynamic_cast<ElementSpring1*>(element.get()))
+        {
+            const auto node = spring1->m_pNode.empty() ? nullptr : spring1->m_pNode.front().lock();
+            if (!node || spring1->m_DOF < 0 || spring1->m_DOF > 5)
+                continue;
+            std::array<double, 3> nodePosition = {node->m_X, node->m_Y, node->m_Z};
+            std::array<double, 3> groundPosition = nodePosition;
+            groundPosition[static_cast<std::size_t>(spring1->m_DOF % 3)] -= groundSpringLength;
+            if (addSpringPolyline(elementId, groundPosition, nodePosition, -1, node->m_Id))
+            {
+                const int firstAxis = (spring1->m_DOF + 1) % 3;
+                const double width = groundSpringLength * 0.18;
+                const std::array<double, 3> beamFirst = {groundPosition[0] - (firstAxis == 0 ? width : 0.0),
+                                                         groundPosition[1] - (firstAxis == 1 ? width : 0.0),
+                                                         groundPosition[2] - (firstAxis == 2 ? width : 0.0)};
+                const std::array<double, 3> beamSecond = {groundPosition[0] + (firstAxis == 0 ? width : 0.0),
+                                                          groundPosition[1] + (firstAxis == 1 ? width : 0.0),
+                                                          groundPosition[2] + (firstAxis == 2 ? width : 0.0)};
+                vtkIdType groundIds[2] = {points->InsertNextPoint(beamFirst.data()),
+                                           points->InsertNextPoint(beamSecond.data())};
+                lines->InsertNextCell(2, groundIds);
+                m_springPointReferences.push_back({groundIds[0], -1, node->m_Id, 0.0});
+                m_springPointReferences.push_back({groundIds[1], -1, node->m_Id, 0.0});
+                m_cellElementIds.push_back(elementId);
+            }
+            continue;
+        }
+
+        if (dynamic_cast<ElementSpring2*>(element.get()) || dynamic_cast<ElementSpringA*>(element.get()))
+        {
+            if (element->m_pNode.size() >= 2)
+            {
+                const auto firstNode = element->m_pNode[0].lock();
+                const auto secondNode = element->m_pNode[1].lock();
+                if (firstNode && secondNode)
+                {
+                    addSpringPolyline(elementId, {firstNode->m_X, firstNode->m_Y, firstNode->m_Z},
+                                      {secondNode->m_X, secondNode->m_Y, secondNode->m_Z}, firstNode->m_Id,
+                                      secondNode->m_Id);
+                }
+            }
+            continue;
+        }
 
         std::vector<vtkIdType> connectivity;
         connectivity.reserve(element->m_pNode.size());
@@ -628,8 +758,8 @@ void ModelViewport::displayModel(const std::shared_ptr<StructureData>& structure
     }
 
     vtkNew<vtkCellArray> vertices;
-    vertices->AllocateEstimate(points->GetNumberOfPoints(), 1);
-    for (vtkIdType pointId = 0; pointId < points->GetNumberOfPoints(); ++pointId)
+    vertices->AllocateEstimate(nodePoints->GetNumberOfPoints(), 1);
+    for (vtkIdType pointId = 0; pointId < nodePoints->GetNumberOfPoints(); ++pointId)
         vertices->InsertNextCell(1, &pointId);
 
     m_points->ShallowCopy(points);
@@ -640,7 +770,7 @@ void ModelViewport::displayModel(const std::shared_ptr<StructureData>& structure
     m_originalElementData->SetPoints(originalPoints);
     m_originalElementData->SetLines(lines);
     m_originalElementData->Modified();
-    m_nodeData->SetPoints(m_points);
+    m_nodeData->SetPoints(nodePoints);
     m_nodeData->SetVerts(vertices);
     m_elementData->Modified();
     m_nodeData->Modified();
@@ -961,6 +1091,8 @@ bool ModelViewport::updateNodePosition(int nodeId, double x, double y, double z)
         return false;
 
     m_points->SetPoint(it->second, x, y, z);
+    if (vtkPoints* nodePoints = m_nodeData->GetPoints())
+        nodePoints->SetPoint(it->second, x, y, z);
     m_points->Modified();
     m_elementData->Modified();
     m_nodeData->Modified();
@@ -999,6 +1131,7 @@ bool ModelViewport::displayResultFrame(const Hdf5ResultFrame& frame, ResultField
     pointScalars->FillValue(0.0);
     double scalarMinimum = std::numeric_limits<double>::max();
     double scalarMaximum = std::numeric_limits<double>::lowest();
+    vtkPoints* nodePoints = m_nodeData->GetPoints();
 
     for (const auto& [nodeId, pointId] : m_nodePointIds)
     {
@@ -1014,6 +1147,12 @@ bool ModelViewport::displayResultFrame(const Hdf5ResultFrame& frame, ResultField
         m_points->SetPoint(pointId, original[0] + displacement[0] * deformationScale,
                            original[1] + displacement[1] * deformationScale,
                            original[2] + displacement[2] * deformationScale);
+        if (nodePoints)
+        {
+            nodePoints->SetPoint(pointId, original[0] + displacement[0] * deformationScale,
+                                 original[1] + displacement[1] * deformationScale,
+                                 original[2] + displacement[2] * deformationScale);
+        }
 
         double scalar = 0.0;
         switch (field)
@@ -1041,6 +1180,29 @@ bool ModelViewport::displayResultFrame(const Hdf5ResultFrame& frame, ResultField
             scalarMaximum = std::max(scalarMaximum, scalar);
         }
     }
+
+    // 弹簧螺旋线包含额外的绘制点；按两端节点位移插值更新它们，保证动画中弹簧随节点伸缩。
+    for (const SpringPointReference& reference : m_springPointReferences)
+    {
+        double originalPoint[3] = {};
+        m_originalElementData->GetPoint(reference.pointId, originalPoint);
+        double displacement[3] = {};
+        const auto applyNodeDisplacement = [&nodalResults, &displacement](int nodeId, double weight)
+        {
+            const auto result = nodalResults.find(nodeId);
+            if (nodeId < 0 || result == nodalResults.end())
+                return;
+            for (int component = 0; component < 3; ++component)
+                displacement[component] += result->second->displacement[component] * weight;
+        };
+        applyNodeDisplacement(reference.firstNodeId, 1.0 - reference.secondNodeWeight);
+        applyNodeDisplacement(reference.secondNodeId, reference.secondNodeWeight);
+        m_points->SetPoint(reference.pointId, originalPoint[0] + displacement[0] * deformationScale,
+                           originalPoint[1] + displacement[1] * deformationScale,
+                           originalPoint[2] + displacement[2] * deformationScale);
+    }
+    if (nodePoints)
+        nodePoints->Modified();
 
     const bool nodalField = field <= ResultField::DisplacementZ;
     if (nodalField)
@@ -1111,7 +1273,7 @@ bool ModelViewport::displayResultFrame(const Hdf5ResultFrame& frame, ResultField
     m_elementMapper->ScalarVisibilityOn();
     m_nodeMapper->SetLookupTable(m_resultLookupTable);
     m_nodeMapper->SetScalarRange(scalarMinimum, scalarMaximum);
-    const char* titles[] = {"|U|", "U-X", "U-Y", "U-Z", "Axial force", "Stress", "Strain"};
+    const char* titles[] = {"|U|", "U-X", "U-Y", "U-Z", "Force", "Stress", "Strain"};
     m_resultScalarBar->SetTitle(titles[static_cast<int>(field)]);
     m_resultScalarBar->SetVisibility(true);
     m_originalElementActor->SetVisibility(showOriginal);
@@ -1154,8 +1316,14 @@ void ModelViewport::clearResultDisplay()
     {
         const auto point = m_nodePointIds.find(nodeId);
         if (point != m_nodePointIds.end())
+        {
             m_points->SetPoint(point->second, coordinates.data());
+            if (vtkPoints* nodePoints = m_nodeData->GetPoints())
+                nodePoints->SetPoint(point->second, coordinates.data());
+        }
     }
+    if (vtkPoints* nodePoints = m_nodeData->GetPoints())
+        nodePoints->Modified();
     m_elementData->GetPointData()->SetScalars(nullptr);
     m_elementData->GetCellData()->SetScalars(nullptr);
     m_nodeData->GetPointData()->SetScalars(nullptr);
@@ -1343,7 +1511,7 @@ void ModelViewport::rebuildSolidGeometry()
     vtkNew<vtkCellArray> solidPolys;
 
     const SolidVector3 globalAxes[3] = {{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0}};
-    for (const auto& [elementId, element] : m_structure->m_Elements)
+    for (const auto& [elementId, element] : m_structure->Elements())
     {
         if (!element || element->m_pNode.size() < 2)
             continue;
@@ -1805,6 +1973,89 @@ void ModelViewport::performSelectionAt(double widgetX, double widgetY)
     emit selectionCleared();
 }
 
+bool ModelViewport::setRotationCenterAt(double widgetX, double widgetY)
+{
+    if (!hasModel())
+        return false;
+
+    const double scale = devicePixelRatioF();
+    const double x = widgetX * scale;
+    const double y = (height() - widgetY) * scale;
+    double center[3] = {};
+
+    m_hardwarePicker->InitializePickList();
+    m_hardwarePicker->PickFromListOn();
+    m_hardwarePicker->SnapToMeshPointOn();
+    m_hardwarePicker->SetPixelTolerance(6);
+    if (m_nodeActor->GetVisibility())
+        m_hardwarePicker->AddPickList(m_nodeActor);
+    const bool nodePicked = m_nodeActor->GetVisibility() && m_hardwarePicker->Pick(x, y, 0.0, m_renderer) &&
+                            m_hardwarePicker->GetActor() == m_nodeActor.GetPointer() &&
+                            m_hardwarePicker->GetPointId() >= 0;
+    if (nodePicked)
+    {
+        double* picked = m_hardwarePicker->GetPickPosition();
+        if (picked && std::isfinite(picked[0]) && std::isfinite(picked[1]) && std::isfinite(picked[2]))
+        {
+            center[0] = picked[0];
+            center[1] = picked[1];
+            center[2] = picked[2];
+        }
+        else
+        {
+            m_hardwarePicker->InitializePickList();
+            return false;
+        }
+    }
+    m_hardwarePicker->InitializePickList();
+
+    if (!nodePicked)
+    {
+        const QList<vtkActor*> actors = {m_nodeActor.GetPointer(), m_elementActor.GetPointer(),
+                                         m_solidActor.GetPointer()};
+        std::array<int, 3> oldPickable = {};
+        m_cellPicker->InitializePickList();
+        m_cellPicker->PickFromListOn();
+        m_cellPicker->SetTolerance(0.008);
+        for (int index = 0; index < actors.size(); ++index)
+        {
+            vtkActor* actor = actors.at(index);
+            oldPickable[static_cast<std::size_t>(index)] = actor->GetPickable();
+            if (actor->GetVisibility())
+            {
+                actor->PickableOn();
+                m_cellPicker->AddPickList(actor);
+            }
+        }
+        bool geometryPicked = m_cellPicker->Pick(x, y, 0.0, m_renderer) != 0;
+        if (geometryPicked)
+        {
+            double* picked = m_cellPicker->GetPickPosition();
+            if (picked && std::isfinite(picked[0]) && std::isfinite(picked[1]) && std::isfinite(picked[2]))
+            {
+                center[0] = picked[0];
+                center[1] = picked[1];
+                center[2] = picked[2];
+            }
+            else
+                geometryPicked = false;
+        }
+        for (int index = 0; index < actors.size(); ++index)
+            actors.at(index)->SetPickable(oldPickable[static_cast<std::size_t>(index)]);
+        m_cellPicker->InitializePickList();
+        if (!geometryPicked)
+            return false;
+    }
+
+    m_rotationCenter = {center[0], center[1], center[2]};
+    m_rotationCenterValid = true;
+    m_rotationCenterSnapped = true;
+    updateRotationCenterIndicatorAppearance();
+    updateRotationCenterIndicator();
+    requestRender();
+    return true;
+}
+
 void ModelViewport::contextMenuEvent(QContextMenuEvent* event)
 {
     QMenu menu(this);
@@ -1850,8 +2101,10 @@ void ModelViewport::contextMenuEvent(QContextMenuEvent* event)
     QAction* bottomAction = viewsMenu->addAction(QStringLiteral("底视图"));
     QAction* fitAction = menu.addAction(QStringLiteral("适应窗口"));
     QMenu* centerMenu = menu.addMenu(QStringLiteral("旋转中心"));
+    QAction* pickCenterAction = centerMenu->addAction(QStringLiteral("拾取当前模型点"));
     QAction* viewportCenterAction = centerMenu->addAction(QStringLiteral("对准视口中心（自动吸附）"));
     QAction* modelCenterAction = centerMenu->addAction(QStringLiteral("恢复到模型中心"));
+    pickCenterAction->setEnabled(hasModel());
     viewportCenterAction->setEnabled(hasModel());
     modelCenterAction->setEnabled(hasModel());
 
@@ -1890,6 +2143,8 @@ void ModelViewport::contextMenuEvent(QContextMenuEvent* event)
         setStandardView(StandardView::Bottom);
     else if (selected == fitAction)
         resetCamera();
+    else if (selected == pickCenterAction)
+        setRotationCenterAt(event->pos().x(), event->pos().y());
     else if (selected == viewportCenterAction)
         updateRotationCenterToViewportCenter(true);
     else if (selected == modelCenterAction)
@@ -1936,6 +2191,12 @@ void ModelViewport::updateThemeColors()
         m_nodeLabelMapper->GetLabelTextProperty()->SetColor(colors.node[0], colors.node[1], colors.node[2]);
     if (m_elementLabelMapper)
         m_elementLabelMapper->GetLabelTextProperty()->SetColor(colors.element[0], colors.element[1], colors.element[2]);
+    if (m_resultScalarBar)
+    {
+        const double scalarText = m_themeIndex == 3 ? 0.12 : 0.94;
+        m_resultScalarBar->GetTitleTextProperty()->SetColor(scalarText, scalarText, scalarText);
+        m_resultScalarBar->GetLabelTextProperty()->SetColor(scalarText, scalarText, scalarText);
+    }
     if (m_emptyStateIconLabel)
     {
         QPixmap icon(96, 96);

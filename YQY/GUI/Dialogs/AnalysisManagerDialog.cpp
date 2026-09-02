@@ -428,19 +428,16 @@ public:
         structuralDampingLayout->setSpacing(12);
         m_enableStructuralDamping =
             new QCheckBox(QStringLiteral("静力平衡后自动生成模态阻尼矩阵"), structuralDampingGroup);
-        m_translationDampingRatio = new QDoubleSpinBox(structuralDampingGroup);
+        m_translationDampingRatio = new CompactDoubleSpinBox(structuralDampingGroup);
         m_translationDampingRatio->setRange(0.0, 100.0);
-        m_translationDampingRatio->setDecimals(4);
         m_translationDampingRatio->setSingleStep(0.05);
         m_translationDampingRatio->setSuffix(QStringLiteral(" %"));
-        m_torsionDampingRatio = new QDoubleSpinBox(structuralDampingGroup);
+        m_torsionDampingRatio = new CompactDoubleSpinBox(structuralDampingGroup);
         m_torsionDampingRatio->setRange(0.0, 100.0);
-        m_torsionDampingRatio->setDecimals(4);
         m_torsionDampingRatio->setSingleStep(0.1);
         m_torsionDampingRatio->setSuffix(QStringLiteral(" %"));
-        m_dampingMaximumFrequency = new QDoubleSpinBox(structuralDampingGroup);
+        m_dampingMaximumFrequency = new CompactDoubleSpinBox(structuralDampingGroup);
         m_dampingMaximumFrequency->setRange(0.1, 100.0);
-        m_dampingMaximumFrequency->setDecimals(3);
         m_dampingMaximumFrequency->setSingleStep(0.5);
         m_dampingMaximumFrequency->setSuffix(QStringLiteral(" Hz"));
         auto* dampingParameters = new QWidget(structuralDampingGroup);

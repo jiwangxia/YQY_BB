@@ -9,9 +9,11 @@
 
 namespace SolverNameSpace
 {
+// 根据分析步配置创建对应求解器。
 class SolverFactory
 {
 public:
+    // 创建一个分析步的求解器实例。
     static std::unique_ptr<ISolver> Create_StepForSlover(const AnalysisStep& step)
     {
         switch (step.m_Type)
@@ -36,6 +38,7 @@ public:
     }
 
 private:
+    // 按动力算法类型选择动力求解器。
     static std::unique_ptr<ISolver> CreateDynamicSolver(const AnalysisStep& step)
     {
         switch (step.m_DynamicSolverType)
@@ -53,6 +56,7 @@ private:
         }
     }
 
+    // 将分析步参数转换为 Newmark 求解器参数。
     static std::unique_ptr<SolverNewmark> CreateNewmarkFromStep(const AnalysisStep& step)
     {
         SolverNewmark::Params p;
@@ -64,6 +68,7 @@ private:
         return std::make_unique<SolverNewmark>(p);
     }
 
+    // 将分析步参数转换为自适应 TSSBN 求解器参数。
     static std::unique_ptr<SolverAdaptiveTSSBN> CreateAdaptiveTssbnFromStep(const AnalysisStep& step)
     {
         SolverAdaptiveTSSBN::Params p(step.m_StepSize, step.m_Tolerance, step.m_MaxIterations, step.m_AdaptiveTssbn);

@@ -1,7 +1,7 @@
 #include "Controllers/ModelController.h"
 
 #include "DataStructure/Structure/StructureData.h"
-#include "Export/Hdf5ModelIO.h"
+#include "Export/Hdf5ModelSerializer.h"
 #include "Import/Input_Model.h"
 
 #include <QElapsedTimer>
@@ -62,7 +62,7 @@ int ModelController::loadModels(const QStringList& filePaths)
 int ModelController::adoptModel(const std::shared_ptr<StructureData>& structure, const QString& filePath,
                                 qint64 elapsedMs)
 {
-    if (!structure || structure->m_Nodes.empty() || filePath.trimmed().isEmpty())
+    if (!structure || structure->Nodes().empty() || filePath.trimmed().isEmpty())
         return -1;
 
     structure->EnsureDefaultAnalysisConfiguration();
@@ -118,8 +118,8 @@ void ModelController::startNextLoading()
                 if (QFileInfo(absolutePath).suffix().compare(QStringLiteral("h5"), Qt::CaseInsensitive) == 0 ||
                     QFileInfo(absolutePath).suffix().compare(QStringLiteral("hdf5"), Qt::CaseInsensitive) == 0)
                 {
-                    Hdf5ModelIO importer;
-                    result.success = importer.ImportHdf5(absolutePath, structure.get());
+                    Hdf5ModelSerializer serializer;
+                    result.success = serializer.importModel(absolutePath, structure.get());
                     if (!result.success)
                     {
                         result.errorMessage = QStringLiteral("H5模型格式不符合YQY统一模型协议。");
@@ -134,7 +134,7 @@ void ModelController::startNextLoading()
                         result.errorMessage = importer.LastError();
                     }
                 }
-                if (result.success && structure->m_Nodes.empty())
+                if (result.success && structure->Nodes().empty())
                 {
                     result.success = false;
                     result.errorMessage = QStringLiteral("文件中没有读取到有效节点。");

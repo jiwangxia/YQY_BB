@@ -1,6 +1,7 @@
 #pragma once
 #include "Application/ApplicationPaths.h"
 #include "Base/EmptyOUT.h"
+#include "GUI/Dialogs/FileDialogService.h"
 #include "Utility/EnumKeyword.h"
 #include "Widgets/DialogSizing.h"
 #include "ui_NodeResultExportDialog.h"
@@ -9,7 +10,6 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
-#include <QFileDialog>
 #include <QFileInfo>
 #include <QLabel>
 #include <QLineEdit>
@@ -80,7 +80,7 @@ public:
 
         m_fileEdit = form.fileEdit;
         const QFileInfo resultInfo(resultFile);
-        m_fileEdit->setText(QDir(ApplicationPaths::resultExportDirectory())
+        m_fileEdit->setText(QDir(ApplicationPaths::resultExportDirectory(resultFile))
                                 .absoluteFilePath(resultInfo.completeBaseName() + QStringLiteral("_节点时程.bdf")));
         m_fileEdit->setCursorPosition(0);
         auto* browseButton = form.browseButton;
@@ -106,10 +106,10 @@ public:
         QObject::connect(browseButton, &QPushButton::clicked, this,
                          [this]()
                          {
-                             const QString selected =
-                                 QFileDialog::getSaveFileName(this, QStringLiteral("保存节点结果"), m_fileEdit->text(),
-                                                              QStringLiteral("BDF 结果文件 (*.bdf);;文本文件 (*.txt)"),
-                                                              nullptr, QFileDialog::DontUseNativeDialog);
+                             const QString selected = FileDialogService::selectSaveFile(
+                                 this, QStringLiteral("保存节点结果"), m_fileEdit->text(),
+                                 QStringLiteral("BDF 结果文件 (*.bdf);;文本文件 (*.txt)"),
+                                 QStringLiteral("nodeResultExport"));
                              if (!selected.isEmpty())
                                  m_fileEdit->setText(selected);
                          });

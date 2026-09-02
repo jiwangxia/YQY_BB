@@ -1,4 +1,5 @@
 #include "Application/VerificationRunner.h"
+#include "Application/ApplicationPaths.h"
 #include "Application/PaperBeamDynamicsVerification.h"
 
 #include "Conductor/ConductorModelBuilder.h"
@@ -8,6 +9,9 @@
 #include "DataStructure/Element/ElementBeam_CR.h"
 #include "DataStructure/Element/ElementCable.h"
 #include "DataStructure/Element/ElementTruss.h"
+#include "DataStructure/Element/ElementSpring1.h"
+#include "DataStructure/Element/ElementSpring2.h"
+#include "DataStructure/Element/ElementSpringA.h"
 #include "DataStructure/Inertia/RigidBodyInertia.h"
 #include "DataStructure/Load/Force_Wind.h"
 #include "DataStructure/Load/LoadAssembler.h"
@@ -33,7 +37,10 @@
 #include "Utility/CR.h"
 
 #include <QComboBox>
+#include <QCoreApplication>
+#include <QDir>
 #include <QElapsedTimer>
+#include <QFileInfo>
 #include <QFile>
 #include <QTemporaryDir>
 #include <array>
@@ -42,6 +49,413 @@
 
 namespace
 {
+static QDir FindVerificationSourceRoot()
+{
+    QDir sourceRoot(QCoreApplication::applicationDirPath());
+    while (!sourceRoot.exists(QStringLiteral("YQY/Import/ImportFile")) && sourceRoot.cdUp())
+    {
+    }
+    return sourceRoot;
+}
+
+std::optional<int> verifySpringElements(const QStringList& arguments)
+{
+    const bool verifyBasicSpringElements = arguments.contains(QStringLiteral("--verify-spring-elements"));
+    const bool verifyComplexSpringElements = arguments.contains(QStringLiteral("--verify-spring-complex"));
+    const bool verifyDirectionContrast = arguments.contains(QStringLiteral("--verify-spring-direction-contrast"));
+    if (!verifyBasicSpringElements && !verifyComplexSpringElements && !verifyDirectionContrast)
+        return std::nullopt;
+
+    if (verifyDirectionContrast)
+    {
+        constexpr double expectedNode2U1 = -1.0;
+        constexpr double expectedNode2U2 = 1.0;
+        constexpr double expectedNode4U1 = -1.0;
+        constexpr double expectedNode4U2 = 1.0;
+        // 路径经过 q=-0.5 拐点，终点 q=-1 的力为-3。
+        constexpr double expectedElement1Force = -3.0;
+        constexpr double expectedElement2Force = 0.0;
+
+        auto structure = std::make_shared<StructureData>();
+        Input_Model importer;
+        const QDir sourceRoot = FindVerificationSourceRoot();
+        const QString relativePath =
+            QStringLiteral("YQY/Import/ImportFile/弹簧方向对比算例/01_spring2_springa_rotation_nonlinear.bdf");
+        const QString path = sourceRoot.filePath(relativePath);
+        const QFileInfo modelFile(path);
+        const bool imported = importer.InputData(path, structure);
+
+        bool solved = false;
+        const DataFrame* finalFrame = nullptr;
+        if (imported)
+        {
+            structure->m_OutputControl.m_StreamResult = false;
+            AnalysisRunner runner;
+            runner.SetStructure(structure);
+            solved = runner.RunAll();
+            const auto& dataSet = structure->GetOutputter().GetDataSet();
+            if (solved && !dataSet.empty())
+                finalFrame = &dataSet.back();
+        }
+
+        double node2U1 = 0.0;
+        double node2U2 = 0.0;
+        double node2U3 = 0.0;
+        double node4U1 = 0.0;
+        double node4U2 = 0.0;
+        double node4U3 = 0.0;
+        double element1Force = 0.0;
+        double element2Force = 0.0;
+        bool hasNode2 = false;
+        bool hasNode4 = false;
+        bool hasElement1 = false;
+        bool hasElement2 = false;
+        if (finalFrame)
+        {
+            hasNode2 = finalFrame->GetNodeDatas().find(2) != finalFrame->GetNodeDatas().cend();
+            hasNode4 = finalFrame->GetNodeDatas().find(4) != finalFrame->GetNodeDatas().cend();
+            hasElement1 = finalFrame->GetElementDatas().find(1) != finalFrame->GetElementDatas().cend();
+            hasElement2 = finalFrame->GetElementDatas().find(2) != finalFrame->GetElementDatas().cend();
+            if (hasNode2)
+            {
+                node2U1 = finalFrame->GetNodeData(2, EnumKeyword::NodeResultType::U1);
+                node2U2 = finalFrame->GetNodeData(2, EnumKeyword::NodeResultType::U2);
+                node2U3 = finalFrame->GetNodeData(2, EnumKeyword::NodeResultType::U3);
+            }
+            if (hasNode4)
+            {
+                node4U1 = finalFrame->GetNodeData(4, EnumKeyword::NodeResultType::U1);
+                node4U2 = finalFrame->GetNodeData(4, EnumKeyword::NodeResultType::U2);
+                node4U3 = finalFrame->GetNodeData(4, EnumKeyword::NodeResultType::U3);
+            }
+            if (hasElement1)
+                element1Force = finalFrame->GetElementData(1, EnumKeyword::ElementResultType::AxialForce);
+            if (hasElement2)
+                element2Force = finalFrame->GetElementData(2, EnumKeyword::ElementResultType::AxialForce);
+        }
+
+        const bool continuousElementIds = structure->m_Elements.size() == 2 &&
+                                          structure->m_Elements.find(1) != structure->m_Elements.cend() &&
+                                          structure->m_Elements.find(2) != structure->m_Elements.cend();
+        const QString resultPrefix =
+            modelFile.dir().filePath(modelFile.completeBaseName() + QStringLiteral("_YQY"));
+        const QString nodeResultPath = resultPrefix + QStringLiteral("_node_result.bdf");
+        const QString springResultPath = resultPrefix + QStringLiteral("_spring_result.bdf");
+        if (finalFrame)
+        {
+            const std::vector<EnumKeyword::NodeResultType> nodeTypes = {
+                EnumKeyword::NodeResultType::U1,
+                EnumKeyword::NodeResultType::U2,
+                EnumKeyword::NodeResultType::U3};
+            const std::vector<EnumKeyword::ElementResultType> elementTypes = {
+                EnumKeyword::ElementResultType::AxialForce,
+                EnumKeyword::ElementResultType::RelativeDisplacement};
+            structure->GetOutputter().ExportNodes(nodeResultPath, {2, 4}, nodeTypes);
+            structure->GetOutputter().ExportElements(springResultPath, {1, 2}, elementTypes);
+        }
+
+        const bool resultFilesValid = QFileInfo(nodeResultPath).isFile() && QFileInfo(nodeResultPath).size() > 0 &&
+                                       QFileInfo(springResultPath).isFile() && QFileInfo(springResultPath).size() > 0;
+        const bool displacementValid = hasNode2 && hasNode4 && std::isfinite(node2U1) && std::isfinite(node2U2) &&
+                                       std::isfinite(node2U3) && std::isfinite(node4U1) && std::isfinite(node4U2) &&
+                                       std::isfinite(node4U3) && std::abs(node2U1 - expectedNode2U1) <= 1.0e-6 &&
+                                       std::abs(node2U2 - expectedNode2U2) <= 1.0e-6 &&
+                                       std::abs(node4U1 - expectedNode4U1) <= 1.0e-6 &&
+                                       std::abs(node4U2 - expectedNode4U2) <= 1.0e-6;
+        const bool forceValid = hasElement1 && hasElement2 && std::isfinite(element1Force) &&
+                                std::isfinite(element2Force) &&
+                                std::abs(element1Force - expectedElement1Force) <= 1.0e-6 &&
+                                std::abs(element2Force - expectedElement2Force) <= 1.0e-6;
+        const bool valid = imported && solved && finalFrame != nullptr && continuousElementIds && displacementValid &&
+                           forceValid && resultFilesValid;
+
+        QTextStream errorStream(stderr);
+        if (!imported)
+            errorStream << "spring direction contrast import failed: " << path << " error=" << importer.LastError()
+                        << Qt::endl;
+        if (imported && !solved)
+            errorStream << "spring direction contrast solve failed: " << path << Qt::endl;
+        errorStream << "N2 U1=" << node2U1 << " expected=" << expectedNode2U1 << " U2=" << node2U2
+                    << " expected=" << expectedNode2U2 << Qt::endl;
+        errorStream << "N4 U1=" << node4U1 << " expected=" << expectedNode4U1 << " U2=" << node4U2
+                    << " expected=" << expectedNode4U2 << Qt::endl;
+        errorStream << "E1 AxialForce=" << element1Force << " expected=" << expectedElement1Force << Qt::endl;
+        errorStream << "E2 AxialForce=" << element2Force << " expected=" << expectedElement2Force << Qt::endl;
+        if (!continuousElementIds)
+            errorStream << "spring direction contrast element numbering is not continuous after CleanupModel"
+                        << Qt::endl;
+        if (!resultFilesValid)
+            errorStream << "spring direction contrast result export failed node=" << nodeResultPath
+                        << " spring=" << springResultPath << Qt::endl;
+        QTextStream(stdout) << "spring_direction_contrast=" << (valid ? 1 : 0) << Qt::endl;
+        return valid ? 0 : 1;
+    }
+
+    bool complexSerialParallelValid = true;
+    bool complexVSpringAValid = true;
+    bool complexMixedSupportValid = true;
+    if (verifyComplexSpringElements)
+    {
+        const auto runComplexCase = [](const QString& relativePath, int resultNodeId, double expectedU1,
+                                       double expectedU2, const std::vector<std::pair<int, double>>& expectedForces)
+        {
+            auto structure = std::make_shared<StructureData>();
+            Input_Model importer;
+            const QDir sourceRoot = FindVerificationSourceRoot();
+            const QString path = sourceRoot.filePath(relativePath);
+            const QFileInfo modelFile(path);
+            if (!importer.InputData(path, structure))
+            {
+                QTextStream(stderr) << "complex spring import failed: " << path << " error=" << importer.LastError()
+                                    << Qt::endl;
+                return false;
+            }
+
+            structure->m_OutputControl.m_StreamResult = false;
+            AnalysisRunner runner;
+            runner.SetStructure(structure);
+            if (!runner.RunAll())
+            {
+                QTextStream(stderr) << "complex spring solve failed: " << path << Qt::endl;
+                return false;
+            }
+
+            const auto& dataSet = structure->GetOutputter().GetDataSet();
+            if (dataSet.empty())
+            {
+                QTextStream(stderr) << "complex spring result missing: " << path << Qt::endl;
+                return false;
+            }
+
+            const auto& frame = dataSet.back();
+            const auto nodeIt = frame.GetNodeDatas().find(resultNodeId);
+            const bool hasNodeResult = nodeIt != frame.GetNodeDatas().cend();
+            const double displacementU1 = hasNodeResult
+                                              ? frame.GetNodeData(resultNodeId, EnumKeyword::NodeResultType::U1)
+                                              : 0.0;
+            const double displacementU2 = hasNodeResult
+                                              ? frame.GetNodeData(resultNodeId, EnumKeyword::NodeResultType::U2)
+                                              : 0.0;
+            const double displacementU3 = hasNodeResult
+                                              ? frame.GetNodeData(resultNodeId, EnumKeyword::NodeResultType::U3)
+                                              : 0.0;
+
+            const QString resultPrefix =
+                modelFile.dir().filePath(modelFile.completeBaseName() + QStringLiteral("_YQY"));
+            const QString nodeResultPath = resultPrefix + QStringLiteral("_node_result.bdf");
+            const QString springResultPath = resultPrefix + QStringLiteral("_spring_result.bdf");
+            const std::vector<EnumKeyword::NodeResultType> nodeTypes = {
+                EnumKeyword::NodeResultType::U1,
+                EnumKeyword::NodeResultType::U2,
+                EnumKeyword::NodeResultType::U3};
+            const std::vector<EnumKeyword::ElementResultType> elementTypes = {
+                EnumKeyword::ElementResultType::AxialForce,
+                EnumKeyword::ElementResultType::RelativeDisplacement};
+            std::vector<int> elementIds;
+            elementIds.reserve(expectedForces.size());
+            for (const auto& [elementId, expectedForce] : expectedForces)
+            {
+                Q_UNUSED(expectedForce);
+                elementIds.push_back(elementId);
+            }
+
+            // 求解成功后保留目标节点三向位移和全部目标弹簧轴力，文件名与原 BDF 完整基名对应。
+            structure->GetOutputter().ExportNodes(nodeResultPath, {resultNodeId}, nodeTypes);
+            structure->GetOutputter().ExportElements(springResultPath, elementIds, elementTypes);
+            const bool exported = QFileInfo(nodeResultPath).isFile() && QFileInfo(nodeResultPath).size() > 0 &&
+                                  QFileInfo(springResultPath).isFile() && QFileInfo(springResultPath).size() > 0;
+
+            bool valid = hasNodeResult && std::isfinite(displacementU1) && std::isfinite(displacementU2) &&
+                         std::isfinite(displacementU3) && std::abs(displacementU1 - expectedU1) <= 1.0e-6 &&
+                         std::abs(displacementU2 - expectedU2) <= 1.0e-6 && exported;
+            QTextStream errorStream(stderr);
+            errorStream << "complex spring case=" << modelFile.fileName() << " U1=" << displacementU1
+                        << " U2=" << displacementU2 << Qt::endl;
+            for (const auto& [elementId, expectedForce] : expectedForces)
+            {
+                const auto elementIt = frame.GetElementDatas().find(elementId);
+                const bool hasElementResult = elementIt != frame.GetElementDatas().cend();
+                const double actualForce = hasElementResult
+                                               ? frame.GetElementData(elementId,
+                                                                      EnumKeyword::ElementResultType::AxialForce)
+                                               : 0.0;
+                errorStream << "  E" << elementId << " AxialForce=" << actualForce
+                            << " expected=" << expectedForce << Qt::endl;
+                valid = valid && hasElementResult && std::isfinite(actualForce) &&
+                        std::abs(actualForce - expectedForce) <= 1.0e-6;
+            }
+            if (!exported)
+                errorStream << "  result export failed node=" << nodeResultPath << " spring=" << springResultPath
+                            << Qt::endl;
+            return valid;
+        };
+
+        complexSerialParallelValid = runComplexCase(
+            QStringLiteral("YQY/Import/ImportFile/弹簧算例3/01_串并联网络/01_serial_parallel_static_nonlinear.bdf"), 3,
+            0.225, 0.0, {{1, 1.5}, {2, 1.5}, {3, 1.5}, {4, 3.0}});
+        complexVSpringAValid = runComplexCase(
+            QStringLiteral("YQY/Import/ImportFile/弹簧算例3/02_V形SPRINGA/02_v_springa_geometric_nonlinear.bdf"), 3,
+            0.0, -0.20, {{1, -0.493355572224}, {2, -0.493355572224}});
+        complexMixedSupportValid = runComplexCase(
+            QStringLiteral("YQY/Import/ImportFile/弹簧算例3/03_混合支承/03_mixed_support_static_nonlinear.bdf"), 3,
+            0.030987372622, 0.006440055557,
+            // 导入 CleanupModel 后，弹簧单元按导入顺序连续编号。
+            {{1, 0.619747459888}, {2, 0.128801107407}, {3, 0.531394958496}});
+    }
+
+    if (!verifyBasicSpringElements)
+    {
+        QTextStream(stdout) << "complex_serial_parallel=" << (complexSerialParallelValid ? 1 : 0)
+                            << " complex_v_springa=" << (complexVSpringAValid ? 1 : 0)
+                            << " complex_mixed_support=" << (complexMixedSupportValid ? 1 : 0) << Qt::endl;
+        return complexSerialParallelValid && complexVSpringAValid && complexMixedSupportValid ? 0 : 1;
+    }
+
+    auto behavior = std::make_shared<SpringBehavior>();
+    behavior->m_Points = {{-1000.0, -0.01}, {0.0, 0.0}, {1200.0, 0.01}};
+
+    auto spring1Node = std::make_shared<Node>();
+    spring1Node->m_Displacement[0] = 0.005;
+    ElementSpring1 spring1;
+    spring1.m_DOF = 0;
+    spring1.m_pNode[0] = spring1Node;
+    spring1.m_pSpringBehavior = behavior;
+    MatrixXd spring1Stiffness;
+    spring1.Get_ke(spring1Stiffness);
+    const bool spring1Valid = std::abs(spring1.m_inforce[0] - 600.0) < 1.0e-12 &&
+                              std::abs(spring1Stiffness(0, 0) - 120000.0) < 1.0e-12;
+
+    auto spring2FirstNode = std::make_shared<Node>();
+    auto spring2SecondNode = std::make_shared<Node>();
+    spring2FirstNode->m_Displacement[0] = 0.005;
+    spring2SecondNode->m_Displacement[1] = -0.003;
+    ElementSpring2 spring2;
+    spring2.m_FirstDOF = 0;
+    spring2.m_SecondDOF = 1;
+    spring2.m_pNode[0] = spring2FirstNode;
+    spring2.m_pNode[1] = spring2SecondNode;
+    spring2.m_pSpringBehavior = behavior;
+    MatrixXd spring2Stiffness;
+    spring2.Get_ke(spring2Stiffness);
+    const bool spring2Valid = std::abs(spring2.m_inforce[0] - 960.0) < 1.0e-12 &&
+                              std::abs(spring2.m_inforce[4] + 960.0) < 1.0e-12 &&
+                              std::abs(spring2Stiffness(0, 4) + 120000.0) < 1.0e-12;
+
+    auto springAFirstNode = std::make_shared<Node>();
+    auto springASecondNode = std::make_shared<Node>();
+    springASecondNode->m_X = 1.0;
+    springASecondNode->m_Displacement[0] = 0.001;
+    springASecondNode->m_Displacement[1] = 0.05;
+    ElementSpringA springA;
+    springA.m_pNode[0] = springAFirstNode;
+    springA.m_pNode[1] = springASecondNode;
+    springA.m_pSpringBehavior = behavior;
+    MatrixXd springAStiffness;
+    springA.Get_ke(springAStiffness);
+    const double length = std::sqrt(1.001 * 1.001 + 0.05 * 0.05);
+    const double force = 120000.0 * (length - 1.0);
+    const bool springAValid = std::abs(springA.m_inforce.segment<3>(0).norm() - force) < 1.0e-10 &&
+                              (springAStiffness - springAStiffness.transpose()).norm() < 1.0e-12 &&
+                              springAStiffness(1, 1) > 0.0;
+
+    const auto runStaticCase = [](const QString& fileName, int resultNodeId, int resultElementId, double expectedU1,
+                                  double expectedU2, double expectedSpringForce)
+    {
+        auto structure = std::make_shared<StructureData>();
+        Input_Model importer;
+        const QDir sourceRoot = FindVerificationSourceRoot();
+        const QString relativeDirectory = QStringLiteral("YQY/Import/ImportFile/SpringStaticNonlinear/");
+        const QString path = sourceRoot.filePath(relativeDirectory + fileName);
+        if (!importer.InputData(path, structure))
+        {
+            QTextStream(stderr) << "spring static import failed: " << importer.LastError() << Qt::endl;
+            return false;
+        }
+        structure->m_OutputControl.m_StreamResult = false;
+        AnalysisRunner runner;
+        runner.SetStructure(structure);
+        if (!runner.RunAll())
+        {
+            QTextStream(stderr) << "spring static solve failed: " << fileName << Qt::endl;
+            return false;
+        }
+        const auto& dataSet = structure->GetOutputter().GetDataSet();
+        const bool hasResult = !dataSet.empty();
+        if (hasResult)
+        {
+            const QFileInfo modelFile(path);
+            const QString resultName = modelFile.completeBaseName() + QStringLiteral("_YQY");
+            const QString resultPrefix = modelFile.dir().filePath(resultName);
+            const std::vector<EnumKeyword::NodeResultType> nodeTypes = {
+                EnumKeyword::NodeResultType::U1,
+                EnumKeyword::NodeResultType::U2,
+                EnumKeyword::NodeResultType::U3};
+            const std::vector<EnumKeyword::ElementResultType> elementTypes = {
+                EnumKeyword::ElementResultType::AxialForce,
+                EnumKeyword::ElementResultType::RelativeDisplacement};
+
+            // 结果文件与模型并列保存，供曲线工具直接读取；输出节点位移、弹簧力和相对位移。
+            structure->GetOutputter().ExportNodes(resultPrefix + QStringLiteral("_node_result.bdf"), {resultNodeId},
+                                                   nodeTypes);
+            structure->GetOutputter().ExportElements(resultPrefix + QStringLiteral("_spring_result.bdf"),
+                                                      {resultElementId}, elementTypes);
+        }
+        const double displacementU1 = hasResult
+                                          ? dataSet.back().GetNodeData(resultNodeId, EnumKeyword::NodeResultType::U1)
+                                          : 0.0;
+        const double displacementU2 = hasResult
+                                          ? dataSet.back().GetNodeData(resultNodeId, EnumKeyword::NodeResultType::U2)
+                                          : 0.0;
+        const double springForce = hasResult
+                                       ? dataSet.back().GetElementData(resultElementId,
+                                                                      EnumKeyword::ElementResultType::AxialForce)
+                                       : 0.0;
+        const bool valid = hasResult && std::abs(displacementU1 - expectedU1) < 1.0e-8 &&
+                           std::abs(displacementU2 - expectedU2) < 1.0e-8 &&
+                           std::abs(springForce - expectedSpringForce) < 1.0e-8;
+        if (!valid)
+        {
+            QTextStream(stderr) << "spring static displacement mismatch: " << fileName << " U1="
+                                << displacementU1 << " U2=" << displacementU2 << " force=" << springForce
+                                << Qt::endl;
+        }
+        return valid;
+    };
+    const bool spring1LinearStaticValid =
+        runStaticCase(QStringLiteral("01_SPRING1_linear_static.bdf"), 1, 1, 0.5, 0.0, 50.0);
+    const bool spring2LinearStaticValid =
+        runStaticCase(QStringLiteral("02_SPRING2_linear_static.bdf"), 1, 1, 0.25, 0.0, 50.0);
+    const bool springALinearStaticValid =
+        runStaticCase(QStringLiteral("03_SPRINGA_linear_static.bdf"), 2, 1, 0.2, 0.0, 60.0);
+    const bool spring1NonlinearStaticValid =
+        runStaticCase(QStringLiteral("04_SPRING1_nonlinear_static.bdf"), 1, 1, 0.15, 0.0, 2.5);
+    const bool spring2NonlinearStaticValid =
+        runStaticCase(QStringLiteral("05_SPRING2_nonlinear_static.bdf"), 1, 1, 0.15, 0.0, 2.5);
+    const bool springANonlinearStaticValid =
+        runStaticCase(QStringLiteral("06_SPRINGA_nonlinear_static.bdf"), 2, 1, 0.275, 0.0, 2.5);
+    const bool springAGeometricNonlinearStaticValid = runStaticCase(
+        QStringLiteral("07_SPRINGA_geom_nonlinear_static.bdf"), 2, 1, 0.0, 0.464282623650, 180.725732102450);
+
+    QTextStream(stdout) << "spring1=" << spring1Valid << " spring2=" << spring2Valid << " springa="
+                        << springAValid << " linear_spring1=" << spring1LinearStaticValid << " linear_spring2="
+                        << spring2LinearStaticValid << " linear_springa=" << springALinearStaticValid
+                        << " nonlinear_spring1=" << spring1NonlinearStaticValid << " nonlinear_spring2="
+                        << spring2NonlinearStaticValid << " nonlinear_springa=" << springANonlinearStaticValid
+                        << " geometric_springa=" << springAGeometricNonlinearStaticValid << Qt::endl;
+    if (verifyComplexSpringElements)
+    {
+        QTextStream(stdout) << "complex_serial_parallel=" << (complexSerialParallelValid ? 1 : 0)
+                            << " complex_v_springa=" << (complexVSpringAValid ? 1 : 0)
+                            << " complex_mixed_support=" << (complexMixedSupportValid ? 1 : 0) << Qt::endl;
+    }
+    return spring1Valid && spring2Valid && springAValid && spring1LinearStaticValid && spring2LinearStaticValid &&
+                   springALinearStaticValid && spring1NonlinearStaticValid && spring2NonlinearStaticValid &&
+                   springANonlinearStaticValid && springAGeometricNonlinearStaticValid &&
+                   complexSerialParallelValid && complexVSpringAValid && complexMixedSupportValid
+               ? 0
+               : 1;
+}
+
 std::optional<int> verifyLowRankDampingSolver(const QStringList& arguments)
 {
     if (!arguments.contains(QStringLiteral("--verify-low-rank-damping")))
@@ -977,22 +1391,25 @@ std::optional<int> verifyLe2012Example1(const QStringList& arguments)
     if (arguments.contains(QStringLiteral("--verify-le2012-example1-tssbn")))
     {
         return PaperBeamDynamicsVerification::RunExample1Adaptive(
-            QStringLiteral("output/verification/le2012_example1_tssbn"));
+            ApplicationPaths::verificationOutputDirectory(QStringLiteral("le2012_example1_tssbn")));
     }
     if (!arguments.contains(QStringLiteral("--verify-le2012-example1")))
         return std::nullopt;
-    return PaperBeamDynamicsVerification::RunExample1(QStringLiteral("output/verification/le2012_example1"));
+    return PaperBeamDynamicsVerification::RunExample1(
+        ApplicationPaths::verificationOutputDirectory(QStringLiteral("le2012_example1")));
 }
 
 std::optional<int> verifyLe2012Example4(const QStringList& arguments)
 {
     if (arguments.contains(QStringLiteral("--verify-le2012-example4-tssbn")))
     {
-        return PaperBeamDynamicsVerification::RunAdaptive(QStringLiteral("output/verification/le2012_example4_tssbn"));
+        return PaperBeamDynamicsVerification::RunAdaptive(
+            ApplicationPaths::verificationOutputDirectory(QStringLiteral("le2012_example4_tssbn")));
     }
     if (!arguments.contains(QStringLiteral("--verify-le2012-example4")))
         return std::nullopt;
-    return PaperBeamDynamicsVerification::Run(QStringLiteral("output/verification/le2012_example4"));
+    return PaperBeamDynamicsVerification::Run(
+        ApplicationPaths::verificationOutputDirectory(QStringLiteral("le2012_example4")));
 }
 
 std::optional<int> verifyBeamDynamics(const QStringList& arguments)
@@ -1139,9 +1556,11 @@ std::optional<int> verifyGallopingCaseSelection(const QStringList& arguments)
     structure.AddAnalysisStep(config);
     const bool staticRejected = !structure.m_AnalysisStep.at(2)->ShouldAssembleGalloping(4, wind);
     AeroManager manager;
-    const bool loaded = manager.loadCase(std::filesystem::path("YQY/Import/Aero_Data/Input_Data"), key);
+    const std::filesystem::path aerodynamicDataDirectory =
+        std::filesystem::path(ApplicationPaths::aerodynamicDataDirectory().toStdWString());
+    const bool loaded = manager.loadCase(aerodynamicDataDirectory, key);
     AeroManager completeCatalog;
-    const bool allCasesLoaded = completeCatalog.loadAllCases(std::filesystem::path("YQY/Import/Aero_Data/Input_Data"));
+    const bool allCasesLoaded = completeCatalog.loadAllCases(aerodynamicDataDirectory);
     bool catalogShapeValid = completeCatalog.getLoadedCaseCount() == 40;
     double maximumEndpointGap = 0.0;
     double maximumSymmetryError = 0.0;
@@ -2063,7 +2482,9 @@ std::optional<int> verifyHdf5ModelContract(const QStringList& arguments)
     sourceStep->m_RegionScope = AnalysisRegionScope::SelectedRegions;
     sourceStep->m_ComputeRegionIds = {firstRegionId, secondRegionId};
     const AeroCaseKey sourceAeroKey{1, 18, 28};
-    if (!source->m_AeroManager.loadCase(std::filesystem::path("YQY/Import/Aero_Data/Input_Data"), sourceAeroKey))
+    const std::filesystem::path aerodynamicDataDirectory =
+        std::filesystem::path(ApplicationPaths::aerodynamicDataDirectory().toStdWString());
+    if (!source->m_AeroManager.loadCase(aerodynamicDataDirectory, sourceAeroKey))
         return 5;
     const int windLoadId = source->m_Load.empty() ? 1 : source->m_Load.crbegin()->first + 1;
     auto sourceWind = std::make_shared<Force_Wind>();
@@ -4074,6 +4495,8 @@ std::optional<int> VerificationRunner::runHeadless(const QStringList& arguments)
 
 std::optional<int> VerificationRunner::run(QApplication& application, const QStringList& arguments)
 {
+    if (const auto result = verifySpringElements(arguments))
+        return result;
     if (const auto result = runHeadless(arguments))
         return result;
     if (const auto result = verifyNodeExport(arguments))

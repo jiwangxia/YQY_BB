@@ -7,6 +7,7 @@
 #include "DataStructure/Structure/StructureData.h"
 #include "DataStructure/Element/ElementBase.h"
 #include "DataStructure/Element/ElementCable.h"
+#include "DataStructure/Element/ElementSpringBase.h"
 #include "DataStructure/Aerodynamics/AeroManager.h"
 #include "DataStructure/Aerodynamics/BundleAeroMapper.h"
 #include "DataStructure/Load/LoadAssembler.h"
@@ -17,6 +18,7 @@
 #include "Solver/AssemblySettings.h"
 #include "Solver/Constraint/NonlinearMPC.h"
 #include <Eigen/SparseCholesky>
+#include <QStringList>
 
 AeroCaseKey AnalysisStep::GetGallopingAeroCase(int bundleCount, const Force_Wind& wind) const
 {
@@ -259,18 +261,25 @@ bool AnalysisStep::PrepareGallopingData(QString* errorMessage)
     if (!wind)
         return false;
 
-    int legacyBundleCount = 1;
     std::set<int> bundleCounts;
     for (const auto& [elementId, element] : m_pData->m_Elements)
     {
         if (!element || !element->HasAerodynamicLoad())
             continue;
-        if (element->m_AeroBundleCount > 0)
-            bundleCounts.insert(element->m_AeroBundleCount);
-        legacyBundleCount = std::max(legacyBundleCount, element->m_AeroProfileId + 1);
+        if (element->m_AeroBundleCount <= 0 || element->m_WireId < 0)
+        {
+            if (errorMessage)
+                *errorMessage = QStringLiteral("气动单元 %1 缺少分裂数或子导线编号。").arg(elementId);
+            return false;
+        }
+        bundleCounts.insert(element->m_AeroBundleCount);
     }
     if (bundleCounts.empty())
-        bundleCounts.insert(legacyBundleCount > 1 ? 4 : 1);
+    {
+        if (errorMessage)
+            *errorMessage = QStringLiteral("舞动已启用，但模型没有读取到气动单元数据。");
+        return false;
+    }
 
     const std::filesystem::path dataDirectories[] = {
         std::filesystem::path(ApplicationPaths::aerodynamicDataDirectory().toStdWString()),
@@ -333,16 +342,6 @@ bool AnalysisStep::BindGallopingProfiles(QString* errorMessage)
         return false;
     }
 
-    int legacyBundleCount = 1;
-    for (const auto& [elementId, element] : m_pData->m_Elements)
-    {
-        Q_UNUSED(elementId);
-        if (element && element->HasAerodynamicLoad())
-            legacyBundleCount = std::max(legacyBundleCount, element->m_AeroProfileId + 1);
-    }
-    if (legacyBundleCount > 1)
-        legacyBundleCount = 4;
-
     const Eigen::Vector3d modelUp = GetModelUpDirection();
     const Eigen::Vector3d windVelocity = wind->GetWindVelocityGlobal();
     const auto currentPosition = [](const Node& node)
@@ -366,8 +365,14 @@ bool AnalysisStep::BindGallopingProfiles(QString* errorMessage)
             return false;
         }
 
-        const int bundleCount = element->m_AeroBundleCount > 0 ? element->m_AeroBundleCount : legacyBundleCount;
-        const int wireId = element->m_WireId >= 0 ? element->m_WireId : element->m_AeroProfileId;
+        if (element->m_AeroBundleCount <= 0 || element->m_WireId < 0)
+        {
+            if (errorMessage)
+                *errorMessage = QStringLiteral("气动单元 %1 缺少分裂数或子导线编号。").arg(elementId);
+            return false;
+        }
+        const int bundleCount = element->m_AeroBundleCount;
+        const int wireId = element->m_WireId;
         try
         {
             m_gallopingProfileBindings.emplace(
@@ -865,6 +870,11 @@ bool AnalysisStep::Solve(bool persistHdf5)
             return false;
         }
         qDebug().noquote() << m_StructuralDamping.report.summary;
+        qDebug().noquote() << QStringLiteral("结构阻尼系数：平动质量 %1，平动刚度 %2；扭转质量 %3，扭转刚度 %4。")
+                                  .arg(m_StructuralDamping.report.translationMassCoefficient, 0, 'g', 8)
+                                  .arg(m_StructuralDamping.report.translationStiffnessCoefficient, 0, 'g', 8)
+                                  .arg(m_StructuralDamping.report.torsionMassCoefficient, 0, 'g', 8)
+                                  .arg(m_StructuralDamping.report.torsionStiffnessCoefficient, 0, 'g', 8);
     }
 
     //solver为求解器类型指针，使用工厂模式创建对应的求解器实例
@@ -1718,9 +1728,31 @@ void AnalysisStep::ComputeStaticResidual(const SolverNameSpace::Vec& F_ext, Solv
 
 void AnalysisStep::OnStepCompleted(double time)
 {
-    if (m_pData)
+    if (!m_pData)
+        return;
+
+    m_pData->GetOutputter().SaveDataFromNodes(time, m_pData);
+
+    if (m_Type != EnumKeyword::StepType::STATIC)
+        return;
+
+    QStringList springResults;
+    for (const auto& [elementId, element] : m_pData->m_Elements)
     {
-        m_pData->GetOutputter().SaveDataFromNodes(time, m_pData);
+        const auto* spring = dynamic_cast<const ElementSpringBase*>(element.get());
+        if (!spring)
+            continue;
+
+        springResults.append(QStringLiteral("EID=%1  REL_DISP=%2  AXIAL=%3")
+                                 .arg(elementId, 6)
+                                 .arg(spring->m_CurrentRelativeDisplacement, 20, 'g', 12)
+                                 .arg(spring->m_CurrentForce, 20, 'g', 12));
+    }
+    if (!springResults.isEmpty())
+    {
+        qDebug().noquote() << QStringLiteral("[弹簧结果]  TIME=%1  %2")
+                                  .arg(time, 20, 'g', 12)
+                                  .arg(springResults.join(QStringLiteral("  ")));
     }
 }
 

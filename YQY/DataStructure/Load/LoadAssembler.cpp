@@ -296,22 +296,15 @@ void LoadAssembler::AssembleGalloping(const Force_Wind& wind, const StructureDat
     if (windVelocity.norm() <= 1.0e-12)
         throw std::runtime_error("Galloping wind direction vector must be nonzero");
 
-    // Compatibility for older models that only stored profile IDs.
-    int legacyBundleCount = 1;
-    for (const auto& [id, element] : structure.m_Elements)
-        if (element && element->HasAerodynamicLoad())
-            legacyBundleCount = std::max(legacyBundleCount, element->m_AeroProfileId + 1);
-    if (legacyBundleCount > 1)
-        legacyBundleCount = 4;
-
-    // One case lookup per bundle count and assembly pass; no file access occurs
-    // in the element loop.
+    // 每种分裂数在一次装配中只查询一次工况，单元循环内不读取文件。
     std::map<int, const std::vector<BladeModel>*> boundCases;
     for (const auto& [id, element] : structure.m_Elements)
     {
         if (!element || !element->HasAerodynamicLoad() || element->m_pNode.size() != 2)
             continue;
-        const int bundleCount = element->m_AeroBundleCount > 0 ? element->m_AeroBundleCount : legacyBundleCount;
+        const int bundleCount = element->m_AeroBundleCount;
+        if (bundleCount <= 0 || element->m_WireId < 0)
+            throw std::runtime_error("Galloping element has incomplete aerodynamic metadata");
         auto caseIt = boundCases.find(bundleCount);
         if (caseIt == boundCases.end())
         {
@@ -344,13 +337,6 @@ void LoadAssembler::AssembleGallopingTangent(const Force_Wind& wind, const Struc
     if (wind.GetWindVelocityGlobal().norm() <= 1.0e-12)
         throw std::runtime_error("Galloping wind direction vector must be nonzero");
 
-    int legacyBundleCount = 1;
-    for (const auto& [id, element] : structure.m_Elements)
-        if (element && element->HasAerodynamicLoad())
-            legacyBundleCount = std::max(legacyBundleCount, element->m_AeroProfileId + 1);
-    if (legacyBundleCount > 1)
-        legacyBundleCount = 4;
-
     const double correctionIncrement =
         std::min(1.0e-6, 1.0e-3 / std::max(1.0, std::abs(velocityDerivative)));
     std::map<int, const std::vector<BladeModel>*> boundCases;
@@ -361,7 +347,9 @@ void LoadAssembler::AssembleGallopingTangent(const Force_Wind& wind, const Struc
     {
         if (!element || !element->HasAerodynamicLoad() || element->m_pNode.size() != 2)
             continue;
-        const int bundleCount = element->m_AeroBundleCount > 0 ? element->m_AeroBundleCount : legacyBundleCount;
+        const int bundleCount = element->m_AeroBundleCount;
+        if (bundleCount <= 0 || element->m_WireId < 0)
+            throw std::runtime_error("Galloping element has incomplete aerodynamic metadata");
         auto caseIt = boundCases.find(bundleCount);
         if (caseIt == boundCases.end())
         {

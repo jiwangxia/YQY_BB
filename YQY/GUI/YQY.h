@@ -1,6 +1,5 @@
 #pragma once
 
-#include <QHash>
 #include <QtWidgets/QMainWindow>
 
 #include "Export/Hdf5ResultData.h"
@@ -9,6 +8,8 @@
 class StructureData;
 class ModelController;
 class SolveTaskController;
+class ResultDataController;
+class WorkspaceController;
 class QEvent;
 class QResizeEvent;
 class QPushButton;
@@ -73,7 +74,6 @@ private:
                         bool partialResult = false, QString* failureReason = nullptr);
     void displayResultFrame(int frameIndex);
     void displayResultPosition(double framePosition);
-    bool cacheResultFramePair(int firstIndex, int secondIndex);
     void updateResultVisualization();
     void clearActiveResultContext();
     bool loadModelFile(const QString& filePath);
@@ -117,6 +117,8 @@ private:
     Ui::YQYClass ui;
     ModelController* m_modelController = nullptr;
     SolveTaskController* m_solveTaskController = nullptr;
+    std::unique_ptr<ResultDataController> m_resultDataController;
+    std::unique_ptr<WorkspaceController> m_workspaceController;
     std::unique_ptr<Conductor::PropertyLibrary> m_propertyLibrary;
     SettingsPanel* m_settingsPanel = nullptr;
     ResultControlPanel* m_resultPanel = nullptr;
@@ -139,10 +141,5 @@ private:
     int m_modelLoadTotal = 0;
     int m_modelLoadSucceeded = 0;
     int m_modelLoadFailed = 0;
-    int m_cachedResultFrameIndex = -1;
-    int m_cachedNextResultFrameIndex = -1;
-    Hdf5ResultFrame m_cachedResultFrame;
-    Hdf5ResultFrame m_cachedNextResultFrame;
     Hdf5ResultRanges m_resultRanges;
-    QHash<int, QString> m_resultFilesByModelId;
 };

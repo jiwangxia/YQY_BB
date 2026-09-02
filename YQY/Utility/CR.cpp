@@ -40,16 +40,12 @@ void Calculate_Ts(const Eigen::Vector3d& vartheta, _OUT Eigen::Matrix3d& result)
         c2 = 2.0 * pow(sin(theta / 2.0), 2) / theta;
     }
 
-    // 调用刚才写的反对称矩阵函数
-    Eigen::Matrix3d skew_v;
-    SkewSymmetric(vartheta, skew_v);
-
-    // 组装最终结果存入 result
+    // 组装切线自旋张量。
     Eigen::Matrix3d nnT = n * n.transpose();
-    Eigen::Matrix3d n_skew;
-    Calculate_RotationMatrix(n, n_skew);
+    Eigen::Matrix3d rotationMatrix;
+    Calculate_RotationMatrix(n, rotationMatrix);
 
-    result = nnT + c1 * (Eigen::Matrix3d::Identity() - nnT) + c2 * n_skew;
+    result = nnT + c1 * (Eigen::Matrix3d::Identity() - nnT) + c2 * rotationMatrix;
 }
 
 // ========================================================================

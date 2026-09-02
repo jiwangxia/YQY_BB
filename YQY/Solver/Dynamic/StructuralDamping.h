@@ -18,19 +18,33 @@ struct StructuralDampingSettings
 
 struct StructuralDampingReport
 {
+    // 原始完整模型的自由度数量。
     int originalDofCount = 0;
+    // MPC 约化后用于模态求解的自由度数量。
     int modalDofCount = 0;
+    // 最终参与结构阻尼构造的模态数量。
     int selectedModeCount = 0;
+    // 用于确定扭转 Rayleigh 系数的参考模态数量。
     int torsionReferenceModeCount = 0;
+    // 第一个平动参考模态频率，单位 Hz。
     double translationReferenceFrequency1Hz = 0.0;
+    // 第二个平动参考模态频率，单位 Hz。
     double translationReferenceFrequency2Hz = 0.0;
+    // 第一个扭转参考模态频率，单位 Hz。
     double torsionReferenceFrequency1Hz = 0.0;
+    // 第二个扭转参考模态频率，单位 Hz。
     double torsionReferenceFrequency2Hz = 0.0;
+    // 根据平动参考模态和目标阻尼比计算的质量比例系数。
     double translationMassCoefficient = 0.0;
+    // 根据平动参考模态和目标阻尼比计算的刚度比例系数。
     double translationStiffnessCoefficient = 0.0;
+    // 根据扭转参考模态和目标阻尼比计算的质量比例系数。
     double torsionMassCoefficient = 0.0;
+    // 根据扭转参考模态和目标阻尼比计算的刚度比例系数。
     double torsionStiffnessCoefficient = 0.0;
+    // 各选中模态回代得到的阻尼比与目标阻尼比之间的最大绝对误差。
     double maximumBackCheckError = 0.0;
+    // 结构阻尼计算过程的摘要信息。
     QString summary;
 };
 

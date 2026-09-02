@@ -1,6 +1,8 @@
 #include "Application/ApplicationBootstrap.h"
+#ifdef _DEBUG
 #include "Application/UiAuditRunner.h"
 #include "Application/VerificationRunner.h"
+#endif
 #include "GUI/YQY.h"
 #include "Export/ResultOutputSettings.h"
 #include "Solver/GpuSettings.h"
@@ -58,6 +60,7 @@ int main(int argc, char* argv[])
             break;
         }
     }
+#ifdef _DEBUG
     bool headlessVerification = false;
     for (int argumentIndex = 1; argumentIndex < argc; ++argumentIndex)
     {
@@ -87,7 +90,6 @@ int main(int argc, char* argv[])
     }
 
     ApplicationBootstrap::prepareEnvironment();
-    QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
     QApplication application(argc, argv);
     ApplicationBootstrap::configureApplication(application);
 
@@ -98,13 +100,21 @@ int main(int argc, char* argv[])
     const UiAuditRunner auditRunner(arguments);
     if (!auditRunner.isValid())
         return auditRunner.errorCode();
+#else
+    ApplicationBootstrap::prepareEnvironment();
+    QApplication application(argc, argv);
+    ApplicationBootstrap::configureApplication(application);
+    const QStringList arguments = application.arguments();
+#endif
 
     YQY window;
     ApplicationBootstrap::prepareMainWindow(window);
     window.show();
 
+#ifdef _DEBUG
     if (const auto auditResult = auditRunner.run(application, window))
         return *auditResult;
+#endif
 
     const QStringList modelFiles = arguments.mid(1);
     if (!modelFiles.isEmpty())

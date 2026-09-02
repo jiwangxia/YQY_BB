@@ -22,7 +22,7 @@ class QTextStream;
 class StructureData;
 class Node;
 class ElementBase;
-class Hdf5ModelIO;
+class Hdf5ResultWriter;
 
 struct SolverIterationRecord
 {
@@ -101,6 +101,7 @@ private:
     double m_initStress = 0.0;    // 初始应力
     double m_currentStress = 0.0; // 当前应力
     double m_deltaStress = 0.0;   // 应力增量
+    double m_relativeDisplacement = 0.0; // 弹簧相对位移
 };
 
 /**
@@ -342,7 +343,7 @@ private:
     bool m_keepFramesInMemory = true;                                 // 是否将结果帧保存到内存
     std::unique_ptr<QFile> m_streamFile;                              // 流式输出文件
     std::unique_ptr<QTextStream> m_stream;                            // 流式输出文本流
-    std::unique_ptr<Hdf5ModelIO> m_hdf5Stream;                        // H5/HDF5 流式输出对象
+    std::unique_ptr<Hdf5ResultWriter> m_hdf5Stream;                   // H5/HDF5 流式输出对象
     std::vector<DataFrame> m_hdf5PendingFrames;                       // 等待批量写入的 H5/HDF5 结果帧
     bool m_hdf5StreamWriteOk = true;                                  // H5/HDF5 流式写入状态
     bool m_hdf5BackgroundWrite = false;                               // 是否由后台线程写入 H5/HDF5

@@ -272,11 +272,13 @@ bool StructuralDampingModel::Calculate(const Eigen::SparseMatrix<double>& stiffn
                              report.torsionStiffnessCoefficient);
     report.maximumBackCheckError = maximumBackCheckError;
     report.summary =
-        QStringLiteral("结构阻尼已生成：自由度 %1→%2，搜索 %3 个模态，使用 %4 个；扭转参考 %5/%6 Hz，最大回代误差 %7。")
+        QStringLiteral("结构阻尼已生成：自由度 %1→%2，搜索 %3 个模态，使用 %4 个；平动参考 %5/%6 Hz，扭转参考 %7/%8 Hz，最大回代误差 %9。")
             .arg(report.originalDofCount)
             .arg(report.modalDofCount)
             .arg(requestedModes)
             .arg(report.selectedModeCount)
+            .arg(report.translationReferenceFrequency1Hz, 0, 'g', 8)
+            .arg(report.translationReferenceFrequency2Hz, 0, 'g', 8)
             .arg(report.torsionReferenceFrequency1Hz, 0, 'g', 8)
             .arg(report.torsionReferenceFrequency2Hz, 0, 'g', 8)
             .arg(maximumBackCheckError, 0, 'g', 8);

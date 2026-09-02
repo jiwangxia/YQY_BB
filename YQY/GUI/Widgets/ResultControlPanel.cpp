@@ -1,7 +1,7 @@
 #include "Widgets/ResultControlPanel.h"
-#include "Export/Hdf5ModelIO.h"
 #include "ui_ResultControlPanel.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 
@@ -10,7 +10,6 @@
 ResultControlPanel::ResultControlPanel(QWidget* parent)
     : QWidget(parent)
     , m_ui(new Ui::ResultControlPanelClass)
-    , m_reader(std::make_unique<Hdf5ModelIO>())
     , m_playbackTimer(new QTimer(this))
 {
     m_ui->setupUi(this);
@@ -32,11 +31,27 @@ ResultControlPanel::ResultControlPanel(QWidget* parent)
                     return;
 
                 const double speed = m_ui->speedCombo->currentData().toDouble();
-                constexpr double sourceFrameDurationMs = 80.0;
-                m_playbackPosition += static_cast<double>(m_playbackTimer->interval()) / sourceFrameDurationMs * speed;
-                m_playbackPosition = std::fmod(m_playbackPosition, static_cast<double>(m_frames.size()));
+                const double firstTime = m_frames.front().time;
+                const double lastTime = m_frames.back().time;
+                const double duration = lastTime - firstTime;
+                if (duration <= 0.0)
+                    return;
 
-                const int displayedFrame = static_cast<int>(std::floor(m_playbackPosition));
+                m_playbackTime += static_cast<double>(m_playbackTimer->interval()) * speed / 1000.0;
+                m_playbackTime = firstTime + std::fmod(std::max(0.0, m_playbackTime - firstTime), duration);
+
+                const auto upper = std::upper_bound(m_frames.cbegin(), m_frames.cend(), m_playbackTime,
+                                                    [](double time, const Hdf5ResultFrameInfo& frame)
+                                                    {
+                                                        return time < frame.time;
+                                                    });
+                const int nextFrame = static_cast<int>(std::distance(m_frames.cbegin(), upper));
+                const int displayedFrame = std::clamp(nextFrame - 1, 0, static_cast<int>(m_frames.size()) - 2);
+                const double frameDuration = m_frames[displayedFrame + 1].time - m_frames[displayedFrame].time;
+                const double interpolation =
+                    frameDuration > 0.0 ? (m_playbackTime - m_frames[displayedFrame].time) / frameDuration : 0.0;
+                m_playbackPosition = static_cast<double>(displayedFrame) + std::clamp(interpolation, 0.0, 1.0);
+
                 {
                     const QSignalBlocker blocker(m_ui->frameSlider);
                     m_ui->frameSlider->setValue(displayedFrame);
@@ -53,6 +68,7 @@ ResultControlPanel::ResultControlPanel(QWidget* parent)
                 else
                 {
                     m_playbackPosition = static_cast<double>(m_ui->frameSlider->value());
+                    m_playbackTime = m_frames[static_cast<std::size_t>(m_ui->frameSlider->value())].time;
                     m_playbackTimer->start();
                 }
                 m_ui->playButton->setText(playing ? QStringLiteral("播放") : QStringLiteral("暂停"));
@@ -63,6 +79,8 @@ ResultControlPanel::ResultControlPanel(QWidget* parent)
             [this](int frameIndex)
             {
                 m_playbackPosition = static_cast<double>(frameIndex);
+                if (frameIndex >= 0 && frameIndex < static_cast<int>(m_frames.size()))
+                    m_playbackTime = m_frames[static_cast<std::size_t>(frameIndex)].time;
                 if (m_frameChangedHandler)
                     m_frameChangedHandler(m_playbackPosition);
             });
@@ -161,11 +179,6 @@ QPushButton* ResultControlPanel::exportElementButton() const
 QPushButton* ResultControlPanel::exportIterationButton() const
 {
     return m_ui->exportIterationButton;
-}
-
-Hdf5ModelIO* ResultControlPanel::reader() const
-{
-    return m_reader.get();
 }
 
 std::vector<Hdf5ResultFrameInfo>& ResultControlPanel::frames()

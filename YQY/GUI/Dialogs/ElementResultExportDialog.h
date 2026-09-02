@@ -1,6 +1,7 @@
 #pragma once
 #include "Application/ApplicationPaths.h"
 #include "Base/EmptyOUT.h"
+#include "GUI/Dialogs/FileDialogService.h"
 
 #include "Utility/EnumKeyword.h"
 #include "Widgets/DialogSizing.h"
@@ -10,7 +11,6 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
-#include <QFileDialog>
 #include <QFileInfo>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -80,8 +80,8 @@ public:
         auto* fileLayout = new QVBoxLayout(fileCard);
         m_fileEdit = new QLineEdit(fileCard);
         const QFileInfo resultInfo(resultFile);
-        m_fileEdit->setText(
-            QDir(exportDirectory()).absoluteFilePath(resultInfo.completeBaseName() + QStringLiteral("_单元时程.bdf")));
+        m_fileEdit->setText(QDir(exportDirectory(resultFile))
+                                .absoluteFilePath(resultInfo.completeBaseName() + QStringLiteral("_单元时程.bdf")));
         auto* browseButton = new QPushButton(QStringLiteral("浏览"), fileCard);
         browseButton->setObjectName(QStringLiteral("exportQuietButton"));
         auto* fileRow = new QHBoxLayout;
@@ -114,9 +114,9 @@ public:
                 [this]()
                 {
                     const QString file =
-                        QFileDialog::getSaveFileName(this, QStringLiteral("保存单元结果"), m_fileEdit->text(),
-                                                     QStringLiteral("BDF 结果文件 (*.bdf);;文本文件 (*.txt)"), nullptr,
-                                                     QFileDialog::DontUseNativeDialog);
+                        FileDialogService::selectSaveFile(this, QStringLiteral("保存单元结果"), m_fileEdit->text(),
+                                                          QStringLiteral("BDF 结果文件 (*.bdf);;文本文件 (*.txt)"),
+                                                          QStringLiteral("elementResultExport"));
                     if (!file.isEmpty())
                         m_fileEdit->setText(file);
                 });
@@ -162,9 +162,9 @@ private:
         EnumKeyword::ElementResultType type;
         bool checked;
     };
-    static QString exportDirectory()
+    static QString exportDirectory(const QString& resultFile)
     {
-        return ApplicationPaths::resultExportDirectory();
+        return ApplicationPaths::resultExportDirectory(resultFile);
     }
     void addFieldGroup(QVBoxLayout* layout, const QString& caption, std::initializer_list<FieldDefinition> definitions)
     {

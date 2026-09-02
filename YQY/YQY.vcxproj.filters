@@ -67,6 +67,7 @@
     <ClInclude Include="GUI\Widgets\PropertyModule.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="GUI\Widgets\ConductorModule.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="GUI\Widgets\CompactDoubleSpinBox.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="GUI\Widgets\ResultControlInputWidgets.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="GUI\Dialogs\AnalysisManagerDialog.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -81,7 +82,7 @@
     <ClInclude Include="GUI\Dialogs\PropertyLibraryDialog.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="GUI\Dialogs\NodeResultExportDialog.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="GUI\Dialogs\ElementResultExportDialog.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="GUI\Dialogs\ModelImportFileDialog.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="GUI\Dialogs\FileDialogService.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="GUI\Widgets\ProgressBarAnimation.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="Application\ApplicationPaths.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="Application\ApplicationBootstrap.h"><Filter>Header Files</Filter></ClInclude>
@@ -95,6 +96,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="GUI\Controllers\ModelController.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GUI\Controllers\ResultDataController.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GUI\Controllers\WorkspaceController.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="GUI\Controllers\SolveTaskController.cpp">
@@ -130,7 +137,7 @@
     <ClCompile Include="GUI\Dialogs\SolveTaskManagerDialog.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="GUI\Dialogs\PropertyItemEditorDialog.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="GUI\Dialogs\PropertyLibraryDialog.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="GUI\Dialogs\ModelImportFileDialog.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="GUI\Dialogs\FileDialogService.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -149,6 +156,10 @@
     <ClCompile Include="DataStructure\Element\ElementTruss.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="DataStructure\Element\ElementSpringBase.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="DataStructure\Element\ElementSpring1.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="DataStructure\Element\ElementSpring2.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="DataStructure\Element\ElementSpringA.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="DataStructure\Material\Material.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -200,13 +211,22 @@
     <ClCompile Include="DataStructure\Element\ElementCable.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Utility\ModelManager.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="Export\Outputter.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Export\Hdf5ModelIO.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Export\Hdf5ResultReader.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Export\Hdf5ResultWriter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Export\Hdf5ModelSerializer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Export\ResultExporter.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Export\ResultFrameUtilities.cpp">
@@ -230,9 +250,6 @@
     <ClCompile Include="Solver\Dynamic\StructuralDamping.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Solver\Dynamic\TimeIntegrationSolver.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="Solver\Static\SolverStatic.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -245,13 +262,13 @@
     <ClCompile Include="DataStructure\Aerodynamics\GallopingStabilityAnalyzer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="DataStructure\Element\ElementBeam_CR2D.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="DataStructure\Element\ElementBeam_CR.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Utility\CR.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Utility\ResultTextFormat.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Utility\Logger\Logger.cpp">
@@ -294,6 +311,11 @@
     <ClInclude Include="DataStructure\Element\ElementBase.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="DataStructure\Element\SpringBehavior.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="DataStructure\Element\ElementSpringBase.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="DataStructure\Element\ElementSpring1.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="DataStructure\Element\ElementSpring2.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="DataStructure\Element\ElementSpringA.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="DataStructure\Element\ElementTruss.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -348,9 +370,6 @@
     <ClInclude Include="DataStructure\Element\ElementCable.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Utility\ModelManager.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="Export\Outputter.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -358,6 +377,21 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Export\Hdf5ModelIO.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Export\Hdf5ResultReader.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Export\Hdf5ResultWriter.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="GUI\Controllers\WorkspaceController.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Export\Hdf5ModelSerializer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Export\ResultExporter.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Export\Hdf5ResultData.h">
@@ -387,9 +421,6 @@
     <ClInclude Include="Solver\Dynamic\StructuralDamping.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Solver\Dynamic\TimeIntegrationSolver.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="Solver\Interface\IAnalysisModel.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -417,13 +448,13 @@
     <ClInclude Include="DataStructure\Aerodynamics\GallopingStabilityAnalyzer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="DataStructure\Element\ElementBeam_CR2D.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="DataStructure\Element\ElementBeam_CR.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Utility\CR.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Utility\ResultTextFormat.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Utility\Logger\Logger.h">

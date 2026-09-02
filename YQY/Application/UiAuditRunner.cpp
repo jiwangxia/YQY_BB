@@ -1,12 +1,10 @@
 #include "Application/UiAuditRunner.h"
 
-#include "GUI/Dialogs/ModelImportFileDialog.h"
 #include "GUI/YQY.h"
 
 UiAuditRunner::UiAuditRunner(const QStringList& arguments)
 {
     const int analysisIndex = arguments.indexOf(QStringLiteral("--audit-analysis-manager"));
-    const int modelImportIndex = arguments.indexOf(QStringLiteral("--audit-model-import-dialog"));
     const int solveIndex = arguments.indexOf(QStringLiteral("--audit-solve-tasks"));
     const int postprocessIndex = arguments.indexOf(QStringLiteral("--audit-postprocess"));
     const int nodeExportIndex = arguments.indexOf(QStringLiteral("--audit-node-export"));
@@ -26,19 +24,6 @@ UiAuditRunner::UiAuditRunner(const QStringList& arguments)
             return;
         }
         QSettings().setValue(QStringLiteral("appearance/theme"), theme);
-    }
-
-    if (modelImportIndex >= 0)
-    {
-        if (modelImportIndex + 2 >= arguments.size())
-        {
-            m_valid = false;
-            return;
-        }
-        m_kind = Kind::ModelImportDialog;
-        m_outputFile = arguments.at(modelImportIndex + 1);
-        m_modelFile = arguments.at(modelImportIndex + 2);
-        return;
     }
 
     if (solveIndex >= 0)
@@ -96,15 +81,6 @@ std::optional<int> UiAuditRunner::run(QApplication& application, YQY& window) co
 {
     if (m_kind == Kind::None)
         return std::nullopt;
-    if (m_kind == Kind::ModelImportDialog)
-    {
-        ModelImportFileDialog dialog(m_modelFile, &window);
-        dialog.show();
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
-        const bool saved = dialog.grab().save(m_outputFile);
-        dialog.close();
-        return saved ? 0 : 3;
-    }
     if (!window.openModel(m_modelFile))
         return 1;
 

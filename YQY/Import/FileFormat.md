@@ -21,6 +21,7 @@
 | `*CONSTRAINT` | 约束定义 |
 | `*LOAD` | 荷载定义 |
 | `*ANALYSIS_STEP` | 分析步定义 |
+| `*SPRING` | 非线性弹簧力-相对位移行为 |
 
 ---
 
@@ -55,6 +56,9 @@ ID  Node1  Node2  MaterialID  SectionID
 | `T3D2` | 桁架单元 | 2 |
 | `CABLE` | 索单元 | 2 |
 | `B31` | 梁单元 | 2 |
+| `SPRING1` | 节点对地固定方向弹簧 | 1 |
+| `SPRING2` | 两节点固定方向弹簧 | 2 |
+| `SPRINGA` | 两节点轴向弹簧 | 2 |
 
 **示例：**
 ```
@@ -62,6 +66,30 @@ ID  Node1  Node2  MaterialID  SectionID
 1   1   2   1   1
 2   2   3   1   1
 ```
+
+### 弹簧单元
+
+弹簧行为独立于材料和截面，必须在引用它的弹簧单元之前定义。当前仅支持静力平动自由度，DOF 直接使用程序内部与荷载、约束一致的 `0`、`1`、`2` 编号，分别代表 `U1`、`U2`、`U3`，导入时不再转换。
+
+```
+*SPRING, 行为ID, 数据点数量
+力  相对位移
+```
+
+力-相对位移数据按相对位移严格递增，字段顺序与 Abaqus 的 `*SPRING, NONLINEAR` 一致。
+
+```
+*ELEMENT, SPRING1, 数量
+ID  节点ID  DOF  行为ID
+
+*ELEMENT, SPRING2, 数量
+ID  节点1ID  DOF1  节点2ID  DOF2  行为ID
+
+*ELEMENT, SPRINGA, 数量
+ID  节点1ID  节点2ID  行为ID
+```
+
+`SPRINGA` 不指定 DOF；它始终利用两端节点的三个平动自由度，后续静力实现中沿两节点当前连线方向作用。
 
 ---
 

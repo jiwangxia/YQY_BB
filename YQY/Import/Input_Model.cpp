@@ -8,6 +8,7 @@
 #include <QDir>
 #include <QStringDecoder>
 
+#include <algorithm>
 #include <cmath>
 #include <set>
 #include <stdexcept>
@@ -18,7 +19,7 @@ namespace
 QString GetDefaultHdf5FileName(const QString& inputFileName)
 {
     const QFileInfo inputFileInfo(inputFileName);
-    QDir outputDir(ApplicationPaths::hdf5ResultDirectory());
+    QDir outputDir(ApplicationPaths::hdf5ResultDirectory(inputFileName));
     if (!outputDir.exists())
     {
         QDir().mkpath(outputDir.absolutePath());
@@ -47,6 +48,25 @@ bool RequireKeywordFieldCount(const QStringList& fields, int expected, const QSt
                               .arg(expected)
                               .arg(fields.size());
     return false;
+}
+
+bool IsSpringElement(const ElementBase& element)
+{
+    return dynamic_cast<const ElementSpringBase*>(&element) != nullptr;
+}
+
+bool ParsePositiveId(const QString& text, _OUT int& value)
+{
+    bool ok = false;
+    value = text.toInt(&ok);
+    return ok && value > 0;
+}
+
+bool ParseSpringDOF(const QString& text, _OUT int& dof)
+{
+    bool ok = false;
+    dof = text.toInt(&ok);
+    return ok && dof >= 0 && dof <= 5;
 }
 }
 
@@ -123,6 +143,14 @@ bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureDa
                 if (!InputElement(flow, list_str))
                     return false;
                 break;
+            case EnumKeyword::KeyData::AERO_ELEMENT:
+                if (!InputAeroElements(flow, list_str))
+                    return false;
+                break;
+            case EnumKeyword::KeyData::SPRING:
+                if (!InputSpringBehavior(flow, list_str))
+                    return false;
+                break;
             case EnumKeyword::KeyData::SECTION:
                 if (!InputSection(flow, list_str))
                     return false;
@@ -183,6 +211,12 @@ bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureDa
             typeName = "CABLE";
         else if (dynamic_cast<ElementBeam_CR*>(pair.second.get()))
             typeName = "CR3D";
+        else if (dynamic_cast<ElementSpring1*>(pair.second.get()))
+            typeName = "SPRING1";
+        else if (dynamic_cast<ElementSpring2*>(pair.second.get()))
+            typeName = "SPRING2";
+        else if (dynamic_cast<ElementSpringA*>(pair.second.get()))
+            typeName = "SPRINGA";
         elementTypeCount[typeName]++;
     }
 
@@ -248,17 +282,20 @@ bool Input_Model::ValidateStructure(QString& errorMessage) const
         errorMessage = QStringLiteral("模型没有有效单元。");
         return false;
     }
-    if (m_Structure->m_Material.empty())
+    const bool hasNonSpringElement = std::any_of(
+        m_Structure->m_Elements.cbegin(), m_Structure->m_Elements.cend(),
+        [](const auto& item) { return item.second && !IsSpringElement(*item.second); });
+    if (hasNonSpringElement && m_Structure->m_Material.empty())
     {
         errorMessage = QStringLiteral("模型缺少材料属性。");
         return false;
     }
-    if (m_Structure->m_Section.empty())
+    if (hasNonSpringElement && m_Structure->m_Section.empty())
     {
         errorMessage = QStringLiteral("模型缺少截面属性。");
         return false;
     }
-    if (m_Structure->m_Property.empty())
+    if (hasNonSpringElement && m_Structure->m_Property.empty())
     {
         errorMessage = QStringLiteral("模型没有建立有效的材料-截面属性关联。");
         return false;
@@ -342,6 +379,19 @@ bool Input_Model::ValidateStructure(QString& errorMessage) const
                 return false;
             }
         }
+        if (const auto* spring = dynamic_cast<const ElementSpringBase*>(element.get()))
+        {
+            const auto behavior = spring->m_pSpringBehavior.lock();
+            const auto behaviorIt = behavior ? m_Structure->m_SpringBehaviors.find(behavior->m_Id)
+                                             : m_Structure->m_SpringBehaviors.end();
+            if (!behavior || behaviorIt == m_Structure->m_SpringBehaviors.end() || behaviorIt->second.get() != behavior.get())
+            {
+                errorMessage = QStringLiteral("弹簧单元 %1 没有关联有效的弹簧行为。").arg(elementId);
+                return false;
+            }
+            continue;
+        }
+
         const auto property = element->m_pProperty.lock();
         const auto propertyIt = property ? m_Structure->m_Property.find(property->m_Id) : m_Structure->m_Property.end();
         if (!property || propertyIt == m_Structure->m_Property.end() || propertyIt->second.get() != property.get())
@@ -491,6 +541,68 @@ bool Input_Model::InputElement(QTextStream& flow, const QStringList& list_str)
     }
 }
 
+bool Input_Model::InputAeroElements(QTextStream& flow, const QStringList& list_str)
+{
+    if (!RequireKeywordFieldCount(list_str, 2, "AERO_ELEMENT"))
+        return false;
+
+    bool countOk = false;
+    const int count = list_str[1].toInt(&countOk);
+    if (!countOk || count < 0)
+    {
+        m_LastError = QStringLiteral("AERO_ELEMENT 数量无效。");
+        return false;
+    }
+
+    for (int index = 0; index < count; ++index)
+    {
+        QString line;
+        if (!ReadLine(flow, line))
+        {
+            m_LastError = QStringLiteral("AERO_ELEMENT 数据不完整。");
+            return false;
+        }
+
+        const QStringList fields = line.split(QRegularExpression("[\\t, ]"), Qt::SkipEmptyParts);
+        if (fields.size() != 5)
+        {
+            m_LastError = QStringLiteral("AERO_ELEMENT 第 %1 行字段数量无效。").arg(index + 1);
+            return false;
+        }
+
+        bool elementOk = false;
+        bool roleOk = false;
+        bool wireOk = false;
+        bool bundleOk = false;
+        bool profileOk = false;
+        const int elementId = fields[0].toInt(&elementOk);
+        const int role = fields[1].toInt(&roleOk);
+        const int wireId = fields[2].toInt(&wireOk);
+        const int bundleCount = fields[3].toInt(&bundleOk);
+        const int profileId = fields[4].toInt(&profileOk);
+        if (!elementOk || !roleOk || !wireOk || !bundleOk || !profileOk ||
+            role < static_cast<int>(ElementRole::Generic) || role > static_cast<int>(ElementRole::SuspensionHardware) ||
+            bundleCount <= 0 || profileId < 0)
+        {
+            m_LastError = QStringLiteral("AERO_ELEMENT 第 %1 行数据无效。").arg(index + 1);
+            return false;
+        }
+
+        const auto element = m_Structure->FindElement(elementId);
+        if (!element)
+        {
+            m_LastError = QStringLiteral("AERO_ELEMENT 引用了不存在的单元 %1。").arg(elementId);
+            return false;
+        }
+
+        element->m_Role = static_cast<ElementRole>(role);
+        element->m_WireId = wireId;
+        element->m_AeroBundleCount = bundleCount;
+        element->m_AeroProfileId = profileId;
+    }
+    return true;
+}
+
 // 静态单元处理函数映射表初始化
 const QMap<EnumKeyword::ElementType, Input_Model::ElementHandler> Input_Model::s_ElementHandlers = {
     {EnumKeyword::ElementType::T3D2,
@@ -507,6 +619,21 @@ const QMap<EnumKeyword::ElementType, Input_Model::ElementHandler> Input_Model::s
      [](Input_Model* self, QTextStream& flow, const QStringList& list_str, int nElement)
      {
          return self->InputElementBeam_CR3D(flow, list_str, nElement);
+     }},
+    {EnumKeyword::ElementType::SPRING1,
+     [](Input_Model* self, QTextStream& flow, const QStringList& list_str, int nElement)
+     {
+         return self->InputElementSpring1(flow, list_str, nElement);
+     }},
+    {EnumKeyword::ElementType::SPRING2,
+     [](Input_Model* self, QTextStream& flow, const QStringList& list_str, int nElement)
+     {
+         return self->InputElementSpring2(flow, list_str, nElement);
+     }},
+    {EnumKeyword::ElementType::SPRINGA,
+     [](Input_Model* self, QTextStream& flow, const QStringList& list_str, int nElement)
+     {
+         return self->InputElementSpringA(flow, list_str, nElement);
      }},
 };
 
@@ -702,20 +829,179 @@ bool Input_Model::InputElementBeam_CR3D(QTextStream& flow, const QStringList& li
     return true;
 }
 
-// 梁单元处理（待实现）
-bool Input_Model::InputElementBeam(QTextStream& flow, const QStringList& /*list_str*/, int nElement)
+bool Input_Model::InputSpringBehavior(QTextStream& flow, const QStringList& list_str)
 {
-    // TODO: 实现梁单元的读取逻辑
-    QString strdata;
-    for (int i = 0; i < nElement; i++)
+    if (!RequireKeywordFieldCount(list_str, 3, "SPRING"))
+        return false;
+
+    int behaviorId = 0;
+    int pointCount = 0;
+    if (!ParsePositiveId(list_str[1], behaviorId) || !ParsePositiveId(list_str[2], pointCount) ||
+        m_Structure->m_SpringBehaviors.contains(behaviorId))
     {
-        if (!ReadLine(flow, strdata))
+        m_LastError = QStringLiteral("SPRING 行为编号或数据点数量无效。");
+        return false;
+    }
+
+    auto behavior = std::make_shared<SpringBehavior>();
+    behavior->m_Id = behaviorId;
+    behavior->m_Points.reserve(static_cast<std::size_t>(pointCount));
+    double previousDisplacement = 0.0;
+    for (int index = 0; index < pointCount; ++index)
+    {
+        QString line;
+        if (!ReadLine(flow, line) || line.startsWith('*'))
         {
-            qDebug().noquote() << QStringLiteral("Error: 梁单元数据不够");
+            m_LastError = QStringLiteral("SPRING %1 的力-位移数据不完整。").arg(behaviorId);
+            return false;
+        }
+        const QStringList fields = line.split(QRegularExpression("[\\t, ]"), Qt::SkipEmptyParts);
+        if (fields.size() != 2)
+        {
+            m_LastError = QStringLiteral("SPRING %1 的第 %2 个数据点必须包含力和相对位移。").arg(behaviorId).arg(index + 1);
             return false;
         }
 
-        qDebug().noquote() << QStringLiteral("读取梁单元: ") << strdata;
+        bool forceOk = false;
+        bool displacementOk = false;
+        const double force = fields[0].toDouble(&forceOk);
+        const double displacement = fields[1].toDouble(&displacementOk);
+        if (!forceOk || !displacementOk || !std::isfinite(force) || !std::isfinite(displacement) ||
+            (index > 0 && displacement <= previousDisplacement))
+        {
+            m_LastError = QStringLiteral("SPRING %1 的相对位移必须为严格递增的有限数值。").arg(behaviorId);
+            return false;
+        }
+        behavior->m_Points.push_back({force, displacement});
+        previousDisplacement = displacement;
+    }
+    m_Structure->m_SpringBehaviors.emplace(behaviorId, std::move(behavior));
+    return true;
+}
+
+bool Input_Model::InputElementSpring1(QTextStream& flow, const QStringList& /*list_str*/, int nElement)
+{
+    for (int index = 0; index < nElement; ++index)
+    {
+        QString line;
+        if (!ReadLine(flow, line) || line.startsWith('*'))
+        {
+            m_LastError = QStringLiteral("SPRING1 单元数据不完整。");
+            return false;
+        }
+        const QStringList fields = line.split(QRegularExpression("[\\t, ]"), Qt::SkipEmptyParts);
+        int elementId = 0, nodeId = 0, dof = 0, behaviorId = 0;
+        if (fields.size() != 4 || !ParsePositiveId(fields[0], elementId) || !ParsePositiveId(fields[1], nodeId) ||
+            !ParseSpringDOF(fields[2], dof) || !ParsePositiveId(fields[3], behaviorId) ||
+            m_Structure->m_Elements.contains(elementId))
+        {
+            m_LastError = QStringLiteral("SPRING1 单元必须为：ID 节点 DOF 弹簧行为ID，DOF 可为 0 至 5。");
+            return false;
+        }
+        const auto node = m_Structure->FindNode(nodeId);
+        const auto behaviorIt = m_Structure->m_SpringBehaviors.find(behaviorId);
+        if (!node || behaviorIt == m_Structure->m_SpringBehaviors.end())
+        {
+            m_LastError = QStringLiteral("SPRING1 %1 引用了不存在的节点或弹簧行为。").arg(elementId);
+            return false;
+        }
+        auto element = std::make_shared<ElementSpring1>();
+        element->m_Id = elementId;
+        // 输入自由度直接使用程序内部编号，避免额外转换。
+        element->m_DOF = dof;
+        element->m_pNode[0] = node;
+        element->m_pSpringBehavior = behaviorIt->second;
+        if (dof >= 3)
+            node->SetNumDOFs(6);
+        m_Structure->m_Elements.emplace(elementId, std::move(element));
+    }
+    return true;
+}
+
+bool Input_Model::InputElementSpring2(QTextStream& flow, const QStringList& /*list_str*/, int nElement)
+{
+    for (int index = 0; index < nElement; ++index)
+    {
+        QString line;
+        if (!ReadLine(flow, line) || line.startsWith('*'))
+        {
+            m_LastError = QStringLiteral("SPRING2 单元数据不完整。");
+            return false;
+        }
+        const QStringList fields = line.split(QRegularExpression("[\\t, ]"), Qt::SkipEmptyParts);
+        int elementId = 0, firstNodeId = 0, firstDOF = 0, secondNodeId = 0, secondDOF = 0, behaviorId = 0;
+        if (fields.size() != 6 || !ParsePositiveId(fields[0], elementId) || !ParsePositiveId(fields[1], firstNodeId) ||
+            !ParseSpringDOF(fields[2], firstDOF) || !ParsePositiveId(fields[3], secondNodeId) ||
+            !ParseSpringDOF(fields[4], secondDOF) || !ParsePositiveId(fields[5], behaviorId) ||
+            m_Structure->m_Elements.contains(elementId))
+        {
+            m_LastError = QStringLiteral("SPRING2 单元必须为：ID 节点1 DOF1 节点2 DOF2 弹簧行为ID，DOF 可为 0 至 5。");
+            return false;
+        }
+        const auto firstNode = m_Structure->FindNode(firstNodeId);
+        const auto secondNode = m_Structure->FindNode(secondNodeId);
+        const auto behaviorIt = m_Structure->m_SpringBehaviors.find(behaviorId);
+        if (!firstNode || !secondNode || behaviorIt == m_Structure->m_SpringBehaviors.end())
+        {
+            m_LastError = QStringLiteral("SPRING2 %1 引用了不存在的节点或弹簧行为。").arg(elementId);
+            return false;
+        }
+        auto element = std::make_shared<ElementSpring2>();
+        element->m_Id = elementId;
+        element->m_FirstDOF = firstDOF;
+        element->m_SecondDOF = secondDOF;
+        element->m_pNode[0] = firstNode;
+        element->m_pNode[1] = secondNode;
+        element->m_pSpringBehavior = behaviorIt->second;
+        if (firstDOF >= 3)
+            firstNode->SetNumDOFs(6);
+        if (secondDOF >= 3)
+            secondNode->SetNumDOFs(6);
+        m_Structure->m_Elements.emplace(elementId, std::move(element));
+    }
+    return true;
+}
+
+bool Input_Model::InputElementSpringA(QTextStream& flow, const QStringList& /*list_str*/, int nElement)
+{
+    for (int index = 0; index < nElement; ++index)
+    {
+        QString line;
+        if (!ReadLine(flow, line) || line.startsWith('*'))
+        {
+            m_LastError = QStringLiteral("SPRINGA 单元数据不完整。");
+            return false;
+        }
+        const QStringList fields = line.split(QRegularExpression("[\\t, ]"), Qt::SkipEmptyParts);
+        int elementId = 0, firstNodeId = 0, secondNodeId = 0, behaviorId = 0;
+        if (fields.size() != 4 || !ParsePositiveId(fields[0], elementId) || !ParsePositiveId(fields[1], firstNodeId) ||
+            !ParsePositiveId(fields[2], secondNodeId) || !ParsePositiveId(fields[3], behaviorId) ||
+            m_Structure->m_Elements.contains(elementId))
+        {
+            m_LastError = QStringLiteral("SPRINGA 单元必须为：ID 节点1 节点2 弹簧行为ID。");
+            return false;
+        }
+        const auto firstNode = m_Structure->FindNode(firstNodeId);
+        const auto secondNode = m_Structure->FindNode(secondNodeId);
+        const auto behaviorIt = m_Structure->m_SpringBehaviors.find(behaviorId);
+        if (!firstNode || !secondNode || firstNode == secondNode || behaviorIt == m_Structure->m_SpringBehaviors.end())
+        {
+            m_LastError = QStringLiteral("SPRINGA %1 引用了不存在、重复的节点或弹簧行为。").arg(elementId);
+            return false;
+        }
+        const Eigen::Vector3d distance(firstNode->m_X - secondNode->m_X, firstNode->m_Y - secondNode->m_Y,
+                                       firstNode->m_Z - secondNode->m_Z);
+        if (distance.squaredNorm() <= 1.0e-24)
+        {
+            m_LastError = QStringLiteral("SPRINGA %1 的两个节点初始坐标重合。").arg(elementId);
+            return false;
+        }
+        auto element = std::make_shared<ElementSpringA>();
+        element->m_Id = elementId;
+        element->m_pNode[0] = firstNode;
+        element->m_pNode[1] = secondNode;
+        element->m_pSpringBehavior = behaviorIt->second;
+        m_Structure->m_Elements.emplace(elementId, std::move(element));
     }
     return true;
 }
@@ -755,6 +1041,7 @@ bool Input_Model::InputSection(QTextStream& flow, const QStringList& list_str)
             pSectI0n->m_Id = autoId;
             pSectI0n->m_Width = strlist_pro[1].toDouble();
             pSectI0n->m_Height = strlist_pro[2].toDouble();
+            pSectI0n->Calculate_Area();
             m_Structure->m_Section.insert(std::make_pair(autoId, pSectI0n));
         }
         else if (strlist_pro.size() == 8)
@@ -927,9 +1214,10 @@ bool Input_Model::InputForceNode(QTextStream& flow, const QStringList& /*list_st
         }
 
         QStringList strlist_load = strdata.split(QRegularExpression("[\\t, ]"), Qt::SkipEmptyParts);
+        // 兼容格式：ID, NodeID, Direction, Value, StepID
         // 基本格式：ID, NodeID, Direction, Value, StepID, StartTime, EndTime
         // 扩展格式：ID, NodeID, Direction, Value, StepID, StartTime, EndTime, FunctionType, Params...
-        if (strlist_load.size() < 7)
+        if (strlist_load.size() < 5)
         {
             qDebug().noquote() << QStringLiteral("Error: 节点力荷载数据格式错误: ") << strdata;
             return false;
@@ -939,8 +1227,8 @@ bool Input_Model::InputForceNode(QTextStream& flow, const QStringList& /*list_st
         int direction = strlist_load[2].toInt();
         double value = strlist_load[3].toDouble();
         int stepid = strlist_load[4].toInt();
-        double startTime = strlist_load[5].toDouble();
-        double endTime = strlist_load[6].toDouble();
+        const double startTime = strlist_load.size() >= 6 ? strlist_load[5].toDouble() : 0.0;
+        const double endTime = strlist_load.size() >= 7 ? strlist_load[6].toDouble() : 0.0;
 
         int autoId = static_cast<int>(m_Structure->m_Load.size()) + 1;
 

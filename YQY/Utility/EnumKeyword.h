@@ -23,7 +23,9 @@ public:
         MPC,                ///< 主从多点约束
         LOAD,               ///< 荷载
         STRESS,             ///< 初始应力
-        ANALYSIS_STEP       ///< 分析步
+        ANALYSIS_STEP,      ///< 分析步
+        AERO_ELEMENT,       ///< 单元气动标签
+        SPRING              ///< 弹簧力-相对位移行为
     };
     static const QMap<QString, KeyData> MapKeyData; ///< 关键字字符串到枚举的映射
 
@@ -50,7 +52,10 @@ public:
         UNKNOWN, ///< 未知
         T3D2,    ///< 桁架单元
         CABLE,   ///< 索单元
-        CR3D     ///< 3维CR梁单元
+        CR3D,    ///< 3维CR梁单元
+        SPRING1, ///< 节点对地固定方向弹簧
+        SPRING2, ///< 两节点固定方向弹簧
+        SPRINGA  ///< 两节点轴向弹簧
     };
     static const QMap<QString, ElementType> MapElementType; ///< 单元类型字符串到枚举的映射
 
@@ -137,6 +142,7 @@ public:
         Strain,        ///< 应变
         InitStress,    ///< 初始应力
         CurrentStress, ///< 当前应力
-        DeltaStress    ///< 应力增量
+        DeltaStress,   ///< 应力增量
+        RelativeDisplacement ///< 弹簧相对位移
     };
 };
