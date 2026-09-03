@@ -5,7 +5,7 @@
 ## 调用方式
 
 ```cpp
-#include "Solver/Dynamic/RayleighDamping.h"
+#include "Solver/Dynamic/Damping/RayleighDamping.h"
 
 const auto result = SolverNameSpace::SolveRayleighDamping(
     0.5,   // f1，Hz

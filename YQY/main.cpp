@@ -5,8 +5,8 @@
 #endif
 #include "GUI/YQY.h"
 #include "Export/ResultOutputSettings.h"
-#include "Solver/GpuSettings.h"
-#include "Solver/LinearSolverSettings.h"
+#include "Solver/Linear/Gpu/GpuSettings.h"
+#include "Solver/Linear/LinearSolverSettings.h"
 
 #include <cstdio>
 
@@ -77,6 +77,7 @@ int main(int argc, char* argv[])
                                argument == QStringLiteral("--verify-galloping-case") ||
                                argument == QStringLiteral("--verify-structural-damping") ||
                                argument == QStringLiteral("--verify-low-rank-damping") ||
+                               argument == QStringLiteral("--verify-time-step-integrators") ||
                                argument == QStringLiteral("--verify-structural-damping-hdf5");
         if (headlessVerification)
             break;

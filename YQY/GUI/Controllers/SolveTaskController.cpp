@@ -4,7 +4,7 @@
 #include "DataStructure/AnalysisStep/AnalysisStep.h"
 #include "DataStructure/Structure/StructureData.h"
 #include "Export/Hdf5ResultReader.h"
-#include "Solver/AnalysisSolve.h"
+#include "Solver/Workflow/AnalysisSolve.h"
 
 #include <QDateTime>
 #include <QDir>

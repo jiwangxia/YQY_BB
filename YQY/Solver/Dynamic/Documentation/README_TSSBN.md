@@ -5,7 +5,7 @@ directly from feature-specific factory functions.
 
 ```cpp
 #include "DataStructure/AnalysisStep/AnalysisStep.h"
-#include "Solver/SolverFactory.h"
+#include "Solver/Factory/SolverFactory.h"
 
 AnalysisStep step;
 step.m_Type = EnumKeyword::StepType::DYNAMIC;

@@ -33,7 +33,7 @@
          <property name="title"><string>档位与坐标</string></property>
          <layout class="QVBoxLayout" name="spanDefinitionLayout">
           <item>
-           <widget class="QComboBox" name="modelModeCombo">
+           <widget class="ChevronComboBox" name="modelModeCombo">
             <item><property name="text"><string>单档导线</string></property></item>
             <item><property name="text"><string>多档导线</string></property></item>
            </widget>
@@ -68,7 +68,7 @@
              <item>
               <layout class="QFormLayout" name="suspensionFormLayout">
                <item row="0" column="0"><widget class="QLabel" name="suspensionLengthLabel"><property name="text"><string>悬垂串长度</string></property></widget></item>
-               <item row="0" column="1"><widget class="QDoubleSpinBox" name="suspensionLengthSpin"><property name="minimum"><double>0.001</double></property><property name="maximum"><double>1000</double></property><property name="decimals"><number>3</number></property><property name="value"><double>1</double></property><property name="suffix"><string> m</string></property></widget></item>
+               <item row="0" column="1"><widget class="ChevronDoubleSpinBox" name="suspensionLengthSpin"><property name="minimum"><double>0.001</double></property><property name="maximum"><double>1000</double></property><property name="decimals"><number>3</number></property><property name="value"><double>1</double></property><property name="suffix"><string> m</string></property></widget></item>
               </layout>
              </item>
             </layout>
@@ -86,12 +86,12 @@
           <item row="0" column="0"><widget class="QLabel" name="nameLabel"><property name="text"><string>模型名称</string></property></widget></item>
           <item row="0" column="1"><widget class="QLineEdit" name="nameEdit"><property name="text"><string>导线模型</string></property></widget></item>
           <item row="1" column="0"><widget class="QLabel" name="materialLabel"><property name="text"><string>材料</string></property></widget></item>
-          <item row="1" column="1"><widget class="QComboBox" name="materialCombo"/></item>
+          <item row="1" column="1"><widget class="ChevronComboBox" name="materialCombo"/></item>
           <item row="2" column="0"><widget class="QLabel" name="sectionLabel"><property name="text"><string>截面</string></property></widget></item>
-          <item row="2" column="1"><widget class="QComboBox" name="sectionCombo"/></item>
+          <item row="2" column="1"><widget class="ChevronComboBox" name="sectionCombo"/></item>
           <item row="3" column="0"><widget class="QLabel" name="elementLabel"><property name="text"><string>单元类型</string></property></widget></item>
           <item row="3" column="1">
-           <widget class="QComboBox" name="elementCombo">
+           <widget class="ChevronComboBox" name="elementCombo">
             <item><property name="text"><string>CABLE 共旋索单元</string></property></item>
             <item><property name="text"><string>T3D2 桁架单元</string></property></item>
             <item><property name="text"><string>CR3D 共旋梁单元</string></property></item>
@@ -106,9 +106,9 @@
              <property name="rightMargin"><number>0</number></property>
              <property name="bottomMargin"><number>0</number></property>
              <property name="spacing"><number>4</number></property>
-             <item><widget class="QDoubleSpinBox" name="startX"><property name="minimum"><double>-1000000</double></property><property name="maximum"><double>1000000</double></property><property name="decimals"><number>3</number></property><property name="prefix"><string>X </string></property></widget></item>
-             <item><widget class="QDoubleSpinBox" name="startY"><property name="minimum"><double>-1000000</double></property><property name="maximum"><double>1000000</double></property><property name="decimals"><number>3</number></property><property name="prefix"><string>Y </string></property></widget></item>
-             <item><widget class="QDoubleSpinBox" name="startZ"><property name="minimum"><double>-1000000</double></property><property name="maximum"><double>1000000</double></property><property name="decimals"><number>3</number></property><property name="prefix"><string>Z </string></property></widget></item>
+             <item><widget class="ChevronDoubleSpinBox" name="startX"><property name="minimum"><double>-1000000</double></property><property name="maximum"><double>1000000</double></property><property name="decimals"><number>3</number></property><property name="prefix"><string>X </string></property></widget></item>
+             <item><widget class="ChevronDoubleSpinBox" name="startY"><property name="minimum"><double>-1000000</double></property><property name="maximum"><double>1000000</double></property><property name="decimals"><number>3</number></property><property name="prefix"><string>Y </string></property></widget></item>
+             <item><widget class="ChevronDoubleSpinBox" name="startZ"><property name="minimum"><double>-1000000</double></property><property name="maximum"><double>1000000</double></property><property name="decimals"><number>3</number></property><property name="prefix"><string>Z </string></property></widget></item>
             </layout>
            </widget>
           </item>
@@ -121,15 +121,15 @@
              <property name="rightMargin"><number>0</number></property>
              <property name="bottomMargin"><number>0</number></property>
              <property name="spacing"><number>1</number></property>
-             <item><widget class="QDoubleSpinBox" name="endX"><property name="minimum"><double>-1000000</double></property><property name="maximum"><double>1000000</double></property><property name="decimals"><number>3</number></property><property name="prefix"><string>X </string></property><property name="value"><double>300</double></property></widget></item>
-             <item><widget class="QDoubleSpinBox" name="endY"><property name="minimum"><double>-1000000</double></property><property name="maximum"><double>1000000</double></property><property name="decimals"><number>3</number></property><property name="prefix"><string>Y </string></property></widget></item>
-             <item><widget class="QDoubleSpinBox" name="endZ"><property name="minimum"><double>-1000000</double></property><property name="maximum"><double>1000000</double></property><property name="decimals"><number>3</number></property><property name="prefix"><string>Z </string></property></widget></item>
+             <item><widget class="ChevronDoubleSpinBox" name="endX"><property name="minimum"><double>-1000000</double></property><property name="maximum"><double>1000000</double></property><property name="decimals"><number>3</number></property><property name="prefix"><string>X </string></property><property name="value"><double>300</double></property></widget></item>
+             <item><widget class="ChevronDoubleSpinBox" name="endY"><property name="minimum"><double>-1000000</double></property><property name="maximum"><double>1000000</double></property><property name="decimals"><number>3</number></property><property name="prefix"><string>Y </string></property></widget></item>
+             <item><widget class="ChevronDoubleSpinBox" name="endZ"><property name="minimum"><double>-1000000</double></property><property name="maximum"><double>1000000</double></property><property name="decimals"><number>3</number></property><property name="prefix"><string>Z </string></property></widget></item>
             </layout>
            </widget>
           </item>
           <item row="6" column="0"><widget class="QLabel" name="bundleLabel"><property name="text"><string>分裂数</string></property></widget></item>
           <item row="6" column="1">
-           <widget class="QComboBox" name="bundleCombo">
+           <widget class="ChevronComboBox" name="bundleCombo">
             <property name="currentIndex"><number>2</number></property>
             <item><property name="text"><string>1</string></property></item>
             <item><property name="text"><string>2</string></property></item>
@@ -139,19 +139,19 @@
            </widget>
           </item>
           <item row="7" column="0"><widget class="QLabel" name="spacingLabel"><property name="text"><string>子导线间距</string></property></widget></item>
-          <item row="7" column="1"><widget class="QDoubleSpinBox" name="spacingSpin"><property name="maximum"><double>20</double></property><property name="decimals"><number>3</number></property><property name="value"><double>0.4</double></property><property name="suffix"><string> m</string></property></widget></item>
+          <item row="7" column="1"><widget class="ChevronDoubleSpinBox" name="spacingSpin"><property name="maximum"><double>20</double></property><property name="decimals"><number>3</number></property><property name="value"><double>0.4</double></property><property name="suffix"><string> m</string></property></widget></item>
           <item row="8" column="0"><widget class="QLabel" name="segmentsLabel"><property name="text"><string>每根导线段数</string></property></widget></item>
-          <item row="8" column="1"><widget class="QSpinBox" name="segmentsSpin"><property name="minimum"><number>2</number></property><property name="maximum"><number>10000</number></property><property name="value"><number>50</number></property></widget></item>
+          <item row="8" column="1"><widget class="ChevronSpinBox" name="segmentsSpin"><property name="minimum"><number>2</number></property><property name="maximum"><number>10000</number></property><property name="value"><number>50</number></property></widget></item>
           <item row="9" column="0"><widget class="QLabel" name="stressLabel"><property name="text"><string>初始应力</string></property></widget></item>
-          <item row="9" column="1"><widget class="QDoubleSpinBox" name="stressSpin"><property name="minimum"><double>0.001</double></property><property name="maximum"><double>10000</double></property><property name="decimals"><number>3</number></property><property name="value"><double>50</double></property><property name="suffix"><string> MPa</string></property></widget></item>
+          <item row="9" column="1"><widget class="ChevronDoubleSpinBox" name="stressSpin"><property name="minimum"><double>0.001</double></property><property name="maximum"><double>10000</double></property><property name="decimals"><number>3</number></property><property name="value"><double>50</double></property><property name="suffix"><string> MPa</string></property></widget></item>
           <item row="10" column="0"><widget class="QLabel" name="endTopologyLabel"><property name="text"><string>端部形式</string></property></widget></item>
-          <item row="10" column="1"><widget class="QComboBox" name="endTopologyCombo">
+          <item row="10" column="1"><widget class="ChevronComboBox" name="endTopologyCombo">
              <item><property name="text"><string>汇集单挂点</string></property></item>
              <item><property name="text"><string>分组双挂点</string></property></item>
              <item><property name="text"><string>子导线独立挂点</string></property></item>
           </widget></item>
           <item row="11" column="0"><widget class="QLabel" name="dualSupportSpacingLabel"><property name="text"><string>双挂点间距</string></property></widget></item>
-          <item row="11" column="1"><widget class="QDoubleSpinBox" name="dualSupportSpacingSpin"><property name="minimum"><double>0.001</double></property><property name="maximum"><double>100</double></property><property name="decimals"><number>3</number></property><property name="value"><double>0.45</double></property><property name="suffix"><string> m</string></property></widget></item>
+          <item row="11" column="1"><widget class="ChevronDoubleSpinBox" name="dualSupportSpacingSpin"><property name="minimum"><double>0.001</double></property><property name="maximum"><double>100</double></property><property name="decimals"><number>3</number></property><property name="value"><double>0.45</double></property><property name="suffix"><string> m</string></property></widget></item>
          </layout>
         </widget>
        </item>
@@ -164,28 +164,28 @@
           <item row="0" column="0" colspan="2"><widget class="QCheckBox" name="innerSpacerCheck"><property name="text"><string>创建相内间隔棒</string></property><property name="toolTip"><string>二分裂生成横杆；三分裂及以上按所选形式生成间隔棒</string></property><property name="checked"><bool>true</bool></property></widget></item>
           <item row="2" column="0"><widget class="QLabel" name="spacerLayoutLabel"><property name="text"><string>布置方式</string></property></widget></item>
           <item row="2" column="1">
-           <widget class="QComboBox" name="spacerLayoutCombo">
+           <widget class="ChevronComboBox" name="spacerLayoutCombo">
             <item><property name="text"><string>规范档距</string></property></item>
             <item><property name="text"><string>指定数量(等距)</string></property></item>
            </widget>
           </item>
           <item row="3" column="0"><widget class="QLabel" name="spacerCountLabel"><property name="text"><string>间隔棒数量</string></property></widget></item>
-          <item row="3" column="1"><widget class="QSpinBox" name="spacerCountSpin"><property name="minimum"><number>1</number></property><property name="maximum"><number>1000</number></property><property name="value"><number>4</number></property></widget></item>
+          <item row="3" column="1"><widget class="ChevronSpinBox" name="spacerCountSpin"><property name="minimum"><number>1</number></property><property name="maximum"><number>1000</number></property><property name="value"><number>4</number></property></widget></item>
           <item row="4" column="0"><widget class="QLabel" name="spacerPreviewTitle"><property name="text"><string>预计生成</string></property></widget></item>
           <item row="4" column="1"><widget class="QLabel" name="spacerCountPreview"><property name="text"><string>按当前档距自动计算</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
           <item row="5" column="0"><widget class="QLabel" name="spacerElementLabel"><property name="text"><string>单元类型</string></property></widget></item>
           <item row="5" column="1">
-           <widget class="QComboBox" name="spacerElementCombo">
+           <widget class="ChevronComboBox" name="spacerElementCombo">
             <item><property name="text"><string>CR3D 梁</string></property></item>
             <item><property name="text"><string>T3D2 桁架</string></property></item>
            </widget>
           </item>
           <item row="6" column="0"><widget class="QLabel" name="spacerMaterialLabel"><property name="text"><string>材料</string></property></widget></item>
-          <item row="6" column="1"><widget class="QComboBox" name="spacerMaterialCombo"/></item>
+          <item row="6" column="1"><widget class="ChevronComboBox" name="spacerMaterialCombo"/></item>
           <item row="7" column="0"><widget class="QLabel" name="spacerSectionLabel"><property name="text"><string>截面</string></property></widget></item>
-          <item row="7" column="1"><widget class="QComboBox" name="spacerSectionCombo"/></item>
+          <item row="7" column="1"><widget class="ChevronComboBox" name="spacerSectionCombo"/></item>
           <item row="1" column="0"><widget class="QLabel" name="spacerStyleLabel"><property name="text"><string>相内间隔棒形式</string></property></widget></item>
-          <item row="1" column="1"><widget class="QComboBox" name="spacerStyleCombo">
+          <item row="1" column="1"><widget class="ChevronComboBox" name="spacerStyleCombo">
            <item><property name="text"><string>外框多边形</string></property></item>
            <item><property name="text"><string>中心对角撑</string></property></item>
            <item><property name="text"><string>内圈多边形</string></property></item>
@@ -203,6 +203,11 @@
    </item>
   </layout>
  </widget>
+ <customwidgets>
+  <customwidget><class>ChevronComboBox</class><extends>QComboBox</extends><header>Widgets/ResultControlInputWidgets.h</header></customwidget>
+  <customwidget><class>ChevronDoubleSpinBox</class><extends>QDoubleSpinBox</extends><header>Widgets/ResultControlInputWidgets.h</header></customwidget>
+  <customwidget><class>ChevronSpinBox</class><extends>QSpinBox</extends><header>Widgets/ResultControlInputWidgets.h</header></customwidget>
+ </customwidgets>
  <resources/>
  <connections/>
 </ui>

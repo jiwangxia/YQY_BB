@@ -1,4 +1,4 @@
-#include "Solver/CudaSparseSolver.h"
+#include "CudaSparseSolver.h"
 
 #include <cublas_v2.h>
 #include <cuda_runtime_api.h>

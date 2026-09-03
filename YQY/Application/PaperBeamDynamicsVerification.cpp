@@ -4,8 +4,8 @@
 #include "DataStructure/Material/Material.h"
 #include "DataStructure/Property/Property.h"
 #include "DataStructure/Section/SectionBase.h"
-#include "Solver/Dynamic/SolverAdaptiveTSSBN.h"
-#include "Solver/Dynamic/SolverNewmark.h"
+#include "Solver/Dynamic/Integrators/SolverAdaptiveTSSBN.h"
+#include "Solver/Dynamic/Integrators/SolverNewmark.h"
 
 #include <QDir>
 #include <QFile>

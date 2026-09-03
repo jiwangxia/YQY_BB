@@ -1,4 +1,4 @@
-#include "../Solver/Dynamic/RayleighDamping.h"
+#include "../Solver/Dynamic/Damping/RayleighDamping.h"
 
 #include <cmath>
 #include <iostream>

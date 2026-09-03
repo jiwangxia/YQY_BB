@@ -107,6 +107,16 @@ void ElementCable::CommitState()
     }
 }
 
+void ElementCable::BackupState()
+{
+    m_BackupCommittedSpatialTwist = m_CommittedSpatialTwist;
+}
+
+void ElementCable::RestoreState()
+{
+    m_CommittedSpatialTwist = m_BackupCommittedSpatialTwist;
+}
+
 void ElementCable::AddNodalAxialTorque(int nodeIndex, double torque, _OUT VectorXd& elementForce) const
 {
     std::vector<int> localDofCounts;

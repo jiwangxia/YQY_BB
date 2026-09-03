@@ -3,8 +3,10 @@
  * @brief 动力求解器 - Newmark-β 隐式时间积分法
  */
 #pragma once
-#include "../Interface/ISolver.h"
-#include "Solver/LinearSystemSolver.h"
+#include "../TimeStepping/TimeStepControl.h"
+#include "../../Interface/ISolver.h"
+#include "Solver/Linear/LinearSystemSolver.h"
+#include <limits>
 
 namespace SolverNameSpace
 {
@@ -37,6 +39,8 @@ public:
         double cutbackFactor = 0.5;
         double recoveryFactor = 1.25;
         int maximumCutbacks = 12;
+        TimeStepMode timeStepMode = TimeStepMode::Fixed;
+        AdaptiveTimeStepSettings adaptiveTimeStep;
     };
 
     /**
@@ -53,7 +57,7 @@ public:
     }
     SolverType GetType() const override
     {
-        return SolverType::Newmark;
+        return m_param.timeStepMode == TimeStepMode::Adaptive ? SolverType::AdaptiveNewmark : SolverType::Newmark;
     }
     void SetStepCallback(StepCallback callback) override
     {
@@ -71,6 +75,15 @@ public:
     }
 
 private:
+    struct StepResult
+    {
+        bool converged = false;
+        int iterations = 0;
+        double residual = std::numeric_limits<double>::infinity();
+        double residualLimit = 0.0;
+        Vec nonlinearMpcMultipliers;
+    };
+
     Params m_param;
     StepCallback m_callback;
 
@@ -87,6 +100,8 @@ private:
          * @brief 根据时间步长计算 Newmark 系数
          */
     void ComputeCoeffs(double dt);
+    bool SolveSingleStep(IAnalysisModel& model, double currentTime, double timeStep,
+                         const Eigen::MatrixXd& dampingFactor, _OUT StepResult& result);
 
     // 线性求解器缓存
     LinearSystemSolver m_linearSolver;

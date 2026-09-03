@@ -4,9 +4,9 @@
  */
 #pragma once
 
-#include "AdaptiveTssbnSettings.h"
-#include "../Interface/ISolver.h"
-#include "Solver/LinearSystemSolver.h"
+#include "../TimeStepping/AdaptiveTssbnSettings.h"
+#include "../../Interface/ISolver.h"
+#include "Solver/Linear/LinearSystemSolver.h"
 #include <limits>
 
 namespace SolverNameSpace

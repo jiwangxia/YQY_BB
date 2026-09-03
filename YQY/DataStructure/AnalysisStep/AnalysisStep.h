@@ -2,12 +2,13 @@
 #include "Base/Base.h"
 #include "Solver/Interface/IAnalysisModel.h"
 #include "Solver/Interface/ISolver.h"
-#include "Solver/Dynamic/AdaptiveTssbnSettings.h"
-#include "Solver/Dynamic/StructuralDamping.h"
+#include "Solver/Dynamic/TimeStepping/AdaptiveTssbnSettings.h"
+#include "Solver/Dynamic/Damping/StructuralDamping.h"
 #include <memory>
 #include <functional>
 #include <map>
 #include <set>
+#include <vector>
 typedef Eigen::SparseMatrix<double> SpMat;
 typedef Eigen::Triplet<double> Tri;
 
@@ -158,6 +159,9 @@ public:
     void RollbackDynamicStep() override;
     bool SaveTrialState() override;
     bool RestoreTrialState() override;
+    bool PushStateCheckpoint() override;
+    bool RestoreStateCheckpoint() override;
+    void DiscardStateCheckpoint() override;
     void SetTrialKinematics(const SolverNameSpace::Vec& v, const SolverNameSpace::Vec& a) override;
     void SetTssbnStageKinematics(int stageIndex, double timeStep, double firstStageTime, double secondStageTime,
                                  double secondStageDiagonalFraction, _OUT SolverNameSpace::Vec& velocity,
@@ -200,6 +204,12 @@ private:
     SolverNameSpace::Vec m_mpcMultipliers;
     SolverNameSpace::Vec m_dynamicInertiaForce;
     std::map<int, std::shared_ptr<Node>> m_trialNodeStates;
+    struct StateCheckpoint
+    {
+        std::map<int, std::shared_ptr<Node>> nodes;
+        SolverNameSpace::Vec mpcMultipliers;
+    };
+    std::vector<StateCheckpoint> m_stateCheckpoints;
     // Fixed for one analysis step after resolving physical wire labels against
     // that step's wind direction. Time integration only changes the angle row.
     std::map<int, int> m_gallopingProfileBindings;

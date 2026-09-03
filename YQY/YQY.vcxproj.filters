@@ -244,10 +244,19 @@
     <ClCompile Include="Conductor\PropertyLibrary.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Solver\Dynamic\SolverNewmark.cpp">
+    <ClCompile Include="Solver\Dynamic\Integrators\SolverNewmark.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Solver\Dynamic\StructuralDamping.cpp">
+    <ClCompile Include="Solver\Dynamic\Integrators\SolverRungeKutta4.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Solver\Dynamic\TimeStepping\TimeStepControl.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Solver\Dynamic\TimeStepping\TimeStepError.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Solver\Dynamic\Damping\StructuralDamping.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Solver\Static\SolverStatic.cpp">
@@ -277,7 +286,7 @@
     <ClCompile Include="DataStructure\Section\SectionRectangle.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Solver\Dynamic\SolverAdaptiveTSSBN.cpp">
+    <ClCompile Include="Solver\Dynamic\Integrators\SolverAdaptiveTSSBN.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -412,13 +421,22 @@
     <ClInclude Include="Conductor\PropertyLibrary.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Solver\Dynamic\SolverNewmark.h">
+    <ClInclude Include="Solver\Dynamic\Integrators\SolverNewmark.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Solver\Dynamic\RayleighDamping.h">
+    <ClInclude Include="Solver\Dynamic\Integrators\SolverRungeKutta4.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Solver\Dynamic\StructuralDamping.h">
+    <ClInclude Include="Solver\Dynamic\TimeStepping\TimeStepControl.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Solver\Dynamic\TimeStepping\TimeStepError.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Solver\Dynamic\Damping\RayleighDamping.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Solver\Dynamic\Damping\StructuralDamping.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Solver\Interface\IAnalysisModel.h">
@@ -427,13 +445,13 @@
     <ClInclude Include="Solver\Interface\ISolver.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Solver\LinearSystemSolver.h">
+    <ClInclude Include="Solver\Linear\LinearSystemSolver.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Solver\AssemblySettings.h">
+    <ClInclude Include="Solver\Assembly\AssemblySettings.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Solver\SolverFactory.h">
+    <ClInclude Include="Solver\Factory\SolverFactory.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Solver\AnalysisRunner.h">
@@ -463,7 +481,7 @@
     <ClInclude Include="DataStructure\Section\SectionRectangle.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Solver\Dynamic\SolverAdaptiveTSSBN.h">
+    <ClInclude Include="Solver\Dynamic\Integrators\SolverAdaptiveTSSBN.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

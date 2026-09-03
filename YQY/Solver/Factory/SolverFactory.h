@@ -1,9 +1,10 @@
 #pragma once
 #include "DataStructure/AnalysisStep/AnalysisStep.h"
-#include "Interface/ISolver.h"
-#include "Static/SolverStatic.h"
-#include "Dynamic/SolverNewmark.h"
-#include "Dynamic/SolverAdaptiveTSSBN.h"
+#include "../Interface/ISolver.h"
+#include "../Static/SolverStatic.h"
+#include "../Dynamic/Integrators/SolverNewmark.h"
+#include "../Dynamic/Integrators/SolverRungeKutta4.h"
+#include "../Dynamic/Integrators/SolverAdaptiveTSSBN.h"
 #include <memory>
 #include <algorithm>
 
@@ -45,6 +46,12 @@ private:
         {
             case SolverType::Newmark:
                 return CreateNewmarkFromStep(step);
+            case SolverType::AdaptiveNewmark:
+                return CreateNewmarkFromStep(step, true);
+            case SolverType::RungeKutta4:
+                return CreateRungeKutta4FromStep(step);
+            case SolverType::AdaptiveRungeKutta4:
+                return CreateRungeKutta4FromStep(step, true);
             case SolverType::CentralDifference:
                 return CreateNewmarkFromStep(step);
             case SolverType::HHT:
@@ -57,7 +64,7 @@ private:
     }
 
     // 将分析步参数转换为 Newmark 求解器参数。
-    static std::unique_ptr<SolverNewmark> CreateNewmarkFromStep(const AnalysisStep& step)
+    static std::unique_ptr<SolverNewmark> CreateNewmarkFromStep(const AnalysisStep& step, bool adaptive = false)
     {
         SolverNewmark::Params p;
         p.dt = step.m_StepSize;
@@ -65,7 +72,22 @@ private:
         p.tol = step.m_Tolerance;
         p.aerodynamicTangentMode = step.m_EnableGalloping ? step.m_GallopingAerodynamicTangentMode
                                                          : AerodynamicTangentMode::Disabled;
+        p.timeStepMode = adaptive ? TimeStepMode::Adaptive : TimeStepMode::Fixed;
+        if (adaptive)
+            p.adaptiveTimeStep.maximumTimeStep = std::max(step.m_StepSize, p.adaptiveTimeStep.maximumTimeStep);
         return std::make_unique<SolverNewmark>(p);
+    }
+
+    static std::unique_ptr<SolverRungeKutta4> CreateRungeKutta4FromStep(const AnalysisStep& step,
+                                                                          bool adaptive = false)
+    {
+        SolverRungeKutta4::Params parameters;
+        parameters.timeStep = step.m_StepSize;
+        parameters.timeStepMode = adaptive ? TimeStepMode::Adaptive : TimeStepMode::Fixed;
+        if (adaptive)
+            parameters.adaptiveTimeStep.maximumTimeStep =
+                std::max(step.m_StepSize, parameters.adaptiveTimeStep.maximumTimeStep);
+        return std::make_unique<SolverRungeKutta4>(parameters);
     }
 
     // 将分析步参数转换为自适应 TSSBN 求解器参数。

@@ -1,4 +1,4 @@
-#include "Solver/GpuSettings.h"
+#include "GpuSettings.h"
 
 namespace SolverNameSpace
 {

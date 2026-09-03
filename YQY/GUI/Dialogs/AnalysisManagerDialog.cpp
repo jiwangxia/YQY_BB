@@ -370,6 +370,12 @@ public:
         auto* solverLayout = new QFormLayout(solverGroup);
         m_dynamicSolver = new QComboBox(solverGroup);
         m_dynamicSolver->addItem(QStringLiteral("Newmark-β"), static_cast<int>(SolverNameSpace::SolverType::Newmark));
+        m_dynamicSolver->addItem(QStringLiteral("Newmark-β（自适应）"),
+                                 static_cast<int>(SolverNameSpace::SolverType::AdaptiveNewmark));
+        m_dynamicSolver->addItem(QStringLiteral("Runge-Kutta 4（显式）"),
+                                 static_cast<int>(SolverNameSpace::SolverType::RungeKutta4));
+        m_dynamicSolver->addItem(QStringLiteral("Runge-Kutta 4（显式，自适应）"),
+                                 static_cast<int>(SolverNameSpace::SolverType::AdaptiveRungeKutta4));
         m_dynamicSolver->addItem(QStringLiteral("自适应 TSSBN"),
                                  static_cast<int>(SolverNameSpace::SolverType::AdaptiveTSSBN));
         solverLayout->addRow(QStringLiteral("积分方法"), m_dynamicSolver);

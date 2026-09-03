@@ -20,9 +20,9 @@
 #include "Dialogs/ElementResultExportDialog.h"
 #include "Dialogs/FileDialogService.h"
 #include "Application/ApplicationPaths.h"
-#include "Solver/AssemblySettings.h"
-#include "Solver/GpuSettings.h"
-#include "Solver/LinearSolverSettings.h"
+#include "Solver/Assembly/AssemblySettings.h"
+#include "Solver/Linear/Gpu/GpuSettings.h"
+#include "Solver/Linear/LinearSolverSettings.h"
 #include "Export/ResultOutputSettings.h"
 #include "DataStructure/Structure/StructureData.h"
 #include "DataStructure/Element/ElementSpring1.h"
@@ -1195,9 +1195,19 @@ QComboBox { selection-background-color: $ACCENT_SOFT; selection-color: $TEXT; }
 QLineEdit:hover, QComboBox:hover, QDoubleSpinBox:hover, QSpinBox:hover { border-color: $ACCENT2; }
 QLineEdit:focus, QComboBox:focus, QDoubleSpinBox:focus, QSpinBox:focus { border: 1px solid $ACCENT; background: $ELEVATED; }
 QComboBox::drop-down { border: none; width: 28px; }
+QComboBox::down-arrow {
+    image: url(:/YQY/icon_chevron_down.svg);
+    width: 12px;
+    height: 12px;
+}
 ResultSelectionComboBox::down-arrow,
 ResultScaleSpinBox::up-arrow,
-ResultScaleSpinBox::down-arrow { image: none; }
+ResultScaleSpinBox::down-arrow,
+ChevronComboBox::down-arrow,
+ChevronDoubleSpinBox::up-arrow,
+ChevronDoubleSpinBox::down-arrow,
+ChevronSpinBox::up-arrow,
+ChevronSpinBox::down-arrow { image: none; }
 QComboBoxPrivateContainer {
     background: $ELEVATED;
     border: 1px solid $BORDER_STRONG;
@@ -1254,6 +1264,16 @@ QDoubleSpinBox::up-button, QSpinBox::up-button {
 QDoubleSpinBox::down-button, QSpinBox::down-button {
     subcontrol-position: bottom right;
     border-bottom-right-radius: 5px;
+}
+QDoubleSpinBox::up-arrow, QSpinBox::up-arrow {
+    image: url(:/YQY/icon_chevron_up.svg);
+    width: 12px;
+    height: 12px;
+}
+QDoubleSpinBox::down-arrow, QSpinBox::down-arrow {
+    image: url(:/YQY/icon_chevron_down.svg);
+    width: 12px;
+    height: 12px;
 }
 QDoubleSpinBox::up-button:hover, QSpinBox::up-button:hover,
 QDoubleSpinBox::down-button:hover, QSpinBox::down-button:hover { background: $ACCENT_SOFT; }

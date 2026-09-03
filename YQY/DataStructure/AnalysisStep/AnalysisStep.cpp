@@ -14,8 +14,8 @@
 #include "DataStructure/Load/Force_Gravity.h"
 #include "DataStructure/Load/Force_Wind.h"
 #include "Solver/Interface/ISolver.h"
-#include "Solver/SolverFactory.h"
-#include "Solver/AssemblySettings.h"
+#include "Solver/Factory/SolverFactory.h"
+#include "Solver/Assembly/AssemblySettings.h"
 #include "Solver/Constraint/NonlinearMPC.h"
 #include <Eigen/SparseCholesky>
 #include <QStringList>
@@ -1253,6 +1253,11 @@ void AnalysisStep::RollbackDynamicStep()
     {
         nodePair.second->RollbackNewmarkStep();
     }
+    for (auto& elementPair : m_pData->m_Elements)
+    {
+        if (elementPair.second)
+            elementPair.second->RestoreState();
+    }
 }
 
 void AnalysisStep::SetTrialKinematics(const SolverNameSpace::Vec& v, const SolverNameSpace::Vec& a)
@@ -1568,6 +1573,63 @@ bool AnalysisStep::RestoreTrialState()
     return true;
 }
 
+bool AnalysisStep::PushStateCheckpoint()
+{
+    if (!m_pData)
+        return false;
+
+    StateCheckpoint checkpoint;
+    for (const auto& [nodeId, node] : m_pData->m_Nodes)
+    {
+        if (!node)
+            return false;
+        checkpoint.nodes.emplace(nodeId, std::make_shared<Node>(*node));
+    }
+    if (checkpoint.nodes.size() != m_pData->m_Nodes.size())
+        return false;
+
+    checkpoint.mpcMultipliers = m_mpcMultipliers;
+    for (const auto& [elementId, element] : m_pData->m_Elements)
+    {
+        Q_UNUSED(elementId);
+        if (element)
+            element->BackupState();
+    }
+    m_stateCheckpoints.push_back(std::move(checkpoint));
+    return true;
+}
+
+bool AnalysisStep::RestoreStateCheckpoint()
+{
+    if (!m_pData || m_stateCheckpoints.empty())
+        return false;
+
+    const StateCheckpoint& checkpoint = m_stateCheckpoints.back();
+    if (checkpoint.nodes.size() != m_pData->m_Nodes.size())
+        return false;
+    for (const auto& [nodeId, state] : checkpoint.nodes)
+    {
+        const auto found = m_pData->m_Nodes.find(nodeId);
+        if (found == m_pData->m_Nodes.end() || !found->second || !state)
+            return false;
+        *found->second = *state;
+    }
+    for (const auto& [elementId, element] : m_pData->m_Elements)
+    {
+        Q_UNUSED(elementId);
+        if (element)
+            element->RestoreState();
+    }
+    m_mpcMultipliers = checkpoint.mpcMultipliers;
+    return true;
+}
+
+void AnalysisStep::DiscardStateCheckpoint()
+{
+    if (!m_stateCheckpoints.empty())
+        m_stateCheckpoints.pop_back();
+}
+
 void AnalysisStep::AssembleExternalLoadTangent(double time, double loadFactor, double velocityDerivative,
                                                 SpMat& externalTangent)
 {
@@ -1847,6 +1909,11 @@ void AnalysisStep::StoreCurrentNodeState()
 void AnalysisStep::BackupStepState()
 {
     StoreCurrentNodeState();
+    for (auto& elementPair : m_pData->m_Elements)
+    {
+        if (elementPair.second)
+            elementPair.second->BackupState();
+    }
 }
 
 void AnalysisStep::GetStepIncrement(SolverNameSpace::Vec& dx_step) const

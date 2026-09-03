@@ -4,7 +4,7 @@
  */
 #pragma once
 #include "../Interface/ISolver.h"
-#include "Solver/LinearSystemSolver.h"
+#include "Solver/Linear/LinearSystemSolver.h"
 
 namespace SolverNameSpace
 {

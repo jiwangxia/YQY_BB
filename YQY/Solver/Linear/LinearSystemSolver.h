@@ -1,11 +1,11 @@
 #pragma once
 
 #include "Solver/Interface/IAnalysisModel.h"
-#include "Solver/CudssSolver.h"
-#include "Solver/CudaSparseSolver.h"
-#include "Solver/GpuSettings.h"
-#include "Solver/LinearSolverSettings.h"
-#include "Solver/PardisoSolver.h"
+#include "Gpu/CudssSolver.h"
+#include "Gpu/CudaSparseSolver.h"
+#include "Gpu/GpuSettings.h"
+#include "LinearSolverSettings.h"
+#include "Direct/PardisoSolver.h"
 
 #include <Eigen/LU>
 #include <Eigen/SparseCholesky>

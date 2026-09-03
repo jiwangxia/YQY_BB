@@ -12,6 +12,7 @@ private:
     double Sy = 0.0;
     double Sz = 0.0;
     std::array<double, 2> m_CommittedSpatialTwist = {0.0, 0.0};
+    std::array<double, 2> m_BackupCommittedSpatialTwist = {0.0, 0.0};
 
 public:
     /**
@@ -34,6 +35,8 @@ public:
     void AddNodalAxialTorque(int nodeIndex, double torque, _OUT VectorXd& elementForce) const;
     void CopyRuntimeState(const ElementCable& source);
     void CommitState() override;
+    void BackupState() override;
+    void RestoreState() override;
 
     /**
      * @brief 计算单元刚度矩阵

@@ -77,6 +77,28 @@ public:
     }
 
     /**
+     * @brief 保存一个可跨越多个试算步的状态检查点。
+     *
+     * 自适应步长的整步/两半步比较需要恢复到同一物理步初状态，不能复用 Newton
+     * 线搜索的单层试探状态。
+     */
+    virtual bool PushStateCheckpoint()
+    {
+        return false;
+    }
+
+    /** @brief 恢复最近一次状态检查点。 */
+    virtual bool RestoreStateCheckpoint()
+    {
+        return false;
+    }
+
+    /** @brief 丢弃最近一次状态检查点而不恢复。 */
+    virtual void DiscardStateCheckpoint()
+    {
+    }
+
+    /**
          * @brief 设置当前试探的速度和加速度（动力学求解器使用）
          * @param[in] v 速度向量
          * @param[in] a 加速度向量

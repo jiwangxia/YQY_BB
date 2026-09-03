@@ -1,4 +1,4 @@
-#include "Solver/CudssSolver.h"
+#include "CudssSolver.h"
 
 #include <cudss.h>
 
