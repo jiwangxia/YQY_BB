@@ -117,6 +117,27 @@ void ElementCable::RestoreState()
     m_CommittedSpatialTwist = m_BackupCommittedSpatialTwist;
 }
 
+bool ElementCable::PushStateCheckpoint()
+{
+    if (m_CheckpointCommittedSpatialTwist.has_value())
+        return false;
+    m_CheckpointCommittedSpatialTwist = m_CommittedSpatialTwist;
+    return true;
+}
+
+bool ElementCable::RestoreStateCheckpoint()
+{
+    if (!m_CheckpointCommittedSpatialTwist.has_value())
+        return false;
+    m_CommittedSpatialTwist = *m_CheckpointCommittedSpatialTwist;
+    return true;
+}
+
+void ElementCable::DiscardStateCheckpoint()
+{
+    m_CheckpointCommittedSpatialTwist.reset();
+}
+
 void ElementCable::AddNodalAxialTorque(int nodeIndex, double torque, _OUT VectorXd& elementForce) const
 {
     std::vector<int> localDofCounts;

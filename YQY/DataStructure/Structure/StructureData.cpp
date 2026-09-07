@@ -291,6 +291,7 @@ std::shared_ptr<StructureData> StructureData::CloneForAnalysis(QString* errorMes
             copied->m_velocity = wind->m_velocity;
             copied->m_direction = wind->m_direction;
             copied->m_windDensity = wind->m_windDensity;
+            copied->m_EnableAerodynamicMoment = wind->m_EnableAerodynamicMoment;
             target = std::move(copied);
         }
         else
@@ -313,6 +314,7 @@ std::shared_ptr<StructureData> StructureData::CloneForAnalysis(QString* errorMes
         config.maxIterations = source->m_MaxIterations;
         config.dynamicSolverType = source->m_DynamicSolverType;
         config.initialStaticStepId = source->m_InitialStaticStepId;
+        config.adaptiveTimeStep = source->m_AdaptiveTimeStep;
         config.adaptiveTssbn = source->m_AdaptiveTssbn;
         config.structuralDamping = source->m_StructuralDamping.settings;
         config.enableGalloping = source->m_EnableGalloping;
@@ -1101,6 +1103,7 @@ void StructureData::AddAnalysisStep(const AnalysisStepConfig& config)
     pStep->m_MaxIterations = config.maxIterations;
     pStep->m_DynamicSolverType = config.dynamicSolverType;
     pStep->m_InitialStaticStepId = pStep->m_Type == EnumKeyword::StepType::DYNAMIC ? config.initialStaticStepId : 0;
+    pStep->m_AdaptiveTimeStep = config.adaptiveTimeStep;
     pStep->m_AdaptiveTssbn = config.adaptiveTssbn;
     pStep->m_StructuralDamping.settings = config.structuralDamping;
     pStep->m_GallopingIceThickness = AeroManager::isSupportedIceThickness(config.gallopingIceThickness)

@@ -33,6 +33,8 @@ public:
     QPushButton* exportButton() const;
     QPushButton* exportElementButton() const;
     QPushButton* exportIterationButton() const;
+    QPushButton* exportPlotButton() const;
+    QComboBox* stepCombo() const;
     std::vector<Hdf5ResultFrameInfo>& frames();
     const std::vector<Hdf5ResultFrameInfo>& frames() const;
     QString& resultFilePath();
@@ -46,6 +48,7 @@ public:
     void setExportHandler(std::function<void()> handler);
     void setElementExportHandler(std::function<void()> handler);
     void setIterationExportHandler(std::function<void()> handler);
+    void setPlotExportHandler(std::function<void()> handler);
     void stopPlayback();
 
 private:
@@ -63,4 +66,5 @@ private:
     std::function<void()> m_exportHandler;
     std::function<void()> m_elementExportHandler;
     std::function<void()> m_iterationExportHandler;
+    std::function<void()> m_plotExportHandler;
 };

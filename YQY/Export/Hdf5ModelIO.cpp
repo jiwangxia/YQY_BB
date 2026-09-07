@@ -47,6 +47,7 @@ QRecursiveMutex g_hdf5ApiMutex;
 constexpr int kModelDomainId = 1;
 constexpr int kDynamicStateFormatVersion = 1;
 constexpr int kResultFormatVersion = 2;
+constexpr int kSolverTypeFormatVersion = 1;
 constexpr size_t kEntityNameSize = 256;
 
 bool ReadIntAttribute(hid_t object, const char* name, int& value);
@@ -513,6 +514,24 @@ struct StepTssbnRecord
     double minimumDerivativeFactor = 0.5;
     double maximumDerivativeFactor = 1.5;
     int maximumRejectedAttempts = 24;
+    int domainId = kModelDomainId;
+};
+
+struct StepAdaptiveTimeRecord
+{
+    int stepId = 0;
+    double minimumTimeStep = 1.0e-6;
+    double maximumTimeStep = 0.5;
+    double relativeTolerance = 1.0e-3;
+    double absoluteTolerance = 1.0e-6;
+    int includeVelocityInError = 0;
+    double velocityRelativeTolerance = 1.0e-3;
+    double velocityAbsoluteTolerance = 1.0e-6;
+    double safetyFactor = 0.9;
+    double minimumScaleFactor = 0.2;
+    double maximumGrowthFactor = 2.0;
+    double solveFailureFactor = 0.5;
+    int maximumRejectedAttempts = 12;
     int domainId = kModelDomainId;
 };
 
@@ -1278,6 +1297,31 @@ H5Handle CreateStepTssbnType()
     return type;
 }
 
+H5Handle CreateStepAdaptiveTimeType()
+{
+    H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(StepAdaptiveTimeRecord)), H5Tclose);
+    if (!type.valid())
+        return {};
+    H5Tinsert(type, "STEP_ID", HOFFSET(StepAdaptiveTimeRecord, stepId), H5T_NATIVE_INT);
+    H5Tinsert(type, "MINIMUM_TIME_STEP", HOFFSET(StepAdaptiveTimeRecord, minimumTimeStep), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "MAXIMUM_TIME_STEP", HOFFSET(StepAdaptiveTimeRecord, maximumTimeStep), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "RELATIVE_TOLERANCE", HOFFSET(StepAdaptiveTimeRecord, relativeTolerance), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "ABSOLUTE_TOLERANCE", HOFFSET(StepAdaptiveTimeRecord, absoluteTolerance), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "INCLUDE_VELOCITY", HOFFSET(StepAdaptiveTimeRecord, includeVelocityInError), H5T_NATIVE_INT);
+    H5Tinsert(type, "VELOCITY_RELATIVE_TOLERANCE", HOFFSET(StepAdaptiveTimeRecord, velocityRelativeTolerance),
+              H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "VELOCITY_ABSOLUTE_TOLERANCE", HOFFSET(StepAdaptiveTimeRecord, velocityAbsoluteTolerance),
+              H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "SAFETY_FACTOR", HOFFSET(StepAdaptiveTimeRecord, safetyFactor), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "MINIMUM_SCALE_FACTOR", HOFFSET(StepAdaptiveTimeRecord, minimumScaleFactor), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "MAXIMUM_GROWTH_FACTOR", HOFFSET(StepAdaptiveTimeRecord, maximumGrowthFactor), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "SOLVE_FAILURE_FACTOR", HOFFSET(StepAdaptiveTimeRecord, solveFailureFactor), H5T_NATIVE_DOUBLE);
+    H5Tinsert(type, "MAXIMUM_REJECTED_ATTEMPTS", HOFFSET(StepAdaptiveTimeRecord, maximumRejectedAttempts),
+              H5T_NATIVE_INT);
+    H5Tinsert(type, "DOMAIN_ID", HOFFSET(StepAdaptiveTimeRecord, domainId), H5T_NATIVE_INT);
+    return type;
+}
+
 H5Handle CreateStepStructuralDampingType()
 {
     H5Handle type(H5Tcreate(H5T_COMPOUND, sizeof(StepStructuralDampingRecord)), H5Tclose);
@@ -1977,6 +2021,34 @@ std::vector<StepTssbnRecord> BuildStepTssbnRecords(const StructureData* pData)
     return records;
 }
 
+std::vector<StepAdaptiveTimeRecord> BuildStepAdaptiveTimeRecords(const StructureData* pData)
+{
+    std::vector<StepAdaptiveTimeRecord> records;
+    records.reserve(pData->m_AnalysisStep.size());
+    for (const auto& [stepId, step] : pData->m_AnalysisStep)
+    {
+        if (!step)
+            continue;
+        const auto& settings = step->m_AdaptiveTimeStep;
+        StepAdaptiveTimeRecord record;
+        record.stepId = stepId;
+        record.minimumTimeStep = settings.minimumTimeStep;
+        record.maximumTimeStep = settings.maximumTimeStep;
+        record.relativeTolerance = settings.relativeTolerance;
+        record.absoluteTolerance = settings.absoluteTolerance;
+        record.includeVelocityInError = settings.includeVelocityInError ? 1 : 0;
+        record.velocityRelativeTolerance = settings.velocityRelativeTolerance;
+        record.velocityAbsoluteTolerance = settings.velocityAbsoluteTolerance;
+        record.safetyFactor = settings.safetyFactor;
+        record.minimumScaleFactor = settings.minimumScaleFactor;
+        record.maximumGrowthFactor = settings.maximumGrowthFactor;
+        record.solveFailureFactor = settings.solveFailureFactor;
+        record.maximumRejectedAttempts = settings.maximumRejectedAttempts;
+        records.push_back(record);
+    }
+    return records;
+}
+
 std::vector<StepStructuralDampingRecord> BuildStepStructuralDampingRecords(const StructureData* pData)
 {
     std::vector<StepStructuralDampingRecord> records;
@@ -2095,6 +2167,7 @@ bool WriteInputData(hid_t file, const StructureData* pData)
     H5Handle stepMetadataType = CreateStepMetadataType();
     H5Handle stepGallopingType = CreateStepGallopingType();
     H5Handle stepTssbnType = CreateStepTssbnType();
+    H5Handle stepAdaptiveTimeType = CreateStepAdaptiveTimeType();
     H5Handle stepStructuralDampingType = CreateStepStructuralDampingType();
     H5Handle stepRegionLinkType = CreateStepRegionLinkType();
     H5Handle aeroCaseType = CreateAeroCaseType();
@@ -2120,7 +2193,8 @@ bool WriteInputData(hid_t file, const StructureData* pData)
            loadType.valid() &&
            windDirectionType.valid() && stepType.valid() && modelSetType.valid() && modelSetMemberType.valid() &&
            computeRegionType.valid() && regionLinkType.valid() && stepMetadataType.valid() &&
-           stepGallopingType.valid() && stepTssbnType.valid() && stepStructuralDampingType.valid() &&
+           stepGallopingType.valid() && stepTssbnType.valid() && stepAdaptiveTimeType.valid() &&
+           stepStructuralDampingType.valid() &&
            stepRegionLinkType.valid() && aeroCaseType.valid() && aeroCoefficientType.valid() &&
            WriteDataset(file, "/YQY/INPUT/NODE/GRID", gridType, BuildGridRecords(pData)) &&
            WriteDataset(file, "/YQY/INPUT/MATERIAL/MAT", materialType, BuildMaterialRecords(pData)) &&
@@ -2140,6 +2214,8 @@ bool WriteInputData(hid_t file, const StructureData* pData)
            WriteDataset(file, "/YQY/INPUT/ANALYSIS_STEP/GALLOPING", stepGallopingType,
                         BuildStepGallopingRecords(pData)) &&
            WriteDataset(file, "/YQY/INPUT/ANALYSIS_STEP/TSSBN", stepTssbnType, BuildStepTssbnRecords(pData)) &&
+           WriteDataset(file, "/YQY/INPUT/ANALYSIS_STEP/ADAPTIVE_TIME", stepAdaptiveTimeType,
+                        BuildStepAdaptiveTimeRecords(pData)) &&
            WriteDataset(file, "/YQY/INPUT/ANALYSIS_STEP/STRUCTURAL_DAMPING", stepStructuralDampingType,
                         BuildStepStructuralDampingRecords(pData)) &&
            WriteDataset(file, "/YQY/INPUT/ANALYSIS_STEP/REGION_LINK", stepRegionLinkType, stepRegionLinks) &&
@@ -2564,6 +2640,7 @@ public:
             WriteIntAttribute(file, "RESULT_COMPLETE", 0) &&
             WriteIntAttribute(file, "DYNAMIC_STATE_FORMAT_VERSION", kDynamicStateFormatVersion) &&
             WriteIntAttribute(file, "RESULT_FORMAT_VERSION", kResultFormatVersion) &&
+            WriteIntAttribute(file, "SOLVER_TYPE_FORMAT_VERSION", kSolverTypeFormatVersion) &&
             WriteStringAttribute(file, "CREATED_TIME", QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss")) &&
             WriteStringAttribute(file, "PROGRAM", "YQY_CAE") &&
             WriteStringAttribute(file, "SOURCE_MODEL", sourceModelName);
@@ -3015,6 +3092,7 @@ bool Hdf5ModelIO::ExportHdf5(const QString& fileName, const StructureData* pData
         WriteIntAttribute(file, "RESULT_COMPLETE", resultComplete ? 1 : 0) &&
         WriteIntAttribute(file, "DYNAMIC_STATE_FORMAT_VERSION", kDynamicStateFormatVersion) &&
         WriteIntAttribute(file, "RESULT_FORMAT_VERSION", kResultFormatVersion) &&
+        WriteIntAttribute(file, "SOLVER_TYPE_FORMAT_VERSION", kSolverTypeFormatVersion) &&
         WriteStringAttribute(file, "CREATED_TIME", QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss")) &&
         WriteStringAttribute(file, "PROGRAM", "YQY_CAE") && WriteStringAttribute(file, "SOURCE_MODEL", sourceModelName);
 
@@ -3059,6 +3137,7 @@ bool Hdf5ModelIO::ExportModelHdf5(const QString& fileName, const StructureData* 
     const bool written =
         WriteStringAttribute(file, "FORMAT", "YQY_H5") && WriteStringAttribute(file, "FILE_KIND", "MODEL") &&
         WriteIntAttribute(file, "RESULT_COMPLETE", 0) &&
+        WriteIntAttribute(file, "SOLVER_TYPE_FORMAT_VERSION", kSolverTypeFormatVersion) &&
         WriteStringAttribute(file, "CREATED_TIME", QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss")) &&
         WriteStringAttribute(file, "PROGRAM", "YQY_CAE") &&
         WriteStringAttribute(file, "SOURCE_MODEL", sourceModelName) && WriteInputData(file, pData);
@@ -3148,6 +3227,11 @@ bool ReadInputData(hid_t file, StructureData* data)
     if (!data)
         return false;
 
+    int solverTypeFormatVersion = 0;
+    const bool hasCurrentSolverTypeFormat =
+        ReadIntAttribute(file, "SOLVER_TYPE_FORMAT_VERSION", solverTypeFormatVersion) &&
+        solverTypeFormatVersion >= kSolverTypeFormatVersion;
+
     H5Handle gridType = CreateGridType();
     H5Handle materialType = CreateMaterialType();
     H5Handle sectionType = CreateSectionType();
@@ -3167,6 +3251,7 @@ bool ReadInputData(hid_t file, StructureData* data)
     H5Handle stepMetadataType = CreateStepMetadataType();
     H5Handle stepGallopingType = CreateStepGallopingType();
     H5Handle stepTssbnType = CreateStepTssbnType();
+    H5Handle stepAdaptiveTimeType = CreateStepAdaptiveTimeType();
     H5Handle stepStructuralDampingType = CreateStepStructuralDampingType();
     H5Handle stepRegionLinkType = CreateStepRegionLinkType();
     H5Handle aeroCaseType = CreateAeroCaseType();
@@ -3177,7 +3262,8 @@ bool ReadInputData(hid_t file, StructureData* data)
         !loadType.valid() ||
         !windDirectionType.valid() || !stepType.valid() || !modelSetType.valid() || !modelSetMemberType.valid() ||
         !computeRegionType.valid() || !regionLinkType.valid() || !stepMetadataType.valid() ||
-        !stepGallopingType.valid() || !stepTssbnType.valid() || !stepStructuralDampingType.valid() ||
+        !stepGallopingType.valid() || !stepTssbnType.valid() || !stepAdaptiveTimeType.valid() ||
+        !stepStructuralDampingType.valid() ||
         !stepRegionLinkType.valid() || !aeroCaseType.valid() || !aeroCoefficientType.valid())
     {
         return false;
@@ -3204,6 +3290,7 @@ bool ReadInputData(hid_t file, StructureData* data)
     std::vector<StepMetadataRecord> stepMetadata;
     std::vector<StepGallopingRecord> stepGalloping;
     std::vector<StepTssbnRecord> stepTssbn;
+    std::vector<StepAdaptiveTimeRecord> stepAdaptiveTime;
     std::vector<StepStructuralDampingRecord> stepStructuralDamping;
     std::vector<StepRegionLinkRecord> stepRegionLinks;
     std::vector<AeroCaseRecord> aeroCases;
@@ -3224,6 +3311,8 @@ bool ReadInputData(hid_t file, StructureData* data)
         !ReadOptionalDatasetAll(file, "/YQY/INPUT/ANALYSIS_STEP/METADATA", stepMetadataType, stepMetadata) ||
         !ReadOptionalDatasetAll(file, "/YQY/INPUT/ANALYSIS_STEP/GALLOPING", stepGallopingType, stepGalloping) ||
         !ReadOptionalDatasetAll(file, "/YQY/INPUT/ANALYSIS_STEP/TSSBN", stepTssbnType, stepTssbn) ||
+        !ReadOptionalDatasetAll(file, "/YQY/INPUT/ANALYSIS_STEP/ADAPTIVE_TIME", stepAdaptiveTimeType,
+                                stepAdaptiveTime) ||
         !ReadOptionalDatasetAll(file, "/YQY/INPUT/ANALYSIS_STEP/STRUCTURAL_DAMPING", stepStructuralDampingType,
                                 stepStructuralDamping) ||
         !ReadOptionalDatasetAll(file, "/YQY/INPUT/ANALYSIS_STEP/REGION_LINK", stepRegionLinkType, stepRegionLinks) ||
@@ -3703,7 +3792,7 @@ bool ReadInputData(hid_t file, StructureData* data)
         config.tolerance = record.tolerance;
         config.maxIterations = record.maxIterations;
         constexpr int legacyTssbnSolverType = 2;
-        config.dynamicSolverType = record.dynamicSolverType == legacyTssbnSolverType
+        config.dynamicSolverType = !hasCurrentSolverTypeFormat && record.dynamicSolverType == legacyTssbnSolverType
                                        ? SolverNameSpace::SolverType::AdaptiveTSSBN
                                        : static_cast<SolverNameSpace::SolverType>(record.dynamicSolverType);
         restored->AddAnalysisStep(config);
@@ -3781,6 +3870,36 @@ bool ReadInputData(hid_t file, StructureData* data)
         settings.derivativeGain = record.derivativeGain;
         settings.minimumDerivativeFactor = record.minimumDerivativeFactor;
         settings.maximumDerivativeFactor = record.maximumDerivativeFactor;
+        settings.maximumRejectedAttempts = record.maximumRejectedAttempts;
+    }
+    for (const StepAdaptiveTimeRecord& record : stepAdaptiveTime)
+    {
+        const auto stepIt = restored->m_AnalysisStep.find(record.stepId);
+        if (stepIt == restored->m_AnalysisStep.cend() || !stepIt->second || !(record.minimumTimeStep > 0.0) ||
+            !(record.maximumTimeStep >= record.minimumTimeStep) || !(record.relativeTolerance > 0.0) ||
+            !(record.absoluteTolerance > 0.0) || !(record.velocityRelativeTolerance > 0.0) ||
+            !(record.velocityAbsoluteTolerance > 0.0) || !(record.safetyFactor > 0.0) ||
+            record.safetyFactor > 1.0 || !(record.minimumScaleFactor > 0.0) ||
+            record.minimumScaleFactor >= 1.0 || !std::isfinite(record.maximumGrowthFactor) ||
+            record.maximumGrowthFactor < 1.0 ||
+            !(record.solveFailureFactor > 0.0) || record.solveFailureFactor >= 1.0 ||
+            record.maximumRejectedAttempts < 1 ||
+            (record.includeVelocityInError != 0 && record.includeVelocityInError != 1))
+        {
+            return false;
+        }
+        auto& settings = stepIt->second->m_AdaptiveTimeStep;
+        settings.minimumTimeStep = record.minimumTimeStep;
+        settings.maximumTimeStep = record.maximumTimeStep;
+        settings.relativeTolerance = record.relativeTolerance;
+        settings.absoluteTolerance = record.absoluteTolerance;
+        settings.includeVelocityInError = record.includeVelocityInError != 0;
+        settings.velocityRelativeTolerance = record.velocityRelativeTolerance;
+        settings.velocityAbsoluteTolerance = record.velocityAbsoluteTolerance;
+        settings.safetyFactor = record.safetyFactor;
+        settings.minimumScaleFactor = record.minimumScaleFactor;
+        settings.maximumGrowthFactor = record.maximumGrowthFactor;
+        settings.solveFailureFactor = record.solveFailureFactor;
         settings.maximumRejectedAttempts = record.maximumRejectedAttempts;
     }
     for (const StepStructuralDampingRecord& record : stepStructuralDamping)

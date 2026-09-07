@@ -430,6 +430,9 @@
     <ClInclude Include="Solver\Dynamic\TimeStepping\TimeStepControl.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Solver\Dynamic\TimeStepping\StateCheckpointGuard.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="Solver\Dynamic\TimeStepping\TimeStepError.h">
       <Filter>Header Files</Filter>
     </ClInclude>

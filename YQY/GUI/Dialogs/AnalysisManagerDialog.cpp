@@ -260,6 +260,12 @@ public:
         return value;
     }
 
+    void commitEditors()
+    {
+        for (const Binding& binding : bindings_)
+            binding.editor->interpretText();
+    }
+
 private:
     using DoubleMember = double Settings::*;
     using IntMember = int Settings::*;
@@ -285,6 +291,155 @@ private:
     };
 
     std::vector<Binding> bindings_;
+};
+
+class AdaptiveTimeStepSettingsEditor final : public QGroupBox
+{
+public:
+    using Settings = SolverNameSpace::AdaptiveTimeStepSettings;
+
+    explicit AdaptiveTimeStepSettingsEditor(QWidget* parent)
+        : QGroupBox(QStringLiteral("Newmark / RK 自适应步长参数"), parent)
+    {
+        auto* contentLayout = new QVBoxLayout(this);
+        contentLayout->setSpacing(10);
+        auto* stepTitle = createSectionTitle(QStringLiteral("步长范围"));
+        contentLayout->addWidget(stepTitle);
+        auto* stepLayout = new QGridLayout;
+        contentLayout->addLayout(stepLayout);
+        addDoubleField(stepLayout, 0, 0, QStringLiteral("最小步长"), 1.0e-12, 1.0e12, 12, m_minimumTimeStep);
+        addDoubleField(stepLayout, 0, 1, QStringLiteral("最大步长"), 1.0e-12, 1.0e12, 12, m_maximumTimeStep);
+
+        auto* errorTitle = createSectionTitle(QStringLiteral("逐自由度最大误差"));
+        contentLayout->addWidget(errorTitle);
+        auto* errorLayout = new QGridLayout;
+        contentLayout->addLayout(errorLayout);
+        addDoubleField(errorLayout, 0, 0, QStringLiteral("位移相对容差"), 1.0e-12, 1.0, 12,
+                       m_relativeTolerance);
+        addDoubleField(errorLayout, 0, 1, QStringLiteral("位移绝对容差"), 1.0e-14, 1.0, 14,
+                       m_absoluteTolerance);
+        m_includeVelocity = new QCheckBox(QStringLiteral("同时控制速度误差"), this);
+        errorLayout->addWidget(m_includeVelocity, 1, 0, 1, 2);
+        addDoubleField(errorLayout, 2, 0, QStringLiteral("速度相对容差"), 1.0e-12, 1.0, 12,
+                       m_velocityRelativeTolerance);
+        addDoubleField(errorLayout, 2, 1, QStringLiteral("速度绝对容差"), 1.0e-14, 1.0, 14,
+                       m_velocityAbsoluteTolerance);
+
+        auto* controlTitle = createSectionTitle(QStringLiteral("步长调整"));
+        contentLayout->addWidget(controlTitle);
+        auto* controlLayout = new QGridLayout;
+        contentLayout->addLayout(controlLayout);
+        addDoubleField(controlLayout, 0, 0, QStringLiteral("安全系数"), 0.01, 1.0, 6, m_safetyFactor);
+        addDoubleField(controlLayout, 0, 1, QStringLiteral("最小倍率"), 0.01, 0.99, 6, m_minimumScaleFactor);
+        addDoubleField(controlLayout, 1, 0, QStringLiteral("最大增长倍率"), 1.0, 100.0, 6,
+                       m_maximumGrowthFactor);
+        addDoubleField(controlLayout, 1, 1, QStringLiteral("求解失败倍率"), 0.01, 0.99, 6,
+                       m_solveFailureFactor);
+        auto* rejectedLabel = new QLabel(QStringLiteral("连续拒绝上限"), this);
+        m_maximumRejectedAttempts = new QSpinBox(this);
+        m_maximumRejectedAttempts->setRange(1, 1000);
+        controlLayout->addWidget(rejectedLabel, 2, 0);
+        controlLayout->addWidget(m_maximumRejectedAttempts, 2, 1);
+
+        for (QGridLayout* layout : {stepLayout, errorLayout, controlLayout})
+        {
+            layout->setHorizontalSpacing(10);
+            layout->setVerticalSpacing(8);
+            layout->setColumnStretch(0, 1);
+            layout->setColumnStretch(1, 1);
+        }
+        connect(m_includeVelocity, &QCheckBox::toggled, this,
+                [this](bool enabled)
+                {
+                    m_velocityRelativeTolerance->setEnabled(enabled);
+                    m_velocityAbsoluteTolerance->setEnabled(enabled);
+                });
+        setSettings(Settings{});
+    }
+
+    void setSettings(const Settings& settings)
+    {
+        m_minimumTimeStep->setValue(settings.minimumTimeStep);
+        m_maximumTimeStep->setValue(settings.maximumTimeStep);
+        m_relativeTolerance->setValue(settings.relativeTolerance);
+        m_absoluteTolerance->setValue(settings.absoluteTolerance);
+        m_includeVelocity->setChecked(settings.includeVelocityInError);
+        m_velocityRelativeTolerance->setValue(settings.velocityRelativeTolerance);
+        m_velocityAbsoluteTolerance->setValue(settings.velocityAbsoluteTolerance);
+        m_safetyFactor->setValue(settings.safetyFactor);
+        m_minimumScaleFactor->setValue(settings.minimumScaleFactor);
+        m_maximumGrowthFactor->setValue(settings.maximumGrowthFactor);
+        m_solveFailureFactor->setValue(settings.solveFailureFactor);
+        m_maximumRejectedAttempts->setValue(settings.maximumRejectedAttempts);
+    }
+
+    Settings settings() const
+    {
+        Settings value;
+        value.minimumTimeStep = m_minimumTimeStep->value();
+        value.maximumTimeStep = m_maximumTimeStep->value();
+        value.relativeTolerance = m_relativeTolerance->value();
+        value.absoluteTolerance = m_absoluteTolerance->value();
+        value.includeVelocityInError = m_includeVelocity->isChecked();
+        value.velocityRelativeTolerance = m_velocityRelativeTolerance->value();
+        value.velocityAbsoluteTolerance = m_velocityAbsoluteTolerance->value();
+        value.safetyFactor = m_safetyFactor->value();
+        value.minimumScaleFactor = m_minimumScaleFactor->value();
+        value.maximumGrowthFactor = m_maximumGrowthFactor->value();
+        value.solveFailureFactor = m_solveFailureFactor->value();
+        value.maximumRejectedAttempts = m_maximumRejectedAttempts->value();
+        return value;
+    }
+
+    void commitEditors()
+    {
+        for (QDoubleSpinBox* editor : m_doubleEditors)
+            editor->interpretText();
+        m_maximumRejectedAttempts->interpretText();
+    }
+
+private:
+    QLabel* createSectionTitle(const QString& text)
+    {
+        auto* label = new QLabel(text, this);
+        QFont font = label->font();
+        font.setBold(true);
+        label->setFont(font);
+        return label;
+    }
+
+    void addDoubleField(QGridLayout* layout, int row, int column, const QString& text, double minimum,
+                        double maximum, int decimals, _OUT QDoubleSpinBox*& editor)
+    {
+        auto* field = new QWidget(this);
+        auto* fieldLayout = new QVBoxLayout(field);
+        fieldLayout->setContentsMargins(0, 0, 0, 0);
+        fieldLayout->setSpacing(5);
+        fieldLayout->addWidget(new QLabel(text, field));
+        auto* spin = new CompactDoubleSpinBox(field);
+        spin->setRange(minimum, maximum);
+        spin->setDecimals(decimals);
+        spin->setKeyboardTracking(false);
+        spin->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        fieldLayout->addWidget(spin);
+        layout->addWidget(field, row, column);
+        editor = spin;
+        m_doubleEditors.push_back(spin);
+    }
+
+    QDoubleSpinBox* m_minimumTimeStep = nullptr;
+    QDoubleSpinBox* m_maximumTimeStep = nullptr;
+    QDoubleSpinBox* m_relativeTolerance = nullptr;
+    QDoubleSpinBox* m_absoluteTolerance = nullptr;
+    QCheckBox* m_includeVelocity = nullptr;
+    QDoubleSpinBox* m_velocityRelativeTolerance = nullptr;
+    QDoubleSpinBox* m_velocityAbsoluteTolerance = nullptr;
+    QDoubleSpinBox* m_safetyFactor = nullptr;
+    QDoubleSpinBox* m_minimumScaleFactor = nullptr;
+    QDoubleSpinBox* m_maximumGrowthFactor = nullptr;
+    QDoubleSpinBox* m_solveFailureFactor = nullptr;
+    QSpinBox* m_maximumRejectedAttempts = nullptr;
+    std::vector<QDoubleSpinBox*> m_doubleEditors;
 };
 
 class StepEditorDialog final : public QDialog
@@ -491,6 +646,9 @@ public:
         solverColumnLayout->addStretch(1);
         m_tssbnEditor = new AdaptiveTssbnSettingsEditor(tssbnColumn);
         auto* tssbnGroup = m_tssbnEditor;
+        m_adaptiveTimeStepEditor = new AdaptiveTimeStepSettingsEditor(tssbnColumn);
+        auto* adaptiveTimeStepGroup = m_adaptiveTimeStepEditor;
+        tssbnColumnLayout->addWidget(adaptiveTimeStepGroup);
         tssbnColumnLayout->addWidget(tssbnGroup);
         tssbnColumnLayout->addStretch(1);
         if (structure)
@@ -564,9 +722,10 @@ public:
             m_inheritedBaseLoads->setText(parts.isEmpty() ? QStringLiteral("未发现前置基础荷载")
                                                           : parts.join(QStringLiteral("；")));
         };
-        const auto updateDynamicState = [this, commonColumn, solverColumn, solverGroup, tssbnGroup, tssbnColumn,
-                                         gallopingGroup, structuralDampingGroup, dampingParameters, initialStateGroup,
-                                         resizeToVisibleContent, updateInheritedBaseLoads]()
+        const auto updateDynamicState = [this, commonColumn, solverColumn, solverGroup, adaptiveTimeStepGroup,
+                                         tssbnGroup, tssbnColumn, gallopingGroup, structuralDampingGroup,
+                                         dampingParameters, initialStateGroup, resizeToVisibleContent,
+                                         updateInheritedBaseLoads]()
         {
             const bool dynamic =
                 static_cast<EnumKeyword::StepType>(m_type->currentData().toInt()) == EnumKeyword::StepType::DYNAMIC;
@@ -577,7 +736,13 @@ public:
             const bool adaptiveTssbn =
                 dynamic && static_cast<SolverNameSpace::SolverType>(m_dynamicSolver->currentData().toInt()) ==
                                SolverNameSpace::SolverType::AdaptiveTSSBN;
-            tssbnColumn->setVisible(adaptiveTssbn);
+            const auto solverType = static_cast<SolverNameSpace::SolverType>(m_dynamicSolver->currentData().toInt());
+            const bool adaptiveTimeStep = dynamic && (solverType == SolverNameSpace::SolverType::AdaptiveNewmark ||
+                                                       solverType == SolverNameSpace::SolverType::AdaptiveRungeKutta4);
+            tssbnColumn->setVisible(adaptiveTssbn || adaptiveTimeStep);
+            adaptiveTimeStepGroup->setVisible(adaptiveTimeStep);
+            adaptiveTimeStepGroup->setEnabled(adaptiveTimeStep);
+            tssbnGroup->setVisible(adaptiveTssbn);
             tssbnGroup->setEnabled(adaptiveTssbn);
             gallopingGroup->setEnabled(dynamic);
             structuralDampingGroup->setEnabled(dynamic);
@@ -628,12 +793,30 @@ public:
             buttons, &QDialogButtonBox::accepted, this,
             [this]()
             {
+                commitNumericEditors();
                 const bool adaptiveTssbn =
                     static_cast<EnumKeyword::StepType>(m_type->currentData().toInt()) ==
                         EnumKeyword::StepType::DYNAMIC &&
                     static_cast<SolverNameSpace::SolverType>(m_dynamicSolver->currentData().toInt()) ==
                         SolverNameSpace::SolverType::AdaptiveTSSBN;
                 const auto tssbn = m_tssbnEditor->settings();
+                const auto adaptiveTimeStepSettings = m_adaptiveTimeStepEditor->settings();
+                const auto solverType =
+                    static_cast<SolverNameSpace::SolverType>(m_dynamicSolver->currentData().toInt());
+                const bool adaptiveTimeStep =
+                    static_cast<EnumKeyword::StepType>(m_type->currentData().toInt()) ==
+                        EnumKeyword::StepType::DYNAMIC &&
+                    (solverType == SolverNameSpace::SolverType::AdaptiveNewmark ||
+                     solverType == SolverNameSpace::SolverType::AdaptiveRungeKutta4);
+                if (adaptiveTimeStep &&
+                    (adaptiveTimeStepSettings.minimumTimeStep > adaptiveTimeStepSettings.maximumTimeStep ||
+                     m_increment->value() < adaptiveTimeStepSettings.minimumTimeStep ||
+                     m_increment->value() > adaptiveTimeStepSettings.maximumTimeStep))
+                {
+                    QMessageBox::warning(this, QStringLiteral("自适应步长参数无效"),
+                                         QStringLiteral("必须满足：最小时间步 ≤ 初始时间步 ≤ 最大时间步。"));
+                    return;
+                }
                 if (adaptiveTssbn &&
                     (tssbn.minimumTimeStep > tssbn.maximumTimeStep || m_increment->value() < tssbn.minimumTimeStep ||
                      m_increment->value() > tssbn.maximumTimeStep))
@@ -695,6 +878,7 @@ public:
             if (inheritedIndex >= 0)
                 m_initialStaticStep->setCurrentIndex(inheritedIndex);
             m_tssbnEditor->setSettings(step->m_AdaptiveTssbn);
+            m_adaptiveTimeStepEditor->setSettings(step->m_AdaptiveTimeStep);
             m_enableStructuralDamping->setChecked(step->m_StructuralDamping.settings.enabled);
             m_translationDampingRatio->setValue(step->m_StructuralDamping.settings.translationDampingRatio * 100.0);
             m_torsionDampingRatio->setValue(step->m_StructuralDamping.settings.torsionDampingRatio * 100.0);
@@ -753,6 +937,7 @@ public:
                                         ? m_initialStaticStep->currentData().toInt()
                                         : 0;
         value.adaptiveTssbn = m_tssbnEditor->settings();
+        value.adaptiveTimeStep = m_adaptiveTimeStepEditor->settings();
         value.structuralDamping.enabled = value.type == EnumKeyword::StepType::DYNAMIC && m_enableStructuralDamping->isChecked();
         value.structuralDamping.translationDampingRatio = m_translationDampingRatio->value() / 100.0;
         value.structuralDamping.torsionDampingRatio = m_torsionDampingRatio->value() / 100.0;
@@ -772,6 +957,19 @@ public:
     }
 
 private:
+    void commitNumericEditors()
+    {
+        m_time->interpretText();
+        m_increment->interpretText();
+        m_tolerance->interpretText();
+        m_translationDampingRatio->interpretText();
+        m_torsionDampingRatio->interpretText();
+        m_dampingMaximumFrequency->interpretText();
+        m_gallopingInitialAttack->interpretText();
+        m_tssbnEditor->commitEditors();
+        m_adaptiveTimeStepEditor->commitEditors();
+    }
+
     int m_id = 0;
     QLineEdit* m_name = nullptr;
     QComboBox* m_type = nullptr;
@@ -785,6 +983,7 @@ private:
     QComboBox* m_initialStaticStep = nullptr;
     QLabel* m_inheritedBaseLoads = nullptr;
     AdaptiveTssbnSettingsEditor* m_tssbnEditor = nullptr;
+    AdaptiveTimeStepSettingsEditor* m_adaptiveTimeStepEditor = nullptr;
     QCheckBox* m_enableStructuralDamping = nullptr;
     QDoubleSpinBox* m_translationDampingRatio = nullptr;
     QDoubleSpinBox* m_torsionDampingRatio = nullptr;

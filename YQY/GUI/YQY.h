@@ -2,6 +2,7 @@
 
 #include <QtWidgets/QMainWindow>
 
+#include "Base/EmptyOUT.h"
 #include "Export/Hdf5ResultData.h"
 #include "ui_YQY.h"
 
@@ -72,6 +73,12 @@ private:
     void openHdf5Result();
     bool loadHdf5Result(const QString& filePath, bool showErrors = true, bool activateResultModule = true,
                         bool partialResult = false, QString* failureReason = nullptr);
+    void refreshResultCases(int preferredTaskId = -1);
+    void loadSolveTaskResult(int taskId);
+    bool resultTaskBelongsToActiveModel(const QString& sourceFile) const;
+    void refreshResultSteps(int preferredStepId = 0);
+    void applyResultStepFilter(int stepId);
+    bool readResultFrame(int frameIndex, _OUT Hdf5ResultFrame& frame);
     void displayResultFrame(int frameIndex);
     void displayResultPosition(double framePosition);
     void updateResultVisualization();
@@ -110,6 +117,7 @@ private:
     void exportNodeResults();
     void exportElementResults();
     void exportIterationHistory();
+    void exportResultPlot();
     void refreshPropertyModule();
     void applyModelPropertyEdits();
     void editPropertyItem(QTreeWidgetItem* item, int column);
@@ -142,4 +150,9 @@ private:
     int m_modelLoadSucceeded = 0;
     int m_modelLoadFailed = 0;
     Hdf5ResultRanges m_resultRanges;
+    std::vector<Hdf5ResultFrameInfo> m_allResultFrames;
+    std::vector<int> m_resultFrameSourceIndices;
+    int m_resultStepId = 0;
+    int m_resultTaskId = -1;
+    QString m_resultSourceModelName;
 };

@@ -18,6 +18,13 @@ static bool IsFinitePositive(double value)
     return std::isfinite(value) && value > 0.0;
 }
 
+double SelectTimeStep(double currentTime, double duration, double proposedTimeStep)
+{
+    const double remainingTime = duration - currentTime;
+    constexpr double endTimeSnapRelativeTolerance = 1.0e-6;
+    return remainingTime <= proposedTimeStep * (1.0 + endTimeSnapRelativeTolerance) ? remainingTime : proposedTimeStep;
+}
+
 TimeStepController::TimeStepController(AdaptiveTimeStepSettings settings)
     : settings_(settings)
 {
@@ -28,18 +35,19 @@ void TimeStepController::Validate() const
 {
     if (!IsFinitePositive(settings_.minimumTimeStep) || !IsFinitePositive(settings_.maximumTimeStep) ||
         settings_.minimumTimeStep > settings_.maximumTimeStep || !IsFinitePositive(settings_.relativeTolerance) ||
-        !IsFinitePositive(settings_.absoluteTolerance) ||
+        !IsFinitePositive(settings_.absoluteTolerance) || !IsFinitePositive(settings_.velocityRelativeTolerance) ||
+        !IsFinitePositive(settings_.velocityAbsoluteTolerance) ||
         !(settings_.safetyFactor > 0.0 && settings_.safetyFactor <= 1.0) ||
-        !(settings_.shrinkFactor > 0.0 && settings_.shrinkFactor < 1.0) ||
+        !(settings_.minimumScaleFactor > 0.0 && settings_.minimumScaleFactor < 1.0) ||
         !IsFinitePositive(settings_.maximumGrowthFactor) || settings_.maximumGrowthFactor < 1.0 ||
+        !(settings_.solveFailureFactor > 0.0 && settings_.solveFailureFactor < 1.0) ||
         settings_.maximumRejectedAttempts < 1)
     {
         throw std::invalid_argument("自适应时间步参数无效");
     }
 }
 
-TimeStepDecision TimeStepController::DecideAccepted(double currentTimeStep, double normalizedError,
-                                                     int methodOrder) const
+TimeStepDecision TimeStepController::Decide(double currentTimeStep, double normalizedError, int methodOrder) const
 {
     if (methodOrder < 1 || !IsFinitePositive(currentTimeStep) || !std::isfinite(normalizedError) ||
         normalizedError < 0.0)
@@ -49,24 +57,16 @@ TimeStepDecision TimeStepController::DecideAccepted(double currentTimeStep, doub
     const double exponent = -1.0 / static_cast<double>(methodOrder + 1);
     const double factor =
         std::clamp(settings_.safetyFactor * std::pow(std::max(normalizedError, minimumControllerError), exponent),
-                                     settings_.shrinkFactor, settings_.maximumGrowthFactor);
+                   settings_.minimumScaleFactor, settings_.maximumGrowthFactor);
     return {normalizedError <= 1.0,
             std::clamp(currentTimeStep * factor, settings_.minimumTimeStep, settings_.maximumTimeStep)};
 }
 
-TimeStepDecision TimeStepController::DecideRejected(double currentTimeStep, double normalizedError,
-                                                     int methodOrder) const
+TimeStepDecision TimeStepController::DecideSolveFailure(double currentTimeStep) const
 {
-    if (methodOrder < 1 || !IsFinitePositive(currentTimeStep))
+    if (!IsFinitePositive(currentTimeStep))
         return {false, currentTimeStep};
 
-    // Newton 不收敛时没有可信误差，按固定缩步因子回退。
-    double factor = settings_.shrinkFactor;
-    if (std::isfinite(normalizedError) && normalizedError > 1.0)
-    {
-        const double exponent = -1.0 / static_cast<double>(methodOrder + 1);
-        factor = std::min(settings_.shrinkFactor, settings_.safetyFactor * std::pow(normalizedError, exponent));
-    }
-    return {false, std::max(settings_.minimumTimeStep, currentTimeStep * factor)};
+    return {false, std::max(settings_.minimumTimeStep, currentTimeStep * settings_.solveFailureFactor)};
 }
 }

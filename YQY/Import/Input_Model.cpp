@@ -62,6 +62,20 @@ bool ParsePositiveId(const QString& text, _OUT int& value)
     return ok && value > 0;
 }
 
+bool ParseNonNegativeInteger(const QString& text, _OUT int& value)
+{
+    bool ok = false;
+    value = text.toInt(&ok);
+    return ok && value >= 0;
+}
+
+bool ParseFiniteDouble(const QString& text, _OUT double& value)
+{
+    bool ok = false;
+    value = text.toDouble(&ok);
+    return ok && std::isfinite(value);
+}
+
 bool ParseSpringDOF(const QString& text, _OUT int& dof)
 {
     bool ok = false;
@@ -1223,12 +1237,32 @@ bool Input_Model::InputForceNode(QTextStream& flow, const QStringList& /*list_st
             return false;
         }
 
-        int idNode = strlist_load[1].toInt();
-        int direction = strlist_load[2].toInt();
-        double value = strlist_load[3].toDouble();
-        int stepid = strlist_load[4].toInt();
-        const double startTime = strlist_load.size() >= 6 ? strlist_load[5].toDouble() : 0.0;
-        const double endTime = strlist_load.size() >= 7 ? strlist_load[6].toDouble() : 0.0;
+        int idNode = 0;
+        int direction = 0;
+        int stepid = 0;
+        double value = 0.0;
+        double startTime = 0.0;
+        double endTime = 1e10;
+        if (!ParsePositiveId(strlist_load[1], idNode) || !ParseNonNegativeInteger(strlist_load[2], direction) ||
+            direction > 5 || !ParseFiniteDouble(strlist_load[3], value) ||
+            !ParseNonNegativeInteger(strlist_load[4], stepid))
+        {
+            m_LastError = QStringLiteral("节点力荷载基本参数无效。");
+            qDebug().noquote() << QStringLiteral("Error:") << m_LastError << strdata;
+            return false;
+        }
+        if (strlist_load.size() >= 6 && !ParseFiniteDouble(strlist_load[5], startTime))
+        {
+            m_LastError = QStringLiteral("节点力荷载 StartTime 必须为有限数值。");
+            qDebug().noquote() << QStringLiteral("Error:") << m_LastError;
+            return false;
+        }
+        if (strlist_load.size() >= 7 && !ParseFiniteDouble(strlist_load[6], endTime))
+        {
+            m_LastError = QStringLiteral("节点力荷载 EndTime 必须为有限数值。");
+            qDebug().noquote() << QStringLiteral("Error:") << m_LastError;
+            return false;
+        }
 
         int autoId = static_cast<int>(m_Structure->m_Load.size()) + 1;
 
@@ -1250,76 +1284,63 @@ bool Input_Model::InputForceNode(QTextStream& flow, const QStringList& /*list_st
         // 解析时间函数
         if (strlist_load.size() >= 8)
         {
-            QString funcType = strlist_load[7].trimmed().toUpper();
-
-            if (funcType == "SIN" && strlist_load.size() >= 12)
+            const QString funcType = strlist_load[7].trimmed().toUpper();
+            bool parametersValid = true;
+            if (funcType == "SIN" || funcType == "COS")
             {
-                pLoad->m_FunctionType = TimeFunctionType::SIN;
-                pLoad->m_Amplitude = strlist_load[8].toDouble();
-                pLoad->m_Frequency = strlist_load[9].toDouble();
-                pLoad->m_Phase = strlist_load[10].toDouble();
-                pLoad->m_Offset = strlist_load[11].toDouble();
-                qDebug().noquote() << QStringLiteral("  荷载 %1: 正弦函数 (幅值=%2, 频率=%3 Hz)")
-                                          .arg(autoId)
-                                          .arg(pLoad->m_Amplitude)
-                                          .arg(pLoad->m_Frequency);
+                parametersValid = strlist_load.size() >= 12 && ParseFiniteDouble(strlist_load[8], pLoad->m_Amplitude) &&
+                                   ParseFiniteDouble(strlist_load[9], pLoad->m_Frequency) &&
+                                   ParseFiniteDouble(strlist_load[10], pLoad->m_Phase) &&
+                                   ParseFiniteDouble(strlist_load[11], pLoad->m_Offset);
+                pLoad->m_FunctionType = funcType == "SIN" ? TimeFunctionType::SIN : TimeFunctionType::COS;
             }
-            else if (funcType == "COS" && strlist_load.size() >= 12)
+            else if (funcType == "RAMP")
             {
-                pLoad->m_FunctionType = TimeFunctionType::COS;
-                pLoad->m_Amplitude = strlist_load[8].toDouble();
-                pLoad->m_Frequency = strlist_load[9].toDouble();
-                pLoad->m_Phase = strlist_load[10].toDouble();
-                pLoad->m_Offset = strlist_load[11].toDouble();
-                qDebug().noquote() << QStringLiteral("  荷载 %1: 余弦函数 (幅值=%2, 频率=%3 Hz)")
-                                          .arg(autoId)
-                                          .arg(pLoad->m_Amplitude)
-                                          .arg(pLoad->m_Frequency);
-            }
-            else if (funcType == "RAMP" && strlist_load.size() >= 10)
-            {
+                parametersValid = strlist_load.size() >= 10 && ParseFiniteDouble(strlist_load[8], pLoad->m_RampT0) &&
+                                   ParseFiniteDouble(strlist_load[9], pLoad->m_RampT1);
                 pLoad->m_FunctionType = TimeFunctionType::RAMP;
-                pLoad->m_RampT0 = strlist_load[8].toDouble();
-                pLoad->m_RampT1 = strlist_load[9].toDouble();
-                qDebug().noquote() << QStringLiteral("  荷载 %1: 斜坡函数 (t0=%2, t1=%3)")
-                                          .arg(autoId)
-                                          .arg(pLoad->m_RampT0)
-                                          .arg(pLoad->m_RampT1);
             }
-            else if (funcType == "EXPONENTIAL" && strlist_load.size() >= 9)
+            else if (funcType == "EXPONENTIAL")
             {
+                parametersValid = strlist_load.size() >= 9 && ParseFiniteDouble(strlist_load[8], pLoad->m_Decay);
                 pLoad->m_FunctionType = TimeFunctionType::EXPONENTIAL;
-                pLoad->m_Decay = strlist_load[8].toDouble();
-                qDebug().noquote()
-                    << QStringLiteral("  荷载 %1: 指数衰减函数 (衰减系数=%2)").arg(autoId).arg(pLoad->m_Decay);
             }
-            else if (funcType == "TRIANGULAR" && strlist_load.size() >= 9)
+            else if (funcType == "TRIANGULAR")
             {
+                parametersValid = strlist_load.size() >= 9 && ParseFiniteDouble(strlist_load[8], pLoad->m_Period);
                 pLoad->m_FunctionType = TimeFunctionType::TRIANGULAR;
-                pLoad->m_Period = strlist_load[8].toDouble();
-                qDebug().noquote()
-                    << QStringLiteral("  荷载 %1: 三角波函数 (周期=%2)").arg(autoId).arg(pLoad->m_Period);
             }
-            else if (funcType == "SQUARE" && strlist_load.size() >= 10)
+            else if (funcType == "SQUARE")
             {
+                parametersValid = strlist_load.size() >= 10 && ParseFiniteDouble(strlist_load[8], pLoad->m_Period) &&
+                                   ParseFiniteDouble(strlist_load[9], pLoad->m_DutyCycle);
                 pLoad->m_FunctionType = TimeFunctionType::SQUARE;
-                pLoad->m_Period = strlist_load[8].toDouble();
-                pLoad->m_DutyCycle = strlist_load[9].toDouble();
-                qDebug().noquote() << QStringLiteral("  荷载 %1: 方波函数 (周期=%2, 占空比=%3)")
-                                          .arg(autoId)
-                                          .arg(pLoad->m_Period)
-                                          .arg(pLoad->m_DutyCycle);
             }
             else if (funcType == "CONSTANT" || funcType.isEmpty())
             {
                 pLoad->m_FunctionType = TimeFunctionType::CONSTANT;
-                qDebug().noquote() << QStringLiteral("  荷载 %1: 常数荷载").arg(autoId);
             }
             else
             {
-                qDebug().noquote() << QStringLiteral("警告: 未知的时间函数类型 '%1'，使用常数荷载").arg(funcType);
-                pLoad->m_FunctionType = TimeFunctionType::CONSTANT;
+                m_LastError = QStringLiteral("节点力荷载包含未知的时间函数类型：%1。").arg(funcType);
+                qDebug().noquote() << QStringLiteral("Error:") << m_LastError;
+                return false;
             }
+
+            if (!parametersValid)
+            {
+                m_LastError = QStringLiteral("节点力荷载时间函数参数不完整或不是有限数值。");
+                qDebug().noquote() << QStringLiteral("Error:") << m_LastError;
+                return false;
+            }
+        }
+
+        QString timeFunctionError;
+        if (!pLoad->ValidateTimeFunction(timeFunctionError))
+        {
+            m_LastError = QStringLiteral("节点力荷载时程校验失败：%1").arg(timeFunctionError);
+            qDebug().noquote() << QStringLiteral("Error:") << m_LastError;
+            return false;
         }
 
         m_Structure->m_Load.insert(std::make_pair(autoId, pLoad));

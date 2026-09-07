@@ -13,6 +13,7 @@
 #include "DataStructure/Element/ElementSpring2.h"
 #include "DataStructure/Element/ElementSpringA.h"
 #include "DataStructure/Inertia/RigidBodyInertia.h"
+#include "DataStructure/Load/Force_Node.h"
 #include "DataStructure/Load/Force_Wind.h"
 #include "DataStructure/Load/LoadAssembler.h"
 #include "DataStructure/Load/AerodynamicLoadCalculator.h"
@@ -31,6 +32,7 @@
 #include "Solver/Dynamic/Integrators/SolverAdaptiveTSSBN.h"
 #include "Solver/Dynamic/Integrators/SolverNewmark.h"
 #include "Solver/Dynamic/Integrators/SolverRungeKutta4.h"
+#include "Solver/Dynamic/TimeStepping/TimeStepError.h"
 #include "Solver/Dynamic/Damping/StructuralDamping.h"
 #include "Solver/Linear/LinearSystemSolver.h"
 #include "Solver/Linear/Direct/PardisoSolver.h"
@@ -44,6 +46,7 @@
 #include <QFileInfo>
 #include <QFile>
 #include <QTemporaryDir>
+#include <QTextStream>
 #include <array>
 #include <cmath>
 #include <numbers>
@@ -664,8 +667,15 @@ public:
         displacement_ += increment;
     }
 
-    void BeginDynamicStep(double, double, double) override
+    void BeginDynamicStep(double timeStep, double beta, double gamma) override
     {
+        savedDisplacement_ = displacement_;
+        savedVelocity_ = velocity_;
+        savedAcceleration_ = acceleration_;
+        displacement_ = savedDisplacement_ + timeStep * savedVelocity_ +
+                        timeStep * timeStep * (0.5 - beta) * savedAcceleration_;
+        velocity_ = savedVelocity_ + timeStep * (1.0 - gamma) * savedAcceleration_;
+        acceleration_.setZero();
     }
 
     void ApplyDynamicCorrection(const SolverNameSpace::Vec& increment, double a0, double a1) override
@@ -1199,6 +1209,16 @@ std::optional<int> verifyTimeStepIntegrators(const QStringList& arguments)
     constexpr double stiffness = 25.0;
     const double period = 2.0 * std::numbers::pi / std::sqrt(stiffness / mass);
 
+    SolverNameSpace::AdaptiveTimeStepSettings maximumErrorSettings;
+    maximumErrorSettings.absoluteTolerance = 1.0;
+    maximumErrorSettings.relativeTolerance = 1.0e-12;
+    SolverNameSpace::Vec zeroState = SolverNameSpace::Vec::Zero(2);
+    SolverNameSpace::Vec fineState(2);
+    fineState << 3.0, 6.0;
+    const double maximumDofError = SolverNameSpace::EstimateStepDoublingError(
+        zeroState, zeroState, fineState, zeroState, maximumErrorSettings, 2);
+    const bool maximumErrorUsed = std::abs(maximumDofError - 2.0) < 1.0e-9;
+
     SolverNameSpace::SolverNewmark::Params newmarkParameters;
     newmarkParameters.dt = period / 5.0;
     newmarkParameters.maxIter = 12;
@@ -1237,8 +1257,199 @@ std::optional<int> verifyTimeStepIntegrators(const QStringList& arguments)
 
     QTextStream(stdout) << "time_step_integrators newmark_solved=" << newmarkSolved
                         << " newmark_error=" << newmarkError << " rk4_solved=" << rkSolved
-                        << " rk4_error=" << rkError << Qt::endl;
-    return newmarkSolved && rkSolved && newmarkError < 2.0e-2 && rkError < 5.0e-4 ? 0 : 1;
+                        << " rk4_error=" << rkError << " maximum_dof_error=" << maximumDofError << Qt::endl;
+    return newmarkSolved && rkSolved && maximumErrorUsed && newmarkError < 2.0e-2 && rkError < 5.0e-4 ? 0 : 1;
+}
+
+std::optional<int> verifyLoadTimeFunctions(const QStringList& arguments)
+{
+    if (!arguments.contains(QStringLiteral("--verify-load-time-functions")))
+        return std::nullopt;
+
+    QTemporaryDir temporaryDirectory;
+    if (!temporaryDirectory.isValid())
+        return 1;
+
+    const QString modelPath = temporaryDirectory.filePath(QStringLiteral("load_time_validation.bdf"));
+    QFile modelFile(modelPath);
+    if (!modelFile.open(QIODevice::WriteOnly | QIODevice::Text))
+        return 2;
+    QTextStream model(&modelFile);
+    model << "*MATERIAL, 1\n"
+          << "1, 2.0e11, 0.3, 7800, 0, 0\n"
+          << "*SECTION, 1\n"
+          << "1, 0.01\n"
+          << "*NODE, 3\n"
+          << "1, 0, 0, 0\n"
+          << "2, 1, 0, 0\n"
+          << "3, 2, 0, 0\n"
+          << "*ELEMENT, CR3D, 2\n"
+          << "1, 1, 2, 1, 1, 0, 1, 0\n"
+          << "2, 2, 3, 1, 1, 0, 1, 0\n"
+          << "*CONSTRAINT, 6\n"
+          << "1, 1, 0, 0\n"
+          << "2, 1, 1, 0\n"
+          << "3, 1, 2, 0\n"
+          << "4, 1, 3, 0\n"
+          << "5, 1, 4, 0\n"
+          << "6, 1, 5, 0\n"
+          << "*LOAD, FORCE_NODE, 1\n"
+          << "1, 3, 2, 1000, 1\n"
+          << "*ANALYSIS_STEP, 1\n"
+          << "1, STATIC, 1, 0.1, 1e-5, 10\n";
+    model.flush();
+    modelFile.close();
+
+    auto structure = std::make_shared<StructureData>();
+    Input_Model importer;
+    if (!importer.InputData(modelPath, structure) || structure->m_Load.size() != 1)
+    {
+        QTextStream(stderr) << "load_time_functions import_failed error=" << importer.LastError() << Qt::endl;
+        return 3;
+    }
+
+    const auto force = std::dynamic_pointer_cast<Force_Node>(structure->m_Load.begin()->second);
+    const bool defaultWindowValid = force && force->m_EndTime > 1.0e9 && force->IsActive(5.0);
+
+    LoadBase invalidRamp;
+    invalidRamp.m_FunctionType = TimeFunctionType::RAMP;
+    invalidRamp.m_RampT1 = invalidRamp.m_RampT0;
+    QString errorMessage;
+    const bool invalidRampRejected = !invalidRamp.ValidateTimeFunction(errorMessage);
+
+    LoadBase invalidPeriod;
+    invalidPeriod.m_FunctionType = TimeFunctionType::TRIANGULAR;
+    invalidPeriod.m_Period = 0.0;
+    const bool invalidPeriodRejected = !invalidPeriod.ValidateTimeFunction(errorMessage);
+
+    LoadBase invalidDutyCycle;
+    invalidDutyCycle.m_FunctionType = TimeFunctionType::SQUARE;
+    invalidDutyCycle.m_DutyCycle = 1.1;
+    const bool invalidDutyCycleRejected = !invalidDutyCycle.ValidateTimeFunction(errorMessage);
+
+    QTextStream(stdout) << "load_time_functions default_window=" << defaultWindowValid
+                        << " invalid_ramp_rejected=" << invalidRampRejected
+                        << " invalid_period_rejected=" << invalidPeriodRejected
+                        << " invalid_duty_cycle_rejected=" << invalidDutyCycleRejected << Qt::endl;
+    return defaultWindowValid && invalidRampRejected && invalidPeriodRejected && invalidDutyCycleRejected ? 0 : 4;
+}
+
+std::optional<int> benchmarkTimeStepIntegrators(const QStringList& arguments)
+{
+    if (!arguments.contains(QStringLiteral("--benchmark-time-step-integrators")))
+        return std::nullopt;
+
+    double duration = 300.0;
+    const int durationIndex = arguments.indexOf(QStringLiteral("--time-step-duration"));
+    if (durationIndex >= 0)
+    {
+        if (durationIndex + 1 >= arguments.size())
+            return 1;
+        bool converted = false;
+        duration = arguments.at(durationIndex + 1).toDouble(&converted);
+        if (!converted || !std::isfinite(duration) || duration <= 0.0)
+            return 1;
+    }
+
+    constexpr double mass = 1.0;
+    constexpr double stiffness = 25.0;
+    constexpr double fixedTimeStep = 0.01;
+    const double angularFrequency = std::sqrt(stiffness / mass);
+    const double exactDisplacement = std::cos(angularFrequency * duration);
+    const double exactVelocity = -angularFrequency * std::sin(angularFrequency * duration);
+
+    struct Result
+    {
+        QString method;
+        QString mode;
+        bool solved = false;
+        double milliseconds = 0.0;
+        double normalizedStateError = std::numeric_limits<double>::infinity();
+        SolverNameSpace::TimeStepStatistics statistics;
+    };
+
+    std::vector<Result> results;
+    for (bool adaptive : {false, true})
+    {
+        LinearOscillatorModel model(mass, stiffness);
+        SolverNameSpace::SolverNewmark::Params parameters;
+        parameters.dt = fixedTimeStep;
+        parameters.maxIter = 12;
+        parameters.tol = 1.0e-11;
+        parameters.timeStepMode =
+            adaptive ? SolverNameSpace::TimeStepMode::Adaptive : SolverNameSpace::TimeStepMode::Fixed;
+        parameters.adaptiveTimeStep.minimumTimeStep = 1.0e-5;
+        parameters.adaptiveTimeStep.maximumTimeStep = 0.05;
+        parameters.adaptiveTimeStep.relativeTolerance = 1.0e-4;
+        parameters.adaptiveTimeStep.absoluteTolerance = 1.0e-4;
+        parameters.adaptiveTimeStep.includeVelocityInError = true;
+        parameters.adaptiveTimeStep.velocityRelativeTolerance = 1.0e-4;
+        parameters.adaptiveTimeStep.velocityAbsoluteTolerance = 5.0e-4;
+        SolverNameSpace::SolverNewmark solver(parameters);
+        QElapsedTimer timer;
+        timer.start();
+        const bool solved = solver.Solve(model, duration);
+        const double milliseconds = static_cast<double>(timer.nsecsElapsed()) / 1.0e6;
+        SolverNameSpace::Vec displacement;
+        SolverNameSpace::Vec velocity;
+        SolverNameSpace::Vec acceleration;
+        model.GetState(displacement, velocity, acceleration);
+        const double error = std::max(std::abs(displacement[0] - exactDisplacement),
+                                      std::abs(velocity[0] - exactVelocity) / angularFrequency);
+        results.push_back({QStringLiteral("Newmark"), adaptive ? QStringLiteral("adaptive") : QStringLiteral("fixed"),
+                           solved, milliseconds, error, solver.GetTimeStepStatistics()});
+    }
+
+    for (bool adaptive : {false, true})
+    {
+        LinearOscillatorModel model(mass, stiffness);
+        SolverNameSpace::SolverRungeKutta4::Params parameters;
+        parameters.timeStep = fixedTimeStep;
+        parameters.timeStepMode =
+            adaptive ? SolverNameSpace::TimeStepMode::Adaptive : SolverNameSpace::TimeStepMode::Fixed;
+        parameters.adaptiveTimeStep.minimumTimeStep = 1.0e-5;
+        parameters.adaptiveTimeStep.maximumTimeStep = 0.05;
+        parameters.adaptiveTimeStep.relativeTolerance = 1.0e-6;
+        parameters.adaptiveTimeStep.absoluteTolerance = 1.0e-6;
+        parameters.adaptiveTimeStep.includeVelocityInError = true;
+        parameters.adaptiveTimeStep.velocityRelativeTolerance = 1.0e-6;
+        parameters.adaptiveTimeStep.velocityAbsoluteTolerance = 5.0e-6;
+        SolverNameSpace::SolverRungeKutta4 solver(parameters);
+        QElapsedTimer timer;
+        timer.start();
+        const bool solved = solver.Solve(model, duration);
+        const double milliseconds = static_cast<double>(timer.nsecsElapsed()) / 1.0e6;
+        SolverNameSpace::Vec displacement;
+        SolverNameSpace::Vec velocity;
+        SolverNameSpace::Vec acceleration;
+        model.GetState(displacement, velocity, acceleration);
+        const double error = std::max(std::abs(displacement[0] - exactDisplacement),
+                                      std::abs(velocity[0] - exactVelocity) / angularFrequency);
+        results.push_back({QStringLiteral("RK4"), adaptive ? QStringLiteral("adaptive") : QStringLiteral("fixed"),
+                           solved, milliseconds, error, solver.GetTimeStepStatistics()});
+    }
+
+    QTextStream output(stdout);
+    output << "time_step_benchmark duration=" << duration << " fixed_dt=" << fixedTimeStep << Qt::endl;
+    bool passed = true;
+    for (const Result& result : results)
+    {
+        output << "  method=" << result.method << " mode=" << result.mode << " solved=" << result.solved
+               << " ms=" << result.milliseconds << " accepted=" << result.statistics.acceptedSteps
+               << " rejected=" << result.statistics.rejectedAttempts
+               << " min_dt=" << result.statistics.minimumAcceptedTimeStep
+               << " max_dt=" << result.statistics.maximumAcceptedTimeStep
+               << " exact_state_error=" << result.normalizedStateError << Qt::endl;
+        passed = passed && result.solved && std::isfinite(result.normalizedStateError);
+    }
+    if (results.size() == 4)
+    {
+        output << "  newmark_speed_ratio=" << results[0].milliseconds / results[1].milliseconds
+               << " rk4_speed_ratio=" << results[2].milliseconds / results[3].milliseconds << Qt::endl;
+        passed = passed && results[0].normalizedStateError < 0.4 && results[1].normalizedStateError < 0.9 &&
+                 results[2].normalizedStateError < 1.0e-4 && results[3].normalizedStateError < 5.0e-3;
+    }
+    return passed ? 0 : 1;
 }
 
 std::optional<int> verifyDynamicMpc(const QStringList& arguments)
@@ -1399,13 +1610,19 @@ std::optional<int> verifyAdaptiveTssbn(const QStringList& arguments)
     const auto* adaptiveFactorySolver = dynamic_cast<const SolverNameSpace::SolverAdaptiveTSSBN*>(factorySolver.get());
     AnalysisStep newmarkFactoryStep;
     newmarkFactoryStep.m_Type = EnumKeyword::StepType::DYNAMIC;
-    newmarkFactoryStep.m_DynamicSolverType = SolverNameSpace::SolverType::Newmark;
+    newmarkFactoryStep.m_DynamicSolverType = SolverNameSpace::SolverType::AdaptiveNewmark;
     newmarkFactoryStep.m_StepSize = 0.01;
+    newmarkFactoryStep.m_AdaptiveTimeStep.maximumTimeStep = 0.21;
+    newmarkFactoryStep.m_AdaptiveTimeStep.relativeTolerance = 3.0e-4;
     newmarkFactoryStep.m_EnableGalloping = true;
     newmarkFactoryStep.m_GallopingAerodynamicTangentMode = SolverNameSpace::AerodynamicTangentMode::Disabled;
     const auto newmarkFactoryBase = SolverNameSpace::SolverFactory::Create_StepForSlover(newmarkFactoryStep);
     const auto* newmarkFactorySolver =
         dynamic_cast<const SolverNameSpace::SolverNewmark*>(newmarkFactoryBase.get());
+    AnalysisStep rkFactoryStep = newmarkFactoryStep;
+    rkFactoryStep.m_DynamicSolverType = SolverNameSpace::SolverType::AdaptiveRungeKutta4;
+    const auto rkFactoryBase = SolverNameSpace::SolverFactory::Create_StepForSlover(rkFactoryStep);
+    const auto* rkFactorySolver = dynamic_cast<const SolverNameSpace::SolverRungeKutta4*>(rkFactoryBase.get());
     const bool factoryConnected =
         adaptiveFactorySolver && adaptiveFactorySolver->GetType() == SolverNameSpace::SolverType::AdaptiveTSSBN &&
         std::abs(adaptiveFactorySolver->GetParams().spectralRadiusInfinity - 0.77) < 1.0e-12 &&
@@ -1422,8 +1639,12 @@ std::optional<int> verifyAdaptiveTssbn(const QStringList& arguments)
         std::abs(adaptiveFactorySolver->GetParams().minimumDerivativeFactor - 0.43) < 1.0e-12 &&
         std::abs(adaptiveFactorySolver->GetParams().maximumDerivativeFactor - 1.61) < 1.0e-12 &&
         adaptiveFactorySolver->GetParams().maximumRejectedAttempts == 17 && newmarkFactorySolver &&
+        newmarkFactorySolver->GetType() == SolverNameSpace::SolverType::AdaptiveNewmark &&
+        std::abs(newmarkFactorySolver->GetParams().adaptiveTimeStep.maximumTimeStep - 0.21) < 1.0e-12 &&
+        std::abs(newmarkFactorySolver->GetParams().adaptiveTimeStep.relativeTolerance - 3.0e-4) < 1.0e-15 &&
         newmarkFactorySolver->GetParams().aerodynamicTangentMode ==
-            SolverNameSpace::AerodynamicTangentMode::Disabled;
+            SolverNameSpace::AerodynamicTangentMode::Disabled &&
+        rkFactorySolver && rkFactorySolver->GetType() == SolverNameSpace::SolverType::AdaptiveRungeKutta4;
 
     constexpr double mass = 2.0;
     constexpr double stiffness = 8.0;
@@ -2556,6 +2777,18 @@ std::optional<int> verifyHdf5ModelContract(const QStringList& arguments)
     sourceStep->m_AdaptiveTssbn.minimumDerivativeFactor = 0.44;
     sourceStep->m_AdaptiveTssbn.maximumDerivativeFactor = 1.72;
     sourceStep->m_AdaptiveTssbn.maximumRejectedAttempts = 19;
+    sourceStep->m_AdaptiveTimeStep.minimumTimeStep = 3.0e-6;
+    sourceStep->m_AdaptiveTimeStep.maximumTimeStep = 0.29;
+    sourceStep->m_AdaptiveTimeStep.relativeTolerance = 6.0e-4;
+    sourceStep->m_AdaptiveTimeStep.absoluteTolerance = 2.0e-7;
+    sourceStep->m_AdaptiveTimeStep.includeVelocityInError = true;
+    sourceStep->m_AdaptiveTimeStep.velocityRelativeTolerance = 9.0e-4;
+    sourceStep->m_AdaptiveTimeStep.velocityAbsoluteTolerance = 8.0e-7;
+    sourceStep->m_AdaptiveTimeStep.safetyFactor = 0.84;
+    sourceStep->m_AdaptiveTimeStep.minimumScaleFactor = 0.24;
+    sourceStep->m_AdaptiveTimeStep.maximumGrowthFactor = 2.2;
+    sourceStep->m_AdaptiveTimeStep.solveFailureFactor = 0.46;
+    sourceStep->m_AdaptiveTimeStep.maximumRejectedAttempts = 15;
     sourceStep->m_EnableGalloping = true;
     sourceStep->m_GallopingIceThickness = 28;
     sourceStep->m_GallopingInitialAttackDegrees = 357.0;
@@ -2575,6 +2808,13 @@ std::optional<int> verifyHdf5ModelContract(const QStringList& arguments)
     sourceWind->m_direction = Eigen::Vector3d(1.0, 2.0, 0.5).normalized();
     source->m_Load[windLoadId] = sourceWind;
 
+    // SolverType=2 在旧格式中曾表示 TSSBN、当前格式中表示 RK4，必须通过文件版本区分。
+    AnalysisStepConfig rk4Config = dynamicConfig;
+    rk4Config.id = dynamicConfig.id + 1;
+    rk4Config.name = QStringLiteral("RK4 格式回读验证");
+    rk4Config.dynamicSolverType = SolverNameSpace::SolverType::RungeKutta4;
+    source->AddAnalysisStep(rk4Config);
+
     Hdf5ModelIO writer;
     if (!writer.ExportModelHdf5(arguments.at(index + 2), source.get(), arguments.at(index + 1)))
         return 5;
@@ -2586,6 +2826,7 @@ std::optional<int> verifyHdf5ModelContract(const QStringList& arguments)
     if (!writer.ImportHdf5(arguments.at(index + 2), restored.get()))
         return 7;
     const auto restoredStep = restored->m_AnalysisStep.find(sourceStep->m_Id);
+    const auto restoredRk4Step = restored->m_AnalysisStep.find(rk4Config.id);
     const auto restoredWindEntry = restored->m_Load.find(windLoadId);
     const auto restoredWind = restoredWindEntry != restored->m_Load.cend()
                                   ? std::dynamic_pointer_cast<Force_Wind>(restoredWindEntry->second)
@@ -2595,6 +2836,8 @@ std::optional<int> verifyHdf5ModelContract(const QStringList& arguments)
     if (restored->m_ModelSets.size() != 2 || restored->m_ComputeRegions.size() != 2 ||
         restored->m_MPCConstraints.size() != source->m_MPCConstraints.size() ||
         restoredStep == restored->m_AnalysisStep.cend() || !restoredStep->second ||
+        restoredRk4Step == restored->m_AnalysisStep.cend() || !restoredRk4Step->second ||
+        restoredRk4Step->second->m_DynamicSolverType != SolverNameSpace::SolverType::RungeKutta4 ||
         restoredStep->second->m_Name != sourceStep->m_Name ||
         restoredStep->second->m_InitialStaticStepId != equilibriumStepId || !restoredStep->second->m_EnableGalloping ||
         restoredStep->second->m_GallopingIceThickness != 28 ||
@@ -2615,6 +2858,18 @@ std::optional<int> verifyHdf5ModelContract(const QStringList& arguments)
         std::abs(restoredStep->second->m_AdaptiveTssbn.maximumDerivativeFactor - 1.72) > 1.0e-12 ||
         restoredStep->second->m_AdaptiveTssbn.maximumRejectedAttempts != 19 ||
         restoredStep->second->m_AdaptiveTssbn.maximumTotalNewtonIterations != 37 ||
+        std::abs(restoredStep->second->m_AdaptiveTimeStep.minimumTimeStep - 3.0e-6) > 1.0e-15 ||
+        std::abs(restoredStep->second->m_AdaptiveTimeStep.maximumTimeStep - 0.29) > 1.0e-12 ||
+        std::abs(restoredStep->second->m_AdaptiveTimeStep.relativeTolerance - 6.0e-4) > 1.0e-15 ||
+        std::abs(restoredStep->second->m_AdaptiveTimeStep.absoluteTolerance - 2.0e-7) > 1.0e-15 ||
+        !restoredStep->second->m_AdaptiveTimeStep.includeVelocityInError ||
+        std::abs(restoredStep->second->m_AdaptiveTimeStep.velocityRelativeTolerance - 9.0e-4) > 1.0e-15 ||
+        std::abs(restoredStep->second->m_AdaptiveTimeStep.velocityAbsoluteTolerance - 8.0e-7) > 1.0e-15 ||
+        std::abs(restoredStep->second->m_AdaptiveTimeStep.safetyFactor - 0.84) > 1.0e-12 ||
+        std::abs(restoredStep->second->m_AdaptiveTimeStep.minimumScaleFactor - 0.24) > 1.0e-12 ||
+        std::abs(restoredStep->second->m_AdaptiveTimeStep.maximumGrowthFactor - 2.2) > 1.0e-12 ||
+        std::abs(restoredStep->second->m_AdaptiveTimeStep.solveFailureFactor - 0.46) > 1.0e-12 ||
+        restoredStep->second->m_AdaptiveTimeStep.maximumRejectedAttempts != 15 ||
         std::abs(restoredStep->second->m_GallopingInitialAttackDegrees - 357.0) > 1.0e-12 ||
         !restored->m_AeroManager.hasCase(sourceAeroKey) ||
         std::abs(restored->m_AeroManager.getData(sourceAeroKey, 0, LIFT, 17.5) -
@@ -3473,12 +3728,14 @@ std::optional<int> verifyConductorGallopingDynamics(const QStringList& arguments
     double gallopingIceThicknessValue = 25.0;
     double gallopingBundleValue = 4.0;
     double gallopingSegmentsValue = 50.0;
+    double gallopingInitialTimeStep = 0.005;
     double gallopingMaximumTimeStep = 0.005;
     if (!readDoubleOption(QStringLiteral("--galloping-duration"), 0.02, true, gallopingDuration) ||
         !readDoubleOption(QStringLiteral("--galloping-attack"), 45.0, false, initialAttackDegrees) ||
         !readDoubleOption(QStringLiteral("--galloping-ice"), 25.0, true, gallopingIceThicknessValue) ||
         !readDoubleOption(QStringLiteral("--galloping-bundle"), 4.0, true, gallopingBundleValue) ||
         !readDoubleOption(QStringLiteral("--galloping-segments"), 50.0, true, gallopingSegmentsValue) ||
+        !readDoubleOption(QStringLiteral("--galloping-step"), 0.005, true, gallopingInitialTimeStep) ||
         !readDoubleOption(QStringLiteral("--galloping-max-step"), 0.005, true, gallopingMaximumTimeStep))
     {
         QTextStream(stderr) << "invalid galloping duration, attack, ice, bundle, segments, or maximum step" << Qt::endl;
@@ -3519,6 +3776,11 @@ std::optional<int> verifyConductorGallopingDynamics(const QStringList& arguments
         QTextStream(stderr) << "invalid --galloping-tssbn-rho (must be in [0, 1])" << Qt::endl;
         return 1;
     }
+    if (gallopingInitialTimeStep > gallopingMaximumTimeStep)
+    {
+        QTextStream(stderr) << "--galloping-step must not exceed --galloping-max-step" << Qt::endl;
+        return 1;
+    }
     const int gallopingSegments = static_cast<int>(std::llround(gallopingSegmentsValue));
     if (std::abs(gallopingSegmentsValue - gallopingSegments) > 1.0e-9 || gallopingSegments < 4)
     {
@@ -3554,19 +3816,29 @@ std::optional<int> verifyConductorGallopingDynamics(const QStringList& arguments
             return 1;
         gallopingSolver = arguments.at(solverOptionIndex + 1).trimmed().toLower();
     }
-    const bool runNewmark = gallopingSolver == QStringLiteral("both") || gallopingSolver == QStringLiteral("newmark") ||
+    const bool runNewmark = gallopingSolver == QStringLiteral("both") || gallopingSolver == QStringLiteral("all") ||
+                            gallopingSolver == QStringLiteral("newmark") ||
                             gallopingSolver == QStringLiteral("newmark-pair");
     const bool runAdaptiveNewmark = gallopingSolver == QStringLiteral("adaptive-newmark") ||
-                                    gallopingSolver == QStringLiteral("newmark-pair");
-    const bool runTssbn = gallopingSolver == QStringLiteral("both") || gallopingSolver == QStringLiteral("tssbn");
+                                    gallopingSolver == QStringLiteral("newmark-pair") ||
+                                    gallopingSolver == QStringLiteral("all");
+    const bool runRk4 = gallopingSolver == QStringLiteral("rk4") || gallopingSolver == QStringLiteral("rk4-pair") ||
+                        gallopingSolver == QStringLiteral("all");
+    const bool runAdaptiveRk4 = gallopingSolver == QStringLiteral("adaptive-rk4") ||
+                                gallopingSolver == QStringLiteral("rk4-pair") ||
+                                gallopingSolver == QStringLiteral("all");
+    const bool runTssbn = gallopingSolver == QStringLiteral("both") || gallopingSolver == QStringLiteral("tssbn") ||
+                          gallopingSolver == QStringLiteral("all");
     const bool disableAerodynamicLoad = arguments.contains(QStringLiteral("--galloping-disable-aero"));
+    const bool disableAerodynamicMoment = arguments.contains(QStringLiteral("--galloping-disable-moment"));
     const bool enableStructuralDamping = arguments.contains(QStringLiteral("--galloping-structural-damping"));
     const bool streamResult = arguments.contains(QStringLiteral("--galloping-stream-result"));
     const bool exportOnly = arguments.contains(QStringLiteral("--galloping-export-only"));
-    if (!runNewmark && !runAdaptiveNewmark && !runTssbn)
+    if (!runNewmark && !runAdaptiveNewmark && !runRk4 && !runAdaptiveRk4 && !runTssbn)
     {
-        QTextStream(stderr) << "invalid --galloping-solver (both|newmark|adaptive-newmark|newmark-pair|tssbn)"
-                            << Qt::endl;
+        QTextStream(stderr)
+            << "invalid --galloping-solver (all|both|newmark|adaptive-newmark|newmark-pair|rk4|adaptive-rk4|rk4-pair|tssbn)"
+            << Qt::endl;
         return 1;
     }
 
@@ -3634,16 +3906,22 @@ std::optional<int> verifyConductorGallopingDynamics(const QStringList& arguments
         return 1;
     }
 
+    const int selectedSolverCount = static_cast<int>(runNewmark) + static_cast<int>(runAdaptiveNewmark) +
+                                    static_cast<int>(runRk4) + static_cast<int>(runAdaptiveRk4) +
+                                    static_cast<int>(runTssbn);
     const auto solve = [&library, &exportPath, gallopingDuration, initialAttackDegrees, gallopingIceThickness,
-                        gallopingBundleCount, gallopingSegments, gallopingMaximumTimeStep, runNewmark,
-                        runAdaptiveNewmark, runTssbn,
+                        gallopingBundleCount, gallopingSegments, gallopingInitialTimeStep,
+                        gallopingMaximumTimeStep, selectedSolverCount,
                         spacerStyle,
                         windDirection, &historyPath, historyInterval,
-                         tssbnSpectralRadius, aerodynamicTangentMode, disableAerodynamicLoad,
-                         enableStructuralDamping, streamResult, exportOnly](SolverNameSpace::SolverType solverType,
-                                              double& maximumDisplacement,
-                                             double& inheritanceGap, double& dynamicMilliseconds, double& maximumMpcGap,
-                                             int& acceptedSteps, double& averageAcceptedStep, int& maximumIterations)
+                        tssbnSpectralRadius, aerodynamicTangentMode, disableAerodynamicLoad, disableAerodynamicMoment,
+                        enableStructuralDamping, streamResult, exportOnly](SolverNameSpace::SolverType solverType,
+                                                                            double& maximumDisplacement,
+                                                                            double& inheritanceGap,
+                                                                            double& dynamicMilliseconds,
+                                                                            double& maximumMpcGap, int& acceptedSteps,
+                                                                            double& averageAcceptedStep,
+                                                                            int& maximumIterations)
     {
         QTemporaryDir outputDirectory;
         ConductorModule module;
@@ -3689,7 +3967,7 @@ std::optional<int> verifyConductorGallopingDynamics(const QStringList& arguments
         dynamicConfig.name = QStringLiteral("verification dynamics");
         dynamicConfig.type = EnumKeyword::StepType::DYNAMIC;
         dynamicConfig.totalTime = gallopingDuration;
-        dynamicConfig.stepSize = 0.005;
+        dynamicConfig.stepSize = gallopingInitialTimeStep;
         dynamicConfig.tolerance = 1.0e-5;
         dynamicConfig.maxIterations = 48;
         dynamicConfig.dynamicSolverType = solverType;
@@ -3709,6 +3987,14 @@ std::optional<int> verifyConductorGallopingDynamics(const QStringList& arguments
         dynamicConfig.adaptiveTssbn.absoluteTolerance = 1.0e-6;
         dynamicConfig.adaptiveTssbn.targetNewtonIterations = 8;
         dynamicConfig.adaptiveTssbn.spectralRadiusInfinity = tssbnSpectralRadius;
+        dynamicConfig.adaptiveTimeStep.minimumTimeStep = 1.0e-5;
+        dynamicConfig.adaptiveTimeStep.maximumTimeStep = gallopingMaximumTimeStep;
+        dynamicConfig.adaptiveTimeStep.relativeTolerance = 5.0e-4;
+        dynamicConfig.adaptiveTimeStep.absoluteTolerance = 1.0e-5;
+        // 二阶动力系统的完整状态为 [u, v]；同时控制速度可抑制长时振动的相位漂移。
+        dynamicConfig.adaptiveTimeStep.includeVelocityInError = true;
+        dynamicConfig.adaptiveTimeStep.velocityRelativeTolerance = 5.0e-4;
+        dynamicConfig.adaptiveTimeStep.velocityAbsoluteTolerance = 1.0e-4;
         dynamicConfig.gallopingAerodynamicTangentMode = aerodynamicTangentMode;
         structure->AddAnalysisStep(dynamicConfig);
 
@@ -3719,6 +4005,7 @@ std::optional<int> verifyConductorGallopingDynamics(const QStringList& arguments
         wind->m_velocity = 14.0;
         wind->m_direction = windDirection;
         wind->m_windDensity = 1.225;
+        wind->m_EnableAerodynamicMoment = !disableAerodynamicMoment;
         if (!disableAerodynamicLoad)
             structure->m_Load.emplace(wind->m_Id, wind);
 
@@ -3726,8 +4013,7 @@ std::optional<int> verifyConductorGallopingDynamics(const QStringList& arguments
         // 保证重新打开时不丢失舞动定义。
         const bool exportThisSolver =
             !exportPath.isEmpty() &&
-            ((static_cast<int>(runNewmark) + static_cast<int>(runAdaptiveNewmark) + static_cast<int>(runTssbn) == 1) ||
-             solverType == SolverNameSpace::SolverType::AdaptiveTSSBN);
+            (selectedSolverCount == 1 || solverType == SolverNameSpace::SolverType::AdaptiveTSSBN);
         if (exportThisSolver)
         {
             Hdf5ModelIO hdf5;
@@ -3806,15 +4092,18 @@ std::optional<int> verifyConductorGallopingDynamics(const QStringList& arguments
         dynamicStructure->GetOutputter().Clear();
         dynamicStructure->m_OutputControl.m_Hdf5FileName = dynamicResultPath;
         QString solverHistoryPath = historyPath;
-        if (!historyPath.isEmpty() &&
-            static_cast<int>(runNewmark) + static_cast<int>(runAdaptiveNewmark) + static_cast<int>(runTssbn) > 1)
+        if (!historyPath.isEmpty() && selectedSolverCount > 1)
         {
             const QFileInfo historyInfo(historyPath);
             const QString suffix = solverType == SolverNameSpace::SolverType::Newmark
-                                       ? QStringLiteral("_newmark")
-                                   : solverType == SolverNameSpace::SolverType::AdaptiveNewmark
-                                       ? QStringLiteral("_adaptive_newmark")
-                                       : QStringLiteral("_tssbn");
+                                         ? QStringLiteral("_newmark")
+                                    : solverType == SolverNameSpace::SolverType::AdaptiveNewmark
+                                         ? QStringLiteral("_adaptive_newmark")
+                                    : solverType == SolverNameSpace::SolverType::RungeKutta4
+                                         ? QStringLiteral("_rk4")
+                                    : solverType == SolverNameSpace::SolverType::AdaptiveRungeKutta4
+                                         ? QStringLiteral("_adaptive_rk4")
+                                         : QStringLiteral("_tssbn");
             solverHistoryPath = historyInfo.dir().filePath(
                 historyInfo.completeBaseName() + suffix +
                 (historyInfo.suffix().isEmpty() ? QStringLiteral(".csv") : QStringLiteral(".") + historyInfo.suffix()));
@@ -4129,24 +4418,38 @@ std::optional<int> verifyConductorGallopingDynamics(const QStringList& arguments
 
     double newmarkMaximumDisplacement = 0.0;
     double adaptiveNewmarkMaximumDisplacement = 0.0;
+    double rk4MaximumDisplacement = 0.0;
+    double adaptiveRk4MaximumDisplacement = 0.0;
     double tssbnMaximumDisplacement = 0.0;
     double newmarkInheritanceGap = 0.0;
     double adaptiveNewmarkInheritanceGap = 0.0;
+    double rk4InheritanceGap = 0.0;
+    double adaptiveRk4InheritanceGap = 0.0;
     double tssbnInheritanceGap = 0.0;
     double newmarkDynamicMilliseconds = 0.0;
     double adaptiveNewmarkDynamicMilliseconds = 0.0;
+    double rk4DynamicMilliseconds = 0.0;
+    double adaptiveRk4DynamicMilliseconds = 0.0;
     double tssbnDynamicMilliseconds = 0.0;
     double newmarkMpcGap = 0.0;
     double adaptiveNewmarkMpcGap = 0.0;
+    double rk4MpcGap = 0.0;
+    double adaptiveRk4MpcGap = 0.0;
     double tssbnMpcGap = 0.0;
     int newmarkAcceptedSteps = 0;
     int adaptiveNewmarkAcceptedSteps = 0;
+    int rk4AcceptedSteps = 0;
+    int adaptiveRk4AcceptedSteps = 0;
     int tssbnAcceptedSteps = 0;
     double newmarkAverageStep = 0.0;
     double adaptiveNewmarkAverageStep = 0.0;
+    double rk4AverageStep = 0.0;
+    double adaptiveRk4AverageStep = 0.0;
     double tssbnAverageStep = 0.0;
     int newmarkMaximumIterations = 0;
     int adaptiveNewmarkMaximumIterations = 0;
+    int rk4MaximumIterations = 0;
+    int adaptiveRk4MaximumIterations = 0;
     int tssbnMaximumIterations = 0;
     const bool newmarkSolved = !runNewmark || solve(SolverNameSpace::SolverType::Newmark, newmarkMaximumDisplacement,
                                                     newmarkInheritanceGap, newmarkDynamicMilliseconds, newmarkMpcGap,
@@ -4156,6 +4459,14 @@ std::optional<int> verifyConductorGallopingDynamics(const QStringList& arguments
         solve(SolverNameSpace::SolverType::AdaptiveNewmark, adaptiveNewmarkMaximumDisplacement,
               adaptiveNewmarkInheritanceGap, adaptiveNewmarkDynamicMilliseconds, adaptiveNewmarkMpcGap,
               adaptiveNewmarkAcceptedSteps, adaptiveNewmarkAverageStep, adaptiveNewmarkMaximumIterations);
+    const bool rk4Solved =
+        !runRk4 || solve(SolverNameSpace::SolverType::RungeKutta4, rk4MaximumDisplacement, rk4InheritanceGap,
+                         rk4DynamicMilliseconds, rk4MpcGap, rk4AcceptedSteps, rk4AverageStep, rk4MaximumIterations);
+    const bool adaptiveRk4Solved =
+        !runAdaptiveRk4 ||
+        solve(SolverNameSpace::SolverType::AdaptiveRungeKutta4, adaptiveRk4MaximumDisplacement,
+              adaptiveRk4InheritanceGap, adaptiveRk4DynamicMilliseconds, adaptiveRk4MpcGap, adaptiveRk4AcceptedSteps,
+              adaptiveRk4AverageStep, adaptiveRk4MaximumIterations);
     const bool tssbnSolved = !runTssbn || solve(SolverNameSpace::SolverType::AdaptiveTSSBN, tssbnMaximumDisplacement,
                                                 tssbnInheritanceGap, tssbnDynamicMilliseconds, tssbnMpcGap,
                                                 tssbnAcceptedSteps, tssbnAverageStep, tssbnMaximumIterations);
@@ -4168,14 +4479,22 @@ std::optional<int> verifyConductorGallopingDynamics(const QStringList& arguments
                                                ? std::abs(tssbnMaximumDisplacement - newmarkMaximumDisplacement) /
                                                      std::max(1.0e-12, newmarkMaximumDisplacement)
                                                : 0.0;
+    const double adaptiveRk4RelativeDifference =
+        runRk4 && runAdaptiveRk4
+            ? std::abs(adaptiveRk4MaximumDisplacement - rk4MaximumDisplacement) /
+                  std::max(1.0e-12, rk4MaximumDisplacement)
+            : 0.0;
     QTextStream(stdout) << "conductor galloping duration=" << gallopingDuration << " attack=" << initialAttackDegrees
                         << " ice=" << gallopingIceThickness << " bundle=" << gallopingBundleCount
                         << " segments=" << gallopingSegments
+                        << " initial_step=" << gallopingInitialTimeStep
                         << " maximum_step=" << gallopingMaximumTimeStep << " wind_direction=" << gallopingWindDirection
                         << " spacer_mode=" << spacerMode << " solver=" << gallopingSolver
                         << " aero_tangent=" << aerodynamicTangentModeText
+                        << " aero_moment=" << (!disableAerodynamicMoment ? 1 : 0)
                         << " newmark_solved=" << newmarkSolved
-                        << " adaptive_newmark_solved=" << adaptiveNewmarkSolved << " tssbn_solved=" << tssbnSolved
+                        << " adaptive_newmark_solved=" << adaptiveNewmarkSolved << " rk4_solved=" << rk4Solved
+                        << " adaptive_rk4_solved=" << adaptiveRk4Solved << " tssbn_solved=" << tssbnSolved
                         << " newmark_max_displacement=" << newmarkMaximumDisplacement
                         << " newmark_dynamic_ms=" << newmarkDynamicMilliseconds
                         << " newmark_steps=" << newmarkAcceptedSteps << " newmark_average_step=" << newmarkAverageStep
@@ -4187,6 +4506,14 @@ std::optional<int> verifyConductorGallopingDynamics(const QStringList& arguments
                         << " adaptive_newmark_average_step=" << adaptiveNewmarkAverageStep
                         << " adaptive_newmark_max_iterations=" << adaptiveNewmarkMaximumIterations
                         << " adaptive_newmark_mpc_gap=" << adaptiveNewmarkMpcGap
+                        << " rk4_max_displacement=" << rk4MaximumDisplacement
+                        << " rk4_dynamic_ms=" << rk4DynamicMilliseconds << " rk4_steps=" << rk4AcceptedSteps
+                        << " rk4_average_step=" << rk4AverageStep << " rk4_mpc_gap=" << rk4MpcGap
+                        << " adaptive_rk4_max_displacement=" << adaptiveRk4MaximumDisplacement
+                        << " adaptive_rk4_dynamic_ms=" << adaptiveRk4DynamicMilliseconds
+                        << " adaptive_rk4_steps=" << adaptiveRk4AcceptedSteps
+                        << " adaptive_rk4_average_step=" << adaptiveRk4AverageStep
+                        << " adaptive_rk4_mpc_gap=" << adaptiveRk4MpcGap
                         << " tssbn_max_displacement=" << tssbnMaximumDisplacement
                         << " tssbn_dynamic_ms=" << tssbnDynamicMilliseconds << " tssbn_steps=" << tssbnAcceptedSteps
                         << " tssbn_average_step=" << tssbnAverageStep
@@ -4195,6 +4522,7 @@ std::optional<int> verifyConductorGallopingDynamics(const QStringList& arguments
                         << " adaptive_newmark_inheritance_gap=" << adaptiveNewmarkInheritanceGap
                         << " tssbn_inheritance_gap=" << tssbnInheritanceGap
                         << " adaptive_newmark_relative_difference=" << adaptiveNewmarkRelativeDifference
+                        << " adaptive_rk4_relative_difference=" << adaptiveRk4RelativeDifference
                         << " tssbn_relative_difference=" << tssbnRelativeDifference << Qt::endl;
 
     if (!exportPath.isEmpty())
@@ -4204,6 +4532,7 @@ std::optional<int> verifyConductorGallopingDynamics(const QStringList& arguments
         {
             QTextStream reportStream(&report);
             reportStream << "duration=" << gallopingDuration << '\n'
+                         << "initial_step=" << gallopingInitialTimeStep << '\n'
                          << "attack=" << initialAttackDegrees << '\n'
                          << "ice=" << gallopingIceThickness << '\n'
                          << "wind_direction=" << gallopingWindDirection << '\n'
@@ -4211,23 +4540,31 @@ std::optional<int> verifyConductorGallopingDynamics(const QStringList& arguments
                          << "aero_tangent=" << aerodynamicTangentModeText << '\n'
                          << "newmark_solved=" << newmarkSolved << '\n'
                          << "adaptive_newmark_solved=" << adaptiveNewmarkSolved << '\n'
+                         << "rk4_solved=" << rk4Solved << '\n'
+                         << "adaptive_rk4_solved=" << adaptiveRk4Solved << '\n'
                          << "tssbn_solved=" << tssbnSolved << '\n'
                          << "newmark_max_displacement=" << newmarkMaximumDisplacement << '\n'
                          << "adaptive_newmark_max_displacement=" << adaptiveNewmarkMaximumDisplacement << '\n'
+                         << "rk4_max_displacement=" << rk4MaximumDisplacement << '\n'
+                         << "adaptive_rk4_max_displacement=" << adaptiveRk4MaximumDisplacement << '\n'
                          << "tssbn_max_displacement=" << tssbnMaximumDisplacement << '\n'
                          << "newmark_inheritance_gap=" << newmarkInheritanceGap << '\n'
                          << "adaptive_newmark_inheritance_gap=" << adaptiveNewmarkInheritanceGap << '\n'
                          << "tssbn_inheritance_gap=" << tssbnInheritanceGap << '\n'
                          << "adaptive_newmark_relative_difference=" << adaptiveNewmarkRelativeDifference << '\n'
+                         << "adaptive_rk4_relative_difference=" << adaptiveRk4RelativeDifference << '\n'
                          << "tssbn_relative_difference=" << tssbnRelativeDifference << '\n';
         }
     }
 
-    return newmarkSolved && adaptiveNewmarkSolved && tssbnSolved &&
+    return newmarkSolved && adaptiveNewmarkSolved && rk4Solved && adaptiveRk4Solved && tssbnSolved &&
                    (!runNewmark || newmarkMaximumDisplacement > 0.0) &&
                    (!runAdaptiveNewmark || adaptiveNewmarkMaximumDisplacement > 0.0) &&
+                   (!runRk4 || rk4MaximumDisplacement > 0.0) &&
+                   (!runAdaptiveRk4 || adaptiveRk4MaximumDisplacement > 0.0) &&
                    (!runTssbn || tssbnMaximumDisplacement > 0.0) &&
                    (!(runNewmark && runAdaptiveNewmark) || adaptiveNewmarkRelativeDifference <= 0.05) &&
+                   (!(runRk4 && runAdaptiveRk4) || adaptiveRk4RelativeDifference <= 0.05) &&
                    (!(runNewmark && runTssbn) || tssbnRelativeDifference <= 0.05)
                ? 0
                : 2;
@@ -4602,6 +4939,10 @@ std::optional<int> VerificationRunner::runHeadless(const QStringList& arguments)
     if (const auto result = verifyGpuSparseSolver(arguments))
         return result;
     if (const auto result = verifyTimeStepIntegrators(arguments))
+        return result;
+    if (const auto result = verifyLoadTimeFunctions(arguments))
+        return result;
+    if (const auto result = benchmarkTimeStepIntegrators(arguments))
         return result;
     if (const auto result = verifyDynamicMpc(arguments))
         return result;

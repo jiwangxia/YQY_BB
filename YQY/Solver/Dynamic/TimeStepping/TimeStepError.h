@@ -21,13 +21,12 @@ namespace SolverNameSpace
  * @param coarseVelocity 一个完整步得到的步末速度。
  * @param fineDisplacement 两个半步得到的步末位移。
  * @param fineVelocity 两个半步得到的步末速度。
- * @param settings 绝对容差、相对容差等控制参数。
+ * @param settings 位移、速度各自的绝对/相对容差及控制参数。
  * @param methodOrder 积分器全局阶数；Newmark 为 2，RK4 为 4。
  *
  * 相对误差尺度使用 max(|coarse|, |fine|)，与 yA/yB 误差估计公式一致。
  * @return 不大于 1 表示当前细解可接受；非有限值表示输入状态不匹配或阶数无效。
  */
-double EstimateStepDoublingError(const Vec& coarseDisplacement, const Vec& coarseVelocity,
-                                 const Vec& fineDisplacement, const Vec& fineVelocity,
-                                 const AdaptiveTimeStepSettings& settings, int methodOrder);
+double EstimateStepDoublingError(const Vec& coarseDisplacement, const Vec& coarseVelocity, const Vec& fineDisplacement,
+                                 const Vec& fineVelocity, const AdaptiveTimeStepSettings& settings, int methodOrder);
 }

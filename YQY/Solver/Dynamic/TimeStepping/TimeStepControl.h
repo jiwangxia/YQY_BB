@@ -4,11 +4,13 @@
  */
 #pragma once
 
+#include <algorithm>
+
 namespace SolverNameSpace
 {
 enum class TimeStepMode
 {
-    Fixed,    ///< 始终采用用户指定的标准步长；仅在非线性求解失败时按求解器自身规则回退。
+    Fixed,   ///< 始终采用用户指定的标准步长；仅在非线性求解失败时按求解器自身规则回退。
     Adaptive ///< 根据局部误差接受或拒绝本步，并为下一步计算新的时间步长。
 };
 
@@ -20,22 +22,49 @@ enum class TimeStepMode
  */
 struct AdaptiveTimeStepSettings
 {
-    double minimumTimeStep = 1.0e-6;      ///< 缩步下限；达到该值仍不合格时终止求解。
-    double maximumTimeStep = 0.5;         ///< 增步上限；避免平稳阶段无限放大时间步。
-    double relativeTolerance = 1.0e-3;    ///< 与当前位移量级相乘的相对容差。
-    double absoluteTolerance = 1.0e-6;    ///< 位移接近零时仍允许的绝对误差。
-    bool includeVelocityInError = false;  ///< 是否将速度纳入误差；速度与位移量纲不同，默认仅控制位移。
-    double safetyFactor = 0.9;            ///< 理论步长乘以该系数，给误差预测留出余量。
-    double shrinkFactor = 0.5;            ///< 拒绝时允许的最大比例；也限制接受步不会缩得过慢。
-    double maximumGrowthFactor = 2.0;     ///< 单次接受后允许的最大增步比例。
-    int maximumRejectedAttempts = 12;     ///< 同一物理时刻最多允许的拒绝重试次数。
+    double minimumTimeStep = 1.0e-6;           ///< 缩步下限；达到该值仍不合格时终止求解。
+    double maximumTimeStep = 0.5;              ///< 增步上限；避免平稳阶段无限放大时间步。
+    double relativeTolerance = 1.0e-3;         ///< 与当前位移量级相乘的相对容差。
+    double absoluteTolerance = 1.0e-6;         ///< 位移接近零时仍允许的绝对误差。
+    bool includeVelocityInError = true;        ///< 是否同时控制速度误差；长时振动建议保持启用。
+    double velocityRelativeTolerance = 1.0e-3; ///< 与当前速度量级相乘的相对容差。
+    double velocityAbsoluteTolerance = 1.0e-6; ///< 速度接近零时仍允许的绝对误差。
+    double safetyFactor = 0.9;                 ///< 理论步长乘以该系数，给误差预测留出余量。
+    double minimumScaleFactor = 0.2;           ///< 单次误差控制允许的最小步长倍率。
+    double maximumGrowthFactor = 2.0;          ///< 单次误差控制允许的最大步长倍率。
+    double solveFailureFactor = 0.5;           ///< 积分或非线性求解失败且没有可信误差时的缩步倍率。
+    int maximumRejectedAttempts = 12;          ///< 同一物理时刻最多允许的拒绝重试次数。
 };
 
 /** @brief 一次步长判定的结果。 */
 struct TimeStepDecision
 {
-    bool accepted = false;    ///< true 时提交当前试算状态；false 时回滚并重试。
+    bool accepted = false;     ///< true 时提交当前试算状态；false 时回滚并重试。
     double nextTimeStep = 0.0; ///< 下一次尝试应使用的时间步长。
+};
+
+/** @brief 选择本次实际步长，并在接近总时长时直接吸附到终点。 */
+double SelectTimeStep(double currentTime, double duration, double proposedTimeStep);
+
+/** @brief 一次求解的时间步统计，用于结果诊断和性能验证。 */
+struct TimeStepStatistics
+{
+    int acceptedSteps = 0;
+    int rejectedAttempts = 0;
+    double minimumAcceptedTimeStep = 0.0;
+    double maximumAcceptedTimeStep = 0.0;
+
+    void RecordAccepted(double timeStep)
+    {
+        ++acceptedSteps;
+        minimumAcceptedTimeStep = acceptedSteps == 1 ? timeStep : std::min(minimumAcceptedTimeStep, timeStep);
+        maximumAcceptedTimeStep = std::max(maximumAcceptedTimeStep, timeStep);
+    }
+
+    void RecordRejected()
+    {
+        ++rejectedAttempts;
+    }
 };
 
 /**
@@ -60,16 +89,14 @@ public:
      * @param methodOrder 积分器全局阶数，例如 Newmark 为 2、经典 RK4 为 4。
      * @return 当前误差合格时 accepted 为 true，同时给出受上下限约束后的下一步步长。
      */
-    TimeStepDecision DecideAccepted(double currentTimeStep, double normalizedError, int methodOrder) const;
+    TimeStepDecision Decide(double currentTimeStep, double normalizedError, int methodOrder) const;
 
     /**
-     * @brief 为误差超限或试算失败的时间步提出缩步重试方案。
+     * @brief 为没有可信误差的积分或非线性求解失败提出缩步重试方案。
      * @param currentTimeStep 被拒绝的时间步长。
-     * @param normalizedError 已知时使用误差阶数预测缩步；非有限值表示求解失败，直接使用 shrinkFactor。
-     * @param methodOrder 积分器全局阶数。
      * @return accepted 恒为 false，nextTimeStep 不小于 minimumTimeStep。
      */
-    TimeStepDecision DecideRejected(double currentTimeStep, double normalizedError, int methodOrder) const;
+    TimeStepDecision DecideSolveFailure(double currentTimeStep) const;
 
 private:
     AdaptiveTimeStepSettings settings_;

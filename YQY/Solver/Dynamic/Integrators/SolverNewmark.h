@@ -73,6 +73,10 @@ public:
     {
         return m_param;
     }
+    const TimeStepStatistics& GetTimeStepStatistics() const
+    {
+        return m_timeStepStatistics;
+    }
 
 private:
     struct StepResult
@@ -85,6 +89,7 @@ private:
     };
 
     Params m_param;
+    TimeStepStatistics m_timeStepStatistics;
     StepCallback m_callback;
 
     /**

@@ -12,7 +12,7 @@
 namespace SolverNameSpace
 {
 static double ScaledMaximumError(const Vec& difference, const Vec& referenceA, const Vec& referenceB,
-                                 const AdaptiveTimeStepSettings& settings)
+                                 double absoluteTolerance, double relativeTolerance)
 {
     if (difference.size() != referenceA.size() || difference.size() != referenceB.size())
         return std::numeric_limits<double>::infinity();
@@ -23,13 +23,11 @@ static double ScaledMaximumError(const Vec& difference, const Vec& referenceA, c
     double maximumError = 0.0;
     for (Eigen::Index index = 0; index < difference.size(); ++index)
     {
-        if (!std::isfinite(difference[index]) || !std::isfinite(referenceA[index]) ||
-            !std::isfinite(referenceB[index]))
+        if (!std::isfinite(difference[index]) || !std::isfinite(referenceA[index]) || !std::isfinite(referenceB[index]))
             return std::numeric_limits<double>::infinity();
 
-        const double scale = settings.absoluteTolerance +
-                             settings.relativeTolerance * std::max(std::abs(referenceA[index]),
-                                                                   std::abs(referenceB[index]));
+        const double scale =
+            absoluteTolerance + relativeTolerance * std::max(std::abs(referenceA[index]), std::abs(referenceB[index]));
         if (!std::isfinite(scale) || scale <= 0.0)
             return std::numeric_limits<double>::infinity();
 
@@ -38,12 +36,14 @@ static double ScaledMaximumError(const Vec& difference, const Vec& referenceA, c
     return maximumError;
 }
 
-double EstimateStepDoublingError(const Vec& coarseDisplacement, const Vec& coarseVelocity,
-                                 const Vec& fineDisplacement, const Vec& fineVelocity,
-                                 const AdaptiveTimeStepSettings& settings, int methodOrder)
+double EstimateStepDoublingError(const Vec& coarseDisplacement, const Vec& coarseVelocity, const Vec& fineDisplacement,
+                                 const Vec& fineVelocity, const AdaptiveTimeStepSettings& settings, int methodOrder)
 {
     if (methodOrder < 1 || !std::isfinite(settings.absoluteTolerance) || settings.absoluteTolerance <= 0.0 ||
-        !std::isfinite(settings.relativeTolerance) || settings.relativeTolerance <= 0.0)
+        !std::isfinite(settings.relativeTolerance) || settings.relativeTolerance <= 0.0 ||
+        (settings.includeVelocityInError &&
+         (!std::isfinite(settings.velocityAbsoluteTolerance) || settings.velocityAbsoluteTolerance <= 0.0 ||
+          !std::isfinite(settings.velocityRelativeTolerance) || settings.velocityRelativeTolerance <= 0.0)))
         return std::numeric_limits<double>::infinity();
 
     // Richardson 步长加倍关系：细解误差约为 (fine - coarse) / (2^p - 1)。
@@ -51,13 +51,16 @@ double EstimateStepDoublingError(const Vec& coarseDisplacement, const Vec& coars
     if (!std::isfinite(denominator) || denominator <= 0.0)
         return std::numeric_limits<double>::infinity();
     const double displacementError =
-        ScaledMaximumError(fineDisplacement - coarseDisplacement, coarseDisplacement, fineDisplacement, settings) /
+        ScaledMaximumError(fineDisplacement - coarseDisplacement, coarseDisplacement, fineDisplacement,
+                           settings.absoluteTolerance, settings.relativeTolerance) /
         denominator;
     if (!settings.includeVelocityInError)
         return displacementError;
 
     const double velocityError =
-        ScaledMaximumError(fineVelocity - coarseVelocity, coarseVelocity, fineVelocity, settings) / denominator;
+        ScaledMaximumError(fineVelocity - coarseVelocity, coarseVelocity, fineVelocity,
+                           settings.velocityAbsoluteTolerance, settings.velocityRelativeTolerance) /
+        denominator;
     return std::max(displacementError, velocityError);
 }
 }

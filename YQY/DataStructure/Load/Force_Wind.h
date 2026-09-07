@@ -13,6 +13,7 @@ public:
     // the legacy TSSBN +Z inflow (legacy Y was vertical).
     Eigen::Vector3d m_direction = -Eigen::Vector3d::UnitY(); // 全局风向，使用时归一化
     double m_windDensity = 1.225;                            // 风密度，海平面标准空气密度 kg/m³
+    bool m_EnableAerodynamicMoment = true;                   // 舞动气动力矩开关，验证时可只保留升力和阻力
 
     Eigen::Vector3d GetWindVelocityGlobal() const
     {

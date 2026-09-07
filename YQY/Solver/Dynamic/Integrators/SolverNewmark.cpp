@@ -3,6 +3,7 @@
  * @brief Newmark-beta 非线性动力求解器。
  */
 #include "SolverNewmark.h"
+#include "../TimeStepping/StateCheckpointGuard.h"
 #include "../TimeStepping/TimeStepError.h"
 #include "Solver/Constraint/NonlinearMPC.h"
 
@@ -33,12 +34,13 @@ void SolverNewmark::ComputeCoeffs(double timeStep)
 
 bool SolverNewmark::Solve(IAnalysisModel& model, double duration)
 {
+    m_timeStepStatistics = {};
     qDebug().noquote() << QStringLiteral("开始 Newmark 动力非线性求解...");
     const int dofCount = model.GetFreeDofs();
     if (dofCount <= 0 || !std::isfinite(duration) || duration <= 0.0 || !std::isfinite(m_param.dt) ||
-        m_param.dt <= 0.0 || !std::isfinite(m_param.beta) || m_param.beta <= 0.0 ||
-        !std::isfinite(m_param.gamma) || m_param.gamma < 0.0 || m_param.maxIter < 1 || !std::isfinite(m_param.tol) ||
-        m_param.tol <= 0.0 || !std::isfinite(m_param.constraintTolerance) || m_param.constraintTolerance <= 0.0)
+        m_param.dt <= 0.0 || !std::isfinite(m_param.beta) || m_param.beta <= 0.0 || !std::isfinite(m_param.gamma) ||
+        m_param.gamma < 0.0 || m_param.maxIter < 1 || !std::isfinite(m_param.tol) || m_param.tol <= 0.0 ||
+        !std::isfinite(m_param.constraintTolerance) || m_param.constraintTolerance <= 0.0)
     {
         qDebug().noquote() << QStringLiteral("Newmark 参数无效");
         return false;
@@ -81,12 +83,6 @@ bool SolverNewmark::Solve(IAnalysisModel& model, double duration)
             qDebug().noquote() << QStringLiteral("Newmark 自适应时间步参数无效：%1").arg(error.what());
             return false;
         }
-        if (!model.PushStateCheckpoint())
-        {
-            qDebug().noquote() << QStringLiteral("模型不支持自适应时间步状态检查点");
-            return false;
-        }
-        model.DiscardStateCheckpoint();
     }
 
     m_dx.resize(dofCount);
@@ -113,7 +109,7 @@ bool SolverNewmark::Solve(IAnalysisModel& model, double duration)
         if (model.IsCancellationRequested())
             return false;
 
-        const double timeStep = std::min(nextTimeStep, duration - time);
+        const double timeStep = SelectTimeStep(time, duration, nextTimeStep);
         if (timeStep <= 0.0)
             break;
 
@@ -134,12 +130,14 @@ bool SolverNewmark::Solve(IAnalysisModel& model, double duration)
                 }
                 nextTimeStep = std::max(m_param.minimumTimeStep, timeStep * m_param.cutbackFactor);
                 ++rejectedAttempts;
+                m_timeStepStatistics.RecordRejected();
                 continue;
             }
 
             model.SetNonlinearMPCMultipliers(result.nonlinearMpcMultipliers);
             model.CommitState();
             ++acceptedSteps;
+            m_timeStepStatistics.RecordAccepted(timeStep);
             time += timeStep;
             nextTimeStep = std::min(m_param.dt, timeStep * m_param.recoveryFactor);
             rejectedAttempts = 0;
@@ -153,7 +151,8 @@ bool SolverNewmark::Solve(IAnalysisModel& model, double duration)
             continue;
         }
 
-        if (!model.PushStateCheckpoint())
+        StateCheckpointGuard checkpoint(model);
+        if (!checkpoint.IsActive())
             return false;
 
         StepResult coarse;
@@ -163,17 +162,20 @@ bool SolverNewmark::Solve(IAnalysisModel& model, double duration)
         Vec ignoredAcceleration;
         if (converged)
             model.GetState(coarseDisplacement, coarseVelocity, ignoredAcceleration);
-        if (!converged || !model.RestoreStateCheckpoint())
+        if (!converged)
         {
-            model.RestoreStateCheckpoint();
-            model.DiscardStateCheckpoint();
-            const TimeStepDecision decision = adaptiveController->DecideRejected(timeStep, 1.0, 2);
+            if (!checkpoint.Restore())
+                return false;
+            const TimeStepDecision decision = adaptiveController->DecideSolveFailure(timeStep);
             if (decision.nextTimeStep >= timeStep ||
                 ++rejectedAttempts > m_param.adaptiveTimeStep.maximumRejectedAttempts)
                 return false;
+            m_timeStepStatistics.RecordRejected();
             nextTimeStep = decision.nextTimeStep;
             continue;
         }
+        if (!checkpoint.Restore())
+            return false;
 
         StepResult firstHalf;
         converged = SolveSingleStep(model, time, 0.5 * timeStep, dampingFactor, firstHalf);
@@ -195,20 +197,19 @@ bool SolverNewmark::Solve(IAnalysisModel& model, double duration)
 
         const double normalizedError =
             converged ? EstimateStepDoublingError(coarseDisplacement, coarseVelocity, fineDisplacement, fineVelocity,
-                                                   m_param.adaptiveTimeStep, 2)
+                                                  m_param.adaptiveTimeStep, 2)
                       : std::numeric_limits<double>::infinity();
-        const TimeStepDecision decision = converged
-                                              ? adaptiveController->DecideAccepted(timeStep, normalizedError, 2)
-                                              : adaptiveController->DecideRejected(timeStep, normalizedError, 2);
+        const TimeStepDecision decision = converged ? adaptiveController->Decide(timeStep, normalizedError, 2)
+                                                    : adaptiveController->DecideSolveFailure(timeStep);
         if (!decision.accepted)
         {
-            model.RestoreStateCheckpoint();
-            model.DiscardStateCheckpoint();
+            if (!checkpoint.Restore())
+                return false;
             if (decision.nextTimeStep >= timeStep ||
                 ++rejectedAttempts > m_param.adaptiveTimeStep.maximumRejectedAttempts)
             {
-                QTextStream(stderr) << "Newmark adaptive step rejected too many times: t=" << time
-                                    << " dt=" << timeStep << " normalized_error=" << normalizedError
+                QTextStream(stderr) << "Newmark adaptive step rejected too many times: t=" << time << " dt=" << timeStep
+                                    << " normalized_error=" << normalizedError
                                     << " rejected_attempts=" << rejectedAttempts << Qt::endl;
                 qDebug().noquote() << QStringLiteral("Newmark 自适应时间步在 t=%1 失败，dt=%2，误差=%3")
                                           .arg(time, 0, 'g', 10)
@@ -216,14 +217,16 @@ bool SolverNewmark::Solve(IAnalysisModel& model, double duration)
                                           .arg(normalizedError, 0, 'g', 8);
                 return false;
             }
+            m_timeStepStatistics.RecordRejected();
             nextTimeStep = decision.nextTimeStep;
             continue;
         }
 
         model.SetNonlinearMPCMultipliers(fine.nonlinearMpcMultipliers);
         model.CommitState();
-        model.DiscardStateCheckpoint();
+        checkpoint.Release();
         ++acceptedSteps;
+        m_timeStepStatistics.RecordAccepted(timeStep);
         time += timeStep;
         nextTimeStep = decision.nextTimeStep;
         rejectedAttempts = 0;
@@ -232,11 +235,10 @@ bool SolverNewmark::Solve(IAnalysisModel& model, double duration)
         if (m_callback)
             m_callback(acceptedSteps, time, m_Un);
         model.OnStepCompleted(time);
-        model.ReportProgress(std::min(1.0, time / duration),
-                             QStringLiteral("自适应 Newmark 第 %1 步，dt=%2，误差=%3")
-                                 .arg(acceptedSteps)
-                                 .arg(timeStep, 0, 'g', 6)
-                                 .arg(normalizedError, 0, 'g', 4));
+        model.ReportProgress(std::min(1.0, time / duration), QStringLiteral("自适应 Newmark 第 %1 步，dt=%2，误差=%3")
+                                                                 .arg(acceptedSteps)
+                                                                 .arg(timeStep, 0, 'g', 6)
+                                                                 .arg(normalizedError, 0, 'g', 4));
     }
 
     qDebug().noquote() << QStringLiteral("Newmark 动力求解完成");
@@ -265,8 +267,7 @@ bool SolverNewmark::SolveSingleStep(IAnalysisModel& model, double currentTime, d
         Vec externalForce;
         model.ComputeExternalForce(currentTime + timeStep, 1.0, constrainedForce, externalForce);
         model.AssembleEffectiveTangent(m_c.a0, m_c.a1, m_Keff);
-        if (!externalTangentAssembled ||
-            m_param.aerodynamicTangentMode == AerodynamicTangentMode::EveryNewtonIteration)
+        if (!externalTangentAssembled || m_param.aerodynamicTangentMode == AerodynamicTangentMode::EveryNewtonIteration)
         {
             model.AssembleExternalLoadTangent(currentTime + timeStep, 1.0, m_c.a1, m_externalTangent);
             externalTangentAssembled = true;
@@ -298,8 +299,7 @@ bool SolverNewmark::SolveSingleStep(IAnalysisModel& model, double currentTime, d
             solveRhs = reduction.rhs;
             solveDampingFactor = reduction.masterTransformation.transpose() * dampingFactor;
             if (dampingFactor.cols() > 0)
-                solveRhs -= m_c.a1 * solveDampingFactor *
-                            (dampingFactor.transpose() * reduction.particularCorrection);
+                solveRhs -= m_c.a1 * solveDampingFactor * (dampingFactor.transpose() * reduction.particularCorrection);
             constraintError = reduction.constraintNorm;
             result.nonlinearMpcMultipliers = reduction.multipliers;
         }
@@ -378,8 +378,8 @@ bool SolverNewmark::SolveSingleStep(IAnalysisModel& model, double currentTime, d
                     const Eigen::MatrixXd trialDamping =
                         trialReduction.masterTransformation.transpose() * dampingFactor;
                     trialResidualNorm =
-                        (trialReduction.rhs - m_c.a1 * trialDamping *
-                                                  (dampingFactor.transpose() * trialReduction.particularCorrection))
+                        (trialReduction.rhs -
+                         m_c.a1 * trialDamping * (dampingFactor.transpose() * trialReduction.particularCorrection))
                             .norm();
                 }
                 trialConstraintError = trialReduction.constraintNorm;

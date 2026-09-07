@@ -200,8 +200,9 @@ Vec EvaluateGallopingElementForce(const ElementBase& element, const ElementCable
     const AeroCoefficients coefficients = structure.m_AeroManager.getCoefficients(
         caseData, profileId,
         AeroManager::normalizeAngleDegrees(result.attackAngle * 180.0 / std::acos(-1.0)));
+    const double momentCoefficient = wind.m_EnableAerodynamicMoment ? coefficients.moment : 0.0;
     AerodynamicLoadCalculator::ComputeLineLoad(result, wind.m_windDensity, 2.0 * section->m_Radius,
-                                               coefficients.lift, coefficients.drag, coefficients.moment);
+                                               coefficients.lift, coefficients.drag, momentCoefficient);
 
     Vec elementForce = SpatialUniformLineLoad(element, scale * result.lineForce);
     const double currentLength = (state.secondPosition - state.firstPosition).norm();

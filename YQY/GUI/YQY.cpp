@@ -8,6 +8,7 @@
 #include "Widgets/NavigationButton.h"
 #include "Widgets/SettingsPanel.h"
 #include "Widgets/ResultControlPanel.h"
+#include "Widgets/ResultControlInputWidgets.h"
 #include "Widgets/AnalysisSummaryPanel.h"
 #include "Widgets/PropertyModule.h"
 #include "Widgets/ConductorModule.h"
@@ -18,6 +19,7 @@
 #include "Dialogs/PropertyLibraryDialog.h"
 #include "Dialogs/NodeResultExportDialog.h"
 #include "Dialogs/ElementResultExportDialog.h"
+#include "Dialogs/ResultPlotExportDialog.h"
 #include "Dialogs/FileDialogService.h"
 #include "Application/ApplicationPaths.h"
 #include "Solver/Assembly/AssemblySettings.h"
@@ -41,9 +43,26 @@
 
 #include <cmath>
 #include <QComboBox>
+#include <QAbstractSpinBox>
 #include <QCheckBox>
+#include <QDesktopServices>
+#include <QDir>
+#include <QEvent>
+#include <QFile>
 #include <QFileInfo>
+#include <QFutureWatcher>
+#include <QLocale>
 #include <QMessageBox>
+#include <QPainter>
+#include <QPointer>
+#include <QProcess>
+#include <QStyleOptionComboBox>
+#include <QStyleOptionButton>
+#include <QStyleOptionSpinBox>
+#include <QTextStream>
+#include <QTimer>
+#include <QUrl>
+#include <QtConcurrent/QtConcurrentRun>
 #include <QtSvg/QSvgRenderer>
 
 #ifdef Q_OS_WIN
@@ -55,6 +74,197 @@
 
 namespace
 {
+class InputArrowOverlay final : public QWidget
+{
+public:
+    explicit InputArrowOverlay(QWidget* target)
+        : QWidget(target)
+        , m_target(target)
+    {
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        setAttribute(Qt::WA_NoSystemBackground);
+        m_target->installEventFilter(this);
+        updateGeometry();
+        show();
+    }
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override
+    {
+        if (watched == m_target && (event->type() == QEvent::Resize || event->type() == QEvent::Show ||
+                                    event->type() == QEvent::StyleChange || event->type() == QEvent::EnabledChange ||
+                                    event->type() == QEvent::PaletteChange))
+        {
+            QTimer::singleShot(0, this, [this]() { updateGeometry(); });
+        }
+        return QWidget::eventFilter(watched, event);
+    }
+
+    void paintEvent(QPaintEvent*) override
+    {
+        if (!m_target)
+            return;
+
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        QColor color = m_target->palette().color(m_target->isEnabled() ? QPalette::Active : QPalette::Disabled,
+                                                  QPalette::Text);
+        color.setAlphaF(0.72F);
+        painter.setPen(QPen(color, 1.6, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+
+        if (qobject_cast<QComboBox*>(m_target))
+        {
+            const QPoint center = rect().center();
+            QPainterPath path;
+            path.moveTo(center.x() - 4, center.y() - 2);
+            path.lineTo(center.x(), center.y() + 2);
+            path.lineTo(center.x() + 4, center.y() - 2);
+            painter.drawPath(path);
+            return;
+        }
+
+        painter.drawLine(0, 0, 0, height());
+        DrawChevron(painter, QRect(0, 0, width(), height() / 2), true);
+        DrawChevron(painter, QRect(0, height() / 2, width(), height() - height() / 2), false);
+    }
+
+private:
+    void updateGeometry()
+    {
+        if (!m_target)
+            return;
+
+        QRect arrowRect;
+        if (qobject_cast<QComboBox*>(m_target))
+        {
+            QStyleOptionComboBox option;
+            option.initFrom(m_target);
+            option.rect = m_target->rect();
+            arrowRect = m_target->style()->subControlRect(QStyle::CC_ComboBox, &option, QStyle::SC_ComboBoxArrow,
+                                                           m_target);
+        }
+        else
+        {
+            QStyleOptionSpinBox option;
+            option.initFrom(m_target);
+            option.rect = m_target->rect();
+            const QRect up = m_target->style()->subControlRect(QStyle::CC_SpinBox, &option, QStyle::SC_SpinBoxUp,
+                                                                m_target);
+            const QRect down = m_target->style()->subControlRect(QStyle::CC_SpinBox, &option,
+                                                                  QStyle::SC_SpinBoxDown, m_target);
+            arrowRect = up.united(down);
+        }
+        setGeometry(arrowRect);
+        raise();
+        update();
+    }
+
+    static void DrawChevron(QPainter& painter, const QRect& rect, bool upward)
+    {
+        const QPoint center = rect.center();
+        QPainterPath path;
+        path.moveTo(center.x() - 3, center.y() + (upward ? 1 : -1));
+        path.lineTo(center.x(), center.y() + (upward ? -2 : 2));
+        path.lineTo(center.x() + 3, center.y() + (upward ? 1 : -1));
+        painter.drawPath(path);
+    }
+
+    QPointer<QWidget> m_target;
+};
+
+class CheckboxCheckmarkOverlay final : public QWidget
+{
+public:
+    explicit CheckboxCheckmarkOverlay(QCheckBox* target)
+        : QWidget(target)
+        , m_target(target)
+    {
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        setAttribute(Qt::WA_NoSystemBackground);
+        m_target->installEventFilter(this);
+        connect(m_target, &QCheckBox::toggled, this, [this](bool) { update(); });
+        updateGeometry();
+        show();
+    }
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override
+    {
+        if (watched == m_target && (event->type() == QEvent::Resize || event->type() == QEvent::Show ||
+                                    event->type() == QEvent::StyleChange || event->type() == QEvent::EnabledChange ||
+                                    event->type() == QEvent::PaletteChange))
+        {
+            QTimer::singleShot(0, this, [this]() { updateGeometry(); });
+        }
+        return QWidget::eventFilter(watched, event);
+    }
+
+    void paintEvent(QPaintEvent*) override
+    {
+        if (!m_target || m_target->checkState() == Qt::Unchecked)
+            return;
+
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        QColor color(Qt::white);
+        color.setAlphaF(m_target->isEnabled() ? 0.95F : 0.45F);
+        painter.setPen(QPen(color, 2.2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+
+        QPainterPath path;
+        path.moveTo(width() * 0.31, height() * 0.50);
+        path.lineTo(width() * 0.44, height() * 0.72);
+        path.lineTo(width() * 0.70, height() * 0.28);
+        painter.drawPath(path);
+    }
+
+private:
+    void updateGeometry()
+    {
+        if (!m_target)
+            return;
+
+        QStyleOptionButton option;
+        option.initFrom(m_target);
+        option.rect = m_target->rect();
+        setGeometry(m_target->style()->subElementRect(QStyle::SE_CheckBoxIndicator, &option, m_target));
+        raise();
+        update();
+    }
+
+    QPointer<QCheckBox> m_target;
+};
+
+void installInputControlOverlays(QWidget* root)
+{
+    const auto install = [](QWidget* target)
+    {
+        if (!target || dynamic_cast<ResultSelectionComboBox*>(target) || dynamic_cast<ResultScaleSpinBox*>(target) ||
+            dynamic_cast<ChevronComboBox*>(target) || dynamic_cast<ChevronDoubleSpinBox*>(target) ||
+            dynamic_cast<ChevronSpinBox*>(target) || target->property("inputArrowOverlayInstalled").toBool())
+            return;
+        target->setProperty("inputArrowOverlayInstalled", true);
+        new InputArrowOverlay(target);
+    };
+    const auto installCheckmark = [](QCheckBox* target)
+    {
+        if (!target || target->property("checkboxCheckmarkOverlayInstalled").toBool())
+            return;
+        target->setProperty("checkboxCheckmarkOverlayInstalled", true);
+        new CheckboxCheckmarkOverlay(target);
+    };
+
+    if (qobject_cast<QComboBox*>(root) || qobject_cast<QAbstractSpinBox*>(root))
+        install(root);
+    if (auto* checkBox = qobject_cast<QCheckBox*>(root))
+        installCheckmark(checkBox);
+    for (QComboBox* combo : root->findChildren<QComboBox*>())
+        install(combo);
+    for (QAbstractSpinBox* spin : root->findChildren<QAbstractSpinBox*>())
+        install(spin);
+    for (QCheckBox* checkBox : root->findChildren<QCheckBox*>())
+        installCheckmark(checkBox);
+}
+
 QString solveTaskDisplayStatus(const SolveTaskController::TaskInfo& info)
 {
     if (info.partialResult)
@@ -298,6 +508,8 @@ protected:
             return QObject::eventFilter(watched, event);
 
         auto* widget = qobject_cast<QWidget*>(watched);
+        if (widget)
+            installInputControlOverlays(widget);
         if (widget && widget->isWindow())
         {
             QTimer::singleShot(0, widget,
@@ -1125,7 +1337,8 @@ QDialog#analysisStepEditorDialog,
 QDialog#analysisLoadEditorDialog,
 QDialog#analysisConstraintEditorDialog,
 QDialog#analysisMPCEditorDialog,
-QDialog#nodeResultExportDialog {
+QDialog#nodeResultExportDialog,
+QDialog#resultPlotExportDialog {
     background: $PANEL;
     color: $TEXT;
 }
@@ -1157,6 +1370,18 @@ QDialog#nodeResultExportDialog #exportFieldHint { color: $MUTED; }
 QDialog#nodeResultExportDialog #exportSectionCard {
     background: $ELEVATED; border: 1px solid $BORDER; border-radius: 12px;
 }
+QDialog#resultPlotExportDialog #resultPlotSectionCard {
+    background: $ELEVATED; border: 1px solid $BORDER; border-radius: 12px;
+    margin-top: 10px; padding: 10px 12px 12px 12px;
+}
+QDialog#resultPlotExportDialog QGroupBox#resultPlotSectionCard::title {
+    subcontrol-origin: margin; left: 10px; padding: 0 5px; color: $TEXT; font-weight: 700;
+}
+QDialog#resultPlotExportDialog #plotDialogTitle { font-size: 20px; font-weight: 750; color: $TEXT; }
+QDialog#resultPlotExportDialog #plotDialogSubtitle { color: $MUTED; }
+QDialog#resultPlotExportDialog #plotDialogErrorLabel { color: #F08080; }
+QDialog#resultPlotExportDialog #plotDialogQuietButton { background: $FIELD; }
+QDialog#resultPlotExportDialog #plotDialogButtons { background: transparent; border: none; }
 QDialog#nodeResultExportDialog QGroupBox#exportSectionCard {
     margin-top: 10px; padding: 10px 12px 12px 12px;
 }
@@ -1341,6 +1566,8 @@ QPushButton:disabled, QToolButton:disabled, QLineEdit:disabled, QComboBox:disabl
 #toolBarCard QPushButton, #toolBarCard QToolButton { padding: 0; min-width: 36px; min-height: 34px; }
 #toolBarCard #startSolveButton { padding: 0; }
 #toolBarCard QToolButton:checked { background: $ACCENT_SOFT; border-color: $ACCENT2; color: $TEXT; }
+#exportPlotButton { background: $ACCENT_SOFT; border-color: $ACCENT2; color: $TEXT; min-height: 34px; }
+#exportPlotButton:hover { background: $ACCENT2; }
 
 QTreeWidget { background: transparent; border: none; alternate-background-color: transparent; padding: 2px; }
 QTreeWidget::item { min-height: 27px; border-radius: 6px; padding: 2px 4px; }
@@ -1468,7 +1695,7 @@ QSlider::sub-page:horizontal { background: $ACCENT2; border-radius: 2px; }
 QSlider::handle:horizontal { background: $TEXT; border: 2px solid $ACCENT2; width: 14px; height: 14px; margin: -6px 0; border-radius: 8px; }
 QCheckBox { spacing: 10px; }
 QCheckBox::indicator { width: 34px; height: 18px; border-radius: 9px; background: $BORDER_STRONG; border: 1px solid $BORDER; }
-QCheckBox::indicator:checked { image: url(:/YQY/icon_check.svg); background: $ACCENT2; border-color: $ACCENT2; }
+QCheckBox::indicator:checked { image: none; background: $ACCENT2; border-color: $ACCENT2; }
 QSplitter::handle { background: $BORDER; }
 QSplitter::handle:horizontal { width: 4px; }
 QSplitter::handle:vertical { height: 6px; }
@@ -1842,9 +2069,25 @@ bool YQY::saveNodeExportPreview(const QString& filePath)
 void YQY::initializeResultModule()
 {
     m_resultPanel = new ResultControlPanel(ui.resultModulePage);
+    ui.resultCaseCombo->setMinimumWidth(0);
+    ui.resultCaseCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    connect(ui.resultCaseCombo, qOverload<int>(&QComboBox::currentIndexChanged), this,
+            [this](int index)
+            {
+                if (index < 0)
+                    return;
+                loadSolveTaskResult(ui.resultCaseCombo->itemData(index).toInt());
+            });
+    connect(m_resultPanel->stepCombo(), qOverload<int>(&QComboBox::currentIndexChanged), this,
+            [this](int index)
+            {
+                if (index >= 0)
+                    applyResultStepFilter(m_resultPanel->stepCombo()->itemData(index).toInt());
+            });
     setActionGlyph(m_resultPanel->exportButton(), ActionGlyph::Export);
     setActionGlyph(m_resultPanel->exportElementButton(), ActionGlyph::Export);
     setActionGlyph(m_resultPanel->exportIterationButton(), ActionGlyph::Export);
+    setActionGlyph(m_resultPanel->exportPlotButton(), ActionGlyph::Export);
     ui.resultModuleLayout->insertWidget(3, m_resultPanel);
     m_resultPanel->setFrameChangedHandler(
         [this](double framePosition)
@@ -1886,6 +2129,11 @@ void YQY::initializeResultModule()
         [this]()
         {
             exportIterationHistory();
+        });
+    m_resultPanel->setPlotExportHandler(
+        [this]()
+        {
+            exportResultPlot();
         });
 }
 
@@ -2198,6 +2446,11 @@ void YQY::editPropertyItem(QTreeWidgetItem* item, int)
         connect(buttons, &QDialogButtonBox::accepted, &dialog,
                 [&]()
                 {
+                    young->interpretText();
+                    poisson->interpretText();
+                    density->interpretText();
+                    stress->interpretText();
+                    expansion->interpretText();
                     if (kind == 1)
                     {
                         preset.young = young->value();
@@ -2271,6 +2524,9 @@ void YQY::editPropertyItem(QTreeWidgetItem* item, int)
         connect(buttons, &QDialogButtonBox::accepted, &dialog,
                 [&]()
                 {
+                    area->interpretText();
+                    width->interpretText();
+                    height->interpretText();
                     if (kind == 3)
                     {
                         preset.area = area->value();
@@ -2960,7 +3216,9 @@ void YQY::initializeInteractions()
     connect(ui.solveStepTree, &QTreeWidget::itemSelectionChanged, this,
             [this]()
             {
-                updateTaskMonitor(selectedSolveTaskId());
+                const int taskId = selectedSolveTaskId();
+                updateTaskMonitor(taskId);
+                loadSolveTaskResult(taskId);
             });
     connect(m_solveTaskController, &SolveTaskController::taskAdded, this,
             [this](int taskId)
@@ -2975,6 +3233,7 @@ void YQY::initializeInteractions()
             {
                 updateSolveTaskRow(taskId);
                 refreshSolveTaskManager();
+                refreshResultCases();
                 const auto info = m_solveTaskController->taskInfo(taskId);
                 if (info.status == SolveTaskController::Status::Queued && m_resultPanel &&
                     QFileInfo(m_resultPanel->resultFilePath()).absoluteFilePath() ==
@@ -3982,6 +4241,169 @@ void YQY::openHdf5Result()
         setWorkspaceMessage(QStringLiteral("已打开 %1 个 H5 结果文件").arg(loadedCount));
 }
 
+bool YQY::resultTaskBelongsToActiveModel(const QString& sourceFile) const
+{
+    if (!m_modelController || sourceFile.trimmed().isEmpty())
+        return false;
+
+    const QString sourcePath = QFileInfo(sourceFile).absoluteFilePath();
+    const QString activeModelPath = QFileInfo(m_modelController->filePath()).absoluteFilePath();
+    if (!activeModelPath.isEmpty() && sourcePath.compare(activeModelPath, Qt::CaseInsensitive) == 0)
+    {
+        return true;
+    }
+
+    if (m_resultSourceModelName.isEmpty())
+        return false;
+    return QFileInfo(sourceFile).completeBaseName().compare(QFileInfo(m_resultSourceModelName).completeBaseName(),
+                                                            Qt::CaseInsensitive) == 0;
+}
+
+void YQY::refreshResultCases(int preferredTaskId)
+{
+    if (!m_solveTaskController || !ui.resultCaseCombo)
+        return;
+
+    auto* combo = ui.resultCaseCombo;
+    int selectedTaskId = preferredTaskId > 0 ? preferredTaskId : m_resultTaskId;
+    if (selectedTaskId <= 0 && combo->currentIndex() >= 0)
+        selectedTaskId = combo->currentData().toInt();
+
+    const QSignalBlocker blocker(combo);
+    combo->clear();
+    for (const int taskId : m_solveTaskController->taskIds())
+    {
+        const auto info = m_solveTaskController->taskInfo(taskId);
+        if (!info.hasUsableResult || !QFileInfo::exists(info.outputFile) ||
+            !resultTaskBelongsToActiveModel(info.sourceFile))
+        {
+            continue;
+        }
+
+        const QString stepText = info.analysisStepId > 0 ? QStringLiteral("分析步 %1").arg(info.analysisStepId)
+                                                         : QStringLiteral("全部分析步");
+        combo->addItem(QStringLiteral("%1 · %2").arg(stepText, QFileInfo(info.outputFile).completeBaseName()), taskId);
+    }
+
+    if (combo->count() == 0)
+    {
+        combo->setEnabled(false);
+        return;
+    }
+
+    int selectedIndex = combo->findData(selectedTaskId);
+    if (selectedIndex < 0 && m_resultPanel && !m_resultPanel->resultFilePath().isEmpty())
+    {
+        for (int index = 0; index < combo->count(); ++index)
+        {
+            const auto info = m_solveTaskController->taskInfo(combo->itemData(index).toInt());
+            if (QFileInfo(info.outputFile).absoluteFilePath().compare(m_resultPanel->resultFilePath(),
+                                                                       Qt::CaseInsensitive) == 0)
+            {
+                selectedIndex = index;
+                break;
+            }
+        }
+    }
+    combo->setCurrentIndex(selectedIndex >= 0 ? selectedIndex : combo->count() - 1);
+    combo->setEnabled(true);
+}
+
+void YQY::loadSolveTaskResult(int taskId)
+{
+    if (taskId <= 0 || !m_solveTaskController)
+        return;
+
+    const auto info = m_solveTaskController->taskInfo(taskId);
+    if (!info.hasUsableResult || !QFileInfo::exists(info.outputFile))
+        return;
+
+    const QString resultFile = QFileInfo(info.outputFile).absoluteFilePath();
+    if (resultFile.compare(m_resultPanel->resultFilePath(), Qt::CaseInsensitive) == 0)
+        return;
+
+    loadHdf5Result(resultFile, false, false, info.partialResult);
+}
+
+void YQY::refreshResultSteps(int preferredStepId)
+{
+    auto* combo = m_resultPanel->stepCombo();
+    const QSignalBlocker blocker(combo);
+    combo->clear();
+
+    std::vector<int> stepIds;
+    for (const auto& frame : m_allResultFrames)
+    {
+        if (std::find(stepIds.cbegin(), stepIds.cend(), frame.stepId) == stepIds.cend())
+            stepIds.push_back(frame.stepId);
+    }
+    if (stepIds.empty())
+    {
+        combo->setEnabled(false);
+        return;
+    }
+
+    if (stepIds.size() > 1)
+        combo->addItem(QStringLiteral("全部分析步"), 0);
+    const auto structure = m_modelController->model();
+    for (const int stepId : stepIds)
+    {
+        QString label = QStringLiteral("分析步 %1").arg(stepId);
+        if (structure)
+        {
+            const auto stepIt = structure->m_AnalysisStep.find(stepId);
+            if (stepIt != structure->m_AnalysisStep.cend() && stepIt->second &&
+                !stepIt->second->m_Name.trimmed().isEmpty())
+            {
+                label += QStringLiteral(" · %1").arg(stepIt->second->m_Name.trimmed());
+            }
+        }
+        combo->addItem(label, stepId);
+    }
+
+    int selectedIndex = combo->findData(preferredStepId);
+    if (selectedIndex < 0)
+        selectedIndex = combo->count() - 1;
+    combo->setCurrentIndex(selectedIndex);
+    combo->setEnabled(combo->count() > 1);
+}
+
+void YQY::applyResultStepFilter(int stepId)
+{
+    if (!m_resultPanel)
+        return;
+
+    m_resultStepId = stepId;
+    auto& frames = m_resultPanel->frames();
+    frames.clear();
+    m_resultFrameSourceIndices.clear();
+    for (int index = 0; index < static_cast<int>(m_allResultFrames.size()); ++index)
+    {
+        const auto& frame = m_allResultFrames[static_cast<std::size_t>(index)];
+        if (stepId > 0 && frame.stepId != stepId)
+            continue;
+        frames.push_back(frame);
+        m_resultFrameSourceIndices.push_back(index);
+    }
+
+    m_resultPanel->stopPlayback();
+    auto* slider = m_resultPanel->frameSlider();
+    const QSignalBlocker blocker(slider);
+    slider->setRange(0, std::max(0, static_cast<int>(frames.size()) - 1));
+    slider->setValue(0);
+    slider->setEnabled(!frames.empty());
+    m_resultPanel->playButton()->setEnabled(frames.size() > 1);
+    if (!frames.empty())
+        displayResultFrame(0);
+}
+
+bool YQY::readResultFrame(int frameIndex, _OUT Hdf5ResultFrame& frame)
+{
+    if (frameIndex < 0 || frameIndex >= static_cast<int>(m_resultFrameSourceIndices.size()))
+        return false;
+    return m_resultDataController->readFrame(m_resultFrameSourceIndices[static_cast<std::size_t>(frameIndex)], frame);
+}
+
 void YQY::exportNodeResults()
 {
     auto* m_resultPlayButton = m_resultPanel->playButton();
@@ -4198,6 +4620,189 @@ void YQY::exportIterationHistory()
     }
 }
 
+void YQY::exportResultPlot()
+{
+    const QString sourceFile = m_resultPanel->resultFilePath();
+    const auto& frames = m_resultPanel->frames();
+    if (sourceFile.isEmpty() || frames.empty())
+    {
+        QMessageBox::information(this, QStringLiteral("尚无可绘图结果"),
+                                 QStringLiteral("请先加载包含结果帧的 H5 结果文件。"));
+        return;
+    }
+    QSet<int> availableNodes;
+    if (const auto structure = m_modelController->model())
+    {
+        for (const auto& [nodeId, node] : structure->Nodes())
+        {
+            if (node)
+                availableNodes.insert(nodeId);
+        }
+    }
+    ResultPlotExportDialog dialog(sourceFile, availableNodes, m_selectedNodeId, this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+    const ResultPlotSelection selection = dialog.selection();
+    QString csvFile = selection.outputFile;
+    if (QFileInfo(csvFile).suffix().isEmpty())
+        csvFile += QStringLiteral(".csv");
+    if (QFileInfo::exists(csvFile) &&
+        QMessageBox::question(this, QStringLiteral("替换已有文件"),
+                              QStringLiteral("文件已经存在，是否替换？\n%1").arg(csvFile),
+                              QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
+        return;
+
+    auto* plotButton = m_resultPanel->exportPlotButton();
+    plotButton->setEnabled(false);
+    plotButton->setText(QStringLiteral("正在导出 CSV…"));
+    setWorkspaceMessage(QStringLiteral("正在导出节点 %1 的时程数据…").arg(selection.nodeId));
+
+    const int nodeId = selection.nodeId;
+    auto* watcher = new QFutureWatcher<bool>(this);
+    connect(watcher, &QFutureWatcher<bool>::finished, this,
+            [this, watcher, plotButton, csvFile, nodeId]()
+            {
+                const bool succeeded = watcher->result();
+                watcher->deleteLater();
+                if (!succeeded)
+                {
+                    plotButton->setEnabled(true);
+                    plotButton->setText(QStringLiteral("导出数据并生成曲线"));
+                    setWorkspaceMessage(QStringLiteral("时程数据导出失败"));
+                    QMessageBox::critical(this, QStringLiteral("导出失败"),
+                                          QStringLiteral("无法读取 H5 结果或写入 CSV 文件，请检查结果文件和保存路径。"));
+                    return;
+                }
+
+                QString scriptFile;
+                const QStringList candidates = {
+                    QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(QStringLiteral("Tools/result_plot.py")),
+                    QDir::current().absoluteFilePath(QStringLiteral("YQY/Tools/result_plot.py")),
+                    QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(QStringLiteral("../../YQY/Tools/result_plot.py"))};
+                for (const QString& candidate : candidates)
+                {
+                    if (QFileInfo(candidate).isFile())
+                    {
+                        scriptFile = QFileInfo(candidate).absoluteFilePath();
+                        break;
+                    }
+                }
+                if (scriptFile.isEmpty())
+                {
+                    plotButton->setEnabled(true);
+                    plotButton->setText(QStringLiteral("导出数据并生成曲线"));
+                    setWorkspaceMessage(QStringLiteral("CSV 已导出，但未找到 Python 绘图脚本"));
+                    QMessageBox::warning(this, QStringLiteral("CSV 已导出"),
+                                         QStringLiteral("CSV 已保存，但未找到 YQY/Tools/result_plot.py。"));
+                    return;
+                }
+
+                const QString imageFile = QFileInfo(csvFile).absolutePath() + QDir::separator() +
+                                          QFileInfo(csvFile).completeBaseName() + QStringLiteral(".png");
+                auto* process = new QProcess(this);
+                process->setProcessChannelMode(QProcess::MergedChannels);
+                const QStringList arguments = {scriptFile, QStringLiteral("--input"), csvFile,
+                                               QStringLiteral("--output"), imageFile};
+                plotButton->setText(QStringLiteral("正在生成曲线…"));
+                setWorkspaceMessage(QStringLiteral("正在调用 Python 生成结果图…"));
+                connect(process, &QProcess::errorOccurred, this,
+                        [this, process, plotButton](QProcess::ProcessError error)
+                        {
+                            if (error != QProcess::FailedToStart)
+                                return;
+                            plotButton->setEnabled(true);
+                            plotButton->setText(QStringLiteral("导出数据并生成曲线"));
+                            setWorkspaceMessage(QStringLiteral("CSV 已导出，但 Python 未能启动"));
+                            QMessageBox::warning(this, QStringLiteral("绘图未完成"),
+                                                 QStringLiteral("CSV 已导出，但无法启动 Python。请确认 Python 已安装并已加入 PATH。"));
+                            process->deleteLater();
+                        });
+                connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
+                        [this, process, plotButton, csvFile, imageFile, nodeId](int exitCode,
+                                                                                 QProcess::ExitStatus exitStatus)
+                        {
+                            const bool plotted = exitStatus == QProcess::NormalExit && exitCode == 0 &&
+                                          QFileInfo(imageFile).isFile();
+                            plotButton->setEnabled(true);
+                            plotButton->setText(QStringLiteral("导出数据并生成曲线"));
+                            if (plotted)
+                            {
+                                ui.logEdit->appendPlainText(QStringLiteral("[INFO] 节点 %1 曲线已生成：%2")
+                                                                .arg(nodeId)
+                                                                .arg(imageFile));
+                                setWorkspaceMessage(QStringLiteral("结果图生成完成 · %1")
+                                                        .arg(QFileInfo(imageFile).fileName()));
+                                QDesktopServices::openUrl(QUrl::fromLocalFile(imageFile));
+                            }
+                            else
+                            {
+                                setWorkspaceMessage(QStringLiteral("CSV 已导出，但 Python 绘图失败"));
+                                const QString details = QString::fromLocal8Bit(process->readAllStandardOutput());
+                                QMessageBox::warning(this, QStringLiteral("绘图未完成"),
+                                                     QStringLiteral("CSV 已导出，但 Python 绘图失败。\n%1")
+                                                         .arg(details.trimmed()));
+                            }
+                            process->deleteLater();
+                        });
+                process->start(QStringLiteral("python"), arguments);
+            });
+    watcher->setFuture(QtConcurrent::run(
+        [sourceFile, csvFile, selection, nodeId]()
+        {
+            Hdf5ResultReader reader;
+            std::vector<Hdf5ResultFrameInfo> loadedFrames;
+            if (!reader.open(sourceFile, loadedFrames))
+                return false;
+
+            QFile output(csvFile);
+            if (!output.open(QIODevice::WriteOnly | QIODevice::Text))
+                return false;
+
+            QTextStream stream(&output);
+            stream.setLocale(QLocale::c());
+            stream << "time,node_id";
+            if (selection.displacementX)
+                stream << ",ux";
+            if (selection.displacementY)
+                stream << ",uy";
+            if (selection.displacementZ)
+                stream << ",uz";
+            if (selection.twist)
+                stream << ",twist";
+            if (selection.twistRate)
+                stream << ",twist_rate";
+            stream << '\n';
+            for (int frameIndexValue = 0; frameIndexValue < static_cast<int>(loadedFrames.size()); ++frameIndexValue)
+            {
+                Hdf5ResultFrame frame;
+                if (!reader.readFrame(frameIndexValue, frame))
+                    return false;
+                const auto node = std::find_if(frame.nodes.cbegin(), frame.nodes.cend(),
+                                               [nodeId](const Hdf5NodalResult& item)
+                                               {
+                                                   return item.id == nodeId;
+                                               });
+                if (node == frame.nodes.cend())
+                    continue;
+                stream << frame.info.time << ',' << node->id;
+                if (selection.displacementX)
+                    stream << ',' << node->displacement[0];
+                if (selection.displacementY)
+                    stream << ',' << node->displacement[1];
+                if (selection.displacementZ)
+                    stream << ',' << node->displacement[2];
+                if (selection.twist)
+                    stream << ',' << node->displacement[3];
+                if (selection.twistRate)
+                    stream << ',' << node->velocity[3];
+                stream << '\n';
+            }
+            stream.flush();
+            reader.close();
+            return output.error() == QFile::NoError;
+        }));
+}
+
 bool YQY::loadHdf5Result(const QString& filePath, bool showErrors, bool activateResultModule, bool partialResult,
                          QString* failureReason)
 {
@@ -4214,6 +4819,7 @@ bool YQY::loadHdf5Result(const QString& filePath, bool showErrors, bool activate
     auto* m_exportNodeResultsButton = m_resultPanel->exportButton();
     auto* m_exportElementResultsButton = m_resultPanel->exportElementButton();
     auto* m_exportIterationButton = m_resultPanel->exportIterationButton();
+    auto* m_exportPlotButton = m_resultPanel->exportPlotButton();
     auto& m_resultFrames = m_resultPanel->frames();
     auto& m_resultFilePath = m_resultPanel->resultFilePath();
     auto& m_resultIsPartial = m_resultPanel->partialResult();
@@ -4271,8 +4877,25 @@ bool YQY::loadHdf5Result(const QString& filePath, bool showErrors, bool activate
 
     m_resultFilePath = QFileInfo(filePath).absoluteFilePath();
     m_workspaceController->associateResult(m_modelController->activeModelId(), m_resultFilePath);
+    m_resultSourceModelName = embeddedModel->m_OutputControl.m_SourceModelName.trimmed();
+    if (m_resultSourceModelName.isEmpty())
+        m_resultSourceModelName = m_modelController->filePath();
+    m_resultTaskId = -1;
+    for (const int taskId : m_solveTaskController->taskIds())
+    {
+        const auto taskInfo = m_solveTaskController->taskInfo(taskId);
+        if (QFileInfo(taskInfo.outputFile).absoluteFilePath().compare(m_resultFilePath, Qt::CaseInsensitive) == 0)
+        {
+            m_resultTaskId = taskId;
+            break;
+        }
+    }
     m_resultIsPartial = partialResult;
-    m_resultFrames = std::move(indexedFrames);
+    m_allResultFrames = std::move(indexedFrames);
+    const int preferredStepId = m_allResultFrames.empty() ? 0 : m_allResultFrames.back().stepId;
+    refreshResultSteps(preferredStepId);
+    applyResultStepFilter(preferredStepId);
+    refreshResultCases(m_resultTaskId);
     if (m_resultRanges.displacementMagnitude.valid)
     {
         m_resultAutomaticScale =
@@ -4281,7 +4904,7 @@ bool YQY::loadHdf5Result(const QString& filePath, bool showErrors, bool activate
     else
     {
         Hdf5ResultFrame scaleReferenceFrame;
-        if (m_resultDataController->readFrame(static_cast<int>(m_resultFrames.size()) - 1, scaleReferenceFrame) &&
+        if (readResultFrame(static_cast<int>(m_resultFrames.size()) - 1, scaleReferenceFrame) &&
             ui.modelViewport->displayResultFrame(scaleReferenceFrame, ModelViewport::ResultField::DisplacementMagnitude,
                                                  0.0, false))
         {
@@ -4299,6 +4922,7 @@ bool YQY::loadHdf5Result(const QString& filePath, bool showErrors, bool activate
     m_exportNodeResultsButton->setEnabled(true);
     m_exportElementResultsButton->setEnabled(true);
     m_exportIterationButton->setEnabled(true);
+    m_exportPlotButton->setEnabled(true);
 
     ui.resultFileLabel->setText(partialResult ? QStringLiteral("%1 · 部分结果").arg(QFileInfo(filePath).fileName())
                                               : QFileInfo(filePath).fileName());
@@ -4381,7 +5005,7 @@ void YQY::displayResultPosition(double framePosition)
     const double interpolation = framePosition - static_cast<double>(frameIndex);
     Hdf5ResultFrame currentFrame;
     Hdf5ResultFrame nextFrame;
-    if (!m_resultDataController->readFramePair(frameIndex, nextFrameIndex, currentFrame, nextFrame))
+    if (!readResultFrame(frameIndex, currentFrame) || !readResultFrame(nextFrameIndex, nextFrame))
     {
         m_resultFrameLabel->setText(QStringLiteral("第 %1 帧读取失败").arg(frameIndex + 1));
         m_resultTimeLabel->setText(QStringLiteral("--"));
@@ -4435,7 +5059,12 @@ void YQY::clearActiveResultContext()
     m_resultPanel->stopPlayback();
     m_resultDataController->close();
     m_resultPanel->frames().clear();
+    m_allResultFrames.clear();
+    m_resultFrameSourceIndices.clear();
+    m_resultStepId = 0;
     m_resultPanel->resultFilePath().clear();
+    m_resultTaskId = -1;
+    m_resultSourceModelName.clear();
     m_resultPanel->partialResult() = false;
     m_resultPanel->automaticScale() = 1.0;
     m_resultRanges = {};
@@ -4450,6 +5079,17 @@ void YQY::clearActiveResultContext()
     m_resultPanel->exportButton()->setEnabled(false);
     m_resultPanel->exportElementButton()->setEnabled(false);
     m_resultPanel->exportIterationButton()->setEnabled(false);
+    m_resultPanel->exportPlotButton()->setEnabled(false);
+    {
+        const QSignalBlocker blocker(ui.resultCaseCombo);
+        ui.resultCaseCombo->clear();
+    }
+    ui.resultCaseCombo->setEnabled(false);
+    {
+        const QSignalBlocker blocker(m_resultPanel->stepCombo());
+        m_resultPanel->stepCombo()->clear();
+    }
+    m_resultPanel->stepCombo()->setEnabled(false);
     m_resultPanel->frameLabel()->setText(QStringLiteral("--"));
     m_resultPanel->timeValueLabel()->setText(QStringLiteral("--"));
     m_resultPanel->deformationValueLabel()->setText(QStringLiteral("--"));

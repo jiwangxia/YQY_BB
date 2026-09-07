@@ -17,6 +17,7 @@
 #include "Solver/Factory/SolverFactory.h"
 #include "Solver/Assembly/AssemblySettings.h"
 #include "Solver/Constraint/NonlinearMPC.h"
+#include "Solver/Linear/LinearSystemSolver.h"
 #include <Eigen/SparseCholesky>
 #include <QStringList>
 
@@ -601,8 +602,7 @@ void AnalysisStep::AccumulateElementMatrix(const ElementAssemblyMap& assemblyMap
 }
 
 void AnalysisStep::AccumulateRigidBodyInertiaMatrix(const RigidBodyInertiaAssemblyMap& assemblyMap,
-                                                     const Eigen::MatrixXd& inertiaMatrix,
-                                                     _OUT double* values) const
+                                                    const Eigen::MatrixXd& inertiaMatrix, _OUT double* values) const
 {
     const int dofCount = static_cast<int>(assemblyMap.dofs.size());
     for (int localRow = 0; localRow < dofCount; ++localRow)
@@ -838,6 +838,22 @@ bool AnalysisStep::Solve(bool persistHdf5)
     m_lastFailureReason.clear();
     if (!PrepareData())
         return false;
+    for (const auto& [loadId, load] : m_pData->m_Load)
+    {
+        if (!load)
+        {
+            m_lastFailureReason = QStringLiteral("荷载 %1 为空，无法求解。").arg(loadId);
+            return false;
+        }
+
+        QString timeFunctionError;
+        if (!load->ValidateTimeFunction(timeFunctionError))
+        {
+            m_lastFailureReason = QStringLiteral("荷载 %1 时程参数无效：%2").arg(loadId).arg(timeFunctionError);
+            qDebug().noquote() << QStringLiteral("Error:") << m_lastFailureReason;
+            return false;
+        }
+    }
     QString gallopingError;
     if (!ValidateGallopingConfiguration(&gallopingError))
     {
@@ -865,8 +881,10 @@ bool AnalysisStep::Solve(bool persistHdf5)
         if (!PrepareStructuralDamping(dampingError))
         {
             qDebug().noquote() << QStringLiteral("结构阻尼计算失败：") << dampingError;
-            m_lastFailureReason = QStringLiteral("结构阻尼计算失败，动力分析未启动：%1。请编辑该动力分析步，关闭结构阻尼或调整阻尼设置后重新计算。")
-                                       .arg(dampingError);
+            m_lastFailureReason =
+                QStringLiteral(
+                    "结构阻尼计算失败，动力分析未启动：%1。请编辑该动力分析步，关闭结构阻尼或调整阻尼设置后重新计算。")
+                    .arg(dampingError);
             return false;
         }
         qDebug().noquote() << m_StructuralDamping.report.summary;
@@ -875,6 +893,17 @@ bool AnalysisStep::Solve(bool persistHdf5)
                                   .arg(m_StructuralDamping.report.translationStiffnessCoefficient, 0, 'g', 8)
                                   .arg(m_StructuralDamping.report.torsionMassCoefficient, 0, 'g', 8)
                                   .arg(m_StructuralDamping.report.torsionStiffnessCoefficient, 0, 'g', 8);
+    }
+
+    if (m_Type == EnumKeyword::StepType::DYNAMIC)
+    {
+        QString accelerationError;
+        if (!InitializeConsistentDynamicAcceleration(0.0, accelerationError))
+        {
+            m_lastFailureReason = QStringLiteral("动力步初始加速度计算失败：%1").arg(accelerationError);
+            qDebug().noquote() << QStringLiteral("Error:") << m_lastFailureReason;
+            return false;
+        }
     }
 
     //solver为求解器类型指针，使用工厂模式创建对应的求解器实例
@@ -951,6 +980,105 @@ bool AnalysisStep::Solve(bool persistHdf5)
     }
 
     return solveOk;
+}
+
+bool AnalysisStep::InitializeConsistentDynamicAcceleration(double time, QString& errorMessage)
+{
+    if (!m_pData || m_Type != EnumKeyword::StepType::DYNAMIC || m_nFree <= 0)
+    {
+        errorMessage = QStringLiteral("动力模型或自由度尚未初始化");
+        return false;
+    }
+
+    VectorXd displacement;
+    VectorXd velocity;
+    VectorXd ignoredAcceleration;
+    Get_CurrentStepState(displacement, velocity, ignoredAcceleration);
+    SetTrialKinematics(velocity, VectorXd::Zero(m_nFree));
+
+    SpMat mass;
+    SpMat gyroscopic;
+    SpMat centrifugal;
+    AssembleDynamicSystem(mass, gyroscopic, centrifugal);
+    UpdateInternalForce();
+
+    VectorXd constrainedForce;
+    VectorXd externalForce;
+    VectorXd residual;
+    ComputeExternalForce(time, 1.0, constrainedForce, externalForce);
+    ComputeResidual(externalForce, residual);
+    if (mass.rows() != m_nFree || mass.cols() != m_nFree || residual.size() != m_nFree || !residual.allFinite())
+    {
+        errorMessage = QStringLiteral("质量矩阵或初始残差维数无效");
+        return false;
+    }
+
+    SolverNameSpace::NonlinearMPCData constraints;
+    if (!AssembleNonlinearMPC(constraints))
+    {
+        errorMessage = QStringLiteral("无法组装初始状态的 MPC 约束");
+        return false;
+    }
+    if (!constraints.Empty() && constraints.value.norm() > 1.0e-9)
+    {
+        errorMessage =
+            QStringLiteral("初始构型不满足 MPC 位置约束，残差为 %1").arg(constraints.value.norm(), 0, 'g', 8);
+        return false;
+    }
+
+    SpMat solveMatrix = mass;
+    VectorXd solveRhs = residual;
+    if (!constraints.Empty())
+    {
+        const int constraintCount = static_cast<int>(constraints.value.size());
+        std::vector<Eigen::Triplet<double>> triplets;
+        triplets.reserve(static_cast<std::size_t>(mass.nonZeros()) +
+                         2 * static_cast<std::size_t>(constraints.jacobian.rows() * constraints.jacobian.cols()));
+        for (int outer = 0; outer < mass.outerSize(); ++outer)
+            for (SpMat::InnerIterator entry(mass, outer); entry; ++entry)
+                triplets.emplace_back(entry.row(), entry.col(), entry.value());
+        for (int row = 0; row < constraints.jacobian.rows(); ++row)
+        {
+            for (int column = 0; column < constraints.jacobian.cols(); ++column)
+            {
+                const double value = constraints.jacobian(row, column);
+                if (value == 0.0)
+                    continue;
+                triplets.emplace_back(column, m_nFree + row, value);
+                triplets.emplace_back(m_nFree + row, column, value);
+            }
+        }
+        solveMatrix.resize(m_nFree + constraintCount, m_nFree + constraintCount);
+        solveMatrix.setFromTriplets(triplets.begin(), triplets.end());
+        solveRhs = VectorXd::Zero(m_nFree + constraintCount);
+        solveRhs.head(m_nFree) = residual;
+    }
+
+    SolverNameSpace::LinearSystemSolver solver;
+    solver.SetPreferLdlt(constraints.Empty());
+    VectorXd solution;
+    if (!solver.Solve(solveMatrix, solveRhs, solution) || solution.size() < m_nFree)
+    {
+        errorMessage = QStringLiteral("初始质量方程求解失败");
+        return false;
+    }
+
+    const VectorXd acceleration = solution.head(m_nFree);
+    const double equilibriumError = (mass * acceleration - residual).norm();
+    const double equilibriumScale = std::max(1.0, residual.norm());
+    const double constraintError = constraints.Empty() ? 0.0 : (constraints.jacobian * acceleration).norm();
+    if (!acceleration.allFinite() || !std::isfinite(equilibriumError) || !std::isfinite(constraintError) ||
+        (constraints.Empty() && equilibriumError > 1.0e-8 * equilibriumScale) || constraintError > 1.0e-8)
+    {
+        errorMessage = QStringLiteral("初始加速度平衡检查失败，动力残差=%1，约束残差=%2")
+                           .arg(equilibriumError / equilibriumScale, 0, 'g', 8)
+                           .arg(constraintError, 0, 'g', 8);
+        return false;
+    }
+
+    SetTrialKinematics(velocity, acceleration);
+    StoreCurrentNodeState();
+    return true;
 }
 
 void AnalysisStep::SetRuntimeCallbacks(ProgressCallback progressCallback, CancelCallback cancelCallback)
@@ -1139,8 +1267,7 @@ bool AnalysisStep::PrepareStructuralDamping(QString& errorMessage)
         }
         modalTransformation = reduction.masterTransformation;
     }
-    return m_StructuralDamping.Calculate(stiffness, mass, GetCableTorsionFreeDofs(), modalTransformation,
-                                         errorMessage);
+    return m_StructuralDamping.Calculate(stiffness, mass, GetCableTorsionFreeDofs(), modalTransformation, errorMessage);
 }
 
 void AnalysisStep::ApplyIncrement(const SolverNameSpace::Vec& dx)
@@ -1389,8 +1516,7 @@ void AnalysisStep::AssembleDynamicSystem(SpMat& mass, SpMat& gyroscopic, SpMat& 
     std::vector<Tri> massTriplets;
     std::vector<Tri> gyroscopicTriplets;
     std::vector<Tri> centrifugalTriplets;
-    const std::size_t initialTripletCapacity =
-        (m_pData->m_Elements.size() + m_pData->m_RigidBodyInertias.size()) * 36;
+    const std::size_t initialTripletCapacity = (m_pData->m_Elements.size() + m_pData->m_RigidBodyInertias.size()) * 36;
     massTriplets.reserve(initialTripletCapacity);
     gyroscopicTriplets.reserve(initialTripletCapacity);
     centrifugalTriplets.reserve(initialTripletCapacity);
@@ -1461,7 +1587,7 @@ void AnalysisStep::AssembleEffectiveDynamicSystem(double accelerationDerivative,
 }
 
 void AnalysisStep::AssembleEffectiveTangent(double accelerationDerivative, double velocityDerivative,
-                                             SpMat& effectiveTangent)
+                                            SpMat& effectiveTangent)
 {
     EnsureAssemblyPattern();
     const int requestedThreads = SolverNameSpace::AssemblySettings::ThreadCount();
@@ -1538,6 +1664,17 @@ void AnalysisStep::AssembleEffectiveTangent(double accelerationDerivative, doubl
     }
 }
 
+void AnalysisStep::UpdateInternalForce()
+{
+    MatrixXd unusedStiffness;
+    for (const auto& [elementId, element] : m_pData->m_Elements)
+    {
+        Q_UNUSED(elementId);
+        if (element)
+            element->Get_ke(unusedStiffness);
+    }
+}
+
 void AnalysisStep::GetStructuralDampingFactor(Eigen::MatrixXd& factor) const
 {
     if (m_Type == EnumKeyword::StepType::DYNAMIC && m_StructuralDamping.IsComputed())
@@ -1575,7 +1712,7 @@ bool AnalysisStep::RestoreTrialState()
 
 bool AnalysisStep::PushStateCheckpoint()
 {
-    if (!m_pData)
+    if (!m_pData || m_stateCheckpoint.has_value())
         return false;
 
     StateCheckpoint checkpoint;
@@ -1589,22 +1726,31 @@ bool AnalysisStep::PushStateCheckpoint()
         return false;
 
     checkpoint.mpcMultipliers = m_mpcMultipliers;
+    std::vector<std::shared_ptr<ElementBase>> checkpointedElements;
+    checkpointedElements.reserve(m_pData->m_Elements.size());
     for (const auto& [elementId, element] : m_pData->m_Elements)
     {
         Q_UNUSED(elementId);
-        if (element)
-            element->BackupState();
+        if (!element)
+            continue;
+        if (!element->PushStateCheckpoint())
+        {
+            for (const auto& checkpointedElement : checkpointedElements)
+                checkpointedElement->DiscardStateCheckpoint();
+            return false;
+        }
+        checkpointedElements.push_back(element);
     }
-    m_stateCheckpoints.push_back(std::move(checkpoint));
+    m_stateCheckpoint = std::move(checkpoint);
     return true;
 }
 
 bool AnalysisStep::RestoreStateCheckpoint()
 {
-    if (!m_pData || m_stateCheckpoints.empty())
+    if (!m_pData || !m_stateCheckpoint.has_value())
         return false;
 
-    const StateCheckpoint& checkpoint = m_stateCheckpoints.back();
+    const StateCheckpoint& checkpoint = *m_stateCheckpoint;
     if (checkpoint.nodes.size() != m_pData->m_Nodes.size())
         return false;
     for (const auto& [nodeId, state] : checkpoint.nodes)
@@ -1617,8 +1763,8 @@ bool AnalysisStep::RestoreStateCheckpoint()
     for (const auto& [elementId, element] : m_pData->m_Elements)
     {
         Q_UNUSED(elementId);
-        if (element)
-            element->RestoreState();
+        if (element && !element->RestoreStateCheckpoint())
+            return false;
     }
     m_mpcMultipliers = checkpoint.mpcMultipliers;
     return true;
@@ -1626,12 +1772,20 @@ bool AnalysisStep::RestoreStateCheckpoint()
 
 void AnalysisStep::DiscardStateCheckpoint()
 {
-    if (!m_stateCheckpoints.empty())
-        m_stateCheckpoints.pop_back();
+    if (m_pData && m_stateCheckpoint.has_value())
+    {
+        for (const auto& [elementId, element] : m_pData->m_Elements)
+        {
+            Q_UNUSED(elementId);
+            if (element)
+                element->DiscardStateCheckpoint();
+        }
+    }
+    m_stateCheckpoint.reset();
 }
 
 void AnalysisStep::AssembleExternalLoadTangent(double time, double loadFactor, double velocityDerivative,
-                                                SpMat& externalTangent)
+                                               SpMat& externalTangent)
 {
     externalTangent.resize(m_nFree, m_nFree);
     externalTangent.setZero();
@@ -1643,8 +1797,7 @@ void AnalysisStep::AssembleExternalLoadTangent(double time, double loadFactor, d
     for (const auto& [loadId, load] : m_pData->m_Load)
     {
         Q_UNUSED(loadId);
-        if (!load || load->m_LoadType != EnumKeyword::LoadType::FORCE_WIND ||
-            !IsStepScopedDataActive(load->m_StepId))
+        if (!load || load->m_LoadType != EnumKeyword::LoadType::FORCE_WIND || !IsStepScopedDataActive(load->m_StepId))
             continue;
         double scale = 1.0;
         if (load->m_StepId == m_Id)
@@ -1660,8 +1813,8 @@ void AnalysisStep::AssembleExternalLoadTangent(double time, double loadFactor, d
         return;
 
     LoadAssembler::AssembleGallopingTangent(*gallopingWind, *m_pData, m_gallopingProfileBindings,
-                                            m_GallopingIceThickness, m_GallopingInitialAttackDegrees, m_nFixed,
-                                            m_nFree, gallopingScale, velocityDerivative, externalTangent);
+                                            m_GallopingIceThickness, m_GallopingInitialAttackDegrees, m_nFixed, m_nFree,
+                                            gallopingScale, velocityDerivative, externalTangent);
 }
 
 void AnalysisStep::EvaluateDynamicElement(ElementBase& element, _OUT DynamicElementData& result)

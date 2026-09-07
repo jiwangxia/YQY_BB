@@ -1,5 +1,6 @@
 ﻿#pragma once
 #include "Base/Base.h"
+#include <QString>
 #include <cmath>
 
 /**
@@ -48,7 +49,68 @@ public:
 
     bool IsActive(double time) const
     {
-        return (time >= m_StartTime && time <= m_EndTime);
+        return std::isfinite(time) && time >= m_StartTime && time <= m_EndTime;
+    }
+
+    bool ValidateTimeFunction(_OUT QString& errorMessage) const
+    {
+        if (!std::isfinite(m_StartTime) || !std::isfinite(m_EndTime) || m_StartTime > m_EndTime)
+        {
+            errorMessage = QStringLiteral("荷载作用时间窗口必须为有限数值，且 StartTime 不得大于 EndTime。");
+            return false;
+        }
+
+        switch (m_FunctionType)
+        {
+            case TimeFunctionType::CONSTANT:
+                return true;
+
+            case TimeFunctionType::SIN:
+            case TimeFunctionType::COS:
+                if (!std::isfinite(m_Amplitude) || !std::isfinite(m_Frequency) || !std::isfinite(m_Phase) ||
+                    !std::isfinite(m_Offset) || m_Frequency < 0.0)
+                {
+                    errorMessage = QStringLiteral("正弦或余弦函数参数必须为有限数值，且频率不得为负数。");
+                    return false;
+                }
+                return true;
+
+            case TimeFunctionType::RAMP:
+                if (!std::isfinite(m_RampT0) || !std::isfinite(m_RampT1) || m_RampT1 <= m_RampT0)
+                {
+                    errorMessage = QStringLiteral("斜坡函数必须满足 RampT1 大于 RampT0，且参数为有限数值。");
+                    return false;
+                }
+                return true;
+
+            case TimeFunctionType::EXPONENTIAL:
+                if (!std::isfinite(m_Decay) || m_Decay < 0.0)
+                {
+                    errorMessage = QStringLiteral("指数衰减系数必须为有限的非负数。");
+                    return false;
+                }
+                return true;
+
+            case TimeFunctionType::TRIANGULAR:
+                if (!std::isfinite(m_Period) || m_Period <= 0.0)
+                {
+                    errorMessage = QStringLiteral("三角波周期必须为有限的正数。");
+                    return false;
+                }
+                return true;
+
+            case TimeFunctionType::SQUARE:
+                if (!std::isfinite(m_Period) || m_Period <= 0.0 || !std::isfinite(m_DutyCycle) ||
+                    m_DutyCycle < 0.0 || m_DutyCycle > 1.0)
+                {
+                    errorMessage = QStringLiteral("方波周期必须为正数，占空比必须在 0 到 1 之间。");
+                    return false;
+                }
+                return true;
+        }
+
+        errorMessage = QStringLiteral("未知的时间函数类型。");
+        return false;
     }
 
     /**
@@ -64,7 +126,8 @@ public:
         // 将时间映射到相对于起始时间的局部时间
         double localTime = time - m_StartTime;
 
-        return EvaluateTimeFunction(localTime);
+        const double scaleFactor = EvaluateTimeFunction(localTime);
+        return std::isfinite(scaleFactor) ? scaleFactor : 0.0;
     }
 
 private:
@@ -94,6 +157,8 @@ private:
 
             case TimeFunctionType::RAMP:
             {
+                if (m_RampT1 <= m_RampT0)
+                    return 0.0;
                 if (t <= m_RampT0)
                     return 0.0;
                 if (t >= m_RampT1)
@@ -106,6 +171,8 @@ private:
 
             case TimeFunctionType::TRIANGULAR:
             {
+                if (m_Period <= 0.0)
+                    return 0.0;
                 double phase = std::fmod(t, m_Period) / m_Period;
                 if (phase < 0.5)
                     return 2.0 * phase;
@@ -115,12 +182,14 @@ private:
 
             case TimeFunctionType::SQUARE:
             {
+                if (m_Period <= 0.0)
+                    return 0.0;
                 double phase = std::fmod(t, m_Period) / m_Period;
                 return (phase < m_DutyCycle) ? 1.0 : 0.0;
             }
 
             default:
-                return 1.0;
+                return 0.0;
         }
     }
 };

@@ -122,6 +122,12 @@ ResultControlPanel::ResultControlPanel(QWidget* parent)
                 if (m_iterationExportHandler)
                     m_iterationExportHandler();
             });
+    connect(m_ui->exportPlotButton, &QPushButton::clicked, this,
+            [this]()
+            {
+                if (m_plotExportHandler)
+                    m_plotExportHandler();
+            });
 }
 ResultControlPanel::~ResultControlPanel()
 {
@@ -179,6 +185,16 @@ QPushButton* ResultControlPanel::exportElementButton() const
 QPushButton* ResultControlPanel::exportIterationButton() const
 {
     return m_ui->exportIterationButton;
+}
+
+QComboBox* ResultControlPanel::stepCombo() const
+{
+    return m_ui->stepCombo;
+}
+
+QPushButton* ResultControlPanel::exportPlotButton() const
+{
+    return m_ui->exportPlotButton;
 }
 
 std::vector<Hdf5ResultFrameInfo>& ResultControlPanel::frames()
@@ -244,6 +260,11 @@ void ResultControlPanel::setElementExportHandler(std::function<void()> handler)
 void ResultControlPanel::setIterationExportHandler(std::function<void()> handler)
 {
     m_iterationExportHandler = std::move(handler);
+}
+
+void ResultControlPanel::setPlotExportHandler(std::function<void()> handler)
+{
+    m_plotExportHandler = std::move(handler);
 }
 
 void ResultControlPanel::stopPlayback()

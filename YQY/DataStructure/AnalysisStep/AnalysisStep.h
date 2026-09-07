@@ -3,10 +3,12 @@
 #include "Solver/Interface/IAnalysisModel.h"
 #include "Solver/Interface/ISolver.h"
 #include "Solver/Dynamic/TimeStepping/AdaptiveTssbnSettings.h"
+#include "Solver/Dynamic/TimeStepping/TimeStepControl.h"
 #include "Solver/Dynamic/Damping/StructuralDamping.h"
 #include <memory>
 #include <functional>
 #include <map>
+#include <optional>
 #include <set>
 #include <vector>
 typedef Eigen::SparseMatrix<double> SpMat;
@@ -42,6 +44,7 @@ struct AnalysisStepConfig
     int maxIterations = 32;
     SolverNameSpace::SolverType dynamicSolverType = SolverNameSpace::SolverType::Newmark;
     int initialStaticStepId = 0; ///< 动力步继承的静力平衡步；0 表示从原始状态开始
+    SolverNameSpace::AdaptiveTimeStepSettings adaptiveTimeStep;
     SolverNameSpace::AdaptiveTssbnSettings adaptiveTssbn;
     SolverNameSpace::StructuralDampingSettings structuralDamping;
     bool enableGalloping = false;
@@ -73,6 +76,7 @@ public:
     /// 当前可用: Newmark、AdaptiveTSSBN；其他枚举值为预留。
     SolverNameSpace::SolverType m_DynamicSolverType = SolverNameSpace::SolverType::Newmark;
     int m_InitialStaticStepId = 0; ///< 动力步的前置静力平衡步
+    SolverNameSpace::AdaptiveTimeStepSettings m_AdaptiveTimeStep;
     SolverNameSpace::AdaptiveTssbnSettings m_AdaptiveTssbn;
     SolverNameSpace::StructuralDampingModel m_StructuralDamping;
     bool m_EnableGalloping = false;
@@ -181,6 +185,7 @@ public:
                                         _OUT SpMat& effectiveDynamicTangent) override;
     void AssembleEffectiveTangent(double accelerationDerivative, double velocityDerivative,
                                   _OUT SpMat& effectiveTangent) override;
+    void UpdateInternalForce() override;
     void GetStructuralDampingFactor(_OUT Eigen::MatrixXd& factor) const override;
     void AssembleExternalLoadTangent(double time, double loadFactor, double velocityDerivative,
                                      _OUT SpMat& externalTangent) override;
@@ -209,7 +214,7 @@ private:
         std::map<int, std::shared_ptr<Node>> nodes;
         SolverNameSpace::Vec mpcMultipliers;
     };
-    std::vector<StateCheckpoint> m_stateCheckpoints;
+    std::optional<StateCheckpoint> m_stateCheckpoint;
     // Fixed for one analysis step after resolving physical wire labels against
     // that step's wind direction. Time integration only changes the angle row.
     std::map<int, int> m_gallopingProfileBindings;
@@ -289,6 +294,7 @@ private:
     void AccumulateDynamicInertiaForce(const DynamicElementData& elementData);
     std::vector<bool> GetCableTorsionFreeDofs() const;
     bool PrepareStructuralDamping(_OUT QString& errorMessage);
+    bool InitializeConsistentDynamicAcceleration(double time, _OUT QString& errorMessage);
 
     /**
      * @brief 组装所有荷载到力向量

@@ -481,6 +481,9 @@ void SolveTaskController::runTask(const std::shared_ptr<TaskContext>& task)
         if (!structure)
             throw std::runtime_error(cloneError.isEmpty() ? "无法创建独立计算模型" : cloneError.toUtf8().constData());
 
+        if (startsFromStaticState)
+            structure->GetOutputter().MergeFramesFrom(dependency->solvedModel->GetOutputter());
+
         structure->m_OutputControl.m_Hdf5FileName = task->info.outputFile;
 
         AnalysisRunner runner;
@@ -511,10 +514,8 @@ void SolveTaskController::runTask(const std::shared_ptr<TaskContext>& task)
 
         task->startedAtMs.store(QDateTime::currentMSecsSinceEpoch(), std::memory_order_relaxed);
         solverTimer.start();
-        // A prepared single-step task may retain its referenced static step as
-        // an internal dependency.  Run the selected step explicitly so the
-        // dependency is solved first without turning it into a user-visible
-        // result step in the dynamic task's H5 file.
+        // 单步任务先复用已完成的前置静力状态，并将前置静力结果帧合并到当前分支 H5。
+        // 这里只显式求解当前步，避免重复计算前置静力步。
         const bool succeeded = task->info.analysisStepId > 0
                                    ? (startsFromStaticState ? runner.RunStepFromCurrentState(task->info.analysisStepId)
                                                             : runner.RunStep(task->info.analysisStepId))

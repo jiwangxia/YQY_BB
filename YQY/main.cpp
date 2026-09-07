@@ -1,5 +1,5 @@
 #include "Application/ApplicationBootstrap.h"
-#ifdef _DEBUG
+#if defined(_DEBUG) || defined(YQY_VERIFICATION_BUILD)
 #include "Application/UiAuditRunner.h"
 #include "Application/VerificationRunner.h"
 #endif
@@ -60,7 +60,7 @@ int main(int argc, char* argv[])
             break;
         }
     }
-#ifdef _DEBUG
+#if defined(_DEBUG) || defined(YQY_VERIFICATION_BUILD)
     bool headlessVerification = false;
     for (int argumentIndex = 1; argumentIndex < argc; ++argumentIndex)
     {
@@ -78,6 +78,8 @@ int main(int argc, char* argv[])
                                argument == QStringLiteral("--verify-structural-damping") ||
                                argument == QStringLiteral("--verify-low-rank-damping") ||
                                argument == QStringLiteral("--verify-time-step-integrators") ||
+                               argument == QStringLiteral("--verify-load-time-functions") ||
+                               argument == QStringLiteral("--benchmark-time-step-integrators") ||
                                argument == QStringLiteral("--verify-structural-damping-hdf5");
         if (headlessVerification)
             break;
@@ -112,7 +114,7 @@ int main(int argc, char* argv[])
     ApplicationBootstrap::prepareMainWindow(window);
     window.show();
 
-#ifdef _DEBUG
+#if defined(_DEBUG) || defined(YQY_VERIFICATION_BUILD)
     if (const auto auditResult = auditRunner.run(application, window))
         return *auditResult;
 #endif

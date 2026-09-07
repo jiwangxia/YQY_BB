@@ -18,13 +18,23 @@ public:
 
     explicit SolverRungeKutta4(Params parameters);
     bool Solve(IAnalysisModel& model, double duration) override;
-    const char* GetName() const override { return "Runge-Kutta 4"; }
+    const char* GetName() const override
+    {
+        return "Runge-Kutta 4";
+    }
     SolverType GetType() const override
     {
         return parameters_.timeStepMode == TimeStepMode::Adaptive ? SolverType::AdaptiveRungeKutta4
-                                                                    : SolverType::RungeKutta4;
+                                                                  : SolverType::RungeKutta4;
     }
-    void SetStepCallback(StepCallback callback) override { callback_ = std::move(callback); }
+    void SetStepCallback(StepCallback callback) override
+    {
+        callback_ = std::move(callback);
+    }
+    const TimeStepStatistics& GetTimeStepStatistics() const
+    {
+        return timeStepStatistics_;
+    }
 
 private:
     bool SolveSingleStep(IAnalysisModel& model, double time, double timeStep, _OUT Vec& displacement,
@@ -33,6 +43,7 @@ private:
                               const Vec& displacement, const Vec& velocity, _OUT Vec& acceleration);
 
     Params parameters_;
+    TimeStepStatistics timeStepStatistics_;
     StepCallback callback_;
 };
 }

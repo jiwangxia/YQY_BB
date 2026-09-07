@@ -650,6 +650,16 @@ bool Outputter::BeginHdf5ResultStream(const QString& fileName, StructureData* pD
     m_hdf5FrameBatchSize = ResultOutputSettings::FrameBatchSize();
     m_hdf5PendingFrames.clear();
     m_hdf5PendingFrames.reserve(static_cast<std::size_t>(m_hdf5FrameBatchSize));
+    if (!m_DataSet.empty())
+    {
+        if (!m_hdf5Stream->writeFrames(m_hdf5NextDomainId, m_DataSet))
+        {
+            m_hdf5Stream->end(false);
+            m_hdf5Stream.reset();
+            return false;
+        }
+        m_hdf5NextDomainId += static_cast<int>(m_DataSet.size());
+    }
     {
         std::lock_guard<std::mutex> lock(m_hdf5QueueMutex);
         m_hdf5StreamWriteOk = true;

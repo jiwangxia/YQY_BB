@@ -197,6 +197,18 @@ public:
         effectiveTangent = stiffness + dynamicTangent;
     }
 
+    /**
+     * @brief 刷新当前试探位移对应的单元内力
+     *
+     * 显式积分器会在一个时间步内建立多个试探状态。模型必须在计算每个阶段的
+     * 残差前更新内力；默认实现借助刚度组装兼容已有模型。
+     */
+    virtual void UpdateInternalForce()
+    {
+        SpMat unusedStiffness;
+        Assemble_Matrix(unusedStiffness, true);
+    }
+
     /** @brief 返回结构阻尼低秩因子 U，使 C=U*U^T。 */
     virtual void GetStructuralDampingFactor(_OUT Eigen::MatrixXd& factor) const
     {

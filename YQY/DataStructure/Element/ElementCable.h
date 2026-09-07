@@ -2,6 +2,7 @@
 #include "ElementBase.h"
 
 #include <array>
+#include <optional>
 
 /**
  * @brief 索单元类 - 只承受拉力的二节点单元
@@ -13,6 +14,7 @@ private:
     double Sz = 0.0;
     std::array<double, 2> m_CommittedSpatialTwist = {0.0, 0.0};
     std::array<double, 2> m_BackupCommittedSpatialTwist = {0.0, 0.0};
+    std::optional<std::array<double, 2>> m_CheckpointCommittedSpatialTwist;
 
 public:
     /**
@@ -37,6 +39,9 @@ public:
     void CommitState() override;
     void BackupState() override;
     void RestoreState() override;
+    bool PushStateCheckpoint() override;
+    bool RestoreStateCheckpoint() override;
+    void DiscardStateCheckpoint() override;
 
     /**
      * @brief 计算单元刚度矩阵

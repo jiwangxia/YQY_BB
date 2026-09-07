@@ -77,8 +77,9 @@
             <widget class="QWidget" name="resultModulePage">
              <layout class="QVBoxLayout" name="resultModuleLayout"><property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property><property name="spacing"><number>10</number></property>
               <item><widget class="QLabel" name="resultModuleHint"><property name="text"><string>结果后处理显示</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
-              <item><widget class="QPushButton" name="openH5Button"><property name="text"><string>打开 H5 结果文件</string></property></widget></item>
-              <item><widget class="QLabel" name="resultFileLabel"><property name="text"><string>尚未打开结果文件</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+               <item><widget class="QPushButton" name="openH5Button"><property name="text"><string>打开 H5 结果文件</string></property></widget></item>
+               <item><layout class="QHBoxLayout" name="resultCaseLayout"><item><widget class="QLabel" name="resultCaseLabel"><property name="text"><string>结果算例</string></property></widget></item><item><widget class="QComboBox" name="resultCaseCombo"><property name="enabled"><bool>false</bool></property><property name="toolTip"><string>切换当前模型下不同分析步的计算结果</string></property></widget></item></layout></item>
+               <item><widget class="QLabel" name="resultFileLabel"><property name="text"><string>尚未打开结果文件</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
               <item><widget class="QTreeWidget" name="resultTree"><property name="headerHidden"><bool>true</bool></property><property name="animated"><bool>true</bool></property><column><property name="text"><string notr="true">1</string></property></column></widget></item>
              </layout>
             </widget>

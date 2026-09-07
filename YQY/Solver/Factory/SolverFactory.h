@@ -74,7 +74,7 @@ private:
                                                          : AerodynamicTangentMode::Disabled;
         p.timeStepMode = adaptive ? TimeStepMode::Adaptive : TimeStepMode::Fixed;
         if (adaptive)
-            p.adaptiveTimeStep.maximumTimeStep = std::max(step.m_StepSize, p.adaptiveTimeStep.maximumTimeStep);
+            p.adaptiveTimeStep = step.m_AdaptiveTimeStep;
         return std::make_unique<SolverNewmark>(p);
     }
 
@@ -85,8 +85,7 @@ private:
         parameters.timeStep = step.m_StepSize;
         parameters.timeStepMode = adaptive ? TimeStepMode::Adaptive : TimeStepMode::Fixed;
         if (adaptive)
-            parameters.adaptiveTimeStep.maximumTimeStep =
-                std::max(step.m_StepSize, parameters.adaptiveTimeStep.maximumTimeStep);
+            parameters.adaptiveTimeStep = step.m_AdaptiveTimeStep;
         return std::make_unique<SolverRungeKutta4>(parameters);
     }
 

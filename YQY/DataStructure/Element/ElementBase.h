@@ -123,6 +123,23 @@ public:
     {
     }
 
+    /** @brief 保存跨越多个试算步的内部状态；与单步 BackupState 相互独立。 */
+    virtual bool PushStateCheckpoint()
+    {
+        return true;
+    }
+
+    /** @brief 恢复跨步检查点，同时保留检查点供后续试算继续使用。 */
+    virtual bool RestoreStateCheckpoint()
+    {
+        return true;
+    }
+
+    /** @brief 释放跨步检查点。 */
+    virtual void DiscardStateCheckpoint()
+    {
+    }
+
     /**
     * @brief 组装单元阻尼矩阵，用vector保存四个阻尼值double trans_m = 0.0, double trans_k = 0.0, double rot_m = 0.0, double rot_k = 0.0
     * @param [in] Vector[4] damping   //依次上述值
