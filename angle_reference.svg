@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="620" viewBox="0 0 900 620">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L9,3 L0,6 Z" fill="#263238"/>
+    </marker>
+    <marker id="redArrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L9,3 L0,6 Z" fill="#d32f2f"/>
+    </marker>
+  </defs>
+  <rect width="900" height="620" fill="#ffffff"/>
+  <text x="450" y="45" text-anchor="middle" font-size="26" font-family="Microsoft YaHei, Arial" fill="#172b4d">当前程序初始风攻角示意（默认风向 -Y）</text>
+  <text x="450" y="82" text-anchor="middle" font-size="17" font-family="Microsoft YaHei, Arial" fill="#52606d">导线轴线沿 +X，图中只画导线截面 Y-Z 平面</text>
+
+  <line x1="450" y1="320" x2="120" y2="320" stroke="#263238" stroke-width="4" marker-end="url(#arrow)"/>
+  <line x1="450" y1="320" x2="450" y2="120" stroke="#263238" stroke-width="4" marker-end="url(#arrow)"/>
+  <line x1="450" y1="320" x2="780" y2="320" stroke="#263238" stroke-width="3" marker-end="url(#arrow)"/>
+  <line x1="450" y1="320" x2="450" y2="520" stroke="#263238" stroke-width="3" marker-end="url(#arrow)"/>
+  <text x="105" y="312" font-size="22" font-family="Arial" fill="#263238">-Y</text>
+  <text x="458" y="112" font-size="22" font-family="Arial" fill="#263238">+Z</text>
+  <text x="785" y="312" font-size="22" font-family="Arial" fill="#263238">+Y</text>
+  <text x="458" y="548" font-size="22" font-family="Arial" fill="#263238">-Z</text>
+  <circle cx="450" cy="320" r="9" fill="#263238"/>
+  <text x="462" y="350" font-size="17" font-family="Microsoft YaHei, Arial" fill="#52606d">导线截面中心</text>
+
+  <line x1="450" y1="320" x2="175" y2="320" stroke="#1976d2" stroke-width="8" marker-end="url(#arrow)"/>
+  <text x="165" y="285" font-size="20" font-family="Microsoft YaHei, Arial" fill="#1976d2">风在截面内的基准方向 e_w = -Y</text>
+
+  <path d="M250,320 A200,200 0 0 1 603,473" fill="none" stroke="#d32f2f" stroke-width="5" marker-end="url(#redArrow)"/>
+  <line x1="450" y1="320" x2="603" y2="473" stroke="#d32f2f" stroke-width="7" marker-end="url(#redArrow)"/>
+  <text x="555" y="420" font-size="23" font-family="Arial" fill="#d32f2f">α₀ = 40°</text>
+  <text x="575" y="455" font-size="17" font-family="Microsoft YaHei, Arial" fill="#d32f2f">从 -Y 向 +Z 的正向旋转</text>
+
+  <line x1="450" y1="320" x2="760" y2="338" stroke="#7b1fa2" stroke-width="6" stroke-dasharray="12 8" marker-end="url(#arrow)"/>
+  <text x="610" y="285" font-size="21" font-family="Microsoft YaHei, Arial" fill="#7b1fa2">α₀ = 170°（接近 +Y）</text>
+
+  <rect x="90" y="570" width="720" height="32" rx="6" fill="#eef3f8"/>
+  <text x="450" y="592" text-anchor="middle" font-size="17" font-family="Microsoft YaHei, Arial" fill="#172b4d">静止时：实际查询角度 = 初始风攻角；运动后还要叠加扭转角并减去相对风偏角</text>
+</svg>
