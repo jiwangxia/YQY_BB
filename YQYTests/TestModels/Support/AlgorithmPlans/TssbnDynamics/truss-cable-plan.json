@@ -1,0 +1,300 @@
+{
+  "schema": "tssbn-real-elements-plan-v1",
+  "frozen_before_candidate_execution": true,
+  "frozen_utc": "2026-10-20T02:49:20.826724+00:00",
+  "algorithms": [
+    "adaptive-tssbn",
+    "reference-tssbn"
+  ],
+  "spectral_radius": 1.0,
+  "default_settings": {
+    "spectral_radius_infinity": 1.0,
+    "safety_factor": 0.9,
+    "shrink_factor": 0.8,
+    "maximum_growth_factor": 3.0,
+    "target_newton_iterations": 8,
+    "maximum_total_newton_iterations": 32,
+    "derivative_gain": 0.1,
+    "minimum_derivative_factor": 0.5,
+    "maximum_derivative_factor": 1.5,
+    "maximum_rejected_attempts": 24
+  },
+  "algorithm_policies": {
+    "adaptive-tssbn": {
+      "factory_solver_type": "AdaptiveTSSBN",
+      "solver_type_id": 3,
+      "solver_name": "Adaptive-TSSBN",
+      "error_norm_mode": "ComponentwiseMax",
+      "use_duan_controller": false,
+      "use_reference_extrapolated_acceleration": false,
+      "reference_independent_error_control": false,
+      "effective_velocity_absolute_tolerance": "requested velocity_absolute_tolerance",
+      "controller_scope": "production default Mahnken-style LTE proportional controller; no Duan settings substituted"
+    },
+    "reference-tssbn": {
+      "factory_solver_type": "ReferenceTSSBN",
+      "solver_type_id": 8,
+      "solver_name": "Reference-TSSBN-Galloping",
+      "error_norm_mode": "LegacyGlobal",
+      "use_duan_controller": true,
+      "use_reference_extrapolated_acceleration": true,
+      "reference_independent_error_control": false,
+      "effective_velocity_absolute_tolerance": "absolute_tolerance, overwritten by production factory",
+      "controller_scope": "unchanged reference factory legacy norm/extrapolation/controller; no independent-velocity repair enabled"
+    }
+  },
+  "relative_tolerances": [
+    0.001,
+    1e-05,
+    1e-07
+  ],
+  "absolute_tolerance_rule": "Requested q/v atol=.01*rtol*the corresponding frozen q/v normalization; Reference factory changes effective vatol to qatol, recorded explicitly.",
+  "runtime_criteria": {
+    "frame_time_absolute_limit": 1e-09,
+    "finite_complete_strictly_increasing": true,
+    "accepted_count_matches_frames": true,
+    "allow_local_error_rejection": true,
+    "minimum_bound_exception": "Only final remainder may be smaller than minimum_time_step; SelectTimeStep end snap relative allowance1e-6",
+    "precision_limited_solves": "record separately; any nonzero requires investigation, not silently certify",
+    "numerical_acceptance": "deferred to independent dense reference at actual accepted times; completion alone is not PASS"
+  },
+  "comparison_criteria": {
+    "all_expected_runs_present": true,
+    "complete_finite_actual_time_history": true,
+    "time_zero_initial_state": true,
+    "endpoint_time_absolute_limit": 1e-09,
+    "frame_time_absolute_limit": 1e-09,
+    "rejection_is_allowed": true,
+    "normal_precision_limited_stage_count": 0,
+    "successive_error_ratio_maximum": 0.9,
+    "finest_maximum_step_cap_fraction_upper_exclusive": 0.5,
+    "cap_fraction_definition": "Nonterminal accepted steps >=hmax*(1-1e-6), divided by nonterminal count. Prevent cap-dominated finest runs from masquerading as tolerance control.",
+    "fixed_step_order_gate_applies": false,
+    "physical_gates": "Existing independent initial q/v/a, fixed DOF and mass/stiffness checks retained. Endpoint equilibrium is a normal-TSSBN check only; Reference extrapolated-a endpoint residual is separately reported diagnostic, not a master gate. No Newmark full-H kinematics asserted.",
+    "reference_endpoint_acceleration_qualification": "Reference legacy accepts extrapolated endpoint acceleration by design. Compare actually exported q/v/a to independent full-history reference under original precision limits; separately report exact endpoint M*a+f-fext residual and whether it meets the old strict limit, without making that residual a Reference master pass/fail gate or automatically labeling a theory-consistent discrepancy implementation wrong.",
+    "execution_accuracy_trend_reported_separately": true
+  },
+  "fixed_source_plans": {
+    "truss": {
+      "path": "Published/NewmarkTrussRod/validation-plan.json",
+      "sha256": "f5d5d5c7e8a493dbe9afd4c8fe7c1e96e8422c0f77a3a279625ae1464a8a38b4"
+    },
+    "cable": {
+      "path": "Published/NewmarkCable/validation-plan.json",
+      "sha256": "80e8d48ddf68fed6585b755d7d44e94233eeb93c88e010abe028b823e5955b83"
+    }
+  },
+  "independent_reference": {
+    "generator_path": "Published/AdaptiveNewmark/independent_reference.py",
+    "generator_sha256": "9883ffa6d2ba7f7a1c8d0a0ab2c0025852038489c48f1eb2a90829626cd162af",
+    "summary_sha256": "1439224b99eeb16d53f49c56fc9bc70b7de421599d779219b554cd50cfcfd572",
+    "dense_files_sha256": {
+      "truss-small.npz": "be28acdb177cb718c8493278d9f9dc8b724907df813f9d4ca4b6b4c87bf2b611",
+      "truss-nonlinear.npz": "31535a251d711e9033671a1d4d4337e19f141cdf18b4959361fd9ff18a5bbc22",
+      "cable-taut-string.npz": "3af57a98bfccfb8ba08bc52fbee9df4079ed995ca1fc40bbbb701f6182130474",
+      "cable-nonlinear.npz": "2b7ef7e8de5a074d07030804cbe3b42d8b1af800298ad0ecbfd4e3224a835c55"
+    },
+    "candidate_output_used": false,
+    "evaluation": "Frozen DOP853 continuous polynomials at actual accepted times; no new integration and no time interpolation of candidate/reference CSV rows."
+  },
+  "families": [
+    {
+      "element": "truss",
+      "name": "small",
+      "input_file": "small.bdf",
+      "input_path": "Published/NewmarkTrussRod/small.bdf",
+      "input_sha256": "203ec4c36ab30e3daf1bf265990d97faf5a3bb55456c1f88d6f4279e3a320049",
+      "duration": 10.0,
+      "normalization_q_v_a": [
+        3e-06,
+        3.370344910044028e-06,
+        1.5576923076923076e-05
+      ],
+      "newton_tolerance": 1e-13,
+      "maximum_newton_evaluations": 40,
+      "finest_normalized_q_v_a_limits": [
+        0.002,
+        0.002,
+        0.002
+      ],
+      "runs": [
+        {
+          "level": 0,
+          "relative_tolerance": 0.001,
+          "absolute_tolerance": 3.0000000000000006e-11,
+          "velocity_absolute_tolerance": 3.370344910044028e-11,
+          "initial_time_step": 0.1,
+          "minimum_time_step": 1e-08,
+          "maximum_time_step": 0.5
+        },
+        {
+          "level": 1,
+          "relative_tolerance": 1e-05,
+          "absolute_tolerance": 3.0000000000000003e-13,
+          "velocity_absolute_tolerance": 3.3703449100440286e-13,
+          "initial_time_step": 0.1,
+          "minimum_time_step": 1e-08,
+          "maximum_time_step": 0.5
+        },
+        {
+          "level": 2,
+          "relative_tolerance": 1e-07,
+          "absolute_tolerance": 3.0000000000000002e-15,
+          "velocity_absolute_tolerance": 3.3703449100440285e-15,
+          "initial_time_step": 0.1,
+          "minimum_time_step": 1e-08,
+          "maximum_time_step": 0.5
+        }
+      ]
+    },
+    {
+      "element": "truss",
+      "name": "nonlinear",
+      "input_file": "nonlinear.bdf",
+      "input_path": "Published/NewmarkTrussRod/nonlinear.bdf",
+      "input_sha256": "3f6fd7976d4c309b2a03833e2cd4dcb018251c89136c01c19a05fedd9eb7b59a",
+      "duration": 10.0,
+      "normalization_q_v_a": [
+        3.0,
+        3.370344910044028,
+        15.576923076923078
+      ],
+      "newton_tolerance": 1e-13,
+      "maximum_newton_evaluations": 40,
+      "finest_normalized_q_v_a_limits": [
+        0.002,
+        0.002,
+        0.002
+      ],
+      "runs": [
+        {
+          "level": 0,
+          "relative_tolerance": 0.001,
+          "absolute_tolerance": 3.0000000000000004e-05,
+          "velocity_absolute_tolerance": 3.370344910044028e-05,
+          "initial_time_step": 0.1,
+          "minimum_time_step": 1e-08,
+          "maximum_time_step": 0.5
+        },
+        {
+          "level": 1,
+          "relative_tolerance": 1e-05,
+          "absolute_tolerance": 3.0000000000000004e-07,
+          "velocity_absolute_tolerance": 3.370344910044028e-07,
+          "initial_time_step": 0.1,
+          "minimum_time_step": 1e-08,
+          "maximum_time_step": 0.5
+        },
+        {
+          "level": 2,
+          "relative_tolerance": 1e-07,
+          "absolute_tolerance": 3.0000000000000004e-09,
+          "velocity_absolute_tolerance": 3.3703449100440283e-09,
+          "initial_time_step": 0.1,
+          "minimum_time_step": 1e-08,
+          "maximum_time_step": 0.5
+        }
+      ]
+    },
+    {
+      "element": "cable",
+      "name": "taut-string",
+      "input_file": "TautString.bdf",
+      "input_path": "Published/NewmarkCable/TautString.bdf",
+      "input_sha256": "ca45ba86339f2e83c27d744c2b0c150cc3c0207d62c74b8391b71e456692fe3c",
+      "duration": 0.0669425834794515,
+      "normalization_q_v_a": [
+        0.001,
+        0.46929659572432353,
+        218.6335023554716
+      ],
+      "newton_tolerance": 1e-09,
+      "maximum_newton_evaluations": 32,
+      "finest_normalized_q_v_a_limits": [
+        0.001,
+        0.001,
+        0.001
+      ],
+      "runs": [
+        {
+          "level": 0,
+          "relative_tolerance": 0.001,
+          "absolute_tolerance": 1e-08,
+          "velocity_absolute_tolerance": 4.6929659572432355e-06,
+          "initial_time_step": 0.000669425834794515,
+          "minimum_time_step": 1.33885166958903e-10,
+          "maximum_time_step": 0.00133885166958903
+        },
+        {
+          "level": 1,
+          "relative_tolerance": 1e-05,
+          "absolute_tolerance": 1.0000000000000002e-10,
+          "velocity_absolute_tolerance": 4.6929659572432355e-08,
+          "initial_time_step": 0.000669425834794515,
+          "minimum_time_step": 1.33885166958903e-10,
+          "maximum_time_step": 0.00133885166958903
+        },
+        {
+          "level": 2,
+          "relative_tolerance": 1e-07,
+          "absolute_tolerance": 1.0000000000000002e-12,
+          "velocity_absolute_tolerance": 4.692965957243235e-10,
+          "initial_time_step": 0.000669425834794515,
+          "minimum_time_step": 1.33885166958903e-10,
+          "maximum_time_step": 0.00133885166958903
+        }
+      ]
+    },
+    {
+      "element": "cable",
+      "name": "nonlinear",
+      "input_file": "NonlinearCable.bdf",
+      "input_path": "Published/NewmarkCable/NonlinearCable.bdf",
+      "input_sha256": "7e8e3aa923227cce95c69c384063091b2491b0679959af9d19ee82167e74ac84",
+      "duration": 0.09391166021003311,
+      "normalization_q_v_a": [
+        10.0,
+        3122.242140691314,
+        1278347.2576503546
+      ],
+      "newton_tolerance": 1e-09,
+      "maximum_newton_evaluations": 32,
+      "finest_normalized_q_v_a_limits": [
+        0.001,
+        0.001,
+        0.001
+      ],
+      "runs": [
+        {
+          "level": 0,
+          "relative_tolerance": 0.001,
+          "absolute_tolerance": 0.0001,
+          "velocity_absolute_tolerance": 0.031222421406913142,
+          "initial_time_step": 0.0009391166021003311,
+          "minimum_time_step": 1.8782332042006623e-10,
+          "maximum_time_step": 0.0018782332042006622
+        },
+        {
+          "level": 1,
+          "relative_tolerance": 1e-05,
+          "absolute_tolerance": 1.0000000000000002e-06,
+          "velocity_absolute_tolerance": 0.00031222421406913145,
+          "initial_time_step": 0.0009391166021003311,
+          "minimum_time_step": 1.8782332042006623e-10,
+          "maximum_time_step": 0.0018782332042006622
+        },
+        {
+          "level": 2,
+          "relative_tolerance": 1e-07,
+          "absolute_tolerance": 1e-08,
+          "velocity_absolute_tolerance": 3.1222421406913143e-06,
+          "initial_time_step": 0.0009391166021003311,
+          "minimum_time_step": 1.8782332042006623e-10,
+          "maximum_time_step": 0.0018782332042006622
+        }
+      ]
+    }
+  ],
+  "boundary": "All four physical models are declared source-derived semidiscrete TRUSS/CABLE problems, not original paper cases. Actual production AnalysisStep/Factory/Node/Element objects are reused; Reference numerical policy is exercised without claiming full windless-static/galloping business orchestration. Tolerance tightening is not fixed-step order certification.",
+  "reference_cable_physical_qualification": "AnalysisStep Init legitimately enables reference cable constitutive mode. For these specific inputs, L0=initial chord, all rotations fixed, mass first moment zero and tension stays positive: reference P+EA/Linit*(l-Linit) equals ordinary max(0,P+EA/L0*(l-L0)). This equivalence must be supported by actual force/mass/constraints and independently recomputed transverse equilibrium, not by silently disabling reference mode. Slack or unlocked-rotation cases are outside this equivalence."
+}

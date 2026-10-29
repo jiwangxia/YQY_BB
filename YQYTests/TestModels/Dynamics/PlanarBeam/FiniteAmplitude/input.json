@@ -1,0 +1,26 @@
+{
+  "schema": "newmark-production-planar-cr-beam-nonlinear-v1",
+  "length": 2.0,
+  "width": 0.1,
+  "height": 0.2,
+  "young": 200000000000.0,
+  "density": 7800.0,
+  "poisson": 0.3,
+  "initial_q_y_rz": [0.2, 0.0],
+  "initial_v_y_rz": [0.0, 0.0],
+  "duration_high_frequency_periods": 2.0,
+  "fixed_steps_per_high_frequency_period": [128, 256, 512],
+  "damping": "disabled",
+  "loads": "zero",
+  "constraints": "Root all 6 DOFs fixed, tip only global-Y translation and global-Z rotation free",
+  "reference_potential": "U=EA/(2L)*(sqrt(L^2+y^2)-L)^2+2EI/L*(3phi^2-3phi*theta+theta^2), phi=atan2(y,L)",
+  "reference_mass": "diag(rho*A*L/3,rho*Iz*L/3); Iz=height*width^3/12",
+  "reference_conditions": "single planar CR element, zero prestress, undeformed R0=I, centered principal mass, all rotations share global Z, |theta-phi|<pi, frame does not flip",
+  "sources": {
+    "Euler_section_geometry_theory": "https://code-aster.org/doc/v17/manuals/man_v/v3/v3.01.102/index.html",
+    "public_linearized_beam_theory": "https://code-aster.org/doc/v17/manuals/man_v/v2/v2.02.101/Solution_de_r_f_rence.html",
+    "independent_ODE_solver_documentation": "https://docs.scipy.org/doc/scipy/reference/generated/scipy.integrate.solve_ivp.html"
+  },
+  "source_qualification": "New fully specified planar finite-amplitude semidiscrete verification derived from the native CR elastic energy and the stated linear-N inertia; not a published Aster transient reproduction, not an ANCF/Kratos golden trace",
+  "time_window_scope": "Two periods of the zero-state highest bending frequency, short-window finite-amplitude verification, not multiple slow-mode periods"
+}

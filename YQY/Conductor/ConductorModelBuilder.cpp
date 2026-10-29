@@ -3,13 +3,15 @@
 #include "DataStructure/Element/ElementBeam_CR.h"
 #include "DataStructure/Element/ElementCable.h"
 #include "DataStructure/Element/ElementBase.h"
-#include "DataStructure/Element/ElementTruss.h"
+#include "DataStructure/Factory/ElementFactory.h"
+#include "DataStructure/Factory/SectionFactory.h"
 #include "DataStructure/Inertia/RigidBodyInertia.h"
 #include "DataStructure/Constraint/NonlinearMPCConstraint.h"
 #include "DataStructure/Material/Material.h"
 #include "DataStructure/Node/Node.h"
 #include "DataStructure/Property/Property.h"
 #include "DataStructure/Section/SectionBase.h"
+#include "DataStructure/Section/SectionCircular.h"
 #include "DataStructure/Structure/StructureData.h"
 #include "Utility/CR.h"
 
@@ -118,6 +120,13 @@ ConductorModelBuilder::ConductorModelBuilder(StructureData* structure)
 bool ConductorModelBuilder::BuildLine(const LineBuildConfig& config, _OUT LineBuildResult& result,
                                       _OUT std::string& error)
 {
+    return BuildLineWithSpacerPositions(config, {}, result, error);
+}
+
+bool ConductorModelBuilder::BuildLineWithSpacerPositions(const LineBuildConfig& config,
+                                                          const std::vector<double>& positions,
+                                                          _OUT LineBuildResult& result, _OUT std::string& error)
+{
     result = LineBuildResult{};
 
     if (m_structure == nullptr)
@@ -162,6 +171,12 @@ bool ConductorModelBuilder::BuildLine(const LineBuildConfig& config, _OUT LineBu
         config.conductor.nBundle != 6 && config.conductor.nBundle != 8)
     {
         error = "导线分裂数仅支持 1、2、4、6、8";
+        return false;
+    }
+
+    if (!IsValidBundleRotation(config.conductor))
+    {
+        error = "束截面旋角无效：多分裂绝对值必须小于 180/分裂数 度；单分裂必须为 0 度";
         return false;
     }
 
@@ -218,12 +233,14 @@ bool ConductorModelBuilder::BuildLine(const LineBuildConfig& config, _OUT LineBu
             rightCutLength = transitionLength;
     }
 
+    std::string positionError;
     BundleResult raw = Generator::CreateBundle(config.start.data(), config.end.data(), leftCutLength, rightCutLength,
-                                               horizontalTension, lineWeight, config.conductor);
+                                               horizontalTension, lineWeight, config.conductor, positions,
+                                               &positionError);
 
     if (raw.wiresNode.empty())
     {
-        error = "导线几何生成失败，没有生成任何子导线节点";
+        error = positionError.empty() ? "导线几何生成失败，没有生成任何子导线节点" : positionError;
         return false;
     }
 
@@ -234,6 +251,9 @@ bool ConductorModelBuilder::BuildLine(const LineBuildConfig& config, _OUT LineBu
         return false;
     }
 
+    const int originalPropertyId = m_structure->m_Property.empty() ? 0 : m_structure->m_Property.rbegin()->first;
+    const int originalSectionId = m_structure->m_Section.empty() ? 0 : m_structure->m_Section.rbegin()->first;
+    const int originalMaterialId = m_structure->m_Material.empty() ? 0 : m_structure->m_Material.rbegin()->first;
     auto rollbackBuiltLine = [&]()
     {
         std::set<int> elementIds;
@@ -261,6 +281,7 @@ bool ConductorModelBuilder::BuildLine(const LineBuildConfig& config, _OUT LineBu
             m_structure->m_Elements.erase(elementId);
         for (int nodeId : nodeIds)
             m_structure->m_Nodes.erase(nodeId);
+        RollbackLocalMassProperties(originalPropertyId, originalSectionId, originalMaterialId);
         result = LineBuildResult{};
     };
 
@@ -291,10 +312,49 @@ bool ConductorModelBuilder::BuildLine(const LineBuildConfig& config, _OUT LineBu
     return true;
 }
 
+bool ConductorModelBuilder::PrepareSpanSpacerConfigs(const SpanConductorBuildConfig& config, double spanLength,
+                                                      _OUT std::vector<InnerSpacerConfig>& configs,
+                                                      _OUT std::string& error) const
+{
+    configs = config.innerSpacers;
+    if (!config.useInnerSpacerLayout)
+        return true;
+
+    LineBuildResult preview;
+    preview.spanLength = spanLength;
+    for (int wireId = 0; wireId < config.line.conductor.nBundle; ++wireId)
+        preview.subConductors.emplace(wireId, SubConductorModel{});
+    std::vector<InnerSpacerConfig> automatic;
+    if (!CalculateInnerSpacerConfigs(preview, config.innerSpacerLayout, automatic, error))
+        return false;
+    configs.insert(configs.end(), automatic.begin(), automatic.end());
+    return true;
+}
+
 bool ConductorModelBuilder::BuildSpanConductor(const SpanConductorBuildConfig& config, _OUT LineBuildResult& result,
                                                _OUT std::string& error)
 {
-    if (!BuildLine(config.line, result, error))
+    std::vector<InnerSpacerConfig> spacerConfigs;
+    const double spanLength = (config.line.end - config.line.start).head<2>().norm();
+    if (!PrepareSpanSpacerConfigs(config, spanLength, spacerConfigs, error))
+        return false;
+    std::vector<double> positions;
+    positions.reserve(spacerConfigs.size());
+    for (std::size_t i = 0; i < spacerConfigs.size(); ++i)
+    {
+        // 内置次档距规则在挂点旁放置 0.1 m 标记；保持原有约 1 m 端部过渡。
+        // 用户指定位置及等距布置则要求精确落在导线节点上。
+        if (i < config.innerSpacers.size() || config.innerSpacerLayout.useEqualSpacing)
+            positions.push_back(spacerConfigs[i].position);
+    }
+
+    const int originalPropertyId =
+        m_structure && !m_structure->m_Property.empty() ? m_structure->m_Property.rbegin()->first : 0;
+    const int originalSectionId =
+        m_structure && !m_structure->m_Section.empty() ? m_structure->m_Section.rbegin()->first : 0;
+    const int originalMaterialId =
+        m_structure && !m_structure->m_Material.empty() ? m_structure->m_Material.rbegin()->first : 0;
+    if (!BuildLineWithSpacerPositions(config.line, positions, result, error))
     {
         return false;
     }
@@ -358,24 +418,14 @@ bool ConductorModelBuilder::BuildSpanConductor(const SpanConductorBuildConfig& c
             m_structure->m_Nodes.erase(nodeId);
         for (int nodeId : result.rightTensionEnd.supportNodeIds)
             m_structure->m_Nodes.erase(nodeId);
+        RollbackLocalMassProperties(originalPropertyId, originalSectionId, originalMaterialId);
         result = LineBuildResult{};
     };
 
-    if (!config.innerSpacers.empty() && !BuildInnerSpacers(result, config.innerSpacers, error))
+    if (!spacerConfigs.empty() && !BuildInnerSpacers(result, spacerConfigs, error))
     {
         rollbackLine();
         return false;
-    }
-
-    if (config.useInnerSpacerLayout)
-    {
-        std::vector<InnerSpacerConfig> autoSpacers;
-        if (!CalculateInnerSpacerConfigs(result, config.innerSpacerLayout, autoSpacers, error) ||
-            !BuildInnerSpacers(result, autoSpacers, error))
-        {
-            rollbackLine();
-            return false;
-        }
     }
 
     if (!RenumberLineModel(result, error))
@@ -424,6 +474,11 @@ bool ConductorModelBuilder::BuildMultiSpanConductor(const MultiSpanConductorBuil
         error = "导线分裂数仅支持 1、2、4、6、8";
         return false;
     }
+    if (!IsValidBundleRotation(lineConfig.conductor))
+    {
+        error = "束截面旋角无效：多分裂绝对值必须小于 180/分裂数 度；单分裂必须为 0 度";
+        return false;
+    }
     if (lineConfig.conductor.nBundle > 1 && !lineConfig.convergeBundleEnds)
     {
         error = "多档多分裂导线必须启用首末耐张端汇集";
@@ -458,6 +513,9 @@ bool ConductorModelBuilder::BuildMultiSpanConductor(const MultiSpanConductorBuil
     std::set<int> originalSetIds;
     std::set<int> originalMpcIds;
     std::set<int> originalInertiaIds;
+    const int originalPropertyId = m_structure->m_Property.empty() ? 0 : m_structure->m_Property.rbegin()->first;
+    const int originalSectionId = m_structure->m_Section.empty() ? 0 : m_structure->m_Section.rbegin()->first;
+    const int originalMaterialId = m_structure->m_Material.empty() ? 0 : m_structure->m_Material.rbegin()->first;
     for (const auto& [id, node] : m_structure->m_Nodes)
         originalNodeIds.insert(id);
     for (const auto& [id, element] : m_structure->m_Elements)
@@ -505,6 +563,7 @@ bool ConductorModelBuilder::BuildMultiSpanConductor(const MultiSpanConductorBuil
             else
                 ++it;
         }
+        RollbackLocalMassProperties(originalPropertyId, originalSectionId, originalMaterialId);
         result = LineBuildResult{};
     };
 
@@ -531,6 +590,7 @@ bool ConductorModelBuilder::BuildMultiSpanConductor(const MultiSpanConductorBuil
     const double horizontalTension = lineConfig.conductor.initialStress * section->m_Area;
     std::vector<BundleResult> rawSpans;
     rawSpans.reserve(spanCount);
+    std::vector<std::vector<InnerSpacerConfig>> spanSpacerConfigs(spanCount);
     for (std::size_t spanIndex = 0; spanIndex < spanCount; ++spanIndex)
     {
         const Vector3d& start = config.stationCenters[spanIndex];
@@ -543,13 +603,30 @@ bool ConductorModelBuilder::BuildMultiSpanConductor(const MultiSpanConductorBuil
             return false;
         }
         result.spanLength += horizontalLength;
+        if (!PrepareSpanSpacerConfigs(config.span, horizontalLength, spanSpacerConfigs[spanIndex], error))
+        {
+            error = "第 " + std::to_string(spanIndex + 1) + " 档：" + error;
+            rollback();
+            return false;
+        }
+        std::vector<double> positions;
+        positions.reserve(spanSpacerConfigs[spanIndex].size());
+        for (std::size_t i = 0; i < spanSpacerConfigs[spanIndex].size(); ++i)
+        {
+            if (i < config.span.innerSpacers.size() || config.span.innerSpacerLayout.useEqualSpacing)
+                positions.push_back(spanSpacerConfigs[spanIndex][i].position);
+        }
         const double transitionLength =
             std::min(std::max(0.0, lineConfig.bundleEndTransitionLength), horizontalLength * 0.1);
+        std::string positionError;
         BundleResult raw = Generator::CreateBundle(start.data(), end.data(), transitionLength, transitionLength,
-                                                   horizontalTension, lineWeight, lineConfig.conductor);
+                                                   horizontalTension, lineWeight, lineConfig.conductor, positions,
+                                                   &positionError);
         if (raw.wiresNode.size() != static_cast<std::size_t>(wireCount))
         {
             error = "第 " + std::to_string(spanIndex + 1) + " 档导线几何生成失败";
+            if (!positionError.empty())
+                error += "：" + positionError;
             rollback();
             return false;
         }
@@ -708,45 +785,25 @@ bool ConductorModelBuilder::BuildMultiSpanConductor(const MultiSpanConductorBuil
             direction = (config.stationCenters[stationIndex + 1] - config.stationCenters[stationIndex]).head<2>();
         return direction.normalized();
     };
-    auto bundleOffset = [&](int wireId, const Vector2d& direction) -> Vector3d
-    {
-        if (wireCount == 1)
-            return Vector3d::Zero();
-        double startAngle = 0.0;
-        double radius = 0.0;
-        if (wireCount == 2)
-            radius = lineConfig.conductor.spacing * 0.5;
-        else if (wireCount == 4)
-        {
-            startAngle = -std::numbers::pi / 4.0;
-            radius = lineConfig.conductor.spacing / (2.0 * std::sin(std::numbers::pi / 4.0));
-        }
-        else if (wireCount == 6)
-        {
-            startAngle = -std::numbers::pi / 3.0;
-            radius = lineConfig.conductor.spacing / (2.0 * std::sin(std::numbers::pi / 6.0));
-        }
-        else if (wireCount == 8)
-        {
-            startAngle = -3.0 * std::numbers::pi / 8.0;
-            radius = lineConfig.conductor.spacing / (2.0 * std::sin(std::numbers::pi / 8.0));
-        }
-        const double angle = startAngle + 2.0 * std::numbers::pi * wireId / wireCount;
-        const Vector2d right(direction.y(), -direction.x());
-        return Vector3d(right.x() * std::cos(angle) * radius, right.y() * std::cos(angle) * radius,
-                        std::sin(angle) * radius);
-    };
-
     for (std::size_t stationIndex = 1; stationIndex + 1 < config.stationCenters.size(); ++stationIndex)
     {
         SuspensionPointModel suspension;
         suspension.stationIndex = static_cast<int>(stationIndex);
         suspension.center = config.stationCenters[stationIndex];
         const Vector2d direction = stationDirection(stationIndex);
+        std::vector<RawNode> stationOffsets;
+        Generator::Offset(lineConfig.conductor, direction.x(), direction.y(), stationOffsets);
+        if (stationOffsets.size() != static_cast<std::size_t>(wireCount))
+        {
+            error = "创建中间悬垂点的束截面方位失败";
+            rollback();
+            return false;
+        }
         for (int wireId = 0; wireId < wireCount; ++wireId)
         {
             int nodeId = -1;
-            if (!addNode(suspension.center + bundleOffset(wireId, direction), nodeId))
+            const RawNode& offset = stationOffsets[wireId];
+            if (!addNode(suspension.center + Vector3d(offset.x, offset.y, offset.z), nodeId))
             {
                 error = "创建中间悬垂点的子导线节点失败";
                 rollback();
@@ -792,7 +849,7 @@ bool ConductorModelBuilder::BuildMultiSpanConductor(const MultiSpanConductorBuil
             if (!AddElement(suspension.wireNodeIds[wireId], suspension.junctionNodeId,
                             // H 型悬垂顶部两根联板按杆单元处理，使 J-P 悬垂串和
                             // 上部挂点仅引入平动自由度，避免转角自由度导致奇异。
-                            EnumKeyword::ElementType::T3D2, lineConfig.property, lineConfig.conductor.initialStress,
+                            EnumKeyword::ElementType::T3D2, fittingProperty, lineConfig.conductor.initialStress,
                             elementId, error, ElementRole::SuspensionHardware))
             {
                 error = "创建悬垂端联板失败：" + error;
@@ -933,7 +990,7 @@ bool ConductorModelBuilder::BuildMultiSpanConductor(const MultiSpanConductorBuil
                 int elementId = -1;
                 if (!AddElement(rawNodes[iIndex].id, rawNodes[jIndex].id, lineConfig.elementType, lineConfig.property,
                                 rawElement.initialStress, elementId, error, ElementRole::Conductor, wireId, wireId,
-                                wireCount))
+                                wireCount, lineConfig.localMassFirstMomentPerLength))
                 {
                     error = "添加多档导线单元失败：" + error;
                     rollback();
@@ -954,20 +1011,11 @@ bool ConductorModelBuilder::BuildMultiSpanConductor(const MultiSpanConductorBuil
     for (std::size_t spanIndex = 0; spanIndex < spanCount; ++spanIndex)
     {
         auto& spanResult = spanResults[spanIndex];
-        if (!config.span.innerSpacers.empty() && !BuildInnerSpacers(spanResult, config.span.innerSpacers, error))
+        if (!spanSpacerConfigs[spanIndex].empty() &&
+            !BuildInnerSpacers(spanResult, spanSpacerConfigs[spanIndex], error))
         {
             rollback();
             return false;
-        }
-        if (config.span.useInnerSpacerLayout)
-        {
-            std::vector<InnerSpacerConfig> autoSpacers;
-            if (!CalculateInnerSpacerConfigs(spanResult, config.span.innerSpacerLayout, autoSpacers, error) ||
-                !BuildInnerSpacers(spanResult, autoSpacers, error))
-            {
-                rollback();
-                return false;
-            }
         }
         result.innerSpacers.insert(result.innerSpacers.end(), spanResult.innerSpacers.begin(),
                                    spanResult.innerSpacers.end());
@@ -1056,8 +1104,9 @@ bool ConductorModelBuilder::ValidateProperty(std::shared_ptr<Property> property,
 }
 
 bool ConductorModelBuilder::AddRigidSpacerInertia(int centerNodeId, const std::vector<Vector3d>& wirePositions,
-                                                  const std::shared_ptr<Property>& property, _OUT int& inertiaId,
-                                                  _OUT std::string& error)
+                                                  const std::shared_ptr<Property>& property,
+                                                  EnumKeyword::ElementType equivalentElementType, double totalMass,
+                                                  _OUT int& inertiaId, _OUT std::string& error)
 {
     inertiaId = -1;
     const auto centerNode = m_structure ? m_structure->FindNode(centerNodeId) : nullptr;
@@ -1072,31 +1121,97 @@ bool ConductorModelBuilder::AddRigidSpacerInertia(int centerNodeId, const std::v
 
     const Vector3d center(centerNode->m_X, centerNode->m_Y, centerNode->m_Z);
     const double lineMass = material->m_Density * section->m_Area;
+    if (equivalentElementType != EnumKeyword::ElementType::CR3D &&
+        equivalentElementType != EnumKeyword::ElementType::T3D2)
+    {
+        error = "刚性中心间隔棒只支持 CR3D 或 T3D2 的等效质量";
+        return false;
+    }
+    Vector3d sectionRotaryInertia = Vector3d::Zero();
+    if (equivalentElementType == EnumKeyword::ElementType::CR3D)
+    {
+        double Iy = 0.0;
+        double Iz = 0.0;
+        double polarMoment = 0.0;
+        section->Calculate_I(Iy, Iz, polarMoment);
+        sectionRotaryInertia =
+            Vector3d(material->m_Density * (Iy + Iz), material->m_Density * Iy, material->m_Density * Iz);
+        if ((section->m_MassInertiaPerLength.array() > 0.0).all())
+            sectionRotaryInertia = section->m_MassInertiaPerLength;
+    }
     double mass = 0.0;
     double maximumArmLength = 0.0;
     Vector3d firstMassMoment = Vector3d::Zero();
     Matrix3d rotaryInertia = Matrix3d::Zero();
+    const auto addMemberInertia = [&](const Vector3d& first, const Vector3d& second)
+    {
+        const Vector3d direction = second - first;
+        const double length = direction.norm();
+        if (length <= 1.0e-10)
+            return false;
+
+        const double memberMass = lineMass * length;
+        mass += memberMass;
+        maximumArmLength = std::max({maximumArmLength, first.norm(), second.norm()});
+        firstMassMoment += 0.5 * memberMass * (first + second);
+        const Matrix3d secondMoment = memberMass *
+                                      (first * first.transpose() +
+                                       0.5 * (first * direction.transpose() + direction * first.transpose()) +
+                                       (1.0 / 3.0) * direction * direction.transpose());
+        rotaryInertia += secondMoment.trace() * Matrix3d::Identity() - secondMoment;
+        // 与梁单元一致，保留截面绕三条局部轴的自转惯量。
+        const Vector3d axis = direction / length;
+        const Vector3d reference = std::abs(axis.dot(Vector3d::UnitZ())) < 0.9 ? Vector3d::UnitZ()
+                                                                                  : Vector3d::UnitY();
+        const Vector3d third = axis.cross(reference).normalized();
+        Matrix3d sectionRotation;
+        sectionRotation.col(0) = axis;
+        sectionRotation.col(1) = third.cross(axis);
+        sectionRotation.col(2) = third;
+        rotaryInertia +=
+            length * sectionRotation * sectionRotaryInertia.asDiagonal() * sectionRotation.transpose();
+        return true;
+    };
     for (const Vector3d& wirePosition : wirePositions)
     {
         const Vector3d offset = wirePosition - center;
-        const double length = offset.norm();
-        if (length <= 1.0e-10)
+        if (!addMemberInertia(Vector3d::Zero(), offset))
         {
             error = "刚性中心间隔棒存在长度为零的等效刚臂";
             return false;
         }
-        const double armMass = lineMass * length;
-        mass += armMass;
-        maximumArmLength = std::max(maximumArmLength, length);
-        firstMassMoment += 0.5 * armMass * offset;
-        // 每根中心刚臂按均匀细杆等效：m=ρAL，关于中心端点的转动惯量系数为 m/3。
-        rotaryInertia += (armMass / 3.0) *
-                          (offset.squaredNorm() * Matrix3d::Identity() - offset * offset.transpose());
+    }
+    for (std::size_t wireId = 0; wireId < wirePositions.size(); ++wireId)
+    {
+        const Vector3d first = wirePositions[wireId] - center;
+        const Vector3d second = wirePositions[(wireId + 1) % wirePositions.size()] - center;
+        if (!addMemberInertia(first, second))
+        {
+            error = "刚性中心间隔棒存在长度为零的等效外框";
+            return false;
+        }
     }
     if (firstMassMoment.norm() > 1.0e-8 * mass * maximumArmLength)
     {
         error = "刚性中心间隔棒的参考节点与等效质心不重合";
         return false;
+    }
+
+    if (totalMass > 0.0)
+    {
+        if (!std::isfinite(mass) || mass <= 0.0)
+        {
+            error = "刚性中心间隔棒无法归一总质量";
+            return false;
+        }
+        const double ratio = totalMass / mass;
+        if (!std::isfinite(ratio) || ratio <= 0.0)
+        {
+            error = "刚性中心间隔棒无法归一总质量";
+            return false;
+        }
+        mass = totalMass;
+        rotaryInertia *= ratio;
     }
 
     auto inertia = std::make_shared<RigidBodyInertia>();
@@ -1119,15 +1234,9 @@ std::shared_ptr<ElementBase> ConductorModelBuilder::CreateLineElement(EnumKeywor
     switch (elementType)
     {
         case EnumKeyword::ElementType::T3D2:
-            return std::make_shared<ElementTruss>();
         case EnumKeyword::ElementType::CABLE:
-            return std::make_shared<ElementCable>();
         case EnumKeyword::ElementType::CR3D:
-        {
-            auto beam = std::make_shared<ElementBeam_CR>();
-            beam->q0 = Vector3d::UnitZ();
-            return beam;
-        }
+            return ElementFactory::Create(elementType);
         default:
             error = "导线单元类型未知，无法生成导线单元";
             return nullptr;
@@ -1205,10 +1314,164 @@ int ConductorModelBuilder::FindNearestNodeOnSubConductor(const SubConductorModel
     return bestNodeId;
 }
 
+std::shared_ptr<Property> ConductorModelBuilder::CreateLocalMassProperty(const std::shared_ptr<Property>& property,
+                                                                         const Vector3d& axis,
+                                                                         const Vector3d& localMassFirstMoment,
+                                                                         _OUT std::string& error)
+{
+    if (!localMassFirstMoment.allFinite() || std::abs(localMassFirstMoment.x()) > 1.0e-12)
+    {
+        error = "导线截面局部质量一次矩必须有限且位于局部 YZ 平面";
+        return nullptr;
+    }
+    const auto originalSection =
+        property ? std::dynamic_pointer_cast<SectionCircular>(property->m_pSection.lock()) : nullptr;
+    if (!originalSection)
+    {
+        error = "导线局部偏心质量目前仅支持圆形截面";
+        return nullptr;
+    }
+
+    Vector3d localZ = Vector3d::UnitZ() - axis.z() * axis;
+    if (localZ.norm() <= 1.0e-8)
+        localZ = Vector3d::UnitY() - axis.y() * axis;
+    localZ.normalize();
+    const Vector3d localY = localZ.cross(axis);
+    auto section = std::make_shared<SectionCircular>(*originalSection);
+    section->m_Id = m_structure->m_Section.empty() ? 1 : m_structure->m_Section.rbegin()->first + 1;
+    // 文件和求解器继续使用初始全局一次矩；局部截面参数只在建模时转换。
+    section->m_MassFirstMomentPerLength = localMassFirstMoment.y() * localY + localMassFirstMoment.z() * localZ;
+    auto localProperty = std::make_shared<Property>(*property);
+    localProperty->m_Id = m_structure->m_Property.empty() ? 1 : m_structure->m_Property.rbegin()->first + 1;
+    localProperty->m_pSection = section;
+    if (!m_structure->m_Section.emplace(section->m_Id, section).second)
+    {
+        error = "添加导线局部偏心质量截面失败";
+        return nullptr;
+    }
+    if (!m_structure->m_Property.emplace(localProperty->m_Id, localProperty).second)
+    {
+        m_structure->m_Section.erase(section->m_Id);
+        error = "添加导线局部偏心质量属性失败";
+        return nullptr;
+    }
+    return localProperty;
+}
+
+bool ConductorModelBuilder::ApplySpacerTotalMass(const std::vector<int>& elementIds, double totalMass,
+                                                 _OUT std::string& error)
+{
+    if (totalMass == 0.0)
+        return true;
+    if (!m_structure || !std::isfinite(totalMass) || totalMass < 0.0 || elementIds.empty())
+    {
+        error = "间隔棒总质量需要有效的单元与有限正值";
+        return false;
+    }
+
+    std::vector<std::shared_ptr<ElementBase>> elements;
+    elements.reserve(elementIds.size());
+    std::shared_ptr<Property> sourceProperty;
+    double totalLength = 0.0;
+    for (int elementId : elementIds)
+    {
+        const auto found = m_structure->m_Elements.find(elementId);
+        const auto element = found == m_structure->m_Elements.end() ? nullptr : found->second;
+        const auto property = element ? element->m_pProperty.lock() : nullptr;
+        if (!element || !property || !std::isfinite(element->L0) || element->L0 <= 0.0 ||
+            (sourceProperty && property != sourceProperty))
+        {
+            error = "间隔棒总质量需要同一属性及有效初始杆长";
+            return false;
+        }
+        sourceProperty = property;
+        totalLength += element->L0;
+        elements.push_back(element);
+    }
+    const auto sourceMaterial = sourceProperty->m_pMaterial.lock();
+    const auto sourceSection = sourceProperty->m_pSection.lock();
+    if (!sourceMaterial || !sourceSection || !std::isfinite(sourceMaterial->m_Density) ||
+        sourceMaterial->m_Density <= 0.0 || !std::isfinite(sourceSection->m_Area) || sourceSection->m_Area <= 0.0 ||
+        !std::isfinite(totalLength) || totalLength <= 0.0)
+    {
+        error = "间隔棒总质量需要有效材料密度、截面面积及总杆长";
+        return false;
+    }
+    const double totalVolume = sourceSection->m_Area * totalLength;
+    const double originalMass = sourceMaterial->m_Density * totalVolume;
+    if (!std::isfinite(totalVolume) || totalVolume <= 0.0 || !std::isfinite(originalMass) || originalMass <= 0.0)
+    {
+        error = "间隔棒总质量需要有效的总体积与原始质量";
+        return false;
+    }
+    const double ratio = totalMass / originalMass;
+    const double density = totalMass / totalVolume;
+    if (!std::isfinite(ratio) || ratio <= 0.0 || !std::isfinite(density) || density <= 0.0)
+    {
+        error = "间隔棒总质量换算得到无效的等效密度";
+        return false;
+    }
+
+    auto section = SectionFactory::Clone(sourceSection);
+    if (!section)
+    {
+        error = "间隔棒总质量不支持当前截面类型";
+        return false;
+    }
+    section->m_Id = m_structure->m_Section.empty() ? 1 : m_structure->m_Section.rbegin()->first + 1;
+    section->m_MassInertiaPerLength *= ratio;
+    section->m_MassFirstMomentPerLength *= ratio;
+    if (!section->m_MassInertiaPerLength.allFinite() || !section->m_MassFirstMomentPerLength.allFinite())
+    {
+        error = "间隔棒总质量换算得到无效的截面质量惯量";
+        return false;
+    }
+    auto material = std::make_shared<Material>(*sourceMaterial);
+    material->m_Id = m_structure->m_Material.empty() ? 1 : m_structure->m_Material.rbegin()->first + 1;
+    material->m_Density = density;
+    auto property = std::make_shared<Property>(*sourceProperty);
+    property->m_Id = m_structure->m_Property.empty() ? 1 : m_structure->m_Property.rbegin()->first + 1;
+    property->m_pMaterial = material;
+    property->m_pSection = section;
+    if (!m_structure->m_Material.emplace(material->m_Id, material).second)
+    {
+        error = "添加间隔棒独立质量材料失败";
+        return false;
+    }
+    if (!m_structure->m_Section.emplace(section->m_Id, section).second)
+    {
+        m_structure->m_Material.erase(material->m_Id);
+        error = "添加间隔棒独立质量截面失败";
+        return false;
+    }
+    if (!m_structure->m_Property.emplace(property->m_Id, property).second)
+    {
+        m_structure->m_Section.erase(section->m_Id);
+        m_structure->m_Material.erase(material->m_Id);
+        error = "添加间隔棒独立质量属性失败";
+        return false;
+    }
+    for (const auto& element : elements)
+        element->m_pProperty = property;
+    return true;
+}
+
+void ConductorModelBuilder::RollbackLocalMassProperties(int originalPropertyId, int originalSectionId,
+                                                        int originalMaterialId)
+{
+    if (!m_structure)
+        return;
+    m_structure->m_Property.erase(m_structure->m_Property.upper_bound(originalPropertyId),
+                                  m_structure->m_Property.end());
+    m_structure->m_Section.erase(m_structure->m_Section.upper_bound(originalSectionId), m_structure->m_Section.end());
+    m_structure->m_Material.erase(m_structure->m_Material.upper_bound(originalMaterialId),
+                                  m_structure->m_Material.end());
+}
+
 bool ConductorModelBuilder::AddElement(int iNodeId, int jNodeId, EnumKeyword::ElementType elementType,
                                        std::shared_ptr<Property> property, double initStress, _OUT int& elementId,
                                        _OUT std::string& error, ElementRole role, int wireId, int aeroProfileId,
-                                       int aeroBundleCount)
+                                       int aeroBundleCount, const Vector3d& localMassFirstMoment)
 {
     auto iNode = m_structure->FindNode(iNodeId);
     auto jNode = m_structure->FindNode(jNodeId);
@@ -1237,9 +1500,31 @@ bool ConductorModelBuilder::AddElement(int iNodeId, int jNodeId, EnumKeyword::El
     PrepareElementLocalFrame(element);
     element->Get_L0();
 
+    const bool hasLocalMass = role == ElementRole::Conductor && elementType == EnumKeyword::ElementType::CABLE &&
+                              (!localMassFirstMoment.allFinite() || localMassFirstMoment.squaredNorm() > 0.0);
+    if (hasLocalMass)
+    {
+        const Vector3d chord(jNode->m_X - iNode->m_X, jNode->m_Y - iNode->m_Y, jNode->m_Z - iNode->m_Z);
+        if (!chord.allFinite() || chord.norm() <= 1.0e-12)
+        {
+            error = "导线局部偏心质量需要有效的单元初始轴线";
+            return false;
+        }
+        property = CreateLocalMassProperty(property, Utility::CR::CanonicalAxis(chord), localMassFirstMoment, error);
+        if (!property)
+            return false;
+        element->m_pProperty = property;
+    }
     auto inserted = m_structure->m_Elements.insert({elementId, element});
     if (!inserted.second)
     {
+        if (hasLocalMass)
+        {
+            const auto section = property->m_pSection.lock();
+            m_structure->m_Property.erase(property->m_Id);
+            if (section)
+                m_structure->m_Section.erase(section->m_Id);
+        }
         error = "添加单元失败";
         return false;
     }
@@ -1250,6 +1535,16 @@ bool ConductorModelBuilder::AddElement(int iNodeId, int jNodeId, EnumKeyword::El
 bool ConductorModelBuilder::BuildSuspensionSpacer(_OUT SuspensionPointModel& suspension,
                                                   const InnerSpacerConfig& config, _OUT std::string& error)
 {
+    if (!std::isfinite(config.totalMass) || config.totalMass < 0.0)
+    {
+        error = "悬垂端间隔棒总质量必须为有限非负值";
+        return false;
+    }
+    if (config.style == InnerSpacerStyle::CrossBraced && suspension.wireNodeIds.size() != 4)
+    {
+        error = "交叉支撑间隔棒只支持四分裂导线";
+        return false;
+    }
     if (suspension.wireNodeIds.size() < 2)
         return true;
     const bool rigidCenterMpc = config.style == InnerSpacerStyle::RigidCenterMPC;
@@ -1266,6 +1561,9 @@ bool ConductorModelBuilder::BuildSuspensionSpacer(_OUT SuspensionPointModel& sus
         return false;
     }
 
+    const int originalPropertyId = m_structure->m_Property.empty() ? 0 : m_structure->m_Property.rbegin()->first;
+    const int originalSectionId = m_structure->m_Section.empty() ? 0 : m_structure->m_Section.rbegin()->first;
+    const int originalMaterialId = m_structure->m_Material.empty() ? 0 : m_structure->m_Material.rbegin()->first;
     std::vector<int> createdNodeIds;
     std::vector<int> createdElementIds;
     std::vector<int> createdMpcIds;
@@ -1280,6 +1578,7 @@ bool ConductorModelBuilder::BuildSuspensionSpacer(_OUT SuspensionPointModel& sus
             m_structure->m_Elements.erase(elementId);
         for (int nodeId : createdNodeIds)
             m_structure->m_Nodes.erase(nodeId);
+        RollbackLocalMassProperties(originalPropertyId, originalSectionId, originalMaterialId);
         suspension.spacerCenterNodeId = -1;
         suspension.spacerInnerNodeIds.clear();
         suspension.spacerElementIds.clear();
@@ -1307,6 +1606,15 @@ bool ConductorModelBuilder::BuildSuspensionSpacer(_OUT SuspensionPointModel& sus
             return false;
         createdElementIds.push_back(elementId);
         suspension.spacerElementIds.push_back(elementId);
+        return true;
+    };
+    auto finishSpacer = [&]() -> bool
+    {
+        if (!ApplySpacerTotalMass(suspension.spacerElementIds, config.totalMass, error))
+        {
+            rollback();
+            return false;
+        }
         return true;
     };
 
@@ -1359,31 +1667,29 @@ bool ConductorModelBuilder::BuildSuspensionSpacer(_OUT SuspensionPointModel& sus
             suspension.spacerMpcIds.push_back(mpcId);
 
             Vector3d cableAxis;
-            if (!FindCableAxisAtNode(*m_structure, slave->m_Id, cableAxis))
+            if (FindCableAxisAtNode(*m_structure, slave->m_Id, cableAxis))
             {
-                error = "无法确定悬垂端索节点的局部轴向";
-                rollback();
-                return false;
+                // 只有索单元的第四自由度表示轴向扭转；桁架和梁不应附加该标量约束。
+                const int twistMpcId = NextMPCId();
+                auto twistMpc = std::make_shared<AxialTwistTieMPCConstraint>();
+                twistMpc->m_Id = twistMpcId;
+                twistMpc->m_Name = QStringLiteral("悬垂端间隔棒轴向扭转_%1").arg(twistMpcId);
+                twistMpc->m_pMasterNode = master;
+                twistMpc->m_pSlaveNode = slave;
+                twistMpc->m_Axis = cableAxis;
+                twistMpc->m_SlaveDirections = {3};
+                if (!m_structure->m_MPCConstraints.emplace(twistMpcId, twistMpc).second)
+                {
+                    error = "添加悬垂端间隔棒轴向扭转 MPC 失败";
+                    rollback();
+                    return false;
+                }
+                createdMpcIds.push_back(twistMpcId);
+                suspension.spacerMpcIds.push_back(twistMpcId);
             }
-            const int twistMpcId = NextMPCId();
-            auto twistMpc = std::make_shared<AxialTwistTieMPCConstraint>();
-            twistMpc->m_Id = twistMpcId;
-            twistMpc->m_Name = QStringLiteral("悬垂端间隔棒轴向扭转_%1").arg(twistMpcId);
-            twistMpc->m_pMasterNode = master;
-            twistMpc->m_pSlaveNode = slave;
-            twistMpc->m_Axis = cableAxis;
-            twistMpc->m_SlaveDirections = {3};
-            if (!m_structure->m_MPCConstraints.emplace(twistMpcId, twistMpc).second)
-            {
-                error = "添加悬垂端间隔棒轴向扭转 MPC 失败";
-                rollback();
-                return false;
-            }
-            createdMpcIds.push_back(twistMpcId);
-            suspension.spacerMpcIds.push_back(twistMpcId);
         }
-        if (!AddRigidSpacerInertia(suspension.spacerCenterNodeId, wirePositions, config.property, createdInertiaId,
-                                   error))
+        if (!AddRigidSpacerInertia(suspension.spacerCenterNodeId, wirePositions, config.property, config.elementType,
+                                   config.totalMass, createdInertiaId, error))
         {
             rollback();
             return false;
@@ -1407,7 +1713,7 @@ bool ConductorModelBuilder::BuildSuspensionSpacer(_OUT SuspensionPointModel& sus
     }
 
     if (wireCount == 2 || config.style == InnerSpacerStyle::OuterPolygon)
-        return true;
+        return finishSpacer();
 
     if (config.style == InnerSpacerStyle::CenterBraced)
     {
@@ -1425,7 +1731,25 @@ bool ConductorModelBuilder::BuildSuspensionSpacer(_OUT SuspensionPointModel& sus
                 return false;
             }
         }
-        return true;
+        return finishSpacer();
+    }
+
+    if (config.style == InnerSpacerStyle::CrossBraced)
+    {
+        // 节点按子导线外框顺序排列，连接两组相对节点。
+        if (!addSpacerElement(spacerWireNodeIds[0], spacerWireNodeIds[2]) ||
+            !addSpacerElement(spacerWireNodeIds[1], spacerWireNodeIds[3]))
+        {
+            rollback();
+            return false;
+        }
+        return finishSpacer();
+    }
+    if (config.style != InnerSpacerStyle::InnerPolygon)
+    {
+        error = "悬垂端相内间隔棒形式无效";
+        rollback();
+        return false;
     }
 
     const double scale = std::clamp(config.innerPolygonScale, 0.05, 0.95);
@@ -1451,7 +1775,7 @@ bool ConductorModelBuilder::BuildSuspensionSpacer(_OUT SuspensionPointModel& sus
             return false;
         }
     }
-    return true;
+    return finishSpacer();
 }
 
 bool ConductorModelBuilder::BuildInnerSpacer(LineBuildResult& line, const InnerSpacerConfig& config,
@@ -1467,10 +1791,27 @@ bool ConductorModelBuilder::BuildInnerSpacer(LineBuildResult& line, const InnerS
         error = "StructureData 为空，无法生成相内间隔棒";
         return false;
     }
+    if (!std::isfinite(config.totalMass) || config.totalMass < 0.0)
+    {
+        error = "相内间隔棒总质量必须为有限非负值";
+        return false;
+    }
 
     if (line.subConductors.size() < 2)
     {
         error = "单分裂导线不需要相内间隔棒";
+        return false;
+    }
+    if (config.style == InnerSpacerStyle::CrossBraced && line.subConductors.size() != 4)
+    {
+        error = "交叉支撑间隔棒只支持四分裂导线";
+        return false;
+    }
+    if (config.style != InnerSpacerStyle::OuterPolygon && config.style != InnerSpacerStyle::CenterBraced &&
+        config.style != InnerSpacerStyle::InnerPolygon && config.style != InnerSpacerStyle::RigidCenterMPC &&
+        config.style != InnerSpacerStyle::CrossBraced)
+    {
+        error = "相内间隔棒形式无效";
         return false;
     }
     if (rigidCenterMpc && line.subConductors.size() < 3)
@@ -1495,6 +1836,9 @@ bool ConductorModelBuilder::BuildInnerSpacer(LineBuildResult& line, const InnerS
     {
         return false;
     }
+    const int originalPropertyId = m_structure->m_Property.empty() ? 0 : m_structure->m_Property.rbegin()->first;
+    const int originalSectionId = m_structure->m_Section.empty() ? 0 : m_structure->m_Section.rbegin()->first;
+    const int originalMaterialId = m_structure->m_Material.empty() ? 0 : m_structure->m_Material.rbegin()->first;
 
     int expectedNodeCount = -1;
     for (const auto& pair : line.subConductors)
@@ -1534,9 +1878,6 @@ bool ConductorModelBuilder::BuildInnerSpacer(LineBuildResult& line, const InnerS
     wireNodeIds.reserve(line.subConductors.size());
     std::vector<Vector3d> wirePositions;
     wirePositions.reserve(line.subConductors.size());
-    std::vector<Vector3d> wireAxes;
-    wireAxes.reserve(line.subConductors.size());
-
     Vector3d center = Vector3d::Zero();
     for (const auto& pair : line.subConductors)
     {
@@ -1552,13 +1893,6 @@ bool ConductorModelBuilder::BuildInnerSpacer(LineBuildResult& line, const InnerS
 
         wireNodeIds.push_back(nodeId);
         wirePositions.emplace_back(node->m_X, node->m_Y, node->m_Z);
-        Vector3d cableAxis;
-        if (!FindCableAxisAtNode(*m_structure, nodeId, cableAxis))
-        {
-            error = "无法确定相内间隔棒索节点的局部轴向";
-            return false;
-        }
-        wireAxes.push_back(cableAxis);
         spacer.nodeIds.push_back(nodeId);
         center += Vector3d(node->m_X, node->m_Y, node->m_Z);
     }
@@ -1605,6 +1939,7 @@ bool ConductorModelBuilder::BuildInnerSpacer(LineBuildResult& line, const InnerS
         {
             m_structure->m_Nodes.erase(nodeId);
         }
+        RollbackLocalMassProperties(originalPropertyId, originalSectionId, originalMaterialId);
         spacer = InnerSpacerModel{};
     };
 
@@ -1656,24 +1991,30 @@ bool ConductorModelBuilder::BuildInnerSpacer(LineBuildResult& line, const InnerS
             createdMpcIds.push_back(mpcId);
             spacer.mpcIds.push_back(mpcId);
 
-            const int twistMpcId = NextMPCId();
-            auto twistMpc = std::make_shared<AxialTwistTieMPCConstraint>();
-            twistMpc->m_Id = twistMpcId;
-            twistMpc->m_Name = QStringLiteral("刚性中心间隔棒轴向扭转_%1").arg(twistMpcId);
-            twistMpc->m_pMasterNode = master;
-            twistMpc->m_pSlaveNode = slave;
-            twistMpc->m_Axis = wireAxes[wireId];
-            twistMpc->m_SlaveDirections = {3};
-            if (!m_structure->m_MPCConstraints.emplace(twistMpcId, twistMpc).second)
+            Vector3d cableAxis;
+            if (FindCableAxisAtNode(*m_structure, slave->m_Id, cableAxis))
             {
-                error = "添加刚性中心间隔棒轴向扭转 MPC 失败";
-                rollback();
-                return false;
+                // 轴向扭转约束仅绑定索的标量扭转自由度。
+                const int twistMpcId = NextMPCId();
+                auto twistMpc = std::make_shared<AxialTwistTieMPCConstraint>();
+                twistMpc->m_Id = twistMpcId;
+                twistMpc->m_Name = QStringLiteral("刚性中心间隔棒轴向扭转_%1").arg(twistMpcId);
+                twistMpc->m_pMasterNode = master;
+                twistMpc->m_pSlaveNode = slave;
+                twistMpc->m_Axis = cableAxis;
+                twistMpc->m_SlaveDirections = {3};
+                if (!m_structure->m_MPCConstraints.emplace(twistMpcId, twistMpc).second)
+                {
+                    error = "添加刚性中心间隔棒轴向扭转 MPC 失败";
+                    rollback();
+                    return false;
+                }
+                createdMpcIds.push_back(twistMpcId);
+                spacer.mpcIds.push_back(twistMpcId);
             }
-            createdMpcIds.push_back(twistMpcId);
-            spacer.mpcIds.push_back(twistMpcId);
         }
-        if (!AddRigidSpacerInertia(centerNodeId, wirePositions, config.property, spacer.rigidBodyInertiaId, error))
+        if (!AddRigidSpacerInertia(centerNodeId, wirePositions, config.property, config.elementType, config.totalMass,
+                                   spacer.rigidBodyInertiaId, error))
         {
             rollback();
             return false;
@@ -1717,7 +2058,18 @@ bool ConductorModelBuilder::BuildInnerSpacer(LineBuildResult& line, const InnerS
             }
         }
 
-        if (config.style == InnerSpacerStyle::InnerPolygon)
+        if (config.style == InnerSpacerStyle::CrossBraced)
+        {
+            // 与外框的四条边一起形成六根梁，不增加中心节点。
+            if (!addSpacerElement(wireNodeIds[0], wireNodeIds[2]) ||
+                !addSpacerElement(wireNodeIds[1], wireNodeIds[3]))
+            {
+                error = "添加相内间隔棒交叉支撑失败";
+                rollback();
+                return false;
+            }
+        }
+        else if (config.style == InnerSpacerStyle::InnerPolygon)
         {
             const double scale = std::clamp(config.innerPolygonScale, 1.0e-4, 0.9999);
             std::vector<int> innerNodeIds;
@@ -1764,6 +2116,11 @@ bool ConductorModelBuilder::BuildInnerSpacer(LineBuildResult& line, const InnerS
         }
     }
 
+    if (!ApplySpacerTotalMass(spacer.elementIds, config.totalMass, error))
+    {
+        rollback();
+        return false;
+    }
     line.innerSpacers.push_back(spacer);
     return true;
 }
@@ -1772,6 +2129,12 @@ bool ConductorModelBuilder::BuildInnerSpacers(_OUT LineBuildResult& line, const 
                                               _OUT std::string& error)
 {
     int oldSpacerCount = static_cast<int>(line.innerSpacers.size());
+    const int originalPropertyId =
+        m_structure && !m_structure->m_Property.empty() ? m_structure->m_Property.rbegin()->first : 0;
+    const int originalSectionId =
+        m_structure && !m_structure->m_Section.empty() ? m_structure->m_Section.rbegin()->first : 0;
+    const int originalMaterialId =
+        m_structure && !m_structure->m_Material.empty() ? m_structure->m_Material.rbegin()->first : 0;
 
     for (const auto& config : configs)
     {
@@ -1780,6 +2143,8 @@ bool ConductorModelBuilder::BuildInnerSpacers(_OUT LineBuildResult& line, const 
         {
             for (int i = static_cast<int>(line.innerSpacers.size()) - 1; i >= oldSpacerCount; --i)
             {
+                if (line.innerSpacers[i].rigidBodyInertiaId > 0)
+                    m_structure->m_RigidBodyInertias.erase(line.innerSpacers[i].rigidBodyInertiaId);
                 for (int mpcId : line.innerSpacers[i].mpcIds)
                 {
                     m_structure->m_MPCConstraints.erase(mpcId);
@@ -1794,6 +2159,7 @@ bool ConductorModelBuilder::BuildInnerSpacers(_OUT LineBuildResult& line, const 
                     m_structure->m_Nodes.erase(nodeId);
             }
             line.innerSpacers.resize(oldSpacerCount);
+            RollbackLocalMassProperties(originalPropertyId, originalSectionId, originalMaterialId);
             return false;
         }
     }
@@ -1879,6 +2245,11 @@ bool ConductorModelBuilder::CalculateInnerSpacerConfigs(const LineBuildResult& l
                                                         _OUT std::string& error) const
 {
     configs.clear();
+    if (!std::isfinite(layout.spacer.totalMass) || layout.spacer.totalMass < 0.0)
+    {
+        error = "自动布置间隔棒总质量必须为有限非负值";
+        return false;
+    }
 
     if (layout.useEqualSpacing && layout.count <= 0)
     {
@@ -2212,7 +2583,7 @@ bool ConductorModelBuilder::AddElements(const BundleResult& raw, const LineBuild
             int elementId = -1;
             if (!AddElement(rawNodes[iIndex].id, rawNodes[jIndex].id, config.elementType, property,
                             rawElement.initialStress, elementId, error, ElementRole::Conductor, wireId, wireId,
-                            config.conductor.nBundle))
+                            config.conductor.nBundle, config.localMassFirstMomentPerLength))
             {
                 error = "添加导线单元失败：" + error;
                 rollback();
@@ -2264,7 +2635,7 @@ bool ConductorModelBuilder::AddTensionEndElements(const LineBuildConfig& config,
                                           ? endModel.supportNodeIds[groupIndex]
                                           : endModel.supportNodeId;
             int elementId = -1;
-            if (!AddElement(supportNodeId, groupNodeId, config.elementType, config.property,
+            if (!AddElement(supportNodeId, groupNodeId, config.elementType, stabilizerProperty,
                             config.conductor.initialStress, elementId, error, ElementRole::TensionHardware))
                 return false;
             createdElementIds.push_back(elementId);

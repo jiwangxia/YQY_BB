@@ -1,0 +1,19 @@
+{
+  "length": 1.0,
+  "width": 0.2,
+  "height": 0.1,
+  "young": 100.0,
+  "density": 2.0,
+  "poisson": 0.3,
+  "duration": 2.0,
+  "time_steps": [
+    0.02,
+    0.01,
+    0.005
+  ],
+  "rotation_rates_zyx": [
+    0.7,
+    0.4,
+    0.9
+  ]
+}

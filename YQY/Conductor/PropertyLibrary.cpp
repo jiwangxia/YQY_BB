@@ -1,46 +1,80 @@
 #include "PropertyLibrary.h"
 
+#include "DataStructure/Factory/SectionFactory.h"
 #include "DataStructure/Material/Material.h"
 #include "DataStructure/Property/Property.h"
-#include "DataStructure/Section/SectionCircular.h"
 #include "DataStructure/Structure/StructureData.h"
 
 #include <QFile>
 #include <QCoreApplication>
 #include <QDir>
-#include <QRegularExpression>
+#include <QFileInfo>
 #include <QTextStream>
-
-namespace
-{
-QStringList dataRows(const QString& resourcePath, QString& error)
-{
-    QFile file(resourcePath);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
-    {
-        error = QStringLiteral("无法读取内置属性库：%1").arg(resourcePath);
-        return {};
-    }
-
-    QStringList rows;
-    QTextStream stream(&file);
-    stream.setEncoding(QStringConverter::Utf8);
-    while (!stream.atEnd())
-    {
-        QString row = stream.readLine().trimmed();
-        if (!rows.size() && !row.isEmpty() && row.front() == QChar::ByteOrderMark)
-            row.remove(0, 1);
-        if (!row.isEmpty() && !row.startsWith(QLatin1Char('#')))
-            rows.push_back(row);
-    }
-    return rows;
-}
-}
+#include <algorithm>
+#include <cmath>
+#include <limits>
 
 namespace Conductor
 {
+const QVector<SpacerPreset>& PropertyLibrary::spacerPresets()
+{
+    static const QVector<SpacerPreset> presets = []()
+    {
+        const QString materialName = QStringLiteral("ZL102（参考）");
+        const QString materialNote =
+            QStringLiteral("厂家目录未公开确切材料牌号；ZL102仅为参考建模材料，不代表该型号的厂家材料认证。");
+        const QString beili = QStringLiteral("浙江贝力");
+        const QString twinSource = QStringLiteral("https://www.beiliele.com/fjz-double-split-damper-spacer-product/");
+        const QString quadSource =
+            QStringLiteral("https://www.beiliele.com/fjz4-four-split-conductor-damper-spacer-product/");
+        const QString sixSource =
+            QStringLiteral("https://www.beiliele.com/fjz6-six-split-conductor-single-phase-spacer-product/");
+        const QString mcwadeSource = QStringLiteral("https://mcwadeproductions.co.za/wp-content/uploads/2023/10/"
+                                                    "McWade-Powerlines-Catalogue-2021-2023-07-28.pdf");
+        const QString sixMaterialNote =
+            materialNote + QStringLiteral(" 原目录分裂圆直径750 mm；六分裂相邻子导线中心距换算为375 mm。");
+        return QVector<SpacerPreset>{
+            {QStringLiteral("beili-fjz-240-19"), QStringLiteral("FJZ-240/19"), beili, twinSource, materialName,
+             materialNote, 2, 3.6, 0.4, false},
+            {QStringLiteral("beili-fjz-245-19"), QStringLiteral("FJZ-245/19"), beili, twinSource, materialName,
+             materialNote, 2, 3.96, 0.45, false},
+            {QStringLiteral("beili-fjz-250-30"), QStringLiteral("FJZ-250/30"), beili, twinSource, materialName,
+             materialNote, 2, 4.5, 0.5, false},
+            {QStringLiteral("mcwade-856890-00"), QStringLiteral("856890-00"), QStringLiteral("McWade"), mcwadeSource,
+             materialName, materialNote, 4, 5.0, 0.4, false},
+            {QStringLiteral("mcwade-856889-00"), QStringLiteral("856889-00"), QStringLiteral("McWade"), mcwadeSource,
+             materialName, materialNote, 4, 5.6, 0.45, false},
+            {QStringLiteral("beili-45f-19"), QStringLiteral("FJZ4-45F/19"), beili, quadSource, materialName,
+             materialNote, 4, 7.3, 0.45, false},
+            {QStringLiteral("henvcon-jzf4-45400"), QStringLiteral("JZF4-45400"), QStringLiteral("恒威通"),
+             QStringLiteral("https://cn.henvcon.com/products_details/141.html"), materialName, materialNote, 4, 7.5,
+             0.45, false},
+            {QStringLiteral("beili-50f-36"), QStringLiteral("FJZ4-50F/36"), beili, quadSource, materialName,
+             materialNote, 4, 10.4, 0.5, false},
+            {QStringLiteral("beili-fjz6-375-300"), QStringLiteral("FJZ6-375/300"), beili, sixSource, materialName,
+             sixMaterialNote, 6, 11.3, 0.375, false},
+            {QStringLiteral("beili-fjz6-375d-300"), QStringLiteral("FJZ6-375D/300"), beili, sixSource, materialName,
+             sixMaterialNote, 6, 15.8, 0.375, false}};
+    }();
+    return presets;
+}
+
+static bool IsValidMaterialPreset(const MaterialPreset& value)
+{
+    return value.id > 0 && !value.name.trimmed().isEmpty() && std::isfinite(value.young) && value.young > 0.0 &&
+           std::isfinite(value.poisson) && value.poisson > -1.0 && value.poisson < 0.5 &&
+           std::isfinite(value.density) && value.density > 0.0 && std::isfinite(value.maxStress) &&
+           value.maxStress >= 0.0 && std::isfinite(value.expansion) && value.expansion >= 0.0;
+}
+
+static bool IsValidSectionPreset(const SectionPreset& value)
+{
+    return value.id > 0 && !value.name.trimmed().isEmpty() && std::isfinite(value.area) && value.area > 0.0;
+}
+
 bool PropertyLibrary::load(_OUT QString& error)
 {
+    error.clear();
     m_materials.clear();
     m_sections.clear();
     const QStringList candidates = {
@@ -125,7 +159,9 @@ bool PropertyLibrary::loadBdf(const QString& filePath, _OUT QString& error)
             value.maxStress = fields[6].trimmed().toDouble(&okStress);
             value.expansion = fields[7].trimmed().toDouble(&okExpansion);
             if (!okId || !okE || !okNu || !okDensity || !okStress || !okExpansion || value.id <= 0 ||
-                value.name.isEmpty() || value.young <= 0.0 || value.density <= 0.0)
+                !IsValidMaterialPreset(value) ||
+                std::any_of(m_materials.cbegin(), m_materials.cend(),
+                            [&value](const MaterialPreset& existing) { return existing.id == value.id; }))
             {
                 error = QStringLiteral("MaterialProperty.bdf 第 %1 行材料数据无效").arg(lineNumber);
                 return false;
@@ -146,7 +182,9 @@ bool PropertyLibrary::loadBdf(const QString& filePath, _OUT QString& error)
             value.name = fields[2].trimmed();
             value.area = fields[3].trimmed().toDouble(&okArea);
             value.description = fields[4].trimmed();
-            if (!okId || !okArea || value.id <= 0 || value.name.isEmpty() || value.area <= 0.0)
+            if (!okId || !okArea || !IsValidSectionPreset(value) ||
+                std::any_of(m_sections.cbegin(), m_sections.cend(),
+                            [&value](const SectionPreset& existing) { return existing.id == value.id; }))
             {
                 error = QStringLiteral("MaterialProperty.bdf 第 %1 行截面数据无效").arg(lineNumber);
                 return false;
@@ -162,76 +200,10 @@ bool PropertyLibrary::loadBdf(const QString& filePath, _OUT QString& error)
     return true;
 }
 
-bool PropertyLibrary::loadMaterials(const QString& resourcePath, _OUT QString& error)
-{
-    const QStringList rows = dataRows(resourcePath, error);
-    if (rows.isEmpty())
-        return false;
-
-    for (const QString& row : rows)
-    {
-        const QStringList fields = row.split(QLatin1Char(','));
-        if (fields.size() != 8)
-        {
-            error = QStringLiteral("材料库字段数量错误：%1").arg(row);
-            return false;
-        }
-        bool okId = false, okE = false, okNu = false, okDensity = false, okStress = false, okAlpha = false;
-        MaterialPreset item;
-        item.id = fields[0].trimmed().toInt(&okId);
-        item.category = fields[1].trimmed();
-        item.name = fields[2].trimmed();
-        item.young = fields[3].trimmed().toDouble(&okE);
-        item.poisson = fields[4].trimmed().toDouble(&okNu);
-        item.density = fields[5].trimmed().toDouble(&okDensity);
-        item.maxStress = fields[6].trimmed().toDouble(&okStress);
-        item.expansion = fields[7].trimmed().toDouble(&okAlpha);
-        if (!okId || !okE || !okNu || !okDensity || !okStress || !okAlpha || item.id <= 0 || item.name.isEmpty() ||
-            item.young <= 0.0 || item.density <= 0.0)
-        {
-            error = QStringLiteral("材料库数据无效：%1").arg(row);
-            return false;
-        }
-        m_materials.push_back(item);
-    }
-    return !m_materials.isEmpty();
-}
-
-bool PropertyLibrary::loadSections(const QString& resourcePath, _OUT QString& error)
-{
-    const QStringList rows = dataRows(resourcePath, error);
-    if (rows.isEmpty())
-        return false;
-
-    for (const QString& row : rows)
-    {
-        const QStringList fields = row.split(QLatin1Char(','));
-        if (fields.size() != 5)
-        {
-            error = QStringLiteral("截面库字段数量错误：%1").arg(row);
-            return false;
-        }
-        bool okId = false, okArea = false;
-        SectionPreset item;
-        item.id = fields[0].trimmed().toInt(&okId);
-        item.category = fields[1].trimmed();
-        item.name = fields[2].trimmed();
-        item.area = fields[3].trimmed().toDouble(&okArea);
-        item.description = fields[4].trimmed();
-        if (!okId || !okArea || item.id <= 0 || item.name.isEmpty() || item.area <= 0.0)
-        {
-            error = QStringLiteral("截面库数据无效：%1").arg(row);
-            return false;
-        }
-        m_sections.push_back(item);
-    }
-    return !m_sections.isEmpty();
-}
-
 bool PropertyLibrary::updateMaterial(int index, const MaterialPreset& value, _OUT QString& error)
 {
-    if (index < 0 || index >= m_materials.size() || value.young <= 0.0 || value.poisson <= -1.0 ||
-        value.poisson >= 0.5 || value.density <= 0.0 || value.maxStress < 0.0 || value.expansion < 0.0)
+    error.clear();
+    if (index < 0 || index >= m_materials.size() || !IsValidMaterialPreset(value))
     {
         error = QStringLiteral("材料属性无效：E、密度必须大于 0，泊松比必须在 (-1, 0.5) 内");
         return false;
@@ -242,7 +214,8 @@ bool PropertyLibrary::updateMaterial(int index, const MaterialPreset& value, _OU
 
 bool PropertyLibrary::updateSection(int index, const SectionPreset& value, _OUT QString& error)
 {
-    if (index < 0 || index >= m_sections.size() || value.area <= 0.0)
+    error.clear();
+    if (index < 0 || index >= m_sections.size() || !IsValidSectionPreset(value))
     {
         error = QStringLiteral("截面面积必须大于 0");
         return false;
@@ -254,6 +227,7 @@ bool PropertyLibrary::updateSection(int index, const SectionPreset& value, _OUT 
 std::shared_ptr<Property> PropertyLibrary::instantiateProperty(int materialIndex, int sectionIndex,
                                                                _OUT StructureData& target, _OUT QString& error) const
 {
+    error.clear();
     if (materialIndex < 0 || materialIndex >= m_materials.size() || sectionIndex < 0 ||
         sectionIndex >= m_sections.size())
     {
@@ -263,8 +237,22 @@ std::shared_ptr<Property> PropertyLibrary::instantiateProperty(int materialIndex
 
     const MaterialPreset& sourceMaterial = m_materials.at(materialIndex);
     const SectionPreset& sourceSection = m_sections.at(sectionIndex);
-    const int materialId = static_cast<int>(target.m_Material.size()) + 1;
-    const int sectionId = static_cast<int>(target.m_Section.size()) + 1;
+    const auto nextId = [](const auto& values)
+    {
+        if (values.empty())
+            return 1;
+        const int maximum = values.rbegin()->first;
+        return maximum == std::numeric_limits<int>::max() ? 0 : std::max(0, maximum) + 1;
+    };
+    const int materialId = nextId(target.m_Material);
+    const int sectionId = nextId(target.m_Section);
+    const int propertyId = nextId(target.m_Property);
+    if (materialId <= 0 || sectionId <= 0 || propertyId <= 0 || !IsValidMaterialPreset(sourceMaterial) ||
+        !IsValidSectionPreset(sourceSection))
+    {
+        error = QStringLiteral("创建模型独立属性失败");
+        return nullptr;
+    }
 
     auto material = std::make_shared<Material>();
     material->m_Id = materialId;
@@ -274,20 +262,15 @@ std::shared_ptr<Property> PropertyLibrary::instantiateProperty(int materialIndex
     material->m_MaxStress = sourceMaterial.maxStress;
     material->m_Expansion = sourceMaterial.expansion;
 
-    auto section = std::make_shared<SectionCircular>();
-    section->m_Id = sectionId;
-    section->m_Area = sourceSection.area;
-    section->Calculate_Radius();
+    auto section = SectionFactory::CreateCircular(sectionId, sourceSection.area);
 
-    target.m_Material.emplace(materialId, material);
-    target.m_Section.emplace(sectionId, section);
-    auto property = target.Create_Property(materialId, sectionId);
-    if (!property)
-    {
-        target.m_Material.erase(materialId);
-        target.m_Section.erase(sectionId);
-        error = QStringLiteral("创建模型独立属性失败");
-    }
+    auto property = std::make_shared<Property>();
+    property->m_Id = propertyId;
+    property->m_pMaterial = material;
+    property->m_pSection = section;
+    target.m_Material.emplace(materialId, std::move(material));
+    target.m_Section.emplace(sectionId, std::move(section));
+    target.m_Property.emplace(propertyId, property);
     return property;
 }
 }

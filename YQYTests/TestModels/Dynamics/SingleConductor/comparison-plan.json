@@ -1,0 +1,52 @@
+{
+  "purpose": "Production fixed/adaptive Newmark comparison for a 300 s single-conductor model based on Duan Table 7, with explicitly reconstructed missing inputs; CR beam is a separate extended model.",
+  "cases": [
+    "cable",
+    "beam"
+  ],
+  "duration_seconds": 300,
+  "execution": "serial, same Release runtime, one execution thread, same output policy; static and dynamic timings separate",
+  "candidate_fixed": {
+    "dt": 0.005
+  },
+  "candidate_adaptive": {
+    "initial_dt": 0.005,
+    "maximum_dt": 0.02,
+    "minimum_dt": 1e-06,
+    "rtol": 0.0005,
+    "atol": 1e-05,
+    "velocity_rtol": 0.0005,
+    "velocity_atol": 0.0001,
+    "parameter_basis": "Existing conductor galloping settings; tighten only if comparison to fixed time refinement fails, report every configuration."
+  },
+  "reference_fixed": {
+    "dt": 0.0025,
+    "kind": "same-model time refinement, not analytical or independent solver reference"
+  },
+  "acceptance": {
+    "completed": {
+      "time": 300,
+      "finite_all_saved_qva": true
+    },
+    "response_agreement": {
+      "window_seconds": 20,
+      "maximum_window_p2p_relative_error": 0.02,
+      "normalization_floor_translation_m": 0.01,
+      "normalization_floor_rotation_rad": 0.01,
+      "dominant_frequency_relative_error": 0.02,
+      "phase_sensitive_normalized_rms_error": 0.05
+    },
+    "galloping": "Report vertical/horizontal/twist peak-to-peak envelopes in early/middle/late windows, nonzero cycles and growth/decay; do not equate static drift or successful integration to galloping. 300 s does not establish the paper 2000 s limit cycle."
+  },
+  "restrictions": [
+    "No fitting attack angle to produce growth",
+    "No reference fixed-direction/fixed-mass/no-eccentric-gravity flags",
+    "No numerical acceptance solely on a solver success flag",
+    "No cross-element equality claim: current CR beam lacks eccentric inertia/gravity terms and uses its current Rayleigh damping model"
+  ],
+  "pilot_findings": {
+    "original_minimum_dt": 1e-05,
+    "beam_adaptive_failure": "t=0, normalized_error=1.33446 at the lower bound; Newton solves converged",
+    "minimum_dt_revision_reason": "2 s pilot completed with 1e-6 lower bound; tolerances and physical inputs unchanged; original failure retained"
+  }
+}

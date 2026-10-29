@@ -6,15 +6,6 @@
 #include <map>
 #include "Base/EmptyOUT.h"
 
-// ============ 控制台颜色支持 ============
-const int COLOR_GREEN = 10;
-const int COLOR_RED = 12;
-const int COLOR_WHITE = 7;
-
-// 颜色函数声明
-void enableConsoleColor();
-void setColor(int color);
-void resetColor();
 void ConsoleOut(const std::wstring& text);
 void ConsoleError(const std::wstring& text);
 
@@ -70,6 +61,7 @@ private:
     std::map<AeroCaseKey, std::vector<BladeModel>> caseModels;
     std::filesystem::path currentSourceFile;
     std::map<AeroCaseKey, std::filesystem::path> caseSourceFiles;
+    bool shapePreservingInterpolation = false;
     const double START_VAL = 0.0;
     const double STEP = 5.0;
 
@@ -88,6 +80,7 @@ public:
         , caseModels(other.caseModels)
         , currentSourceFile(other.currentSourceFile)
         , caseSourceFiles(other.caseSourceFiles)
+        , shapePreservingInterpolation(other.shapePreservingInterpolation)
     {
     }
     AeroManager& operator=(const AeroManager& other)
@@ -98,6 +91,7 @@ public:
             caseModels = other.caseModels;
             currentSourceFile = other.currentSourceFile;
             caseSourceFiles = other.caseSourceFiles;
+            shapePreservingInterpolation = other.shapePreservingInterpolation;
         }
         return *this;
     }
@@ -111,6 +105,8 @@ public:
     static bool isSupportedIceThickness(int iceThickness);
     static bool isSupportedCase(const AeroCaseKey& key);
     static double normalizeAngleDegrees(double angleDegrees);
+    void setShapePreservingInterpolation(bool enabled);
+    bool isShapePreservingInterpolationEnabled() const { return shapePreservingInterpolation; }
 
     // 加载CSV数据
     bool loadCSV(const std::filesystem::path& filepath);
@@ -126,6 +122,9 @@ public:
     double getData(const AeroCaseKey& key, int modelIdx, CoefType type, double inputAngle) const;
     const std::vector<BladeModel>* findCaseModels(const AeroCaseKey& key) const;
     AeroCoefficients getCoefficients(const std::vector<BladeModel>& caseData, int modelIdx, double inputAngle) const;
+    // 返回气动系数对攻角弧度的导数，与当前插值方式一致。
+    AeroCoefficients getCoefficientSlopes(const std::vector<BladeModel>& caseData, int modelIdx,
+                                          double inputAngle) const;
     AeroCoefficients getCoefficients(const AeroCaseKey& key, int modelIdx, double inputAngle) const;
     void setCaseData(const AeroCaseKey& key, std::vector<BladeModel> caseData,
                      const std::filesystem::path& sourceFile = {});
@@ -142,8 +141,4 @@ public:
 
     // 导出数据
     bool exportToCSV(const std::filesystem::path& filepath, int precision = 10) const;
-
-    // 验证功能
-    bool ValiDateAllCSV(const std::filesystem::path& outputDir, const std::filesystem::path& standardDir,
-                        double tolerance = 0.000001) const;
 };

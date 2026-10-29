@@ -1,141 +1,171 @@
 #include "ModelSetManagerDialog.h"
+#include "Widgets/DialogSizing.h"
+#include "Utility/UiIcons.h"
 
+#include "DataStructure/Region/ComputeRegion.h"
+#include "DataStructure/Region/ModelSet.h"
 #include "DataStructure/Structure/StructureData.h"
 
-#include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QMessageBox>
-#include <QPlainTextEdit>
 #include <QPushButton>
-#include <QRegularExpression>
 #include <QTableWidget>
 #include <QVBoxLayout>
 
-static bool ParseSetIds(const QString& text, std::set<int>& ids, QString& errorMessage)
+#include <map>
+#include <set>
+#include <vector>
+
+namespace
 {
-    ids.clear();
-    const QStringList tokens = text.split(QRegularExpression(QStringLiteral("[,;\\s]+")), Qt::SkipEmptyParts);
-    for (const QString& token : tokens)
+
+struct LogicalCollection
+{
+    QString name;
+    int nodeSetId = 0;
+    int elementSetId = 0;
+    std::set<int> nodeIds;
+    std::set<int> elementIds;
+};
+
+QString logicalName(const ModelSet& modelSet)
+{
+    const QString suffix =
+        modelSet.m_Type == ModelSetType::Node ? QStringLiteral(" · 节点") : QStringLiteral(" · 单元");
+    return modelSet.m_Name.endsWith(suffix) ? modelSet.m_Name.left(modelSet.m_Name.size() - suffix.size()).trimmed()
+                                            : modelSet.m_Name.trimmed();
+}
+
+std::vector<LogicalCollection> collectLogicalCollections(const StructureData& structure)
+{
+    std::map<QString, LogicalCollection> grouped;
+    for (const auto& [setId, modelSet] : structure.m_ModelSets)
     {
-        const QStringList range = token.split(QLatin1Char('-'), Qt::SkipEmptyParts);
-        bool firstOk = false;
-        const int first = range.value(0).toInt(&firstOk);
-        if (!firstOk || first <= 0 || range.size() > 2)
-        {
-            errorMessage = QStringLiteral("无法识别 ID：%1").arg(token);
-            return false;
-        }
-        if (range.size() == 1)
-        {
-            ids.insert(first);
+        if (!modelSet)
             continue;
+        const QString name = logicalName(*modelSet);
+        if (name.isEmpty())
+            continue;
+        auto& collection = grouped[name];
+        collection.name = name;
+        if (modelSet->m_Type == ModelSetType::Node)
+        {
+            collection.nodeSetId = setId;
+            collection.nodeIds = modelSet->m_Ids;
         }
+        else
+        {
+            collection.elementSetId = setId;
+            collection.elementIds = modelSet->m_Ids;
+        }
+    }
 
-        bool lastOk = false;
-        const int last = range.at(1).toInt(&lastOk);
-        if (!lastOk || last < first)
-        {
-            errorMessage = QStringLiteral("无效 ID 范围：%1").arg(token);
-            return false;
-        }
-        for (int id = first;; ++id)
-        {
-            ids.insert(id);
-            if (id == last)
-            {
-                break;
-            }
-        }
-    }
-    if (ids.empty())
+    std::vector<LogicalCollection> result;
+    result.reserve(grouped.size());
+    for (auto& [name, collection] : grouped)
     {
-        errorMessage = QStringLiteral("集合不能是空集合。");
-        return false;
+        Q_UNUSED(name);
+        result.push_back(std::move(collection));
     }
-    return true;
+    return result;
 }
 
-static QString FormatSetIds(const std::set<int>& ids)
+int regionReferenceCount(const StructureData& structure, int nodeSetId, int elementSetId)
 {
-    QStringList values;
-    for (int id : ids)
+    int count = 0;
+    for (const auto& [regionId, region] : structure.m_ComputeRegions)
     {
-        values.append(QString::number(id));
+        Q_UNUSED(regionId);
+        if (region && ((nodeSetId > 0 && region->m_SourceSetIds.contains(nodeSetId)) ||
+                       (elementSetId > 0 && region->m_SourceSetIds.contains(elementSetId))))
+            ++count;
     }
-    return values.join(QStringLiteral(", "));
+    return count;
 }
 
-static bool ValidateSetIds(const StructureData& structure, ModelSetType type, const std::set<int>& ids,
-                           QString& errorMessage)
-{
-    for (int id : ids)
-    {
-        const bool exists = type == ModelSetType::Node ? structure.m_Nodes.find(id) != structure.m_Nodes.cend()
-                                                       : structure.m_Elements.find(id) != structure.m_Elements.cend();
-        if (!exists)
-        {
-            errorMessage = QStringLiteral("集合引用了不存在的%1 ID %2。")
-                               .arg(type == ModelSetType::Node ? QStringLiteral("节点") : QStringLiteral("单元"))
-                               .arg(id);
-            return false;
-        }
-    }
-    return true;
-}
-
-class ModelSetEditorDialog final : public QDialog
+class CombineCollectionsDialog final : public QDialog
 {
 public:
-    explicit ModelSetEditorDialog(const std::shared_ptr<ModelSet>& modelSet, QWidget* parent)
+    CombineCollectionsDialog(const std::vector<LogicalCollection>& collections, QWidget* parent)
         : QDialog(parent)
     {
-        setWindowTitle(modelSet ? QStringLiteral("编辑集合") : QStringLiteral("新增集合"));
-        setMinimumWidth(520);
+        setWindowTitle(QStringLiteral("新建组合集合"));
+        setWindowIcon(UiIcons::applicationIcon());
+        setMinimumSize(500, 360);
+        resize(620, 440);
+        DialogSizing::lockCurrentHeight(this);
 
         auto* root = new QVBoxLayout(this);
-        auto* form = new QFormLayout();
+        root->setContentsMargins(16, 16, 16, 16);
+        root->setSpacing(12);
+        auto* hint = new QLabel(
+            QStringLiteral(
+                "选择一个或多个已有线路集合，程序自动合并其节点和单元。集合成员由模型对象维护，不需要输入 ID。"),
+            this);
+        hint->setWordWrap(true);
+        hint->setProperty("secondaryText", true);
+        root->addWidget(hint);
+
+        auto* form = new QFormLayout;
+        form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+        form->setLabelAlignment(Qt::AlignLeft | Qt::AlignVCenter);
         m_name = new QLineEdit(this);
-        m_type = new QComboBox(this);
-        m_type->addItem(QStringLiteral("节点集合"), static_cast<int>(ModelSetType::Node));
-        m_type->addItem(QStringLiteral("单元集合"), static_cast<int>(ModelSetType::Element));
-        m_ids = new QPlainTextEdit(this);
-        m_ids->setPlaceholderText(QStringLiteral("支持逗号、空格、分号和范围，例如：1, 2, 10-20"));
-        m_ids->setMinimumHeight(120);
-        form->addRow(QStringLiteral("名称"), m_name);
-        form->addRow(QStringLiteral("类型"), m_type);
-        form->addRow(QStringLiteral("ID"), m_ids);
+        m_name->setPlaceholderText(QStringLiteral("例如：耐张段 1 两根地线"));
+        form->addRow(QStringLiteral("集合名称"), m_name);
         root->addLayout(form);
-        root->addWidget(
-            new QLabel(QStringLiteral("修改被计算区域引用的集合后，相关计算区域将自动重新构建和合并。"), this));
+
+        m_sources = new QListWidget(this);
+        m_sources->setSpacing(2);
+        m_sources->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
+        for (const auto& collection : collections)
+        {
+            if (collection.nodeSetId <= 0 || collection.elementSetId <= 0 || collection.elementIds.empty())
+                continue;
+            auto* item = new QListWidgetItem(QStringLiteral("%1（节点 %2，单元 %3）")
+                                                 .arg(collection.name)
+                                                 .arg(collection.nodeIds.size())
+                                                 .arg(collection.elementIds.size()),
+                                             m_sources);
+            item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+            item->setCheckState(Qt::Unchecked);
+            item->setData(Qt::UserRole, collection.nodeSetId);
+            item->setData(Qt::UserRole + 1, collection.elementSetId);
+        }
+        root->addWidget(m_sources, 1);
 
         auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
-        buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("确定"));
+        buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("创建"));
+        buttons->button(QDialogButtonBox::Ok)->setDefault(true);
+        buttons->button(QDialogButtonBox::Ok)->setProperty("primaryAction", true);
         buttons->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
-        root->addWidget(buttons);
+        buttons->button(QDialogButtonBox::Cancel)->setAutoDefault(false);
         connect(buttons, &QDialogButtonBox::accepted, this,
                 [this]()
                 {
-                    QString error;
-                    if (!ParseSetIds(m_ids->toPlainText(), m_parsedIds, error))
+                    if (name().isEmpty())
                     {
-                        QMessageBox::information(this, QStringLiteral("ID 格式错误"), error);
+                        QMessageBox::information(this, QStringLiteral("缺少名称"), QStringLiteral("请填写集合名称。"));
+                        m_name->setFocus();
+                        return;
+                    }
+                    if (sourceSetIds().empty())
+                    {
+                        QMessageBox::information(this, QStringLiteral("未选择来源"),
+                                                 QStringLiteral("请至少选择一个已有线路集合。"));
+                        m_sources->setFocus();
                         return;
                     }
                     accept();
                 });
         connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
-
-        if (modelSet)
-        {
-            m_name->setText(modelSet->m_Name);
-            m_type->setCurrentIndex(modelSet->m_Type == ModelSetType::Node ? 0 : 1);
-            m_ids->setPlainText(FormatSetIds(modelSet->m_Ids));
-        }
+        root->addWidget(buttons);
+        m_name->setFocus();
     }
 
     QString name() const
@@ -143,226 +173,306 @@ public:
         return m_name->text().trimmed();
     }
 
-    ModelSetType type() const
+    std::set<int> sourceSetIds() const
     {
-        return static_cast<ModelSetType>(m_type->currentData().toInt());
-    }
-
-    const std::set<int>& ids() const
-    {
-        return m_parsedIds;
+        std::set<int> result;
+        for (int row = 0; row < m_sources->count(); ++row)
+        {
+            const auto* item = m_sources->item(row);
+            if (item->checkState() != Qt::Checked)
+                continue;
+            result.insert(item->data(Qt::UserRole).toInt());
+            result.insert(item->data(Qt::UserRole + 1).toInt());
+        }
+        return result;
     }
 
 private:
     QLineEdit* m_name = nullptr;
-    QComboBox* m_type = nullptr;
-    QPlainTextEdit* m_ids = nullptr;
-    std::set<int> m_parsedIds;
+    QListWidget* m_sources = nullptr;
 };
+
+} // namespace
 
 ModelSetManagerDialog::ModelSetManagerDialog(const std::shared_ptr<StructureData>& structure, QWidget* parent)
     : QDialog(parent)
     , m_structure(structure)
 {
     setWindowTitle(QStringLiteral("集合管理器"));
-    resize(760, 440);
+    setWindowIcon(UiIcons::applicationIcon());
+    setObjectName(QStringLiteral("modelSetManagerDialog"));
+    setMinimumSize(720, 380);
+    resize(880, 520);
+    DialogSizing::lockCurrentHeight(this);
 
     auto* root = new QVBoxLayout(this);
+    root->setContentsMargins(16, 16, 16, 16);
+    root->setSpacing(12);
+    auto* hint = new QLabel(QStringLiteral("一个逻辑集合由节点集和单元集成对组成。FEM "
+                                           "导入的相线、地线集合可直接使用；也可以将多个已有集合组合成新的业务集合。"),
+                            this);
+    hint->setWordWrap(true);
+    hint->setProperty("secondaryText", true);
+    root->addWidget(hint);
+
     m_table = new QTableWidget(this);
-    m_table->setColumnCount(5);
-    m_table->setHorizontalHeaderLabels({QStringLiteral("ID"), QStringLiteral("名称"), QStringLiteral("类型"),
-                                        QStringLiteral("成员数"), QStringLiteral("引用区域数")});
+    m_table->setColumnCount(6);
+    m_table->setHorizontalHeaderLabels({QStringLiteral("集合名称"), QStringLiteral("完整性"), QStringLiteral("节点数"),
+                                        QStringLiteral("单元数"), QStringLiteral("引用区域"), QStringLiteral("来源")});
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_table->setSelectionMode(QAbstractItemView::SingleSelection);
     m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_table->setAlternatingRowColors(true);
+    m_table->setShowGrid(false);
+    m_table->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
     m_table->verticalHeader()->setVisible(false);
+    m_table->verticalHeader()->setDefaultSectionSize(36);
     m_table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
-    m_table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
-    root->addWidget(m_table);
+    m_table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+    root->addWidget(m_table, 1);
 
-    auto* actions = new QHBoxLayout();
-    auto* addButton = new QPushButton(QStringLiteral("新增"), this);
-    auto* editButton = new QPushButton(QStringLiteral("编辑"), this);
+    auto* actions = new QHBoxLayout;
+    auto* addButton = new QPushButton(QStringLiteral("组合新集合"), this);
+    auto* renameButton = new QPushButton(QStringLiteral("重命名"), this);
     auto* deleteButton = new QPushButton(QStringLiteral("删除"), this);
     auto* closeButton = new QPushButton(QStringLiteral("关闭"), this);
+    actions->setSpacing(8);
+    addButton->setProperty("primaryAction", true);
+    deleteButton->setProperty("dangerAction", true);
+    renameButton->setEnabled(false);
+    deleteButton->setEnabled(false);
+    for (QPushButton* button : {addButton, renameButton, deleteButton, closeButton})
+        button->setAutoDefault(false);
     actions->addWidget(addButton);
-    actions->addWidget(editButton);
+    actions->addWidget(renameButton);
     actions->addWidget(deleteButton);
-    actions->addStretch();
+    actions->addStretch(1);
     actions->addWidget(closeButton);
     root->addLayout(actions);
 
-    connect(addButton, &QPushButton::clicked, this,
-            [this]()
-            {
-                editSet();
-            });
-    connect(editButton, &QPushButton::clicked, this,
-            [this]()
-            {
-                editSet(selectedSetId());
-            });
-    connect(deleteButton, &QPushButton::clicked, this, &ModelSetManagerDialog::deleteSelectedSet);
+    connect(addButton, &QPushButton::clicked, this, &ModelSetManagerDialog::createCombinedCollection);
+    connect(renameButton, &QPushButton::clicked, this, &ModelSetManagerDialog::renameSelectedCollection);
+    connect(deleteButton, &QPushButton::clicked, this, &ModelSetManagerDialog::deleteSelectedCollection);
     connect(closeButton, &QPushButton::clicked, this, &QDialog::accept);
+    connect(m_table, &QTableWidget::itemSelectionChanged, this,
+            [this, renameButton, deleteButton]()
+            {
+                const bool selected = selectedNodeSetId() > 0 || selectedElementSetId() > 0;
+                renameButton->setEnabled(selected);
+                deleteButton->setEnabled(selected);
+            });
     connect(m_table, &QTableWidget::cellDoubleClicked, this,
             [this](int, int)
             {
-                editSet(selectedSetId());
+                renameSelectedCollection();
             });
     refreshTable();
 }
 
-void ModelSetManagerDialog::refreshTable(int preferredSetId)
+void ModelSetManagerDialog::refreshTable(const QString& preferredName)
 {
     m_table->setRowCount(0);
     if (!m_structure)
-    {
         return;
-    }
 
-    for (const auto& [setId, modelSet] : m_structure->m_ModelSets)
+    for (const auto& collection : collectLogicalCollections(*m_structure))
     {
-        if (!modelSet)
-        {
-            continue;
-        }
-        int referenceCount = 0;
-        for (const auto& [regionId, region] : m_structure->m_ComputeRegions)
-        {
-            Q_UNUSED(regionId);
-            if (region && region->m_SourceSetIds.find(setId) != region->m_SourceSetIds.cend())
-            {
-                ++referenceCount;
-            }
-        }
-
         const int row = m_table->rowCount();
         m_table->insertRow(row);
-        auto* idItem = new QTableWidgetItem(QString::number(setId));
-        idItem->setData(Qt::UserRole, setId);
-        m_table->setItem(row, 0, idItem);
-        m_table->setItem(row, 1, new QTableWidgetItem(modelSet->m_Name));
-        m_table->setItem(row, 2,
-                         new QTableWidgetItem(modelSet->m_Type == ModelSetType::Node ? QStringLiteral("节点")
-                                                                                     : QStringLiteral("单元")));
-        m_table->setItem(row, 3, new QTableWidgetItem(QString::number(modelSet->m_Ids.size())));
-        m_table->setItem(row, 4, new QTableWidgetItem(QString::number(referenceCount)));
-        if (setId == preferredSetId)
-        {
+        auto* nameItem = new QTableWidgetItem(collection.name);
+        nameItem->setData(Qt::UserRole, collection.nodeSetId);
+        nameItem->setData(Qt::UserRole + 1, collection.elementSetId);
+        m_table->setItem(row, 0, nameItem);
+        const bool complete = collection.nodeSetId > 0 && collection.elementSetId > 0 && !collection.elementIds.empty();
+        m_table->setItem(row, 1,
+                         new QTableWidgetItem(complete ? QStringLiteral("可用于计算区域") : QStringLiteral("不完整")));
+        m_table->setItem(row, 2, new QTableWidgetItem(QString::number(collection.nodeIds.size())));
+        m_table->setItem(row, 3, new QTableWidgetItem(QString::number(collection.elementIds.size())));
+        m_table->setItem(row, 4,
+                         new QTableWidgetItem(QString::number(
+                             regionReferenceCount(*m_structure, collection.nodeSetId, collection.elementSetId))));
+        const bool importedLine =
+            collection.name.contains(QStringLiteral("_相线_")) || collection.name.contains(QStringLiteral("_地线_"));
+        m_table->setItem(
+            row, 5,
+            new QTableWidgetItem(importedLine ? QStringLiteral("FEM 线路对象") : QStringLiteral("用户组合/模型")));
+        for (int column = 2; column <= 4; ++column)
+            m_table->item(row, column)->setTextAlignment(Qt::AlignCenter);
+        for (int column = 0; column < m_table->columnCount(); ++column)
+            m_table->item(row, column)->setToolTip(m_table->item(row, column)->text());
+        if (!preferredName.isEmpty() && collection.name == preferredName)
             m_table->selectRow(row);
-        }
     }
     if (m_table->currentRow() < 0 && m_table->rowCount() > 0)
-    {
         m_table->selectRow(0);
-    }
 }
 
-void ModelSetManagerDialog::editSet(int setId)
+void ModelSetManagerDialog::createCombinedCollection()
 {
     if (!m_structure)
-    {
         return;
-    }
-    std::shared_ptr<ModelSet> existing;
-    const auto existingIt = m_structure->m_ModelSets.find(setId);
-    if (existingIt != m_structure->m_ModelSets.cend())
+    const auto collections = collectLogicalCollections(*m_structure);
+    CombineCollectionsDialog editor(collections, this);
+    if (editor.exec() != QDialog::Accepted)
+        return;
+
+    for (const auto& collection : collections)
     {
-        existing = existingIt->second;
+        if (collection.name.compare(editor.name(), Qt::CaseInsensitive) == 0)
+        {
+            QMessageBox::information(this, QStringLiteral("名称重复"), QStringLiteral("已存在同名集合。"));
+            return;
+        }
     }
 
-    ModelSetEditorDialog editor(existing, this);
-    if (editor.exec() != QDialog::Accepted)
+    std::set<int> nodeIds;
+    std::set<int> elementIds;
+    for (int setId : editor.sourceSetIds())
     {
+        const auto found = m_structure->m_ModelSets.find(setId);
+        if (found == m_structure->m_ModelSets.end() || !found->second)
+            continue;
+        if (found->second->m_Type == ModelSetType::Node)
+            nodeIds.insert(found->second->m_Ids.begin(), found->second->m_Ids.end());
+        else
+            elementIds.insert(found->second->m_Ids.begin(), found->second->m_Ids.end());
+    }
+    // 单元集才是计算范围的核心。节点集即使来自旧文件且不完整，也按单元连接关系自动补齐。
+    for (int elementId : elementIds)
+    {
+        const auto elementIt = m_structure->m_Elements.find(elementId);
+        if (elementIt == m_structure->m_Elements.cend() || !elementIt->second)
+            continue;
+        for (const auto& nodeRef : elementIt->second->m_pNode)
+        {
+            if (const auto node = nodeRef.lock())
+                nodeIds.insert(node->m_Id);
+        }
+    }
+    if (nodeIds.empty() || elementIds.empty())
+    {
+        QMessageBox::critical(this, QStringLiteral("无法创建集合"),
+                              QStringLiteral("所选来源没有形成完整的节点和单元集合。"));
         return;
     }
 
     QString error;
-    if (!ValidateSetIds(*m_structure, editor.type(), editor.ids(), error))
+    const int nodeSetId =
+        m_structure->AddModelSet(editor.name() + QStringLiteral(" · 节点"), ModelSetType::Node, nodeIds, &error);
+    if (nodeSetId <= 0)
     {
-        QMessageBox::critical(this, QStringLiteral("无法保存集合"), error);
+        QMessageBox::critical(this, QStringLiteral("无法创建集合"), error);
         return;
     }
-
-    int selectedId = setId;
-    if (!existing)
+    const int elementSetId =
+        m_structure->AddModelSet(editor.name() + QStringLiteral(" · 单元"), ModelSetType::Element, elementIds, &error);
+    if (elementSetId <= 0)
     {
-        selectedId = m_structure->AddModelSet(editor.name(), editor.type(), editor.ids(), &error);
-        if (selectedId <= 0)
-        {
-            QMessageBox::critical(this, QStringLiteral("无法创建集合"), error);
-            return;
-        }
+        m_structure->m_ModelSets.erase(nodeSetId);
+        QMessageBox::critical(this, QStringLiteral("无法创建集合"), error);
+        return;
     }
-    else
-    {
-        const ModelSet setBackup = *existing;
-        std::map<int, std::shared_ptr<ComputeRegion>> regionBackup;
-        for (const auto& [regionId, region] : m_structure->m_ComputeRegions)
-        {
-            regionBackup.emplace(regionId, region ? std::make_shared<ComputeRegion>(*region) : nullptr);
-        }
-        std::map<int, std::set<int>> stepRegionBackup;
-        for (const auto& [stepId, step] : m_structure->m_AnalysisStep)
-        {
-            if (step)
-            {
-                stepRegionBackup.emplace(stepId, step->m_ComputeRegionIds);
-            }
-        }
-
-        existing->m_Name = editor.name().isEmpty() ? setBackup.m_Name : editor.name();
-        existing->m_Type = editor.type();
-        existing->m_Ids = editor.ids();
-        if (!m_structure->RebuildAndMergeComputeRegions(&error))
-        {
-            *existing = setBackup;
-            m_structure->m_ComputeRegions = std::move(regionBackup);
-            for (const auto& [stepId, regionIds] : stepRegionBackup)
-            {
-                const auto stepIt = m_structure->m_AnalysisStep.find(stepId);
-                if (stepIt != m_structure->m_AnalysisStep.cend() && stepIt->second)
-                {
-                    stepIt->second->m_ComputeRegionIds = regionIds;
-                }
-            }
-            QMessageBox::critical(this, QStringLiteral("无法修改集合"), error);
-            return;
-        }
-    }
-    refreshTable(selectedId);
+    refreshTable(editor.name());
 }
 
-void ModelSetManagerDialog::deleteSelectedSet()
+void ModelSetManagerDialog::renameSelectedCollection()
 {
-    const int setId = selectedSetId();
-    if (!m_structure || setId <= 0)
-    {
+    if (!m_structure)
         return;
-    }
-    for (const auto& [regionId, region] : m_structure->m_ComputeRegions)
+    const int nodeSetId = selectedNodeSetId();
+    const int elementSetId = selectedElementSetId();
+    if (nodeSetId <= 0 && elementSetId <= 0)
+        return;
+
+    QDialog editor(this);
+    editor.setWindowTitle(QStringLiteral("重命名集合"));
+    editor.setWindowIcon(UiIcons::applicationIcon());
+    editor.setMinimumWidth(440);
+    auto* layout = new QVBoxLayout(&editor);
+    layout->setContentsMargins(16, 16, 16, 16);
+    layout->setSpacing(16);
+    auto* form = new QFormLayout;
+    form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    form->setLabelAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    auto* nameEdit = new QLineEdit(selectedCollectionName(), &editor);
+    nameEdit->selectAll();
+    nameEdit->setFocus();
+    form->addRow(QStringLiteral("新名称"), nameEdit);
+    layout->addLayout(form);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &editor);
+    buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("确定"));
+    buttons->button(QDialogButtonBox::Ok)->setDefault(true);
+    buttons->button(QDialogButtonBox::Ok)->setProperty("primaryAction", true);
+    buttons->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
+    buttons->button(QDialogButtonBox::Cancel)->setAutoDefault(false);
+    layout->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::accepted, &editor, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &editor, &QDialog::reject);
+    DialogSizing::fitCompactFormToScreen(&editor);
+    if (editor.exec() != QDialog::Accepted)
+        return;
+
+    const QString newName = nameEdit->text().trimmed();
+    if (newName.isEmpty())
+        return;
+    for (const auto& collection : collectLogicalCollections(*m_structure))
     {
-        Q_UNUSED(regionId);
-        if (region && region->m_SourceSetIds.find(setId) != region->m_SourceSetIds.cend())
+        if (collection.name.compare(newName, Qt::CaseInsensitive) == 0 &&
+            collection.name.compare(selectedCollectionName(), Qt::CaseSensitive) != 0)
         {
-            QMessageBox::information(
-                this, QStringLiteral("无法删除集合"),
-                QStringLiteral("该集合仍被计算区域“%1”引用，请先修改该计算区域。").arg(region->m_Name));
+            QMessageBox::information(this, QStringLiteral("名称重复"), QStringLiteral("已存在同名集合。"));
             return;
         }
     }
-    if (QMessageBox::question(this, QStringLiteral("删除集合"), QStringLiteral("确定删除选中的集合吗？")) !=
-        QMessageBox::Yes)
+    if (nodeSetId > 0)
+        m_structure->m_ModelSets.at(nodeSetId)->m_Name = newName + QStringLiteral(" · 节点");
+    if (elementSetId > 0)
+        m_structure->m_ModelSets.at(elementSetId)->m_Name = newName + QStringLiteral(" · 单元");
+    refreshTable(newName);
+}
+
+void ModelSetManagerDialog::deleteSelectedCollection()
+{
+    if (!m_structure)
+        return;
+    const int nodeSetId = selectedNodeSetId();
+    const int elementSetId = selectedElementSetId();
+    if (nodeSetId <= 0 && elementSetId <= 0)
+        return;
+    const int references = regionReferenceCount(*m_structure, nodeSetId, elementSetId);
+    if (references > 0)
     {
+        QMessageBox::information(
+            this, QStringLiteral("集合正在使用"),
+            QStringLiteral("该集合仍被 %1 个计算区域引用。请先删除对应计算区域。").arg(references));
         return;
     }
-    m_structure->m_ModelSets.erase(setId);
+    if (QMessageBox::question(
+            this, QStringLiteral("删除集合"),
+            QStringLiteral("确定删除“%1”的节点集和单元集吗？\n模型实体不会被删除。").arg(selectedCollectionName()),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes)
+        return;
+    if (nodeSetId > 0)
+        m_structure->m_ModelSets.erase(nodeSetId);
+    if (elementSetId > 0)
+        m_structure->m_ModelSets.erase(elementSetId);
     refreshTable();
 }
 
-int ModelSetManagerDialog::selectedSetId() const
+int ModelSetManagerDialog::selectedNodeSetId() const
 {
     const int row = m_table ? m_table->currentRow() : -1;
-    const auto* item = row >= 0 ? m_table->item(row, 0) : nullptr;
-    return item ? item->data(Qt::UserRole).toInt() : -1;
+    return row >= 0 && m_table->item(row, 0) ? m_table->item(row, 0)->data(Qt::UserRole).toInt() : 0;
+}
+
+int ModelSetManagerDialog::selectedElementSetId() const
+{
+    const int row = m_table ? m_table->currentRow() : -1;
+    return row >= 0 && m_table->item(row, 0) ? m_table->item(row, 0)->data(Qt::UserRole + 1).toInt() : 0;
+}
+
+QString ModelSetManagerDialog::selectedCollectionName() const
+{
+    const int row = m_table ? m_table->currentRow() : -1;
+    return row >= 0 && m_table->item(row, 0) ? m_table->item(row, 0)->text() : QString{};
 }

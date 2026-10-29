@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <Filter Include="Source Files">
@@ -26,24 +26,6 @@
     <QtRcc Include="Resource\YQY.qrc">
       <Filter>Resource Files</Filter>
     </QtRcc>
-    <QtUic Include="GUI\Ui\YQY.ui">
-      <Filter>Form Files</Filter>
-    </QtUic>
-    <QtUic Include="GUI\Ui\SettingsPanel.ui">
-      <Filter>Form Files</Filter>
-    </QtUic>
-    <QtUic Include="GUI\Ui\ResultControlPanel.ui"><Filter>Form Files</Filter></QtUic>
-    <QtUic Include="GUI\Ui\AnalysisSummaryPanel.ui"><Filter>Form Files</Filter></QtUic>
-    <QtUic Include="GUI\Ui\SolveTaskManagerDialog.ui"><Filter>Form Files</Filter></QtUic>
-    <QtUic Include="GUI\Ui\PropertyModule.ui"><Filter>Form Files</Filter></QtUic>
-    <QtUic Include="GUI\Ui\ConductorModule.ui"><Filter>Form Files</Filter></QtUic>
-    <QtUic Include="GUI\Ui\AnalysisManagerDialog.ui"><Filter>Form Files</Filter></QtUic>
-    <QtUic Include="GUI\Ui\StepEditorDialog.ui"><Filter>Form Files</Filter></QtUic>
-    <QtUic Include="GUI\Ui\LoadEditorDialog.ui"><Filter>Form Files</Filter></QtUic>
-    <QtUic Include="GUI\Ui\ConstraintEditorDialog.ui"><Filter>Form Files</Filter></QtUic>
-    <QtUic Include="GUI\Ui\PropertyItemEditorDialog.ui"><Filter>Form Files</Filter></QtUic>
-    <QtUic Include="GUI\Ui\PropertyLibraryDialog.ui"><Filter>Form Files</Filter></QtUic>
-    <QtUic Include="GUI\Ui\NodeResultExportDialog.ui"><Filter>Form Files</Filter></QtUic>
     <QtMoc Include="GUI\YQY.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -56,18 +38,42 @@
     <QtMoc Include="GUI\Widgets\ModelViewport.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <ClInclude Include="GUI\Widgets\ViewportCameraController.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="GUI\Widgets\NavigationButton.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="GUI\Widgets\SingleLineLabel.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="GUI\Widgets\WorkspaceSplitter.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="GUI\Widgets\SettingsPanel.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="GUI\Widgets\ResultControlPanel.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="GUI\Widgets\AnalysisSummaryPanel.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="GUI\Widgets\PropertyModule.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="GUI\Widgets\ConductorModule.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="GUI\Widgets\CompactDoubleSpinBox.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="GUI\Widgets\ResultControlInputWidgets.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="GUI\Widgets\ResultControlPanel.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="GUI\Widgets\NodeTimeHistoryPanel.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="GUI\Widgets\AnalysisSummaryPanel.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="GUI\Widgets\PropertyModule.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="GUI\Widgets\ConductorModule.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="GUI\Widgets\CompactDoubleSpinBox.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="GUI\Widgets\ResultControlInputWidgets.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="GUI\Dialogs\AnalysisManagerDialog.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -77,18 +83,39 @@
     <ClInclude Include="GUI\Dialogs\ModelSetManagerDialog.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="GUI\Dialogs\SolveTaskManagerDialog.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="GUI\Dialogs\PropertyItemEditorDialog.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="GUI\Dialogs\PropertyLibraryDialog.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="GUI\Dialogs\NodeResultExportDialog.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="GUI\Dialogs\ElementResultExportDialog.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="GUI\Dialogs\FileDialogService.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="GUI\Widgets\ProgressBarAnimation.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="Application\ApplicationPaths.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="Application\ApplicationBootstrap.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="Application\PaperBeamDynamicsVerification.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="Application\VerificationRunner.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="Application\UiAuditRunner.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="GUI\Dialogs\SolveTaskManagerDialog.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="GUI\Dialogs\PropertyItemEditorDialog.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="GUI\Dialogs\PropertyLibraryDialog.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="GUI\Dialogs\NodeResultExportDialog.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="GUI\Dialogs\ElementResultExportDialog.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="GUI\Dialogs\FileDialogService.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="GUI\Widgets\ProgressBarAnimation.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Application\ApplicationPaths.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Application\ApplicationBootstrap.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Application\SolveWorker.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Utility\AnalysisDiagnostics.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClCompile Include="Utility\pch.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -110,19 +137,48 @@
     <ClCompile Include="GUI\Widgets\ModelViewport.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Utility\UiIcons.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Utility\DialogScreenAdapter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GUI\Widgets\ViewportCameraController.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="GUI\Widgets\SettingsPanel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="GUI\Widgets\ResultControlPanel.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="GUI\Widgets\AnalysisSummaryPanel.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="GUI\Widgets\PropertyModule.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="GUI\Widgets\ConductorModule.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="GUI\Widgets\ProgressBarAnimation.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="Application\ApplicationPaths.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="Application\ApplicationBootstrap.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="Application\PaperBeamDynamicsVerification.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="Application\VerificationRunner.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="Application\UiAuditRunner.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="GUI\Widgets\ResultControlPanel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GUI\Widgets\NodeTimeHistoryPanel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GUI\Widgets\AnalysisSummaryPanel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GUI\Widgets\PropertyModule.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GUI\Widgets\ConductorModule.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GUI\Widgets\ProgressBarAnimation.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Application\ApplicationPaths.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Application\ApplicationBootstrap.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Application\SolveWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Utility\AnalysisDiagnostics.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="GUI\Dialogs\AnalysisManagerDialog.cpp">
@@ -134,10 +190,18 @@
     <ClCompile Include="GUI\Dialogs\ModelSetManagerDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="GUI\Dialogs\SolveTaskManagerDialog.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="GUI\Dialogs\PropertyItemEditorDialog.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="GUI\Dialogs\PropertyLibraryDialog.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="GUI\Dialogs\FileDialogService.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="GUI\Dialogs\SolveTaskManagerDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GUI\Dialogs\PropertyItemEditorDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GUI\Dialogs\PropertyLibraryDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GUI\Dialogs\FileDialogService.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -156,10 +220,18 @@
     <ClCompile Include="DataStructure\Element\ElementTruss.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="DataStructure\Element\ElementSpringBase.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="DataStructure\Element\ElementSpring1.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="DataStructure\Element\ElementSpring2.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="DataStructure\Element\ElementSpringA.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="DataStructure\Element\ElementSpringBase.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DataStructure\Element\ElementSpring1.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DataStructure\Element\ElementSpring2.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DataStructure\Element\ElementSpringA.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="DataStructure\Material\Material.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -259,10 +331,10 @@
     <ClCompile Include="Solver\Dynamic\Damping\StructuralDamping.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Solver\Static\SolverStatic.cpp">
+    <ClCompile Include="Solver\Dynamic\Damping\ConductorModalClassifier.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Solver\AnalysisRunner.cpp">
+    <ClCompile Include="Solver\Static\SolverStatic.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="DataStructure\Aerodynamics\AeroManager.cpp">
@@ -274,6 +346,9 @@
     <ClCompile Include="DataStructure\Element\ElementBeam_CR.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="DataStructure\Element\ElementBeam_Simo.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="Utility\CR.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -283,12 +358,69 @@
     <ClCompile Include="Utility\Logger\Logger.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="DataStructure\Factory\ElementFactory.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DataStructure\Factory\LoadFactory.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DataStructure\Factory\SectionFactory.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Solver\Factory\SolverFactory.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="DataStructure\Section\SectionRectangle.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Solver\Dynamic\Integrators\SolverAdaptiveTSSBN.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Solver\Linear\Gpu\GpuSettings.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DataStructure\Constraint\NonlinearMPCConstraint.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DataStructure\Load\LoadAssembler.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DataStructure\Load\AerodynamicLoadCalculator.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DataStructure\Aerodynamics\BundleAeroMapper.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Solver\Workflow\AnalysisSolve.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Solver\Constraint\NonlinearMPC.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Solver\Linear\Gpu\CudaSparseSolver.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Solver\Linear\Gpu\CudssSolver.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Solver\Linear\Direct\PardisoSolver.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Solver\Assembly\ParallelAssemblyEngine.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <CudaCompile Include="Solver\Assembly\Gpu\CudaTrussBatchEvaluator.cu">
+      <Filter>Source Files</Filter>
+    </CudaCompile>
+    <CudaCompile Include="Solver\Assembly\Gpu\CudaCableBatchEvaluator.cu">
+      <Filter>Source Files</Filter>
+    </CudaCompile>
+    <CudaCompile Include="Solver\Assembly\Gpu\CudaBeamBatchEvaluator.cu">
+      <Filter>Source Files</Filter>
+    </CudaCompile>
+    <CudaCompile Include="Solver\Linear\Gpu\CudssDeviceTransfer.cu">
+      <Filter>Source Files</Filter>
+    </CudaCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="app_icon.rc">
@@ -320,11 +452,21 @@
     <ClInclude Include="DataStructure\Element\ElementBase.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="DataStructure\Element\SpringBehavior.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="DataStructure\Element\ElementSpringBase.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="DataStructure\Element\ElementSpring1.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="DataStructure\Element\ElementSpring2.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="DataStructure\Element\ElementSpringA.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="DataStructure\Element\SpringBehavior.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DataStructure\Element\ElementSpringBase.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DataStructure\Element\ElementSpring1.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DataStructure\Element\ElementSpring2.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DataStructure\Element\ElementSpringA.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="DataStructure\Element\ElementTruss.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -380,6 +522,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Export\Outputter.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Export\EnergyResult.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Export\ResultOutputSettings.h">
@@ -442,6 +587,9 @@
     <ClInclude Include="Solver\Dynamic\Damping\StructuralDamping.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Solver\Dynamic\Damping\ConductorModalClassifier.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="Solver\Interface\IAnalysisModel.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -454,10 +602,31 @@
     <ClInclude Include="Solver\Assembly\AssemblySettings.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Solver\Factory\SolverFactory.h">
+    <ClInclude Include="Utility\UiIcons.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Solver\AnalysisRunner.h">
+    <ClInclude Include="Utility\DialogScreenAdapter.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Solver\Assembly\ParallelAssemblyEngine.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Solver\Assembly\SystemEvaluation.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Solver\Assembly\Gpu\CudaTrussBatchEvaluator.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Solver\Assembly\Gpu\CudaCableBatchEvaluator.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Solver\Assembly\Gpu\CudaBeamBatchEvaluator.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Solver\Linear\Gpu\CudssDeviceTransfer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Solver\Factory\SolverFactory.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Solver\Static\SolverStatic.h">
@@ -481,30 +650,108 @@
     <ClInclude Include="Utility\Logger\Logger.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="DataStructure\Factory\ElementFactory.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DataStructure\Factory\LoadFactory.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DataStructure\Factory\SectionFactory.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="DataStructure\Section\SectionRectangle.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Solver\Dynamic\Integrators\SolverAdaptiveTSSBN.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="GUI\Dialogs\ResultPlotExportDialog.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Solver\Dynamic\TimeStepping\AdaptiveTssbnSettings.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DataStructure\Constraint\NonlinearMPCConstraint.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DataStructure\Load\LoadAssembler.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DataStructure\Load\AerodynamicLoadCalculator.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DataStructure\Aerodynamics\BundleAeroMapper.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Solver\Linear\LinearSolverSettings.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Solver\Linear\Gpu\CudaSparseSolver.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Solver\Linear\Gpu\CudssSolver.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Solver\Linear\Direct\PardisoSolver.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Solver\Linear\Gpu\GpuSettings.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Solver\Workflow\AnalysisSolve.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Solver\Constraint\NonlinearMPC.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <Text Include="Import\ImportFile\ce.txt" />
-    <Text Include="Import\ImportFile\Von-Mises-Truss.txt" />
-    <Text Include="Import\ImportFile\两斜杆受压.bdf" />
-    <Text Include="Import\ImportFile\1111.bdf" />
-    <Text Include="Import\ImportFile\11.txt" />
-    <Text Include="Import\ImportFile\daoxian.txt" />
-    <Text Include="Import\ImportFile\sifenlie.txt" />
+    <Text Include="Import\ImportFile\Examples\Misc\ce.txt" />
+    <Text Include="Import\ImportFile\Examples\Trusses\Von-Mises-Truss.txt" />
+    <Text Include="Import\ImportFile\Examples\Trusses\两斜杆受压.bdf" />
+    <Text Include="Import\ImportFile\Examples\Misc\1111.bdf" />
+    <Text Include="Import\ImportFile\Examples\Trusses\11.txt" />
+    <Text Include="Import\ImportFile\Examples\Conductors\daoxian.txt" />
+    <Text Include="Import\ImportFile\Examples\Conductors\sifenlie.txt" />
+    <Text Include="Import\ImportFile\MaterialProperty.bdf" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Import\FileFormat.md" />
-    <None Include="Import\ImportFile\竖直杆受轴和水平力.bdf" />
-    <None Include="Import\ImportFile\斜杆一端受压.bdf" />
-    <None Include="Import\ImportFile\两维梁.bdf" />
+    <None Include="..\docs\02_模型与格式\文本模型格式.md" />
+    <None Include="Import\ImportFile\Examples\Trusses\竖直杆受轴和水平力.bdf" />
+    <None Include="Import\ImportFile\Examples\Trusses\斜杆一端受压.bdf" />
+    <None Include="Import\ImportFile\Examples\Beams\两维梁.bdf" />
     <None Include="packages.config" />
-    <None Include="Import\ImportFile\测试梁.bdf" />
-    <None Include="Import\ImportFile\45梁.bdf" />
-    <None Include="Import\ImportFile\直角梁.bdf" />
+    <None Include="Import\ImportFile\Examples\Beams\测试梁.bdf" />
+    <None Include="Import\ImportFile\Examples\Beams\45梁.bdf" />
+    <None Include="Import\ImportFile\Examples\Beams\直角梁.bdf" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="GUI\Dialogs\AdaptiveTssbnSettingsEditor.h" />
+    <ClCompile Include="GUI\Dialogs\AdaptiveTssbnSettingsEditor.cpp" />
+    <ClInclude Include="GUI\Dialogs\AdaptiveTimeStepSettingsEditor.h" />
+    <ClCompile Include="GUI\Dialogs\AdaptiveTimeStepSettingsEditor.cpp" />
+    <ClInclude Include="GUI\Dialogs\StepAlgorithmStack.h" />
+    <ClCompile Include="GUI\Dialogs\StepAlgorithmStack.cpp" />
+    <ClInclude Include="GUI\Widgets\DialogFormView.h" />
+    <ClCompile Include="GUI\Widgets\DialogFormView.cpp" />
+    <ClInclude Include="GUI\Dialogs\StepEditorDialog.h" />
+    <ClCompile Include="GUI\Dialogs\StepEditorDialog.cpp" />
+    <ClInclude Include="GUI\Dialogs\LoadTimeFunctionPreview.h" />
+    <ClCompile Include="GUI\Dialogs\LoadTimeFunctionPreview.cpp" />
+    <ClInclude Include="GUI\Dialogs\LoadEditorDialog.h" />
+    <ClCompile Include="GUI\Dialogs\LoadEditorDialog.cpp" />
+    <ClInclude Include="GUI\Dialogs\MPCEditorDialog.h" />
+    <ClCompile Include="GUI\Dialogs\MPCEditorDialog.cpp" />
+    <ClInclude Include="GUI\Dialogs\ConstraintEditorDialog.h" />
+    <ClCompile Include="GUI\Dialogs\ConstraintEditorDialog.cpp" />
+    <ClInclude Include="Utility\AnalysisDisplay.h" />
+    <ClCompile Include="Utility\AnalysisDisplay.cpp" />
+    <ClCompile Include="GUI\Dialogs\NodeResultExportDialog.cpp" />
+    <ClCompile Include="GUI\Dialogs\ElementResultExportDialog.cpp" />
+    <ClCompile Include="GUI\Dialogs\ResultPlotExportDialog.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="GUI\YQYLayout.cpp" />
+    <ClCompile Include="GUI\Widgets\ConductorModuleLayout.cpp" />
   </ItemGroup>
 </Project>

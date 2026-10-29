@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Export/EnergyResult.h"
+
 #include <QtTypes>
 
 #include <vector>
@@ -7,24 +9,34 @@
 // HDF5 文件中模型和结果数据的快速摘要。
 struct Hdf5ResultSummary
 {
-    bool hasModel = false;             // 是否包含模型数据
-    bool hasResult = false;            // 是否包含结果数据
-    qint64 frameCount = 0;             // 结果帧数量
+    bool hasModel = false;              // 是否包含模型数据
+    bool hasResult = false;             // 是否包含结果数据
+    qint64 frameCount = 0;              // 结果帧数量
     qint64 displacementRecordCount = 0; // 位移记录数量
-    qint64 stressRecordCount = 0;      // 应力记录数量
-    qint64 strainRecordCount = 0;      // 应变记录数量
-    bool partialResult = false;        // 结果流是否未正常完成
+    qint64 stressRecordCount = 0;       // 应力记录数量
+    qint64 strainRecordCount = 0;       // 应变记录数量
+    bool partialResult = false;         // 结果流是否未正常完成
+    bool hasEnergy = false;             // 是否存在有效能量分量
+    qint64 energyRecordCount = 0;        // 能量记录数量
+    unsigned int availableEnergyMask = 0; // 任意帧中可用的能量分量
 };
 
 // 一帧结果的索引信息。
 struct Hdf5ResultFrameInfo
 {
-    int domainId = 0;          // 全局结果域编号
-    int stepId = 0;            // 分析步编号
-    int increment = 0;         // 增量步编号
-    int analysis = 0;          // 分析类型编码
-    double time = 0.0;         // 对应物理时间
-    double loadFactor = 1.0;   // 静力荷载系数
+    int domainId = 0;        // 全局结果域编号
+    int stepId = 0;          // 分析步编号
+    int increment = 0;       // 增量步编号
+    int analysis = 0;        // 分析类型编码
+    double time = 0.0;       // 对应物理时间
+    double loadFactor = 1.0; // 静力荷载系数
+};
+
+// 能量采样保留分析步和结果域，防止跨分析步误连曲线。
+struct Hdf5EnergyHistorySample
+{
+    Hdf5ResultFrameInfo info;
+    EnergyResult energy;
 };
 
 // 单个节点的一帧结果。
@@ -35,6 +47,13 @@ struct Hdf5NodalResult
     double velocity[6] = {};          // 平动和转动速度
     double acceleration[6] = {};      // 平动和转动加速度
     double currentCoordinate[3] = {}; // 当前全局坐标
+};
+
+// 单个节点的一个位移时程采样点。
+struct Hdf5NodalDisplacementHistorySample
+{
+    double time = 0.0;           // 对应物理时间
+    double displacement[6] = {}; // 平动和转动位移
 };
 
 // 单个单元的一帧结果。
@@ -56,8 +75,9 @@ struct Hdf5ElementResult
 // 由帧索引、节点结果和单元结果组成的一帧数据。
 struct Hdf5ResultFrame
 {
-    Hdf5ResultFrameInfo info;               // 帧索引信息
-    std::vector<Hdf5NodalResult> nodes;     // 节点结果
+    Hdf5ResultFrameInfo info;                // 帧索引信息
+    EnergyResult energy;                    // 当前结果域的结构能量
+    std::vector<Hdf5NodalResult> nodes;      // 节点结果
     std::vector<Hdf5ElementResult> elements; // 单元结果
 };
 

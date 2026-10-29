@@ -64,6 +64,7 @@
 #include <QFont>
 #include <QFormLayout>
 #include <QFrame>
+#include <QFuture>
 #include <QFutureWatcher>
 #include <QGridLayout>
 #include <QGroupBox>
@@ -110,6 +111,7 @@
 #include <QTimer>
 #include <QToolButton>
 #include <QToolTip>
+#include <QThreadPool>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QTreeView>

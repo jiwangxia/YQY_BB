@@ -1,49 +1,55 @@
 #pragma once
 
+#include "DialogFormView.h"
+#include "Utility/DialogScreenAdapter.h"
 #include <QDialog>
 #include <QLayout>
-#include <QSizePolicy>
 #include <QTimer>
 
 namespace DialogSizing
 {
-// Form-only dialogs have no meaningful vertically expanding content. Lock their
-// height after Qt has completed polish/layout, while leaving the width resizable.
-inline void lockHeightToContents(QDialog* dialog)
+// 仅设置首次打开尺寸，后续由原生布局和滚动区处理窗口大小变化。
+inline void fitFormToScreen(QDialog* dialog, bool preserveInitialHeight = false, bool compactForm = false)
 {
-    dialog->setWindowFlag(Qt::WindowMaximizeButtonHint, false);
-    QTimer::singleShot(0, dialog,
-                       [dialog]()
-                       {
-                           if (QLayout* layout = dialog->layout())
-                               layout->activate();
-
-                           const int previousWidth = dialog->width();
-                           dialog->adjustSize();
-                           dialog->resize(qMax(previousWidth, dialog->width()), dialog->height());
-
-                           const int contentHeight = dialog->height();
-                           dialog->setMinimumHeight(contentHeight);
-                           dialog->setMaximumHeight(contentHeight);
-                           dialog->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-                       });
+    QTimer::singleShot(0, dialog, [dialog, preserveInitialHeight, compactForm]()
+    {
+        QWidget* content = DialogFormView::contentWidget(dialog);
+        const bool installed = content != dialog;
+        content->ensurePolished();
+        if (!content->layout())
+        {
+            return;
+        }
+        content->layout()->activate();
+        int width = qMax(dialog->width(), content->sizeHint().width());
+        if (compactForm)
+        {
+            width = qMax(content->minimumSizeHint().width(), qMin(width, 720));
+        }
+        const int naturalHeight = qMax(content->sizeHint().height(),
+                                        content->layout()->totalHeightForWidth(width));
+        const int height = preserveInitialHeight ? dialog->height() : naturalHeight;
+        auto* view = DialogFormView::install(dialog);
+        if (view && !installed)
+        {
+            dialog->resize(width, height);
+        }
+        DialogScreenAdapter::install(dialog, QSize(360, 260));
+    });
 }
 
-// Use this for deliberately composed dialogs whose designed initial height is
-// already correct but whose contents do not benefit from vertical resizing.
-inline void lockCurrentHeight(QDialog* dialog)
+inline void lockHeightToContents(QDialog* dialog) // 按内容确定首次打开高度
 {
-    dialog->setWindowFlag(Qt::WindowMaximizeButtonHint, false);
-    QTimer::singleShot(0, dialog,
-                       [dialog]()
-                       {
-                           if (QLayout* layout = dialog->layout())
-                               layout->activate();
+    fitFormToScreen(dialog);
+}
 
-                           const int designedHeight = dialog->height();
-                           dialog->setMinimumHeight(designedHeight);
-                           dialog->setMaximumHeight(designedHeight);
-                           dialog->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-                       });
+inline void fitCompactFormToScreen(QDialog* dialog) // 使用紧凑的首次打开宽度
+{
+    fitFormToScreen(dialog, false, true);
+}
+
+inline void lockCurrentHeight(QDialog* dialog) // 保留调用方指定的首次打开高度
+{
+    fitFormToScreen(dialog, true);
 }
 }

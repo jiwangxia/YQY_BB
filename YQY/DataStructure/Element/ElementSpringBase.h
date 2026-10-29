@@ -20,8 +20,13 @@ public:
     void Get_me_Consistent(_OUT MatrixXd& me) override;                       // 返回零一致质量矩阵
     void Assemble(const std::vector<double>& damping, _OUT MatrixXd& ce) override; // 返回零阻尼矩阵
     double GetCurrentTangent() const; // 查询当前位移处的本构切线
+    bool TryGetStrainEnergy(_OUT double& energy) const override;
+    bool TryGetKineticEnergy(_OUT double& energy) override;
 
 protected:
     // 插值计算指定相对位移的弹簧力和切线，并更新当前状态。
     void EvaluateBehavior(double relativeDisplacement, _OUT double& force, _OUT double& tangent);
+
+private:
+    bool TryGetEnergyDisplacement(_OUT double& displacement) const;
 };

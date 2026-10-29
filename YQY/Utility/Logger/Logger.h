@@ -22,12 +22,14 @@ public:
     static Logger& Instance(); // 返回全局日志实例
 
     static void InitializeConsoleEncoding(); // 初始化 Windows 控制台 UTF-8 输出
+    static bool DetailedOutputEnabled();     // 显式诊断或验证入口才输出详细信息
 
     bool Start(const QString& modelFileName, int maxBackupCount = 20); // 创建本次运行的日志文件
     void Stop(bool success, const QString& summary = QString()); // 写入运行结论并关闭日志
 
-    void Debug(const QString& message); // 记录调试信息
-    void Info(const QString& message); // 记录普通信息
+    void Debug(const QString& message);      // 记录调试信息
+    void Diagnostic(const QString& message); // 保存诊断明细，按需输出原始文本
+    void Info(const QString& message);       // 记录普通信息
     void InfoToFile(const QString& message); // 仅记录到文件
     void Success(const QString& message); // 记录成功信息
     void Warning(const QString& message); // 记录警告信息

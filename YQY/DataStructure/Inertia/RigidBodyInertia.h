@@ -18,6 +18,8 @@ public:
 
     bool IsValid() const;
     void GetDOFs(_OUT std::vector<int>& dofs) const;
+    /** @brief 空间平动/角加速度的物理质量，区别于隐式增量切线中的质量系数。 */
+    void GetPhysicalMass(_OUT Eigen::MatrixXd& massMatrix) const;
     void GetDynamicContributions(_OUT Eigen::MatrixXd& massMatrix, _OUT Eigen::VectorXd& inertiaForce,
                                  _OUT Eigen::MatrixXd& gyroscopicMatrix,
                                  _OUT Eigen::MatrixXd& configurationTangent) const;

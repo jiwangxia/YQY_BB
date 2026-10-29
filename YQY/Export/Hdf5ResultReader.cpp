@@ -20,6 +20,11 @@ bool Hdf5ResultReader::open(const QString& filePath, _OUT std::vector<Hdf5Result
     return m_modelIO->OpenResultFile(filePath, frames);
 }
 
+bool Hdf5ResultReader::openEnergyHistory(const QString& filePath, _OUT std::vector<Hdf5ResultFrameInfo>& frames)
+{
+    return m_modelIO->OpenEnergyHistory(filePath, frames);
+}
+
 bool Hdf5ResultReader::readRanges(_OUT Hdf5ResultRanges& ranges) const
 {
     return m_modelIO->ReadResultRanges(ranges);
@@ -28,6 +33,17 @@ bool Hdf5ResultReader::readRanges(_OUT Hdf5ResultRanges& ranges) const
 bool Hdf5ResultReader::readFrame(int frameIndex, _OUT Hdf5ResultFrame& frame) const
 {
     return m_modelIO->ReadResultFrame(frameIndex, frame);
+}
+
+bool Hdf5ResultReader::readNodalDisplacementHistory(int nodeId,
+                                                    _OUT std::vector<Hdf5NodalDisplacementHistorySample>& samples) const
+{
+    return m_modelIO->ReadNodalDisplacementHistory(nodeId, samples);
+}
+
+bool Hdf5ResultReader::readEnergyHistory(int stepId, _OUT std::vector<Hdf5EnergyHistorySample>& samples) const
+{
+    return m_modelIO->ReadEnergyHistory(stepId, samples);
 }
 
 bool Hdf5ResultReader::readIterationHistory(_OUT std::vector<SolverIterationRecord>& records) const

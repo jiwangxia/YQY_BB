@@ -1,0 +1,63 @@
+{
+  "schema": "qv-ring-displacement-validation-20261028-v1",
+  "frozen_before_execution": true,
+  "user_accepted_relative_displacement_limit": 0.001,
+  "model": "Same 32-element radius-10-m free CR ring; EA=GA=10000, EI=GJ=500; two opposite Z triangular point loads, knots 0/2.5/5 s; initial rest; zero damping; duration 150 s.",
+  "scope": "Same spatially discrete production model, candidate integrators and a self-converged cross-checked numerical time reference. Not an author-provided exact trajectory or independent verification of the CR spatial model.",
+  "algorithms": ["adaptive-newmark", "adaptive-rk4", "adaptive-tssbn", "reference-tssbn"],
+  "outer_levels": [
+    {"relative_tolerance": 0.001, "displacement_absolute_tolerance": 0.00001, "velocity_absolute_tolerance": 0.001},
+    {"relative_tolerance": 0.0001, "displacement_absolute_tolerance": 0.000001, "velocity_absolute_tolerance": 0.0001},
+    {"relative_tolerance": 0.00001, "displacement_absolute_tolerance": 0.0000001, "velocity_absolute_tolerance": 0.00001}
+  ],
+  "candidate_settings": {
+    "initial_step": 0.01,
+    "minimum_step": 0.000001,
+    "maximum_step": 0.5,
+    "nonlinear_tolerance": 0.000001,
+    "maximum_iterations": 48,
+    "tssbn_spectral_radius": 1,
+    "preserve_current_solver_norms": true,
+    "reference_velocity_atol": "Reference factory binds actual velocity atol to displacement atol; record effective values and do not call equal requested tolerance equal accuracy."
+  },
+  "inner_sensitivity": {
+    "outer_level": 1,
+    "algorithms": ["adaptive-newmark", "adaptive-tssbn", "reference-tssbn"],
+    "nonlinear_tolerances": [0.000001, 0.00000001, 0.0000000001],
+    "qualification": "Compare entire histories to isolate iteration sensitivity; RK4 has no Newton iteration.",
+    "maximum_relative_difference_between_two_strictest": 0.0001
+  },
+  "reference": {
+    "algorithm": "fixed Newmark beta=0.25 gamma=0.5",
+    "initial_steps": [0.01, 0.005, 0.0025],
+    "nonlinear_tolerance": 0.0000000001,
+    "crosscheck_algorithm": "fixed RK4 with the actual CR auxiliary-history integration",
+    "crosscheck_step": 0.0025,
+    "normalization": "Uref=max over all 32 nodes and reference times of norm(position(t)-position(0)); floor 1e-6 m. Also report absolute vector error and component maxima.",
+    "minimum_observed_self_convergence_order": 1.8,
+    "maximum_richardson_relative_remaining_error": 0.0001,
+    "maximum_cross_algorithm_relative_difference": 0.0001,
+    "maximum_reference_interpolation_sensitivity": 0.00001,
+    "conditional_refinement_steps": [0.00125, 0.000625],
+    "conditional_refinement_rule": "If qualification fails, extend both reference sequences with the next halved step without changing thresholds. If still unqualified, retain failure and do not assign absolute accuracy pass to candidates."
+  },
+  "comparison": {
+    "times": "Union of reference and candidate accepted times over 0..150 s; no phase alignment; cubic Hermite of positions and translational velocities. Check reference linear-versus-Hermite interpolation sensitivity at candidate times.",
+    "maximum_error": "max over time and all nodes of norm(candidate_position-reference_position), normalized by Uref",
+    "rms_error": "Time-weighted RMS of three-vector errors over all nodes, normalized by Uref",
+    "additional": ["worst node/time/component", "final-state error", "accepted/rejected steps", "wall seconds", "actual sampled max step"],
+    "complete_finite_and_exact_endpoint_required": true,
+    "relative_displacement_limit_each_level": 0.001,
+    "successive_error_ratio_target": 0.95,
+    "gate_policy": "Each level receives its own accuracy result. Failure to meet threshold or decrease errors remains a failure; no tuning after inspecting results. Inner and outer failures reported separately."
+  },
+  "execution": {
+    "same_frozen_release_runtime": true,
+    "serial": true,
+    "MKL_OMP_threads": 1,
+    "full_state_stride": 1,
+    "timeout_seconds_per_run": 1800,
+    "timing_runs_per_configuration": 1,
+    "timing_qualification": "Includes full output callbacks; timeout is incomplete evidence, not a numerical pass or an equal-accuracy speed ranking."
+  }
+}

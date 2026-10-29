@@ -1,0 +1,63 @@
+{
+  "schema": "corotational-right-angle-independent-dynamics-input-v1",
+  "input": {
+    "nodes": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        10,
+        0
+      ],
+      [
+        -10,
+        10,
+        0
+      ]
+    ],
+    "root_fixed": "all6DOF",
+    "E": 1000000.0,
+    "G": 1000000.0,
+    "A": 1.0,
+    "Iy": 0.001,
+    "Iz": 0.001,
+    "torsionJ": 0.001,
+    "density": 1.0,
+    "rotary_inertia_per_length": [
+      20.0,
+      10.0,
+      10.0
+    ],
+    "damping": "zero",
+    "load": "elbow global Z: 50*t on[0,1], 50*(2-t) on[1,2], then0",
+    "initial_state": "all displacements/velocities/accelerations zero; Rnode=I, RGauss=R0"
+  },
+  "newmark": {
+    "beta": 0.25,
+    "gamma": 0.5,
+    "newton_tolerance": 1e-06,
+    "maximum_iterations": 48,
+    "minimum_time_step": "equal requested h, no reduced-step fallback",
+    "CLI_paper_tolerance": "1e-7 is adaptive-only and inactive in this fixed solver"
+  },
+  "duration": 2.5,
+  "theory": {
+    "elastic_potential": "EA/(2L)*u^2+GJ/(2L)*(t1x-t2x)^2+2EIy/L*(t1y^2+t1y*t2y+t2y^2)+2EIz/L*(t1z^2+t1z*t2z+t2z^2)",
+    "u": "current chord length minus initial length",
+    "ti": "log(Rframe.T*Rnode_i*R0)",
+    "physical_mass": "linear nodal velocity and spatial omega interpolation; two Gauss points; rotary J per length diag(20,10,10)",
+    "gyro": "sum integral N_i*(omega_gp cross Jspatial_gp*omega_gp)",
+    "gauss_orientation_ODE": "Rdot_gp=skew(sum N_i*omega_i)*R_gp"
+  },
+  "scope": "真实默认CR双梁柔性空间响应；生产固定Newmark，beta=.25 gamma=.5，非作者原网格复现。",
+  "sources": {
+    "Le2012_primary": "https://doi.org/10.1016/j.finel.2012.06.007",
+    "Crisfield1997_primary": "https://doi.org/10.1007/s004660050271",
+    "independent_ODE_method": "https://docs.scipy.org/doc/scipy/reference/generated/scipy.integrate.solve_ivp.html",
+    "programmatic_model": "YQYTests/Benchmarks/PaperBeamTest.cpp Le2012BeamModel right-angle branch"
+  },
+  "qualification": "Public right-angle geometry derived into a fully specified 2-element default CR semidiscrete problem. Independent ODE reference, not paper-original mesh/HHT reproduction. Default linear inertia differs from consistent cubic interpolation. Explicit mass inertias are not the stiffness section inertias."
+}

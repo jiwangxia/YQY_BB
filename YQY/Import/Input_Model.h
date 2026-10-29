@@ -2,18 +2,15 @@
 #include "Base/Base.h"
 #include <QTextStream>
 #include <QFile>
-#include <functional>
 
 class StructureData;
+class ElementBase;
 
 /**
  * @brief 模型输入类 - 负责从文件读取有限元模型数据
  */
 class Input_Model : public Base
 {
-private:
-    int g_Direction;
-
 public:
     /**
 	 * @brief 读取一行有效数据（跳过注释和空行）
@@ -24,7 +21,7 @@ public:
     bool ReadLine(QTextStream& flow, _OUT QString& str);
 
     /**
-	 * @brief 读取模型数据文件
+	 * @brief 读取模型数据文件，成功后替换目标模型，失败时保持目标不变
 	 * @param [in] FileName 文件路径
 	 * @param [in] pStructure 结构数据对象
 	 * @return 读取成功返回 true
@@ -36,10 +33,11 @@ public:
     }
 
 private:
-    std::shared_ptr<StructureData> m_Structure; ///< 结构数据指针
-    QString m_InputFileDir;                     ///< 输入文件所在目录
+    std::shared_ptr<StructureData> m_Structure; ///< 当前解析模型，成功提交后关联目标模型
     QString m_LastError;
     bool ValidateStructure(_OUT QString& errorMessage) const;
+    bool ValidateElementGeometry(const ElementBase& element, _OUT QString& errorMessage) const;
+    bool ValidateLoadsAndConstraints(_OUT QString& errorMessage) const;
 
     /**
 	 * @brief 读取节点数据
@@ -57,37 +55,10 @@ private:
 	 */
     bool InputElement(QTextStream& flow, const QStringList& list_str);
 
-    /// @name 单元处理函数映射
+    /// @name 单元读取函数
     /// @{
-    using ElementHandler = std::function<bool(Input_Model*, QTextStream&, const QStringList&, int)>;
-    static const QMap<EnumKeyword::ElementType, ElementHandler> s_ElementHandlers; ///< 单元类型到处理函数的映射表
-
-    /**
-	 * @brief 读取桁架单元数据
-	 * @param [in] flow 文本流
-	 * @param [in] list_str 关键字行解析后的字符串列表
-	 * @param [in] nElement 单元数量
-	 * @return 读取成功返回 true
-	 */
-    bool InputElementTruss(QTextStream& flow, const QStringList& list_str, int nElement);
-
-    /**
-	 * @brief 读取索单元数据
-	 * @param [in] flow 文本流
-	 * @param [in] list_str 关键字行解析后的字符串列表
-	 * @param [in] nElement 单元数量
-	 * @return 读取成功返回 true
-	 */
-    bool InputElementCable(QTextStream& flow, const QStringList& list_str, int nElement);
-
-    /**
-	 * @brief 读取索单元数据
-	 * @param [in] flow 文本流
-	 * @param [in] list_str 关键字行解析后的字符串列表
-	 * @param [in] nElement 单元数量
-	 * @return 读取成功返回 true
-	 */
-    bool InputElementBeam_CR3D(QTextStream& flow, const QStringList& list_str, int nElement);
+    // 桁架、索和 CR3D 梁共用节点、材料及截面的读取流程。
+    bool InputLineElements(QTextStream& flow, EnumKeyword::ElementType type, int nElement);
 
     bool InputElementSpring1(QTextStream& flow, const QStringList& list_str, int nElement);
     bool InputElementSpring2(QTextStream& flow, const QStringList& list_str, int nElement);
@@ -120,7 +91,7 @@ private:
 	 */
     bool InputAnalysisStep(QTextStream& flow, const QStringList& list_str);
 
-    /// @name 荷载处理函数映射
+    /// @name 荷载读取函数
     /// @{
     /**
 	 * @brief 读取荷载数据（分发到具体荷载处理函数）
@@ -129,9 +100,6 @@ private:
 	 * @return 读取成功返回 true
 	 */
     bool InputLoad(QTextStream& flow, const QStringList& list_str);
-
-    using LoadHandler = std::function<bool(Input_Model*, QTextStream&, const QStringList&, int)>;
-    static const QMap<EnumKeyword::LoadType, LoadHandler> s_LoadHandlers; ///< 荷载类型到处理函数的映射表
 
     /**
 	 * @brief 读取节点力荷载数据

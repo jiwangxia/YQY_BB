@@ -1,0 +1,177 @@
+{
+  "schema": "newmark-literature-acceptance-v1",
+  "created_utc": "2026-10-19T05:12:42.170746+00:00",
+  "algorithm": "production factory fixed Newmark beta=.25 gamma=.5 only",
+  "criteria": {
+    "all_complete_finite_no_cutback_or_precision_limited": true,
+    "official_Chopra_displacement_absolute_limit": 0.001,
+    "Chopra_independent_OpenSees_absolute_q_v_a_limits": [
+      1e-08,
+      1e-08,
+      1e-07
+    ],
+    "Chopra_independent_OpenSees_restoring_force_absolute_limit": 1e-08,
+    "Liang_figure_period_and_amplitude_difference_percentage_points": 0.2,
+    "Liang_finest_max_normalized_q_v_a_limits": [
+      0.001,
+      0.001,
+      0.001
+    ],
+    "Liang_additional_refinement_order_range": [
+      1.8,
+      2.2
+    ],
+    "accepted_Newmark_kinematics_absolute_limit": 1e-10,
+    "accepted_equilibrium_absolute_limit": 1e-09,
+    "paper_coarse_step_global_accuracy_is_NOT_required": true
+  },
+  "candidate_newton_residual_tolerance": 1e-12,
+  "runs": [
+    {
+      "name": "chopra-linear",
+      "case": "chopra-linear",
+      "group": "original_table",
+      "step": 0.1,
+      "duration": 1.0
+    },
+    {
+      "name": "chopra-elastoplastic",
+      "case": "chopra-elastoplastic",
+      "group": "original_table",
+      "step": 0.1,
+      "duration": 0.9
+    },
+    {
+      "name": "liang-pendulum-small-r0.04",
+      "case": "liang-pendulum-small",
+      "group": "paper_figure",
+      "step_ratio": 0.04,
+      "period": 6.322163735582885,
+      "initial_angle": 0.3141592653589793,
+      "step": 0.2528865494233154,
+      "duration": 31.610818677914423,
+      "window_qualification": "5T and first-return peak extraction are explicit new choices; author does not specify event/window protocol"
+    },
+    {
+      "name": "liang-pendulum-small-r0.08",
+      "case": "liang-pendulum-small",
+      "group": "paper_figure",
+      "step_ratio": 0.08,
+      "period": 6.322163735582885,
+      "initial_angle": 0.3141592653589793,
+      "step": 0.5057730988466308,
+      "duration": 31.610818677914423,
+      "window_qualification": "5T and first-return peak extraction are explicit new choices; author does not specify event/window protocol"
+    },
+    {
+      "name": "liang-pendulum-small-r0.1",
+      "case": "liang-pendulum-small",
+      "group": "paper_figure",
+      "step_ratio": 0.1,
+      "period": 6.322163735582885,
+      "initial_angle": 0.3141592653589793,
+      "step": 0.6322163735582885,
+      "duration": 31.610818677914423,
+      "window_qualification": "5T and first-return peak extraction are explicit new choices; author does not specify event/window protocol"
+    },
+    {
+      "name": "liang-pendulum-small-r0.01",
+      "case": "liang-pendulum-small",
+      "group": "additional_refinement",
+      "step_ratio": 0.01,
+      "period": 6.322163735582885,
+      "initial_angle": 0.3141592653589793,
+      "step": 0.06322163735582885,
+      "duration": 31.610818677914423,
+      "window_qualification": "5T and first-return peak extraction are explicit new choices; author does not specify event/window protocol"
+    },
+    {
+      "name": "liang-pendulum-small-r0.005",
+      "case": "liang-pendulum-small",
+      "group": "additional_refinement",
+      "step_ratio": 0.005,
+      "period": 6.322163735582885,
+      "initial_angle": 0.3141592653589793,
+      "step": 0.031610818677914425,
+      "duration": 31.610818677914423,
+      "window_qualification": "5T and first-return peak extraction are explicit new choices; author does not specify event/window protocol"
+    },
+    {
+      "name": "liang-pendulum-small-r0.0025",
+      "case": "liang-pendulum-small",
+      "group": "additional_refinement",
+      "step_ratio": 0.0025,
+      "period": 6.322163735582885,
+      "initial_angle": 0.3141592653589793,
+      "step": 0.015805409338957212,
+      "duration": 31.610818677914423,
+      "window_qualification": "5T and first-return peak extraction are explicit new choices; author does not specify event/window protocol"
+    },
+    {
+      "name": "liang-pendulum-large-r0.04",
+      "case": "liang-pendulum-large",
+      "group": "paper_figure",
+      "step_ratio": 0.04,
+      "period": 7.4162987092054875,
+      "initial_angle": 1.5707963267948966,
+      "step": 0.2966519483682195,
+      "duration": 37.08149354602744,
+      "window_qualification": "5T and first-return peak extraction are explicit new choices; author does not specify event/window protocol"
+    },
+    {
+      "name": "liang-pendulum-large-r0.08",
+      "case": "liang-pendulum-large",
+      "group": "paper_figure",
+      "step_ratio": 0.08,
+      "period": 7.4162987092054875,
+      "initial_angle": 1.5707963267948966,
+      "step": 0.593303896736439,
+      "duration": 37.08149354602744,
+      "window_qualification": "5T and first-return peak extraction are explicit new choices; author does not specify event/window protocol"
+    },
+    {
+      "name": "liang-pendulum-large-r0.1",
+      "case": "liang-pendulum-large",
+      "group": "paper_figure",
+      "step_ratio": 0.1,
+      "period": 7.4162987092054875,
+      "initial_angle": 1.5707963267948966,
+      "step": 0.7416298709205488,
+      "duration": 37.08149354602744,
+      "window_qualification": "5T and first-return peak extraction are explicit new choices; author does not specify event/window protocol"
+    },
+    {
+      "name": "liang-pendulum-large-r0.01",
+      "case": "liang-pendulum-large",
+      "group": "additional_refinement",
+      "step_ratio": 0.01,
+      "period": 7.4162987092054875,
+      "initial_angle": 1.5707963267948966,
+      "step": 0.07416298709205488,
+      "duration": 37.08149354602744,
+      "window_qualification": "5T and first-return peak extraction are explicit new choices; author does not specify event/window protocol"
+    },
+    {
+      "name": "liang-pendulum-large-r0.005",
+      "case": "liang-pendulum-large",
+      "group": "additional_refinement",
+      "step_ratio": 0.005,
+      "period": 7.4162987092054875,
+      "initial_angle": 1.5707963267948966,
+      "step": 0.03708149354602744,
+      "duration": 37.08149354602744,
+      "window_qualification": "5T and first-return peak extraction are explicit new choices; author does not specify event/window protocol"
+    },
+    {
+      "name": "liang-pendulum-large-r0.0025",
+      "case": "liang-pendulum-large",
+      "group": "additional_refinement",
+      "step_ratio": 0.0025,
+      "period": 7.4162987092054875,
+      "initial_angle": 1.5707963267948966,
+      "step": 0.01854074677301372,
+      "duration": 37.08149354602744,
+      "window_qualification": "5T and first-return peak extraction are explicit new choices; author does not specify event/window protocol"
+    }
+  ]
+}

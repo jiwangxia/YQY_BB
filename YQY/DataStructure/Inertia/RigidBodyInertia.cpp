@@ -33,6 +33,16 @@ void RigidBodyInertia::GetDOFs(_OUT std::vector<int>& dofs) const
     dofs.assign(node->m_DOF.cbegin(), node->m_DOF.cbegin() + 6);
 }
 
+void RigidBodyInertia::GetPhysicalMass(_OUT Eigen::MatrixXd& massMatrix) const
+{
+    massMatrix = Eigen::MatrixXd::Zero(6, 6);
+    const auto node = m_pNode.lock();
+    if (!node || node->m_DOF.size() < 6)
+        return;
+    massMatrix.block<3, 3>(0, 0) = m_Mass * Eigen::Matrix3d::Identity();
+    massMatrix.block<3, 3>(3, 3) = node->m_Rg * m_RotaryInertia * node->m_Rg.transpose();
+}
+
 void RigidBodyInertia::GetDynamicContributions(_OUT Eigen::MatrixXd& massMatrix, _OUT Eigen::VectorXd& inertiaForce,
                                                _OUT Eigen::MatrixXd& gyroscopicMatrix,
                                                _OUT Eigen::MatrixXd& configurationTangent) const
@@ -75,8 +85,9 @@ void RigidBodyInertia::GetDynamicContributions(_OUT Eigen::MatrixXd& massMatrix,
     massMatrix.block<3, 3>(3, 3) = node->m_Rg * m_RotaryInertia * rotationalMapping;
 
     const Eigen::Matrix3d angularVelocitySkew = CrossProductMatrix(materialAngularVelocity);
+    const Eigen::Matrix3d angularMomentumSkew = CrossProductMatrix(materialAngularMomentum);
     gyroscopicMatrix.block<3, 3>(3, 3) =
-        node->m_Rg * (angularVelocitySkew * m_RotaryInertia - m_RotaryInertia * angularVelocitySkew) *
+        node->m_Rg * (angularVelocitySkew * m_RotaryInertia - angularMomentumSkew) *
         rotationalMapping;
-    configurationTangent.block<3, 3>(3, 3) = -node->m_Rg * CrossProductMatrix(materialDynamicMoment);
+    configurationTangent.block<3, 3>(3, 3) = -CrossProductMatrix(node->m_Rg * materialDynamicMoment);
 }

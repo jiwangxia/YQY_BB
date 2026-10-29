@@ -41,9 +41,8 @@ double EstimateStepDoublingError(const Vec& coarseDisplacement, const Vec& coars
 {
     if (methodOrder < 1 || !std::isfinite(settings.absoluteTolerance) || settings.absoluteTolerance <= 0.0 ||
         !std::isfinite(settings.relativeTolerance) || settings.relativeTolerance <= 0.0 ||
-        (settings.includeVelocityInError &&
-         (!std::isfinite(settings.velocityAbsoluteTolerance) || settings.velocityAbsoluteTolerance <= 0.0 ||
-          !std::isfinite(settings.velocityRelativeTolerance) || settings.velocityRelativeTolerance <= 0.0)))
+        !std::isfinite(settings.velocityAbsoluteTolerance) || settings.velocityAbsoluteTolerance <= 0.0 ||
+        !std::isfinite(settings.velocityRelativeTolerance) || settings.velocityRelativeTolerance <= 0.0)
         return std::numeric_limits<double>::infinity();
 
     // Richardson 步长加倍关系：细解误差约为 (fine - coarse) / (2^p - 1)。
@@ -54,8 +53,6 @@ double EstimateStepDoublingError(const Vec& coarseDisplacement, const Vec& coars
         ScaledMaximumError(fineDisplacement - coarseDisplacement, coarseDisplacement, fineDisplacement,
                            settings.absoluteTolerance, settings.relativeTolerance) /
         denominator;
-    if (!settings.includeVelocityInError)
-        return displacementError;
 
     const double velocityError =
         ScaledMaximumError(fineVelocity - coarseVelocity, coarseVelocity, fineVelocity,

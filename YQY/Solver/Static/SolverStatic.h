@@ -27,6 +27,8 @@ public:
         double tol_R = 1e-4;    //  相对残差容差
         double tol_dx = 1e-6;   //  位移增量容差
         double tol_C = 1e-10;   //  非线性约束容差
+        bool referenceEquilibrium = false; // 独立参考路线采用绝对 Newton 修正/相邻 RHS 收敛判断。
+        double referenceTimeStep = 0.0;
     };
 
     /**
@@ -74,10 +76,12 @@ private:
     SpMat m_K;
     Vec m_R, m_dx;
 
+    bool SolveReferenceEquilibrium(IAnalysisModel& model, double duration);
+
     /**
          * @brief 求解线性方程组 K * x = b
          * @return 是否成功
          */
-    bool SolveLinear(const SpMat& K, const Vec& b, _OUT Vec& x);
+    bool SolveLinear(const SpMat& K, const Vec& b, _OUT Vec& x, std::uint64_t patternVersion = 0);
 };
 }

@@ -1,0 +1,95 @@
+{
+  "source_script_sha256": "aabe80b6cba11281f82896103be548ae9412e284c43ce9e75557538e57a68cb4",
+  "duration": 2.5,
+  "elements_per_leg": 1,
+  "state_dimension": 43,
+  "reference_selfcheck": {
+    "complex_step_invariance_relative": 1.5339303599565994e-16,
+    "translation_resultant_relative": 2.876045150357986e-17,
+    "rigid_rotation_resultant_relative": 3.068085747727219e-17,
+    "finite_directional_derivative": [
+      {
+        "step": 0.0001,
+        "derivative": 23081.13548563597,
+        "scaled_error": 3.2526449511920892e-09
+      },
+      {
+        "step": 5e-05,
+        "derivative": 23081.13542949286,
+        "scaled_error": 8.202209416369323e-10
+      },
+      {
+        "step": 2.5e-05,
+        "derivative": 23081.135416018697,
+        "scaled_error": 2.364470601925835e-10
+      }
+    ],
+    "quaternion_matrix_crosscheck_max": 1.1102230246251565e-16,
+    "independent_force_directional_derivative": 23081.13541056123,
+    "passed": true
+  },
+  "model_scope": "同默认CR半离散势能和线性空间速度惯性，独立连续ODE；不是作者完整离散复现",
+  "candidate_data_used": false,
+  "reference_gate_predeclared": {
+    "max_normalized_state_refinement": 1e-06,
+    "energy_work_scaled": 1e-07,
+    "quaternion_norm": 1e-09
+  },
+  "coarse": {
+    "method": "SciPy DOP853",
+    "rtol": 1e-11,
+    "atol": 9.999999999999999e-14,
+    "max_step": 0.005,
+    "rhs_calls": 16533,
+    "accepted_steps": 1005,
+    "wall_seconds": 20.028728500008583,
+    "completed": true
+  },
+  "fine": {
+    "method": "SciPy DOP853",
+    "rtol": 1e-12,
+    "atol": 1e-14,
+    "max_step": 0.0025,
+    "rhs_calls": 29301,
+    "accepted_steps": 1825,
+    "wall_seconds": 39.13306229992304,
+    "completed": true
+  },
+  "refinement": {
+    "position": {
+      "maximum_vector_error": 6.216793099183072e-11,
+      "scale": 5.287314020000303,
+      "normalized": 1.1757941888200383e-11
+    },
+    "velocity": {
+      "maximum_vector_error": 1.627882093861727e-08,
+      "scale": 3.490293788205957,
+      "normalized": 4.664025989337916e-09
+    },
+    "omega": {
+      "maximum_vector_error": 1.5739896513414389e-13,
+      "scale": 0.8395758249226948,
+      "normalized": 1.8747438940209674e-13
+    },
+    "acceleration": {
+      "maximum_vector_error": 4.266167558223886e-06,
+      "scale": 4.275182621425717,
+      "normalized": 9.978913033663988e-07
+    },
+    "alpha": {
+      "maximum_vector_error": 3.760366300782246e-11,
+      "scale": 2.1067746864085137,
+      "normalized": 1.7848924828277022e-11
+    },
+    "rotation": {
+      "maximum_radians": 4.7250731716929894e-14,
+      "normalized": 4.7250731716929894e-14
+    }
+  },
+  "energy_work_scaled_error": 4.684746753320889e-15,
+  "quaternion_norm_error": 2.3314683517128287e-15,
+  "maximum_potential_energy": 74.05403083609092,
+  "maximum_inter_node_omega_cross": 0.37716438449793355,
+  "maximum_adjacent_time_omega_cross": 0.0029791485589353624,
+  "reference_valid": true
+}

@@ -18,8 +18,12 @@ bool ResultDataController::open(const QString& filePath, _OUT std::vector<Hdf5Re
                                 _OUT Hdf5ResultRanges& ranges)
 {
     close();
+    ranges = {};
     if (!m_reader->open(filePath, frames) || frames.empty())
+    {
+        close();
         return false;
+    }
 
     if (!m_reader->readRanges(ranges))
         ranges = {};
@@ -34,6 +38,9 @@ bool ResultDataController::readFrame(int frameIndex, _OUT Hdf5ResultFrame& frame
 bool ResultDataController::readFramePair(int firstIndex, int secondIndex, _OUT Hdf5ResultFrame& firstFrame,
                                          _OUT Hdf5ResultFrame& secondFrame)
 {
+    if (firstIndex < 0 || secondIndex < 0)
+        return false;
+
     if (m_cachedFrameIndex != firstIndex)
     {
         if (m_cachedNextFrameIndex == firstIndex)
@@ -41,15 +48,18 @@ bool ResultDataController::readFramePair(int firstIndex, int secondIndex, _OUT H
             std::swap(m_cachedFrameIndex, m_cachedNextFrameIndex);
             std::swap(m_cachedFrame, m_cachedNextFrame);
         }
-        else if (!m_reader->readFrame(firstIndex, m_cachedFrame))
+        else
         {
-            return false;
+            m_cachedFrameIndex = -1;
+            if (!m_reader->readFrame(firstIndex, m_cachedFrame))
+                return false;
         }
         m_cachedFrameIndex = firstIndex;
     }
 
     if (m_cachedNextFrameIndex != secondIndex)
     {
+        m_cachedNextFrameIndex = -1;
         if (!m_reader->readFrame(secondIndex, m_cachedNextFrame))
             return false;
         m_cachedNextFrameIndex = secondIndex;

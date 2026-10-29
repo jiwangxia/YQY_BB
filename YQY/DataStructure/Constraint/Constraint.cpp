@@ -31,6 +31,24 @@ bool Constraint::HasTimePoints() const
     return !m_TimePoints.empty();
 }
 
+bool Constraint::IsConstantOverInterval(double startTime, double endTime) const
+{
+    if (!std::isfinite(startTime) || !std::isfinite(endTime) || endTime < startTime || !std::isfinite(m_Value))
+        return false;
+    if (m_Value == 0.0)
+        return true;
+
+    const double initialValue = GetValue(startTime, 1.0);
+    if (!std::isfinite(initialValue) || GetValue(endTime, 1.0) != initialValue)
+        return false;
+    for (const ConstraintTimePoint& point : m_TimePoints)
+    {
+        if (point.time > startTime && point.time < endTime && m_Value * point.value != initialValue)
+            return false;
+    }
+    return true;
+}
+
 double Constraint::GetValue(double currentTime, double factor) const
 {
     // 旧四字段约束没有时程，继续保持 value × factor 的原有行为。

@@ -1,6 +1,8 @@
 #include "ElementBeam_Simo.h"
 
 #include <stdexcept>
+#include <cmath>
+#include <limits>
 
 namespace
 {
@@ -96,7 +98,7 @@ ElementBeam_Simo::GaussState ElementBeam_Simo::EvaluateGaussState(double coordin
     const Eigen::Vector3d x1(node1->m_X + node1->m_Displacement[0], node1->m_Y + node1->m_Displacement[1],
                              node1->m_Z + node1->m_Displacement[2]);
 
-    // m_Rg is the nodal spatial rotation relative to the initial section frame.
+    // m_Rg 表示节点相对初始截面坐标系的空间转动。
     const Eigen::Matrix3d rotation0 = node0->m_Rg * R0;
     const Eigen::Matrix3d rotation1 = node1->m_Rg * R0;
     const Eigen::Vector3d relativeRotation = Log(rotation1 * rotation0.transpose());
@@ -111,6 +113,71 @@ ElementBeam_Simo::GaussState ElementBeam_Simo::EvaluateGaussState(double coordin
     return state;
 }
 
+bool ElementBeam_Simo::TryGetStrainEnergy(_OUT double& energy) const
+{
+    energy = std::numeric_limits<double>::quiet_NaN();
+    const auto property = m_pProperty.lock();
+    const auto material = property ? property->m_pMaterial.lock() : nullptr;
+    const auto section = property ? property->m_pSection.lock() : nullptr;
+    if (!material || !section || L0 <= 0.0 || material->m_Poisson <= -1.0)
+        return false;
+    double Iy = 0.0, Iz = 0.0, J = 0.0;
+    if (!TryGetEnergySectionInertia(Iy, Iz, J))
+        return false;
+    const GaussState state = EvaluateGaussState(0.0);
+    const Vector3d strain = state.rotation.transpose() * state.strain;
+    const Vector3d curvature = state.rotation.transpose() * state.curvature;
+    const double young = material->m_Young;
+    const double shear = young / (2.0 * (1.0 + material->m_Poisson));
+    // 与生产内力相同的单点减缩积分，不另引入完整积分造成能量离散不一致。
+    const double value = 0.5 * L0 *
+                         (young * section->m_Area * strain.x() * strain.x() +
+                           shear * section->m_Area * (strain.y() * strain.y() + strain.z() * strain.z()) +
+                           shear * J * curvature.x() * curvature.x() + young * Iy * curvature.y() * curvature.y() +
+                           young * Iz * curvature.z() * curvature.z());
+    if (!std::isfinite(value))
+        return false;
+    energy = value;
+    return true;
+}
+
+bool ElementBeam_Simo::TryGetKineticEnergy(_OUT double& energy)
+{
+    energy = std::numeric_limits<double>::quiet_NaN();
+    const auto first = m_pNode[0].lock();
+    const auto second = m_pNode[1].lock();
+    const auto property = m_pProperty.lock();
+    const auto material = property ? property->m_pMaterial.lock() : nullptr;
+    const auto section = property ? property->m_pSection.lock() : nullptr;
+    if (!first || !second || !material || !section || L0 <= 0.0 ||
+        first->m_Velocity.size() < 6 || second->m_Velocity.size() < 6)
+        return false;
+    double Iy = 0.0, Iz = 0.0, J = 0.0;
+    if (!TryGetEnergySectionInertia(Iy, Iz, J))
+        return false;
+    const Vector3d rotaryDensity(material->m_Density * (Iy + Iz), material->m_Density * Iy, material->m_Density * Iz);
+    double value = 0.0;
+    for (const double point : {-1.0 / std::sqrt(3.0), 1.0 / std::sqrt(3.0)})
+    {
+        const double firstShape = 0.5 * (1.0 - point);
+        const double secondShape = 0.5 * (1.0 + point);
+        Vector3d velocity, spin;
+        for (int component = 0; component < 3; ++component)
+        {
+            velocity[component] = firstShape * first->m_Velocity[component] + secondShape * second->m_Velocity[component];
+            spin[component] = firstShape * first->m_Velocity[component + 3] + secondShape * second->m_Velocity[component + 3];
+        }
+        const GaussState state = EvaluateGaussState(point);
+        const Vector3d materialSpin = state.rotation.transpose() * spin;
+        value += 0.25 * L0 * (material->m_Density * section->m_Area * velocity.squaredNorm() +
+                               (rotaryDensity.array() * materialSpin.array().square()).sum());
+    }
+    if (!std::isfinite(value) || value < 0.0)
+        return false;
+    energy = value;
+    return true;
+}
+
 void ElementBeam_Simo::Get_ke(Eigen::MatrixXd& ke)
 {
     Get_L0();
@@ -123,11 +190,10 @@ void ElementBeam_Simo::Get_ke(Eigen::MatrixXd& ke)
     constitutive(1, 1) = shear * area;
     constitutive(2, 2) = shear * area;
     constitutive(3, 3) = shear * J;
-    constitutive(4, 4) = young * Iz;
-    constitutive(5, 5) = young * Iy;
+    constitutive(4, 4) = young * Iy;
+    constitutive(5, 5) = young * Iz;
 
-    // As in the reference implementation, one reduced Gauss point is used for
-    // the static Simo-Reissner strain terms to avoid shear locking.
+    // 静力 Simo-Reissner 应变项沿用参考实现的单个 Gauss 点减缩积分，避免剪切锁定。
     const GaussState state = EvaluateGaussState(0.0);
     const double N[2] = {0.5, 0.5};
     const double dN[2] = {-1.0 / L0, 1.0 / L0};
@@ -190,8 +256,8 @@ void ElementBeam_Simo::Get_me_Consistent(Eigen::MatrixXd& me)
 
     Eigen::Matrix3d materialInertia = Eigen::Matrix3d::Zero();
     materialInertia(0, 0) = density * (Iy + Iz);
-    materialInertia(1, 1) = density * Iz;
-    materialInertia(2, 2) = density * Iy;
+    materialInertia(1, 1) = density * Iy;
+    materialInertia(2, 2) = density * Iz;
 
     me = Eigen::MatrixXd::Zero(12, 12);
     const double points[2] = {-1.0 / std::sqrt(3.0), 1.0 / std::sqrt(3.0)};

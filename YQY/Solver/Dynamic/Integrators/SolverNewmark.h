@@ -24,17 +24,14 @@ public:
          */
     struct Params
     {
-        double dt = 0.01;                  ///< 时间步长
-        double beta = 0.25;                ///< Newmark β 参数 (默认: 平均加速度法)
-        double gamma = 0.5;                ///< Newmark γ 参数
-        int maxIter = 10;                  ///< 每个时间步的最大 N-R 迭代次数
-        double tol = 1e-6;                 ///< 收敛容差
-        double constraintTolerance = 1e-8; ///< position-level MPC tolerance
+        double dt = 0.01;                  // 时间步长
+        double beta = 0.25;                // Newmark β 参数 (默认: 平均加速度法)
+        double gamma = 0.5;                // γ=0.5 时二阶，否则按一阶进行自适应误差控制
+        int maxIter = 10;                  // 每个时间步的最大 N-R 迭代次数
+        double tol = 1e-6;                 // 收敛容差
+        double constraintTolerance = 1e-8; // position-level MPC tolerance
         AerodynamicTangentMode aerodynamicTangentMode = AerodynamicTangentMode::EveryNewtonIteration;
-        // A failed nonlinear trial is rolled back and retried with a
-        // smaller physical time increment.  This is a convergence aid,
-        // not numerical damping; accepted increments still use the
-        // average-acceleration Newmark scheme above.
+
         double minimumTimeStep = 1.0e-5;
         double cutbackFactor = 0.5;
         double recoveryFactor = 1.25;
@@ -77,6 +74,11 @@ public:
     {
         return m_timeStepStatistics;
     }
+    // 包括随后因 LTE 拒绝的试算步；每次 Solve 开始重新计数。
+    long long GetPrecisionLimitedSolveCount() const
+    {
+        return m_precisionLimitedSolveCount;
+    }
 
 private:
     struct StepResult
@@ -91,6 +93,8 @@ private:
     Params m_param;
     TimeStepStatistics m_timeStepStatistics;
     StepCallback m_callback;
+    bool m_hasActiveFiniteRotations = false;
+    long long m_precisionLimitedSolveCount = 0;
 
     /**
          * @brief Newmark 积分系数
@@ -105,8 +109,17 @@ private:
          * @brief 根据时间步长计算 Newmark 系数
          */
     void ComputeCoeffs(double dt);
+    /** 固定本步从方向，将预测或线搜索试探回缩到约束曲面，再恢复从运动学。 */
+    bool PrepareMpcTrialState(IAnalysisModel& model, const std::vector<int>& stepSlaveDofs,
+                             _OUT NonlinearMPCData& constraints) const;
+    /** 在当前构型上将从自由度运动学投影到 Gv=0 和 Ga+H[v,v]=0。 */
+    bool ProjectMpcKinematics(IAnalysisModel& model, const NonlinearMPCData& constraints) const;
     bool SolveSingleStep(IAnalysisModel& model, double currentTime, double timeStep,
-                         const Eigen::MatrixXd& dampingFactor, _OUT StepResult& result);
+                         _OUT StepResult& result);
+    bool IsPrecisionLimitedConvergence(const IAnalysisModel& model, const Vec& rhs, const Vec& externalForce,
+                                       const SpMat& tangent, const NonlinearMPCReduction* reduction, const NonlinearMPCData* constraints,
+                                       const Vec& previousVelocity,
+                                       _OUT double& scaledResidual, _OUT double& scaledCorrection) const;
 
     // 线性求解器缓存
     LinearSystemSolver m_linearSolver;
@@ -120,7 +133,7 @@ private:
          * @brief 求解线性方程组 K * x = b
          * @return 是否成功
          */
-    bool SolveLinear(const SpMat& K, const Eigen::MatrixXd& dampingFactor, double dampingScale, const Vec& b,
-                     _OUT Vec& x);
+    bool SolveLinear(const SpMat& K, const Vec& b,
+                     _OUT Vec& x, std::uint64_t patternVersion = 0);
 };
 }

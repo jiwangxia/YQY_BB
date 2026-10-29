@@ -1,0 +1,22 @@
+{
+  "frozen_inputs": [
+    {
+      "file": "cable.h5",
+      "sha256": "b53660adddcd0b596d41aa2d9b1fda5f1b3d57cb174f7e5164e7428ebea94c6d"
+    },
+    {
+      "file": "cable.json",
+      "sha256": "83ce5a439a39a2666915946b30c7e41b7739b2c2c998c13054e6988be486ec29"
+    },
+    {
+      "file": "beam.h5",
+      "sha256": "09aa4a7230bdc371898f814a4c92f3d09cc7c33ecebbd828e9f22e8e82e54358"
+    },
+    {
+      "file": "beam.json",
+      "sha256": "82e89672ea8600355bec21db7d81a69c801f9c273bfe1140b5e88d9388770048"
+    }
+  ],
+  "results_directory": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark-duan-galloping-20261026",
+  "reference": "Duan Table 7 reconstruction; limitations in source_audit.json; not an exact paper reproduction"
+}

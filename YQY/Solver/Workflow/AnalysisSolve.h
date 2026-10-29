@@ -1,8 +1,15 @@
 #pragma once
-#include "DataStructure/Structure/StructureData.h"
+#include <QString>
 #include <memory>
 #include <functional>
+#include <map>
 #include <vector>
+
+class AnalysisStep;
+class StructureData;
+
+/// 将继承的静力状态按分析步配置施加舞动竖向初扰；供运行器和几何回归验证复用。
+bool ApplyGallopingInitialVerticalPerturbation(StructureData& structure, AnalysisStep& step);
 
 /**
  * @brief 分析运行器 - 编排模型中的一个或多个分析步
@@ -37,6 +44,14 @@ public:
     using CancelCallback = std::function<bool()>;
     void SetRuntimeCallbacks(ProgressCallback progressCallback, CancelCallback cancelCallback);
     void SetMaximumRegionThreads(int count);
+    /// 为本运行器限定 CPU 预算。零表示保持单独运行时的默认策略。
+    void SetExecutionThreadBudget(int count);
+    /// 独立动力任务按区域继承对应的已收敛静力状态。
+    void SetInitialRegionStates(const std::map<int, std::shared_ptr<StructureData>>& states);
+    const std::map<int, std::shared_ptr<StructureData>>& GetSolvedRegionStates() const
+    {
+        return m_solvedRegionStates;
+    }
     bool WasCancelled() const
     {
         return m_wasCancelled;
@@ -45,11 +60,14 @@ public:
 private:
     bool RunSelectedByRegions(const std::vector<int>& stepIds);
     bool RunWithStaticDependencies(const std::vector<int>& stepIds);
-    bool RunStepDirect(int stepId, bool persistHdf5 = true);
+    bool RunStepDirect(int stepId, bool persistHdf5 = true, bool inheritedStaticState = false);
 
     std::weak_ptr<StructureData> m_pStructure;
+    std::map<int, std::shared_ptr<StructureData>> m_initialRegionStates;
+    std::map<int, std::shared_ptr<StructureData>> m_solvedRegionStates;
     ProgressCallback m_progressCallback;
     CancelCallback m_cancelCallback;
     bool m_wasCancelled = false;
     int m_maximumRegionThreads = 0;
+    int m_executionThreadBudget = 0;
 };

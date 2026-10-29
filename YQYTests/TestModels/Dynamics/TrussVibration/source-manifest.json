@@ -1,0 +1,20 @@
+{
+  "schema": "newmark-real-truss-source-manifest-v1",
+  "public_problem_url": "https://docs.software.vt.edu/abaqusv2025/English/SIMACAEBMKRefMap/simabmk-c-rodlindynamic.htm",
+  "official_input_url": "https://docs.software.vt.edu/abaqusv2025/English/SIMAINPRefResources/rodlindynamic_modal_nodamp.inp",
+  "official_input_sha256": "736ee253e895e444993c4ac1866f8e06fd8162ee3baf8b0590fe581d525ad7ca",
+  "official_case_scope": "Three T3D2 elements; linear modal dynamics, lumped mass, source rho rounded .011111; undamped input uses two tip loads5 adding to10, time step .1 and duration .3.",
+  "derived_case_scope": "The native production TRUSS logarithmic force and consistent mass are matched by an independently assembled three-DOF ODE. Geometry, material E/A/rho from the public explanatory text, and axial constraints retained; forces1e-6/1 and window10 declared. No claim of original benchmark numerical equivalence.",
+  "reference_generation": "DOP853 two tolerances and two max_step values, no Newmark implemented or candidate read. Micro-amplitude comparison additionally uses exact generalized modal solution.",
+  "matrix_complementary_source": "https://code-aster.org/doc/v17/manuals/man_v/v2/v2.02.146/index.html",
+  "matrix_source_limitation": "SDLL146 is a mass/inertia check, not a nonlinear transient time-history reference.",
+  "files_sha256": {
+    "compare_results.py": "42b5f6d4030e3082074306559e69e354725ee207071b8b8d8f75c9f2001ee1ff",
+    "generate_reference.py": "7b5e1a147a823e76af2f3072da459b6d88f560a555c043310d1c6f95c7ce8b01",
+    "nonlinear.bdf": "3f6fd7976d4c309b2a03833e2cd4dcb018251c89136c01c19a05fedd9eb7b59a",
+    "reference.json": "9379c970341ab18e39c540de739e7e2b5dc074b019b796f0927212faf7b7276d",
+    "rodlindynamic_modal_nodamp.inp": "736ee253e895e444993c4ac1866f8e06fd8162ee3baf8b0590fe581d525ad7ca",
+    "small.bdf": "203ec4c36ab30e3daf1bf265990d97faf5a3bb55456c1f88d6f4279e3a320049",
+    "validation-plan.json": "f5d5d5c7e8a493dbe9afd4c8fe7c1e96e8422c0f77a3a279625ae1464a8a38b4"
+  }
+}

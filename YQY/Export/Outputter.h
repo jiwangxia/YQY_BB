@@ -1,5 +1,6 @@
 #pragma once
 #include "Base/EmptyOUT.h"
+#include "Export/EnergyResult.h"
 
 /**
  * @file Outputter.h
@@ -7,6 +8,7 @@
  */
 
 #include <map>
+#include <set>
 #include <condition_variable>
 #include <deque>
 #include <memory>
@@ -132,6 +134,11 @@ public:
     {
         return m_analysisType;
     }
+    const EnergyResult& GetEnergy() const
+    {
+        static const EnergyResult unavailable;
+        return m_energyComplete ? m_energy : unavailable;
+    }
 
     /**
      * @brief 获取指定节点的指定结果
@@ -172,6 +179,9 @@ private:
     int m_stepId = 0;                          // 所属分析步编号
     int m_increment = 0;                       // 分析步内帧序号
     int m_analysisType = 0;                    // EnumKeyword::StepType
+    EnergyResult m_energy;                    // 当前帧的结构能量
+    size_t m_energyContributions = 1;          // 已汇总的计算区域数
+    bool m_energyComplete = true;             // 是否包含当前步全部参与区域
     std::map<int, NodeData> m_nodeDatas;       // 节点编号 -> 节点结果
     std::map<int, ElementData> m_elementDatas; // 单元编号 -> 单元结果
 };
@@ -193,7 +203,7 @@ public:
      * @param [in] time 当前时间
      * @param [in] pData 结构数据指针
      */
-    void SaveDataFromNodes(double time, StructureData* pData);
+    void SaveDataFromNodes(double time, StructureData* pData, const EnergyResult& energy = EnergyResult{});
 
     /**
      * @brief 设置是否将结果帧保存在内存中
@@ -202,6 +212,10 @@ public:
     void SetKeepFramesInMemory(bool keep)
     {
         m_keepFramesInMemory = keep;
+    }
+    bool HasResultSink() const
+    {
+        return m_keepFramesInMemory || m_stream || m_hdf5Stream;
     }
     void SetResultContext(int stepId, int analysisType);
 
@@ -310,6 +324,7 @@ public:
     void Clear();
 
     void MergeFramesFrom(const Outputter& source);
+    void InvalidateEnergy(int stepId); // 禁用未完整求解的区域分析步能量
 
     void RecordSolverIteration(double time, int iterations);
     const std::vector<SolverIterationRecord>& GetSolverIterationRecords() const
@@ -340,6 +355,8 @@ private:
 
     std::vector<SolverIterationRecord> m_solverIterationRecords;
     std::vector<DataFrame> m_DataSet;                                 // 结果帧集合
+    std::map<int, size_t> m_energyExpectedContributions;               // 各分析步应汇总的区域数
+    std::set<int> m_invalidEnergySteps;                               // 不再发布能量的分析步
     bool m_keepFramesInMemory = true;                                 // 是否将结果帧保存到内存
     std::unique_ptr<QFile> m_streamFile;                              // 流式输出文件
     std::unique_ptr<QTextStream> m_stream;                            // 流式输出文本流

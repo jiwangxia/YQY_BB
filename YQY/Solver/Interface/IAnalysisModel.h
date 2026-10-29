@@ -10,14 +10,24 @@
 #pragma once
 #include <Eigen/Sparse>
 #include <QString>
+#include <array>
 #include <functional>
+#include <vector>
 #include "Solver/Constraint/NonlinearMPC.h"
+#include "Solver/Assembly/SystemEvaluation.h"
 #include "Base/EmptyOUT.h"
 
 namespace SolverNameSpace
 {
 using SpMat = Eigen::SparseMatrix<double>;
 using Vec = Eigen::VectorXd;
+
+/** 六自由度节点的真实姿态和空间转动自由度；固定分量的编号为 -1。 */
+struct FiniteRotationState
+{
+    Eigen::Matrix3d rotation = Eigen::Matrix3d::Identity();
+    std::array<int, 3> freeDofs{-1, -1, -1};
+};
 
 /**
      * @brief 分析模型接口
@@ -38,6 +48,24 @@ public:
 
     /** @brief 获取约束自由度数量 */
     virtual int GetFixedDofs() const = 0;
+
+    /// 由模型决定自动模式是否值得尝试 GPU 直接求解。
+    virtual bool ShouldPreferGpuLinearSolver() const
+    {
+        return true;
+    }
+
+    /** @brief 返回整体稀疏矩阵非零结构版本，0 表示版本未知。 */
+    virtual std::uint64_t GetSparsePatternVersion() const
+    {
+        return 0;
+    }
+
+    /** @brief 当前模型的质量矩阵数值是否会随试探状态变化。 */
+    virtual bool HasStateDependentMass() const
+    {
+        return true;
+    }
 
     virtual QString DescribeFreeDof(int freeDof) const
     {
@@ -105,6 +133,12 @@ public:
          */
     virtual void SetTrialKinematics(const Vec& v, const Vec& a) = 0;
 
+    /** @brief 普通 TSSBN 设置运动学时保留独立步内转角；普通向量模型沿用通用接口。 */
+    virtual void SetTssbnTrialKinematics(const Vec& v, const Vec& a)
+    {
+        SetTrialKinematics(v, a);
+    }
+
     /**
      * @brief 建立一个 TSSBN 试算阶段的速度和加速度状态。
      *
@@ -112,14 +146,57 @@ public:
      * 并覆盖 velocity 和 acceleration 中的转动分量。
      */
     virtual void SetTssbnStageKinematics(int stageIndex, double timeStep, double firstStageTime, double secondStageTime,
-                                         double secondStageDiagonalFraction, _OUT Vec& velocity, _OUT Vec& acceleration)
+                                         double secondStageDiagonalFraction, _OUT Vec& velocity, _OUT Vec& acceleration,
+                                         bool useStoredIncrement = false)
     {
         Q_UNUSED(stageIndex);
         Q_UNUSED(timeStep);
         Q_UNUSED(firstStageTime);
         Q_UNUSED(secondStageTime);
         Q_UNUSED(secondStageDiagonalFraction);
+        Q_UNUSED(useStoredIncrement);
         SetTrialKinematics(velocity, acceleration);
+    }
+
+    /** @brief 普通隐式阶段在实际预测构型上只初始化一次未投影材料状态。 */
+    virtual void BeginTssbnImplicitStage(int stageIndex, double timeStep, double firstStageTime, double secondStageTime,
+                                         double secondStageDiagonalFraction)
+    {
+        Q_UNUSED(stageIndex);
+        Q_UNUSED(timeStep);
+        Q_UNUSED(firstStageTime);
+        Q_UNUSED(secondStageTime);
+        Q_UNUSED(secondStageDiagonalFraction);
+    }
+
+    /** @brief 普通阶段完整修正；普通向量模型仍由求解器独立累积速度和加速度。 */
+    virtual void ApplyTssbnImplicitStageCorrection(const Vec& increment)
+    {
+        ApplyDynamicCorrection(increment, 0.0, 0.0);
+    }
+
+    /** @brief 普通 TSSBN 接受端点保持 SO(3)；非节点模型无需处理，参考路径不调用。 */
+    virtual bool NormalizeTssbnAcceptedRotations()
+    {
+        return true;
+    }
+
+    /** @brief 声明有限转动阶段与当前 Node 的材料 C1/C2 映射一致；默认保留通用保守预算。 */
+    virtual bool SupportsTssbnRotationPrecisionEstimate() const
+    {
+        return false;
+    }
+
+    /** @brief 将显式末阶段 Y3 的有限转动位移和速度变换为空间坐标；不建立试探状态。 */
+    virtual void CorrectTssbnExplicitLastStage(double timeStep, double lastStageFirstCoefficient,
+                                               double lastStageSecondCoefficient, _OUT Vec& stepIncrement,
+                                               _OUT Vec& velocity)
+    {
+        Q_UNUSED(timeStep);
+        Q_UNUSED(lastStageFirstCoefficient);
+        Q_UNUSED(lastStageSecondCoefficient);
+        Q_UNUSED(stepIncrement);
+        Q_UNUSED(velocity);
     }
 
     /** @brief 使用满足 SO(3) 一致性的值替换基础与嵌入 TSSBN 状态中的有限转动分量。 */
@@ -147,6 +224,41 @@ public:
         Q_UNUSED(acceptedAcceleration);
     }
 
+    /** @brief 仅参考线路使用：六维节点的 LTE 位移填材料增量，步初状态填主转角。 */
+    virtual bool CorrectReferenceTssbnErrorDisplacements(
+        double timeStep, double baseFirstWeight, double embeddedFirstWeight, double embeddedSecondWeight,
+        double embeddedLastWeight, double lastStageFirstCoefficient, double lastStageSecondCoefficient,
+        _OUT Vec& stepStartDisplacement, _OUT Vec& baseDisplacement, _OUT Vec& embeddedDisplacement) const
+    {
+        Q_UNUSED(timeStep);
+        Q_UNUSED(baseFirstWeight);
+        Q_UNUSED(embeddedFirstWeight);
+        Q_UNUSED(embeddedSecondWeight);
+        Q_UNUSED(embeddedLastWeight);
+        Q_UNUSED(lastStageFirstCoefficient);
+        Q_UNUSED(lastStageSecondCoefficient);
+        Q_UNUSED(stepStartDisplacement);
+        Q_UNUSED(baseDisplacement);
+        Q_UNUSED(embeddedDisplacement);
+        return false;
+    }
+
+    /** @brief 用真实显式末阶段加速度修正嵌入速度的有限转动分量；不修改接受加速度。 */
+    virtual void CorrectTssbnEmbeddedVelocity(double timeStep, double embeddedFirstWeight,
+                                              double embeddedSecondWeight, double embeddedLastWeight,
+                                              double lastStageFirstCoefficient, double lastStageSecondCoefficient,
+                                              const Vec& explicitLastStageAcceleration, _OUT Vec& embeddedVelocity)
+    {
+        Q_UNUSED(timeStep);
+        Q_UNUSED(embeddedFirstWeight);
+        Q_UNUSED(embeddedSecondWeight);
+        Q_UNUSED(embeddedLastWeight);
+        Q_UNUSED(lastStageFirstCoefficient);
+        Q_UNUSED(lastStageSecondCoefficient);
+        Q_UNUSED(explicitLastStageAcceleration);
+        Q_UNUSED(embeddedVelocity);
+    }
+
     /**
          * @brief 获取当前状态
          * @param[out] u 位移向量
@@ -154,6 +266,23 @@ public:
          * @param[out] a 加速度向量
          */
     virtual void GetState(_OUT Vec& u, _OUT Vec& v, _OUT Vec& a) const = 0;
+
+    /** 返回全部有限转动节点，供群上的积分及真实姿态误差估计使用。 */
+    virtual void GetFiniteRotationStates(_OUT std::vector<FiniteRotationState>& states) const
+    {
+        states.clear();
+    }
+
+    /**
+     * @brief 返回当前 CR 二阶辅助姿态，顺序在一次求解期间必须稳定。
+     *
+     * 自适应 RK4 将非空辅助姿态连同节点按整体二阶控制；默认空保持普通模型的四阶控制。
+     * 这里只查询当前试探状态，不提交历史；相应历史必须已纳入模型检查点。
+     */
+    virtual void GetAuxiliaryFiniteRotationStates(_OUT std::vector<Eigen::Matrix3d>& states) const
+    {
+        states.clear();
+    }
 
     // ============ 矩阵组装 ============
     /**
@@ -174,6 +303,18 @@ public:
         mass.setZero();
         gyroscopic.setZero();
         centrifugal.setZero();
+    }
+
+    /**
+     * @brief 装配空间加速度的物理质量矩阵，用于显式积分、初始加速度及模态/阻尼标定。
+     *
+     * 有限转动模型必须覆盖此接口，不能返回隐式增量切线质量；默认实现兼容普通向量模型。
+     */
+    virtual void AssembleMassMatrix(_OUT SpMat& mass)
+    {
+        SpMat velocityTangent;
+        SpMat configurationTangent;
+        AssembleDynamicSystem(mass, velocityTangent, configurationTangent);
     }
 
     virtual void AssembleEffectiveDynamicSystem(double accelerationDerivative, double velocityDerivative,
@@ -209,10 +350,23 @@ public:
         Assemble_Matrix(unusedStiffness, true);
     }
 
-    /** @brief 返回结构阻尼低秩因子 U，使 C=U*U^T。 */
-    virtual void GetStructuralDampingFactor(_OUT Eigen::MatrixXd& factor) const
+    /** @brief 刷新动力残差所需的内力和惯性力，不要求保留整体切线矩阵。 */
+    virtual void RefreshResidualState()
     {
-        factor.resize(GetFreeDofs(), 0);
+        UpdateInternalForce();
+        SpMat mass;
+        SpMat velocityTangent;
+        SpMat configurationTangent;
+        AssembleDynamicSystem(mass, velocityTangent, configurationTangent);
+    }
+
+    /** @brief 只刷新惯性力，避免生成未使用的动力矩阵。 */
+    virtual void RefreshInertiaForce()
+    {
+        SpMat mass;
+        SpMat velocityTangent;
+        SpMat configurationTangent;
+        AssembleDynamicSystem(mass, velocityTangent, configurationTangent);
     }
 
     /** @brief 装配状态相关外载对本次位移修正的导数。 */
@@ -226,11 +380,76 @@ public:
         externalTangent.setZero();
     }
 
+    /**
+     * @brief 按统一请求计算系统贡献，供不同时间积分器复用同一组装入口。
+     *
+     * 默认实现兼容原有模型接口；高性能模型可重写该函数，将多个贡献合并到一次并行遍历中。
+     */
+    virtual void EvaluateSystem(const SystemEvaluationRequest& request, _OUT SystemEvaluationResult& result)
+    {
+        result = {};
+        const int freeDofs = GetFreeDofs();
+        const bool requiresDynamicTangents = request.Requires(SystemContribution::VelocityTangent) ||
+                                             request.Requires(SystemContribution::ConfigurationTangent);
+        const bool residualStateRequested = request.Requires(SystemContribution::ResidualState);
+        if (request.Requires(SystemContribution::ExternalForce))
+            ComputeExternalForce(request.time, request.loadFactor, result.constrainedExternalForce,
+                                 result.externalForce);
+        if (residualStateRequested)
+            RefreshResidualState();
+        if (request.Requires(SystemContribution::Stiffness))
+            Assemble_Matrix(result.stiffness, true);
+        if (request.Requires(SystemContribution::EffectiveDynamicTangent))
+            AssembleEffectiveDynamicSystem(request.accelerationDerivative, request.velocityDerivative,
+                                           result.effectiveDynamicTangent);
+        if (request.Requires(SystemContribution::EffectiveTangent))
+            AssembleEffectiveTangent(request.accelerationDerivative, request.velocityDerivative,
+                                     result.effectiveTangent);
+        if (requiresDynamicTangents)
+        {
+            AssembleDynamicSystem(result.mass, result.velocityTangent, result.configurationTangent);
+        }
+        else if (request.Requires(SystemContribution::Mass))
+            AssembleMassMatrix(result.mass);
+        if (request.Requires(SystemContribution::InertiaForce) && !requiresDynamicTangents &&
+            !residualStateRequested)
+            RefreshInertiaForce();
+        if (request.Requires(SystemContribution::InertiaForce) || residualStateRequested)
+            GetDynamicInertiaForce(result.inertiaForce);
+        if (request.Requires(SystemContribution::Damping))
+        {
+            result.damping.resize(freeDofs, freeDofs);
+            result.damping.setZero();
+        }
+        if (request.Requires(SystemContribution::InternalForce))
+        {
+            Vec staticResidual;
+            ComputeStaticResidual(Vec::Zero(freeDofs), staticResidual);
+            result.internalForce = -staticResidual;
+        }
+        if (request.Requires(SystemContribution::ExternalTangent))
+            AssembleExternalLoadTangent(request.time, request.loadFactor, request.velocityDerivative,
+                                        result.externalTangent);
+        result.sparsePatternVersion = GetSparsePatternVersion();
+    }
+
+    /** @brief 返回最近一次动力系统组装得到的惯性力。 */
+    virtual void GetDynamicInertiaForce(_OUT Vec& inertiaForce) const
+    {
+        inertiaForce = Vec::Zero(GetFreeDofs());
+    }
+
     /** @brief 组装当前试探状态下的非线性主从约束。 */
     virtual bool AssembleNonlinearMPC(_OUT NonlinearMPCData& constraints)
     {
         constraints.Clear();
         return true;
+    }
+
+    /** @brief 当前分析步是否包含可能参与线搜索的非线性 MPC。 */
+    virtual bool HasActiveNonlinearMPC() const
+    {
+        return false;
     }
 
     /** @brief 保存收敛状态的MPC乘子，用于约束力和反力恢复。 */
@@ -270,6 +489,26 @@ public:
          * @param[out] R 残差向量
          */
     virtual void ComputeResidual(const Vec& F_ext, _OUT Vec& R) = 0;
+
+    // 参考程序的 Newton 停止判据包含约束自由度上的反力变化。
+    virtual void GetReferenceConvergenceResidual(const Vec& freeResidual, const Vec& constrainedExternalForce,
+                                                  _OUT Vec& residual) const
+    {
+        Q_UNUSED(constrainedExternalForce);
+        residual = freeResidual;
+    }
+
+    // 仅适用模型返回参考自由轴排列；空映射保持通用求解顺序。
+    virtual bool GetReferenceLinearSolvePermutation(_OUT std::vector<int>& signedSource) const
+    {
+        signedSource.clear();
+        return false;
+    }
+
+    virtual double GetReferenceVectorNorm(const Vec& vector) const
+    {
+        return vector.norm();
+    }
 
     /**
          * @brief 计算不含惯性力的静力残差 F_ext-F_int

@@ -1,0 +1,9 @@
+{
+  "scope": "原已验证DOP853连续多项式的无pickle数值归档，不重新积分或拟合",
+  "max_replay_state_difference": 0.0,
+  "intervals": 1825,
+  "state_dimension": 43,
+  "source_pickle_sha256": "7564563027ecf6e02830137e410252e3427d3a7e4639c565f2bd9a340e08a853",
+  "dense_npz_sha256": "04453fbc779f803dda59d26ae29aa139f6a606c8cc7d1f41afdccc5518b3d2d6",
+  "passed": true
+}

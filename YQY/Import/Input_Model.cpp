@@ -1,11 +1,10 @@
 #include "Input_Model.h"
 #include "Application/ApplicationPaths.h"
+#include "DataStructure/Factory/ElementFactory.h"
+#include "DataStructure/Factory/SectionFactory.h"
 #include "DataStructure/Structure/StructureData.h"
 #include "Utility/Logger/Logger.h"
 #include <QRegularExpression>
-#include <QElapsedTimer>
-#include <QFileInfo>
-#include <QDir>
 #include <QStringDecoder>
 
 #include <algorithm>
@@ -16,18 +15,6 @@
 
 namespace
 {
-QString GetDefaultHdf5FileName(const QString& inputFileName)
-{
-    const QFileInfo inputFileInfo(inputFileName);
-    QDir outputDir(ApplicationPaths::hdf5ResultDirectory(inputFileName));
-    if (!outputDir.exists())
-    {
-        QDir().mkpath(outputDir.absolutePath());
-    }
-
-    return outputDir.filePath(inputFileInfo.completeBaseName() + ".h5");
-}
-
 QStringConverter::Encoding DetectTextEncoding(QFile& file)
 {
     const QByteArray bytes = file.peek(file.size());
@@ -36,13 +23,14 @@ QStringConverter::Encoding DetectTextEncoding(QFile& file)
     return utf8Decoder.hasError() ? QStringConverter::System : QStringConverter::Utf8;
 }
 
-bool RequireKeywordFieldCount(const QStringList& fields, int expected, const QString& keyword)
+bool RequireKeywordFieldCount(const QStringList& fields, int expected, const QString& keyword, _OUT QString& error)
 {
     if (fields.size() == expected)
     {
         return true;
     }
 
+    error = QStringLiteral("%1 关键字字段数量错误，期望 %2，实际 %3").arg(keyword).arg(expected).arg(fields.size());
     qDebug().noquote() << QStringLiteral("Error: %1 关键字字段数量错误，期望 %2，实际 %3")
                               .arg(keyword)
                               .arg(expected)
@@ -84,17 +72,16 @@ bool ParseSpringDOF(const QString& text, _OUT int& dof)
 }
 }
 
-bool Input_Model::ReadLine(QTextStream& flow, QString& str)
+bool Input_Model::ReadLine(QTextStream& flow, _OUT QString& str)
 {
     while (!flow.atEnd())
     {
-        str = flow.readLine();
+        str = flow.readLine().trimmed();
         if (str.left(2).compare("**") == 0)
             continue; //注释行，继续读取下一行
         if (str.left(2).compare("//") == 0)
             continue;
 
-        str = str.trimmed(); //去除开头和末尾的空格
         if (str.isEmpty())
             continue; //注释行，继续读取下一行
 
@@ -114,12 +101,11 @@ bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureDa
         return false;
     }
 
-    m_Structure = pStructure;
+    // 解析、清理和校验仅修改临时模型，失败不会污染调用方已有数据。
+    m_Structure = std::make_shared<StructureData>();
     m_Structure->m_OutputControl.m_SourceModelName = FileName;
 
-    QFileInfo inputFileInfo(FileName);
-    m_InputFileDir = inputFileInfo.absolutePath();
-    m_Structure->m_OutputControl.m_Hdf5FileName = GetDefaultHdf5FileName(FileName);
+    m_Structure->m_OutputControl.m_Hdf5FileName = ApplicationPaths::hdf5ResultFilePath(FileName);
 
     QFile file(FileName);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
@@ -147,60 +133,76 @@ bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureDa
         // 使用 Map 进行映射，统一转大写
         auto key = EnumKeyword::MapKeyData.value(keyword.toUpper(), EnumKeyword::KeyData::UNKNOWN);
 
+        if (key == EnumKeyword::KeyData::UNKNOWN)
+            continue;
+
+        // 数量字段必须先校验，避免非法文本被 toInt 静默转换为零。
+        const bool countIsThirdField = key == EnumKeyword::KeyData::ELEMENT || key == EnumKeyword::KeyData::LOAD ||
+                                       key == EnumKeyword::KeyData::SPRING ||
+                                       key == EnumKeyword::KeyData::CONSTRAINT_TABULAR;
+        const int countIndex = countIsThirdField ? 2 : 1;
+        int recordCount = 0;
+        if (list_str.size() <= countIndex || !ParseNonNegativeInteger(list_str[countIndex], recordCount))
+        {
+            m_LastError = QStringLiteral("%1 的数量字段必须为非负整数：%2").arg(keyword, str);
+            return false;
+        }
+
+        bool inputSucceeded = true;
         switch (key)
         {
             case EnumKeyword::KeyData::NODE:
-                if (!InputNodes(flow, list_str))
-                    return false;
+                inputSucceeded = InputNodes(flow, list_str);
                 break;
             case EnumKeyword::KeyData::ELEMENT:
-                if (!InputElement(flow, list_str))
-                    return false;
+                inputSucceeded = InputElement(flow, list_str);
                 break;
             case EnumKeyword::KeyData::AERO_ELEMENT:
-                if (!InputAeroElements(flow, list_str))
-                    return false;
+                inputSucceeded = InputAeroElements(flow, list_str);
                 break;
             case EnumKeyword::KeyData::SPRING:
-                if (!InputSpringBehavior(flow, list_str))
-                    return false;
+                inputSucceeded = InputSpringBehavior(flow, list_str);
                 break;
             case EnumKeyword::KeyData::SECTION:
-                if (!InputSection(flow, list_str))
-                    return false;
+                inputSucceeded = InputSection(flow, list_str);
                 break;
             case EnumKeyword::KeyData::MATERIAL:
-                if (!InputMaterial(flow, list_str))
-                    return false;
+                inputSucceeded = InputMaterial(flow, list_str);
                 break;
             case EnumKeyword::KeyData::CONSTRAINT:
-                if (!InputConstraint(flow, list_str))
-                    return false;
+                inputSucceeded = InputConstraint(flow, list_str);
                 break;
             case EnumKeyword::KeyData::CONSTRAINT_TABULAR:
-                if (!InputConstraintTabular(flow, list_str))
-                    return false;
+                inputSucceeded = InputConstraintTabular(flow, list_str);
                 break;
             case EnumKeyword::KeyData::MPC:
-                if (!InputMPC(flow, list_str))
-                    return false;
+                inputSucceeded = InputMPC(flow, list_str);
                 break;
             case EnumKeyword::KeyData::LOAD:
-                if (!InputLoad(flow, list_str))
-                    return false;
+                inputSucceeded = InputLoad(flow, list_str);
                 break;
             case EnumKeyword::KeyData::STRESS:
-                if (!InputElement_Stress(flow, list_str))
-                    return false;
+                inputSucceeded = InputElement_Stress(flow, list_str);
                 break;
             case EnumKeyword::KeyData::ANALYSIS_STEP:
-                if (!InputAnalysisStep(flow, list_str))
-                    return false;
+                inputSucceeded = InputAnalysisStep(flow, list_str);
                 break;
 
             default:
                 break;
         }
+        if (!inputSucceeded)
+        {
+            // 保留具体读取函数的诊断，为旧分支补齐可供界面和测试使用的错误信息。
+            if (m_LastError.isEmpty())
+                m_LastError = QStringLiteral("%1 数据读取失败，请检查字段、数量及对象引用：%2").arg(keyword, FileName);
+            return false;
+        }
+    }
+    if (flow.status() != QTextStream::Ok || file.error() != QFileDevice::NoError)
+    {
+        m_LastError = QStringLiteral("模型文件读取失败：%1").arg(FileName);
+        return false;
     }
     file.close();
 
@@ -267,19 +269,22 @@ bool Input_Model::InputData(const QString& FileName, std::shared_ptr<StructureDa
     for (auto it = loadTypeCount.constBegin(); it != loadTypeCount.constEnd(); ++it)
     {
         summary << QStringLiteral("%1: %2").arg(it.key()).arg(it.value());
-        if (it.key() == "FORCE_GRAVITY")
-        {
-            summary << QStringLiteral("重力方向: %1").arg(g_Direction);
-        }
+    }
+    for (const auto& [loadId, load] : m_Structure->m_Load)
+    {
+        if (dynamic_cast<const Force_Gravity*>(load.get()))
+            summary << QStringLiteral("重力方向: %1").arg(static_cast<int>(load->m_Direction));
     }
     summary << QStringLiteral("分析步数量: %1").arg(m_Structure->m_AnalysisStep.size());
 
     Logger::Instance().InfoToFile(summary.join(QStringLiteral("\n")));
 
+    pStructure->ReplaceModelFrom(std::move(*m_Structure));
+    m_Structure = pStructure;
     return true;
 }
 
-bool Input_Model::ValidateStructure(QString& errorMessage) const
+bool Input_Model::ValidateStructure(_OUT QString& errorMessage) const
 {
     if (!m_Structure)
     {
@@ -296,9 +301,11 @@ bool Input_Model::ValidateStructure(QString& errorMessage) const
         errorMessage = QStringLiteral("模型没有有效单元。");
         return false;
     }
-    const bool hasNonSpringElement = std::any_of(
-        m_Structure->m_Elements.cbegin(), m_Structure->m_Elements.cend(),
-        [](const auto& item) { return item.second && !IsSpringElement(*item.second); });
+    const bool hasNonSpringElement = std::any_of(m_Structure->m_Elements.cbegin(), m_Structure->m_Elements.cend(),
+                                                 [](const auto& item)
+                                                 {
+                                                     return item.second && !IsSpringElement(*item.second);
+                                                 });
     if (hasNonSpringElement && m_Structure->m_Material.empty())
     {
         errorMessage = QStringLiteral("模型缺少材料属性。");
@@ -339,6 +346,11 @@ bool Input_Model::ValidateStructure(QString& errorMessage) const
         if (!std::isfinite(material->m_Density) || material->m_Density < 0.0)
         {
             errorMessage = QStringLiteral("材料 %1 的密度无效。").arg(materialId);
+            return false;
+        }
+        if (!std::isfinite(material->m_Poisson) || material->m_Poisson <= -1.0 || material->m_Poisson >= 0.5)
+        {
+            errorMessage = QStringLiteral("材料 %1 的泊松比必须大于 -1 且小于 0.5。").arg(materialId);
             return false;
         }
     }
@@ -393,12 +405,15 @@ bool Input_Model::ValidateStructure(QString& errorMessage) const
                 return false;
             }
         }
+        if (!ValidateElementGeometry(*element, errorMessage))
+            return false;
         if (const auto* spring = dynamic_cast<const ElementSpringBase*>(element.get()))
         {
             const auto behavior = spring->m_pSpringBehavior.lock();
-            const auto behaviorIt = behavior ? m_Structure->m_SpringBehaviors.find(behavior->m_Id)
-                                             : m_Structure->m_SpringBehaviors.end();
-            if (!behavior || behaviorIt == m_Structure->m_SpringBehaviors.end() || behaviorIt->second.get() != behavior.get())
+            const auto behaviorIt =
+                behavior ? m_Structure->m_SpringBehaviors.find(behavior->m_Id) : m_Structure->m_SpringBehaviors.end();
+            if (!behavior || behaviorIt == m_Structure->m_SpringBehaviors.end() ||
+                behaviorIt->second.get() != behavior.get())
             {
                 errorMessage = QStringLiteral("弹簧单元 %1 没有关联有效的弹簧行为。").arg(elementId);
                 return false;
@@ -414,6 +429,9 @@ bool Input_Model::ValidateStructure(QString& errorMessage) const
             return false;
         }
     }
+
+    if (!ValidateLoadsAndConstraints(errorMessage))
+        return false;
 
     std::set<std::pair<int, int>> dependentDofs;
     for (const auto& [mpcId, mpc] : m_Structure->m_MPCConstraints)
@@ -471,9 +489,101 @@ bool Input_Model::ValidateStructure(QString& errorMessage) const
     return true;
 }
 
+bool Input_Model::ValidateElementGeometry(const ElementBase& element, _OUT QString& errorMessage) const
+{
+    // 固定方向弹簧允许重合节点，轴向弹簧和杆梁必须具有有效轴线。
+    if (dynamic_cast<const ElementSpring1*>(&element) || dynamic_cast<const ElementSpring2*>(&element))
+        return true;
+    if (element.m_pNode.size() != 2)
+    {
+        errorMessage = QStringLiteral("单元 %1 必须包含两个节点。").arg(element.m_Id);
+        return false;
+    }
+
+    const auto first = element.m_pNode[0].lock();
+    const auto second = element.m_pNode[1].lock();
+    const Vector3d chord(second->m_X - first->m_X, second->m_Y - first->m_Y, second->m_Z - first->m_Z);
+    const double length = chord.norm();
+    if (!std::isfinite(length) || length <= 1.0e-12)
+    {
+        errorMessage = QStringLiteral("单元 %1 的初始长度无效或两个节点重合。").arg(element.m_Id);
+        return false;
+    }
+
+    const auto* beam = dynamic_cast<const ElementBeam_CR*>(&element);
+    if (!beam)
+        return true;
+    const double directionNorm = beam->q0.norm();
+    if (!std::isfinite(directionNorm) || directionNorm <= 0.0 ||
+        (chord / length).cross(beam->q0 / directionNorm).norm() <= 1.0e-12)
+    {
+        errorMessage = QStringLiteral("CR3D 单元 %1 的方向向量必须非零且不能平行于轴线。").arg(element.m_Id);
+        return false;
+    }
+    return true;
+}
+
+bool Input_Model::ValidateLoadsAndConstraints(_OUT QString& errorMessage) const
+{
+    for (const auto& [constraintId, constraint] : m_Structure->m_Constraint)
+    {
+        const auto node = constraint ? constraint->m_pNode.lock() : nullptr;
+        const auto nodeIt = node ? m_Structure->m_Nodes.find(node->m_Id) : m_Structure->m_Nodes.end();
+        if (!node || nodeIt == m_Structure->m_Nodes.end() || nodeIt->second != node)
+        {
+            errorMessage = QStringLiteral("约束 %1 引用了无效节点。").arg(constraintId);
+            return false;
+        }
+        const int direction = static_cast<int>(constraint->m_Direction);
+        if (direction < 0 || direction >= node->m_DOF.size())
+        {
+            errorMessage = QStringLiteral("约束 %1 的方向 %2 超过节点 %3 的自由度范围。")
+                               .arg(constraintId)
+                               .arg(direction)
+                               .arg(node->m_Id);
+            return false;
+        }
+    }
+
+    for (const auto& [loadId, load] : m_Structure->m_Load)
+    {
+        if (!load || (load->m_StepId > 0 && !m_Structure->m_AnalysisStep.contains(load->m_StepId)))
+        {
+            errorMessage = QStringLiteral("荷载 %1 为空或引用了不存在的分析步。").arg(loadId);
+            return false;
+        }
+        const int direction = static_cast<int>(load->m_Direction);
+        if (const auto* force = dynamic_cast<const Force_Node*>(load.get()))
+        {
+            const auto node = force->m_pNode.lock();
+            const auto nodeIt = node ? m_Structure->m_Nodes.find(node->m_Id) : m_Structure->m_Nodes.end();
+            if (!node || nodeIt == m_Structure->m_Nodes.end() || nodeIt->second != node || direction < 0 ||
+                direction >= node->m_DOF.size())
+            {
+                errorMessage = QStringLiteral("节点荷载 %1 的节点引用或自由度方向无效。").arg(loadId);
+                return false;
+            }
+        }
+        else if (const auto* force = dynamic_cast<const Force_Element*>(load.get()))
+        {
+            const auto element = force->m_pElement.lock();
+            const auto elementIt =
+                element ? m_Structure->m_Elements.find(element->m_Id) : m_Structure->m_Elements.end();
+            if (!element || elementIt == m_Structure->m_Elements.end() || elementIt->second != element ||
+                element->m_pNode.size() != 2 || direction < 0 || direction >= element->Get_NodeDOF())
+            {
+                errorMessage =
+                    QStringLiteral("单元荷载 %1 的单元引用或自由度方向无效，且必须作用于双节点单元。").arg(loadId);
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 bool Input_Model::InputNodes(QTextStream& flow, const QStringList& list_str)
 {
-    if (!RequireKeywordFieldCount(list_str, 2, "NODE"))
+    if (!RequireKeywordFieldCount(list_str, 2, "NODE", m_LastError))
         return false;
 
     int nNode = list_str[1].toInt();
@@ -484,6 +594,7 @@ bool Input_Model::InputNodes(QTextStream& flow, const QStringList& list_str)
         // 读取下一行有效数据
         if (!ReadLine(flow, strdata))
         {
+            m_LastError = QStringLiteral("节点数据不足");
             qDebug().noquote() << QStringLiteral("Error: 节点数据不足");
             return false;
         }
@@ -491,6 +602,7 @@ bool Input_Model::InputNodes(QTextStream& flow, const QStringList& list_str)
         // 检查是否误读到下一个关键字行
         if (strdata.startsWith("*"))
         {
+            m_LastError = QStringLiteral("节点数据不足，遇到下一个关键字: %1").arg(strdata);
             qDebug().noquote() << QStringLiteral("Error: 节点数据不足，遇到下一个关键字: ") << strdata;
             return false;
         }
@@ -498,13 +610,18 @@ bool Input_Model::InputNodes(QTextStream& flow, const QStringList& list_str)
         QStringList strlist_node = strdata.split(QRegularExpression("[\t, ]"), Qt::SkipEmptyParts);
         if (strlist_node.size() != 4)
         {
+            m_LastError = QStringLiteral("节点数据格式错误，需要4个字段: %1").arg(strdata);
             qDebug().noquote() << QStringLiteral("Error: 节点数据格式错误，需要4个字段: ") << strdata;
             return false;
         }
 
-        double xi = strlist_node[1].toDouble();
-        double yi = strlist_node[2].toDouble();
-        double zi = strlist_node[3].toDouble();
+        double xi = 0.0, yi = 0.0, zi = 0.0;
+        if (!ParseFiniteDouble(strlist_node[1], xi) || !ParseFiniteDouble(strlist_node[2], yi) ||
+            !ParseFiniteDouble(strlist_node[3], zi))
+        {
+            m_LastError = QStringLiteral("节点坐标必须为有限数值：%1").arg(strdata);
+            return false;
+        }
 
         int autoId = static_cast<int>(m_Structure->m_Nodes.size()) + 1;
 
@@ -528,7 +645,7 @@ bool Input_Model::InputNodes(QTextStream& flow, const QStringList& list_str)
 bool Input_Model::InputElement(QTextStream& flow, const QStringList& list_str)
 {
     // *ELEMENT, TYPE_NAME, N
-    if (!RequireKeywordFieldCount(list_str, 3, "ELEMENT"))
+    if (!RequireKeywordFieldCount(list_str, 3, "ELEMENT", m_LastError))
         return false;
 
     QString typeStr = list_str[1].trimmed().toUpper();
@@ -537,27 +654,28 @@ bool Input_Model::InputElement(QTextStream& flow, const QStringList& list_str)
 
     int nElement = list_str[2].toInt();
 
-    // 记录读取前的单元数量
-    int countBefore = static_cast<int>(m_Structure->m_Elements.size());
-
-    // 查找并调用对应的处理函数
-    auto handler = s_ElementHandlers.value(elementType, nullptr);
-    if (handler)
+    switch (elementType)
     {
-        bool result = handler(this, flow, list_str, nElement);
-
-        return result;
-    }
-    else
-    {
-        qDebug().noquote() << QStringLiteral("Error: 未知的单元类型: ") << typeStr;
-        return false;
+        case EnumKeyword::ElementType::T3D2:
+        case EnumKeyword::ElementType::CABLE:
+        case EnumKeyword::ElementType::CR3D:
+            return InputLineElements(flow, elementType, nElement);
+        case EnumKeyword::ElementType::SPRING1:
+            return InputElementSpring1(flow, list_str, nElement);
+        case EnumKeyword::ElementType::SPRING2:
+            return InputElementSpring2(flow, list_str, nElement);
+        case EnumKeyword::ElementType::SPRINGA:
+            return InputElementSpringA(flow, list_str, nElement);
+        default:
+            m_LastError = QStringLiteral("未知的单元类型: %1").arg(typeStr);
+            qDebug().noquote() << QStringLiteral("Error: 未知的单元类型: ") << typeStr;
+            return false;
     }
 }
 
 bool Input_Model::InputAeroElements(QTextStream& flow, const QStringList& list_str)
 {
-    if (!RequireKeywordFieldCount(list_str, 2, "AERO_ELEMENT"))
+    if (!RequireKeywordFieldCount(list_str, 2, "AERO_ELEMENT", m_LastError))
         return false;
 
     bool countOk = false;
@@ -577,7 +695,7 @@ bool Input_Model::InputAeroElements(QTextStream& flow, const QStringList& list_s
             return false;
         }
 
-        const QStringList fields = line.split(QRegularExpression("[\\t, ]"), Qt::SkipEmptyParts);
+        const QStringList fields = line.split(QRegularExpression("[\t, ]"), Qt::SkipEmptyParts);
         if (fields.size() != 5)
         {
             m_LastError = QStringLiteral("AERO_ELEMENT 第 %1 行字段数量无效。").arg(index + 1);
@@ -617,235 +735,116 @@ bool Input_Model::InputAeroElements(QTextStream& flow, const QStringList& list_s
     return true;
 }
 
-// 静态单元处理函数映射表初始化
-const QMap<EnumKeyword::ElementType, Input_Model::ElementHandler> Input_Model::s_ElementHandlers = {
-    {EnumKeyword::ElementType::T3D2,
-     [](Input_Model* self, QTextStream& flow, const QStringList& list_str, int nElement)
-     {
-         return self->InputElementTruss(flow, list_str, nElement);
-     }},
-    {EnumKeyword::ElementType::CABLE,
-     [](Input_Model* self, QTextStream& flow, const QStringList& list_str, int nElement)
-     {
-         return self->InputElementCable(flow, list_str, nElement);
-     }},
-    {EnumKeyword::ElementType::CR3D,
-     [](Input_Model* self, QTextStream& flow, const QStringList& list_str, int nElement)
-     {
-         return self->InputElementBeam_CR3D(flow, list_str, nElement);
-     }},
-    {EnumKeyword::ElementType::SPRING1,
-     [](Input_Model* self, QTextStream& flow, const QStringList& list_str, int nElement)
-     {
-         return self->InputElementSpring1(flow, list_str, nElement);
-     }},
-    {EnumKeyword::ElementType::SPRING2,
-     [](Input_Model* self, QTextStream& flow, const QStringList& list_str, int nElement)
-     {
-         return self->InputElementSpring2(flow, list_str, nElement);
-     }},
-    {EnumKeyword::ElementType::SPRINGA,
-     [](Input_Model* self, QTextStream& flow, const QStringList& list_str, int nElement)
-     {
-         return self->InputElementSpringA(flow, list_str, nElement);
-     }},
-};
-
-// 桁架单元处理
-bool Input_Model::InputElementTruss(QTextStream& flow, const QStringList& /*list_str*/, int nElement)
+bool Input_Model::InputLineElements(QTextStream& flow, EnumKeyword::ElementType type, int nElement)
 {
-    QString strdata;
-    for (int i = 0; i < nElement; i++)
+    QString typeName;
+    QString idTypeName;
+    switch (type)
     {
-        if (!ReadLine(flow, strdata))
-        {
-            qDebug().noquote() << QStringLiteral("Error: 桁架单元数据不够");
+        case EnumKeyword::ElementType::T3D2:
+            typeName = QStringLiteral("桁架");
+            idTypeName = QStringLiteral("truss");
+            break;
+        case EnumKeyword::ElementType::CABLE:
+            typeName = QStringLiteral("索");
+            idTypeName = QStringLiteral("cable");
+            break;
+        case EnumKeyword::ElementType::CR3D:
+            typeName = QStringLiteral("CR3D");
+            idTypeName = QStringLiteral("CR3D");
+            break;
+        default:
             return false;
-        }
-
-        if (strdata.startsWith("*"))
-        {
-            qDebug().noquote() << QStringLiteral("Error: 桁架单元数据不足，遇到下一个关键字: ") << strdata;
-            return false;
-        }
-
-        QStringList strlist_ele = strdata.split(QRegularExpression("[\t, ]"), Qt::SkipEmptyParts);
-        // ID, Node1, Node2, Material, Section (5字段)
-        if (strlist_ele.size() != 5)
-        {
-            qDebug().noquote() << QStringLiteral("Error: 桁架单元数据格式错误: ") << strdata;
-            return false;
-        }
-
-        bool idOk = false;
-        int idElement = strlist_ele[0].toInt(&idOk);
-        if (!idOk || idElement <= 0 || m_Structure->m_Elements.find(idElement) != m_Structure->m_Elements.end())
-        {
-            qDebug().noquote() << QStringLiteral("Error: invalid or duplicate truss element ID: ") << strlist_ele[0];
-            return false;
-        }
-        int idNode0 = strlist_ele[1].toInt();
-        int idNode1 = strlist_ele[2].toInt();
-        int idMaterial = strlist_ele[3].toInt();
-        int idSection = strlist_ele[4].toInt();
-
-        auto pElement_Truss = std::make_shared<ElementTruss>();
-        pElement_Truss->m_Id = idElement;
-        auto node0 = m_Structure->FindNode(idNode0);
-        auto node1 = m_Structure->FindNode(idNode1);
-        if (!node0 || !node1)
-        {
-            qDebug().noquote() << QStringLiteral("Error: 桁架单元引用了不存在的节点: ") << idNode0 << idNode1;
-            return false;
-        }
-        pElement_Truss->m_pNode[0] = node0;
-        node0->SetNumDOFs(pElement_Truss->Get_NodeDOF());
-        pElement_Truss->m_pNode[1] = node1;
-        node1->SetNumDOFs(pElement_Truss->Get_NodeDOF());
-        auto Property = m_Structure->Create_Property(idMaterial, idSection);
-        if (!Property)
-        {
-            qDebug().noquote() << QStringLiteral("Error: 桁架单元属性创建失败，材料/截面 id=") << idMaterial
-                               << idSection;
-            return false;
-        }
-        pElement_Truss->m_pProperty = Property;
-
-        m_Structure->m_Elements.insert(std::make_pair(idElement, pElement_Truss));
     }
-    return true;
-}
 
-bool Input_Model::InputElementCable(QTextStream& flow, const QStringList& list_str, int nElement)
-{
+    const bool isBeam = type == EnumKeyword::ElementType::CR3D;
+    const int fieldCount = isBeam ? 8 : 5;
+    const QString formatName = isBeam ? QStringLiteral("梁") : typeName;
+    const QString referenceName = typeName + (isBeam ? QStringLiteral(" 单元") : QStringLiteral("单元"));
     QString strdata;
-    for (int i = 0; i < nElement; i++)
+    for (int i = 0; i < nElement; ++i)
     {
         if (!ReadLine(flow, strdata))
         {
-            qDebug().noquote() << QStringLiteral("Error: 索单元数据不够");
+            m_LastError = QStringLiteral("%1单元数据不够").arg(typeName);
+            qDebug().noquote() << QStringLiteral("Error: %1单元数据不够").arg(typeName);
             return false;
         }
-
         if (strdata.startsWith("*"))
         {
-            qDebug().noquote() << QStringLiteral("Error: 索单元数据不足，遇到下一个关键字: ") << strdata;
+            m_LastError = QStringLiteral("%1单元数据不足，遇到下一个关键字: %2").arg(typeName).arg(strdata);
+            qDebug().noquote() << QStringLiteral("Error: %1单元数据不足，遇到下一个关键字: ").arg(typeName) << strdata;
             return false;
         }
 
-        QStringList strlist_ele = strdata.split(QRegularExpression("[\t, ]"), Qt::SkipEmptyParts);
-        // ID, Node1, Node2, Material, Section
-        if (strlist_ele.size() != 5)
+        const QStringList fields = strdata.split(QRegularExpression("[\t, ]"), Qt::SkipEmptyParts);
+        if (fields.size() != fieldCount)
         {
-            qDebug().noquote() << QStringLiteral("Error: 索单元数据格式错误: ") << strdata;
+            m_LastError = QStringLiteral("%1单元数据格式错误: %2").arg(formatName).arg(strdata);
+            qDebug().noquote() << QStringLiteral("Error: %1单元数据格式错误: ").arg(formatName) << strdata;
             return false;
         }
 
         bool idOk = false;
-        int idElement = strlist_ele[0].toInt(&idOk);
-        if (!idOk || idElement <= 0 || m_Structure->m_Elements.find(idElement) != m_Structure->m_Elements.end())
+        const int elementId = fields[0].toInt(&idOk);
+        if (!idOk || elementId <= 0 || m_Structure->m_Elements.find(elementId) != m_Structure->m_Elements.end())
         {
-            qDebug().noquote() << QStringLiteral("Error: invalid or duplicate cable element ID: ") << strlist_ele[0];
+            m_LastError = QStringLiteral("invalid or duplicate %1 element ID: %2").arg(idTypeName).arg(fields[0]);
+            qDebug().noquote() << QStringLiteral("Error: invalid or duplicate %1 element ID: ").arg(idTypeName)
+                               << fields[0];
             return false;
         }
-        int idNode0 = strlist_ele[1].toInt();
-        int idNode1 = strlist_ele[2].toInt();
-        int idMaterial = strlist_ele[3].toInt();
-        int idSection = strlist_ele[4].toInt();
+        const int firstNodeId = fields[1].toInt();
+        const int secondNodeId = fields[2].toInt();
+        const int materialId = fields[3].toInt();
+        const int sectionId = fields[4].toInt();
 
-        auto pElement_Truss = std::make_shared<ElementCable>();
-        pElement_Truss->m_Id = idElement;
-        auto node0 = m_Structure->FindNode(idNode0);
-        auto node1 = m_Structure->FindNode(idNode1);
-        if (!node0 || !node1)
+        ElementCreationOptions options;
+        if (isBeam)
         {
-            qDebug().noquote() << QStringLiteral("Error: 索单元引用了不存在的节点: ") << idNode0 << idNode1;
+            double x = 0.0, y = 0.0, z = 0.0;
+            if (!ParseFiniteDouble(fields[5], x) || !ParseFiniteDouble(fields[6], y) ||
+                !ParseFiniteDouble(fields[7], z))
+            {
+                m_LastError = QStringLiteral("CR3D 方向向量必须为有限数值：%1").arg(strdata);
+                return false;
+            }
+            options.beamDirection = Vector3d(x, y, z);
+        }
+        auto element = ElementFactory::Create(type, options);
+        element->m_Id = elementId;
+        const auto firstNode = m_Structure->FindNode(firstNodeId);
+        const auto secondNode = m_Structure->FindNode(secondNodeId);
+        if (!firstNode || !secondNode)
+        {
+            m_LastError =
+                QStringLiteral("%1引用了不存在的节点: %2 %3").arg(referenceName).arg(firstNodeId).arg(secondNodeId);
+            qDebug().noquote() << QStringLiteral("Error: %1引用了不存在的节点: ").arg(referenceName) << firstNodeId
+                               << secondNodeId;
             return false;
         }
-        pElement_Truss->m_pNode[0] = node0;
-        node0->SetNumDOFs(pElement_Truss->Get_NodeDOF());
-        pElement_Truss->m_pNode[1] = node1;
-        node1->SetNumDOFs(pElement_Truss->Get_NodeDOF());
-        auto Property = m_Structure->Create_Property(idMaterial, idSection);
-        if (!Property)
+        element->m_pNode[0] = firstNode;
+        firstNode->SetNumDOFs(element->Get_NodeDOF());
+        element->m_pNode[1] = secondNode;
+        secondNode->SetNumDOFs(element->Get_NodeDOF());
+        const auto property = m_Structure->Create_Property(materialId, sectionId);
+        if (!property)
         {
-            qDebug().noquote() << QStringLiteral("Error: 索单元属性创建失败，材料/截面 id=") << idMaterial << idSection;
+            m_LastError =
+                QStringLiteral("%1属性创建失败，材料/截面 id= %2 %3").arg(referenceName).arg(materialId).arg(sectionId);
+            qDebug().noquote() << QStringLiteral("Error: %1属性创建失败，材料/截面 id=").arg(referenceName)
+                               << materialId << sectionId;
             return false;
         }
-        pElement_Truss->m_pProperty = Property;
-
-        m_Structure->m_Elements.insert(std::make_pair(idElement, pElement_Truss));
-    }
-    return true;
-}
-
-bool Input_Model::InputElementBeam_CR3D(QTextStream& flow, const QStringList& list_str, int nElement)
-{
-    QString strdata;
-    for (int i = 0; i < nElement; i++)
-    {
-        if (!ReadLine(flow, strdata))
-        {
-            qDebug().noquote() << QStringLiteral("Error: CR3D单元数据不够");
-            return false;
-        }
-
-        if (strdata.startsWith("*"))
-        {
-            qDebug().noquote() << QStringLiteral("Error: CR3D单元数据不足，遇到下一个关键字: ") << strdata;
-            return false;
-        }
-
-        QStringList strlist_ele = strdata.split(QRegularExpression("[\t, ]"), Qt::SkipEmptyParts);
-        // ID, Node1, Node2, Material, Section ，1， 0， 0（方向向量）(8字段)
-        if (strlist_ele.size() != 8)
-        {
-            qDebug().noquote() << QStringLiteral("Error: 梁单元数据格式错误: ") << strdata;
-            return false;
-        }
-
-        bool idOk = false;
-        int idElement = strlist_ele[0].toInt(&idOk);
-        if (!idOk || idElement <= 0 || m_Structure->m_Elements.find(idElement) != m_Structure->m_Elements.end())
-        {
-            qDebug().noquote() << QStringLiteral("Error: invalid or duplicate CR3D element ID: ") << strlist_ele[0];
-            return false;
-        }
-        int idNode0 = strlist_ele[1].toInt();
-        int idNode1 = strlist_ele[2].toInt();
-        int idMaterial = strlist_ele[3].toInt();
-        int idSection = strlist_ele[4].toInt();
-
-        auto pElement = std::make_shared<ElementBeam_CR>();
-        pElement->m_Id = idElement;
-        auto node0 = m_Structure->FindNode(idNode0);
-        auto node1 = m_Structure->FindNode(idNode1);
-        if (!node0 || !node1)
-        {
-            qDebug().noquote() << QStringLiteral("Error: CR3D 单元引用了不存在的节点: ") << idNode0 << idNode1;
-            return false;
-        }
-        pElement->m_pNode[0] = node0;
-        node0->SetNumDOFs(pElement->Get_NodeDOF());
-        pElement->m_pNode[1] = node1;
-        node1->SetNumDOFs(pElement->Get_NodeDOF());
-        auto Property = m_Structure->Create_Property(idMaterial, idSection);
-        if (!Property)
-        {
-            qDebug().noquote() << QStringLiteral("Error: CR3D 单元属性创建失败，材料/截面 id=") << idMaterial
-                               << idSection;
-            return false;
-        }
-        pElement->m_pProperty = Property;
-        pElement->q0 = Vector3d(strlist_ele[5].toDouble(), strlist_ele[6].toDouble(), strlist_ele[7].toDouble());
-        m_Structure->m_Elements.insert(std::make_pair(idElement, pElement));
+        element->m_pProperty = property;
+        m_Structure->m_Elements.insert(std::make_pair(elementId, std::move(element)));
     }
     return true;
 }
 
 bool Input_Model::InputSpringBehavior(QTextStream& flow, const QStringList& list_str)
 {
-    if (!RequireKeywordFieldCount(list_str, 3, "SPRING"))
+    if (!RequireKeywordFieldCount(list_str, 3, "SPRING", m_LastError))
         return false;
 
     int behaviorId = 0;
@@ -859,7 +858,6 @@ bool Input_Model::InputSpringBehavior(QTextStream& flow, const QStringList& list
 
     auto behavior = std::make_shared<SpringBehavior>();
     behavior->m_Id = behaviorId;
-    behavior->m_Points.reserve(static_cast<std::size_t>(pointCount));
     double previousDisplacement = 0.0;
     for (int index = 0; index < pointCount; ++index)
     {
@@ -869,10 +867,11 @@ bool Input_Model::InputSpringBehavior(QTextStream& flow, const QStringList& list
             m_LastError = QStringLiteral("SPRING %1 的力-位移数据不完整。").arg(behaviorId);
             return false;
         }
-        const QStringList fields = line.split(QRegularExpression("[\\t, ]"), Qt::SkipEmptyParts);
+        const QStringList fields = line.split(QRegularExpression("[\t, ]"), Qt::SkipEmptyParts);
         if (fields.size() != 2)
         {
-            m_LastError = QStringLiteral("SPRING %1 的第 %2 个数据点必须包含力和相对位移。").arg(behaviorId).arg(index + 1);
+            m_LastError =
+                QStringLiteral("SPRING %1 的第 %2 个数据点必须包含力和相对位移。").arg(behaviorId).arg(index + 1);
             return false;
         }
 
@@ -903,7 +902,7 @@ bool Input_Model::InputElementSpring1(QTextStream& flow, const QStringList& /*li
             m_LastError = QStringLiteral("SPRING1 单元数据不完整。");
             return false;
         }
-        const QStringList fields = line.split(QRegularExpression("[\\t, ]"), Qt::SkipEmptyParts);
+        const QStringList fields = line.split(QRegularExpression("[\t, ]"), Qt::SkipEmptyParts);
         int elementId = 0, nodeId = 0, dof = 0, behaviorId = 0;
         if (fields.size() != 4 || !ParsePositiveId(fields[0], elementId) || !ParsePositiveId(fields[1], nodeId) ||
             !ParseSpringDOF(fields[2], dof) || !ParsePositiveId(fields[3], behaviorId) ||
@@ -919,10 +918,11 @@ bool Input_Model::InputElementSpring1(QTextStream& flow, const QStringList& /*li
             m_LastError = QStringLiteral("SPRING1 %1 引用了不存在的节点或弹簧行为。").arg(elementId);
             return false;
         }
-        auto element = std::make_shared<ElementSpring1>();
+        ElementCreationOptions options;
+        options.firstDOF = dof;
+        auto element = std::static_pointer_cast<ElementSpringBase>(
+            ElementFactory::Create(EnumKeyword::ElementType::SPRING1, options));
         element->m_Id = elementId;
-        // 输入自由度直接使用程序内部编号，避免额外转换。
-        element->m_DOF = dof;
         element->m_pNode[0] = node;
         element->m_pSpringBehavior = behaviorIt->second;
         if (dof >= 3)
@@ -942,7 +942,7 @@ bool Input_Model::InputElementSpring2(QTextStream& flow, const QStringList& /*li
             m_LastError = QStringLiteral("SPRING2 单元数据不完整。");
             return false;
         }
-        const QStringList fields = line.split(QRegularExpression("[\\t, ]"), Qt::SkipEmptyParts);
+        const QStringList fields = line.split(QRegularExpression("[\t, ]"), Qt::SkipEmptyParts);
         int elementId = 0, firstNodeId = 0, firstDOF = 0, secondNodeId = 0, secondDOF = 0, behaviorId = 0;
         if (fields.size() != 6 || !ParsePositiveId(fields[0], elementId) || !ParsePositiveId(fields[1], firstNodeId) ||
             !ParseSpringDOF(fields[2], firstDOF) || !ParsePositiveId(fields[3], secondNodeId) ||
@@ -960,10 +960,12 @@ bool Input_Model::InputElementSpring2(QTextStream& flow, const QStringList& /*li
             m_LastError = QStringLiteral("SPRING2 %1 引用了不存在的节点或弹簧行为。").arg(elementId);
             return false;
         }
-        auto element = std::make_shared<ElementSpring2>();
+        ElementCreationOptions options;
+        options.firstDOF = firstDOF;
+        options.secondDOF = secondDOF;
+        auto element = std::static_pointer_cast<ElementSpringBase>(
+            ElementFactory::Create(EnumKeyword::ElementType::SPRING2, options));
         element->m_Id = elementId;
-        element->m_FirstDOF = firstDOF;
-        element->m_SecondDOF = secondDOF;
         element->m_pNode[0] = firstNode;
         element->m_pNode[1] = secondNode;
         element->m_pSpringBehavior = behaviorIt->second;
@@ -986,7 +988,7 @@ bool Input_Model::InputElementSpringA(QTextStream& flow, const QStringList& /*li
             m_LastError = QStringLiteral("SPRINGA 单元数据不完整。");
             return false;
         }
-        const QStringList fields = line.split(QRegularExpression("[\\t, ]"), Qt::SkipEmptyParts);
+        const QStringList fields = line.split(QRegularExpression("[\t, ]"), Qt::SkipEmptyParts);
         int elementId = 0, firstNodeId = 0, secondNodeId = 0, behaviorId = 0;
         if (fields.size() != 4 || !ParsePositiveId(fields[0], elementId) || !ParsePositiveId(fields[1], firstNodeId) ||
             !ParsePositiveId(fields[2], secondNodeId) || !ParsePositiveId(fields[3], behaviorId) ||
@@ -1010,7 +1012,8 @@ bool Input_Model::InputElementSpringA(QTextStream& flow, const QStringList& /*li
             m_LastError = QStringLiteral("SPRINGA %1 的两个节点初始坐标重合。").arg(elementId);
             return false;
         }
-        auto element = std::make_shared<ElementSpringA>();
+        auto element =
+            std::static_pointer_cast<ElementSpringBase>(ElementFactory::Create(EnumKeyword::ElementType::SPRINGA));
         element->m_Id = elementId;
         element->m_pNode[0] = firstNode;
         element->m_pNode[1] = secondNode;
@@ -1022,7 +1025,7 @@ bool Input_Model::InputElementSpringA(QTextStream& flow, const QStringList& /*li
 
 bool Input_Model::InputSection(QTextStream& flow, const QStringList& list_str)
 {
-    if (!RequireKeywordFieldCount(list_str, 2, "SECTION"))
+    if (!RequireKeywordFieldCount(list_str, 2, "SECTION", m_LastError))
         return false;
     int nSection = list_str[1].toInt();
 
@@ -1031,71 +1034,87 @@ bool Input_Model::InputSection(QTextStream& flow, const QStringList& list_str)
     {
         if (!ReadLine(flow, strdata))
         {
+            m_LastError = QStringLiteral("截面数据不够");
             qDebug() << QStringLiteral("Error: 截面数据不够");
             return false;
         }
 
         QStringList strlist_pro = strdata.split(QRegularExpression("[\t, ]"), Qt::SkipEmptyParts);
+        const int autoId = static_cast<int>(m_Structure->m_Section.size()) + 1;
+        std::shared_ptr<SectionBase> section;
 
         if (strlist_pro.size() == 2) //圆截面
         {
-            int autoId = static_cast<int>(m_Structure->m_Section.size()) + 1;
-
-            auto pSection = std::make_shared<SectionCircular>();
-            pSection->m_Id = autoId;
-            pSection->m_Area = strlist_pro[1].toDouble();
-            pSection->Calculate_Radius();
-            m_Structure->m_Section.insert(std::make_pair(autoId, pSection));
+            double area = 0.0;
+            if (!ParseFiniteDouble(strlist_pro[1], area) || area <= 0.0)
+            {
+                m_LastError = QStringLiteral("圆截面面积必须为正的有限数值：%1").arg(strdata);
+                return false;
+            }
+            section = SectionFactory::CreateCircular(autoId, area);
         }
         else if (strlist_pro.size() == 3) //矩形截面
         {
-            int autoId = static_cast<int>(m_Structure->m_Section.size()) + 1;
-
-            auto pSectI0n = std::make_shared<SectionRectangle>();
-            pSectI0n->m_Id = autoId;
-            pSectI0n->m_Width = strlist_pro[1].toDouble();
-            pSectI0n->m_Height = strlist_pro[2].toDouble();
-            pSectI0n->Calculate_Area();
-            m_Structure->m_Section.insert(std::make_pair(autoId, pSectI0n));
+            double width = 0.0, height = 0.0;
+            if (!ParseFiniteDouble(strlist_pro[1], width) || !ParseFiniteDouble(strlist_pro[2], height) ||
+                width <= 0.0 || height <= 0.0)
+            {
+                m_LastError = QStringLiteral("矩形截面的宽和高必须为正的有限数值：%1").arg(strdata);
+                return false;
+            }
+            section = SectionFactory::CreateRectangle(autoId, width, height);
         }
-        else if (strlist_pro.size() == 8)
+        else if (strlist_pro.size() == 8 || strlist_pro.size() == 11 || strlist_pro.size() == 12)
         {
-            // ID, A, Iy, Iz, J, J_rho_x, J_rho_y, J_rho_z
+            // 旧格式：ID, A, Iy, Iz, J, J_rho_x, J_rho_y, J_rho_z。
+            // 新格式再附加质量一次矩三个分量，以及可选的独立物理半径。
             bool valuesAreValid = true;
-            double values[7] = {};
-            for (int valueIndex = 0; valueIndex < 7; ++valueIndex)
+            double values[11] = {};
+            const int valueCount = strlist_pro.size() - 1;
+            for (int valueIndex = 0; valueIndex < valueCount; ++valueIndex)
             {
                 bool converted = false;
                 values[valueIndex] = strlist_pro[valueIndex + 1].toDouble(&converted);
-                valuesAreValid =
-                    valuesAreValid && converted && std::isfinite(values[valueIndex]) && values[valueIndex] > 0.0;
+                valuesAreValid = valuesAreValid && converted && std::isfinite(values[valueIndex]);
             }
+            for (int valueIndex = 0; valueIndex < 4; ++valueIndex)
+                valuesAreValid = valuesAreValid && values[valueIndex] > 0.0;
+            for (int valueIndex = 4; valueIndex < 7; ++valueIndex)
+                valuesAreValid =
+                    valuesAreValid && (strlist_pro.size() == 8 ? values[valueIndex] > 0.0 : values[valueIndex] >= 0.0);
+            if (strlist_pro.size() == 12)
+                valuesAreValid = valuesAreValid && values[10] >= 0.0;
             if (!valuesAreValid)
             {
-                qDebug().noquote() << QStringLiteral("Error: explicit beam section requires positive "
-                                                     "A, Iy, Iz, J, J_rho_x, J_rho_y, J_rho_z");
+                m_LastError = QStringLiteral("explicit section requires positive A, Iy, Iz, J; nonnegative mass "
+                                             "inertias and radius; finite first moments");
+                qDebug().noquote() << QStringLiteral("Error: explicit section requires positive A, Iy, Iz, J; "
+                                                     "nonnegative mass inertias and radius; finite first moments");
                 return false;
             }
 
-            const int autoId = static_cast<int>(m_Structure->m_Section.size()) + 1;
-            auto pSection = std::make_shared<SectionCircular>();
-            pSection->m_Id = autoId;
-            pSection->m_Area = values[0];
-            pSection->m_HasExplicitSectionInertia = true;
-            pSection->m_ExplicitIy = values[1];
-            pSection->m_ExplicitIz = values[2];
-            pSection->m_ExplicitJ = values[3];
-            pSection->m_MassInertiaPerLength = Eigen::Vector3d(values[4], values[5], values[6]);
-            pSection->Calculate_Radius();
-            m_Structure->m_Section.insert(std::make_pair(autoId, pSection));
+            section = SectionFactory::CreateCircular(autoId, values[0]);
+            section->m_HasExplicitSectionInertia = true;
+            section->m_ExplicitIy = values[1];
+            section->m_ExplicitIz = values[2];
+            section->m_ExplicitJ = values[3];
+            section->m_MassInertiaPerLength = Eigen::Vector3d(values[4], values[5], values[6]);
+            if (strlist_pro.size() >= 11)
+                section->m_MassFirstMomentPerLength = Eigen::Vector3d(values[7], values[8], values[9]);
+            if (strlist_pro.size() == 12)
+                section->m_Radius = values[10];
         }
         else
         {
+            m_LastError = QStringLiteral("SECTION supports ID,A; ID,Width,Height; or "
+                                         "ID,A,Iy,Iz,J,JrhoX,JrhoY,JrhoZ[,FirstX,FirstY,FirstZ[,Radius]]: %1")
+                              .arg(strdata);
             qDebug().noquote() << QStringLiteral("Error: SECTION supports ID,A; ID,Width,Height; "
-                                                 "or ID,A,Iy,Iz,J,J_rho_x,J_rho_y,J_rho_z:")
+                                                 "or ID,A,Iy,Iz,J,JrhoX,JrhoY,JrhoZ[,FirstX,FirstY,FirstZ[,Radius]]:")
                                << strdata;
             return false;
         }
+        m_Structure->m_Section.insert(std::make_pair(autoId, std::move(section)));
     }
 
     return true;
@@ -1104,7 +1123,7 @@ bool Input_Model::InputSection(QTextStream& flow, const QStringList& list_str)
 bool Input_Model::InputMaterial(QTextStream& flow, const QStringList& list_str)
 {
     //读取到材料
-    if (!RequireKeywordFieldCount(list_str, 2, "MATERIAL"))
+    if (!RequireKeywordFieldCount(list_str, 2, "MATERIAL", m_LastError))
         return false;
     int nMaterial = list_str[1].toInt();
 
@@ -1114,6 +1133,7 @@ bool Input_Model::InputMaterial(QTextStream& flow, const QStringList& list_str)
         //继续读一行有效数据
         if (!ReadLine(flow, strdata))
         { //没有读取到有效数据，退出
+            m_LastError = QStringLiteral("材料数据不够");
             qDebug() << QStringLiteral("Error: 材料数据不够");
             return false;
         }
@@ -1121,19 +1141,17 @@ bool Input_Model::InputMaterial(QTextStream& flow, const QStringList& list_str)
         QStringList strlist_mat = strdata.split(QRegularExpression("[\t, ]"), Qt::SkipEmptyParts); //利用空格,分解字符串
         if (strlist_mat.size() != 6)
         {
+            m_LastError = QStringLiteral("材料数据格式错误，需要6个字段: %1").arg(strdata);
             qDebug().noquote() << QStringLiteral("Error: 材料数据格式错误，需要6个字段: ") << strdata;
             return false;
         }
 
-        const double young = strlist_mat[1].toDouble();
-        const double poisson = strlist_mat[2].toDouble();
-        const double density = strlist_mat[3].toDouble();
-        const double maxStress = strlist_mat[4].toDouble();
-        const double expansion = strlist_mat[5].toDouble();
-
-        if (young <= 0.0)
+        double young = 0.0, poisson = 0.0, density = 0.0, maxStress = 0.0, expansion = 0.0;
+        if (!ParseFiniteDouble(strlist_mat[1], young) || !ParseFiniteDouble(strlist_mat[2], poisson) ||
+            !ParseFiniteDouble(strlist_mat[3], density) || !ParseFiniteDouble(strlist_mat[4], maxStress) ||
+            !ParseFiniteDouble(strlist_mat[5], expansion) || young <= 0.0 || density < 0.0)
         {
-            qDebug().noquote() << QStringLiteral("Error: 材料弹性模量必须大于0: ") << strdata;
+            m_LastError = QStringLiteral("材料参数必须为有限数值，弹性模量大于零且密度非负：%1").arg(strdata);
             return false;
         }
 
@@ -1157,56 +1175,29 @@ bool Input_Model::InputMaterial(QTextStream& flow, const QStringList& list_str)
 bool Input_Model::InputLoad(QTextStream& flow, const QStringList& list_str)
 {
     // *LOAD, TYPE_NAME, N
-    if (!RequireKeywordFieldCount(list_str, 3, "LOAD"))
+    if (!RequireKeywordFieldCount(list_str, 3, "LOAD", m_LastError))
         return false;
 
-    QString typeStr = list_str[1].trimmed().toUpper();
-    EnumKeyword::LoadType loadType = EnumKeyword::MapLoadType.value(typeStr, EnumKeyword::LoadType::UNKNOWN);
+    const QString typeStr = list_str[1].trimmed().toUpper();
+    const EnumKeyword::LoadType loadType = EnumKeyword::MapLoadType.value(typeStr, EnumKeyword::LoadType::UNKNOWN);
+    const int nLoad = list_str[2].toInt();
 
-    int nLoad = list_str[2].toInt();
-
-    // 记录读取前的荷载数量
-    int countBefore = static_cast<int>(m_Structure->m_Load.size());
-
-    // 查找并调用对应的处理函数
-    auto handler = s_LoadHandlers.value(loadType, nullptr);
-    if (handler)
+    switch (loadType)
     {
-        bool result = handler(this, flow, list_str, nLoad);
-
-        return result;
-    }
-    else
-    {
-        qDebug().noquote() << QStringLiteral("Error: 未知的荷载类型");
-        return false;
+        case EnumKeyword::LoadType::FORCE_NODE:
+            return InputForceNode(flow, list_str, nLoad);
+        case EnumKeyword::LoadType::FORCE_ELEMENT:
+            return InputForceElement(flow, list_str, nLoad);
+        case EnumKeyword::LoadType::FORCE_GRAVITY:
+            return InputForceGravity(flow, list_str, nLoad);
+        case EnumKeyword::LoadType::FORCE_WIND:
+            return InputForceWind(flow, list_str, nLoad);
+        default:
+            m_LastError = QStringLiteral("未知的荷载类型");
+            qDebug().noquote() << QStringLiteral("Error: 未知的荷载类型");
+            return false;
     }
 }
-
-// 静态荷载处理函数映射表初始化
-const QMap<EnumKeyword::LoadType, Input_Model::LoadHandler> Input_Model::s_LoadHandlers = {
-    {EnumKeyword::LoadType::FORCE_NODE,
-     [](Input_Model* self, QTextStream& flow, const QStringList& list_str, int nLoad)
-     {
-         return self->InputForceNode(flow, list_str, nLoad);
-     }},
-    {EnumKeyword::LoadType::FORCE_ELEMENT,
-     [](Input_Model* self, QTextStream& flow, const QStringList& list_str, int nLoad)
-     {
-         return self->InputForceElement(flow, list_str, nLoad);
-     }},
-    {EnumKeyword::LoadType::FORCE_GRAVITY,
-     [](Input_Model* self, QTextStream& flow, const QStringList& list_str, int nLoad)
-     {
-         return self->InputForceGravity(flow, list_str, nLoad);
-     }},
-    {EnumKeyword::LoadType::FORCE_WIND,
-     [](Input_Model* self, QTextStream& flow, const QStringList& list_str, int nLoad)
-     {
-         return self->InputForceWind(flow, list_str, nLoad);
-     }}
-    // 新增荷载类型只需在此添加映射
-};
 
 // 节点力荷载处理
 bool Input_Model::InputForceNode(QTextStream& flow, const QStringList& /*list_str*/, int nLoad)
@@ -1216,6 +1207,7 @@ bool Input_Model::InputForceNode(QTextStream& flow, const QStringList& /*list_st
     {
         if (!ReadLine(flow, strdata))
         {
+            m_LastError = QStringLiteral("节点力荷载数据不够");
             qDebug().noquote() << QStringLiteral("Error: 节点力荷载数据不够");
             return false;
         }
@@ -1223,16 +1215,18 @@ bool Input_Model::InputForceNode(QTextStream& flow, const QStringList& /*list_st
         // 检查是否误读到下一个关键字行
         if (strdata.startsWith("*"))
         {
+            m_LastError = QStringLiteral("节点力荷载数据不足，遇到下一个关键字: %1").arg(strdata);
             qDebug().noquote() << QStringLiteral("Error: 节点力荷载数据不足，遇到下一个关键字: ") << strdata;
             return false;
         }
 
-        QStringList strlist_load = strdata.split(QRegularExpression("[\\t, ]"), Qt::SkipEmptyParts);
+        QStringList strlist_load = strdata.split(QRegularExpression("[\t, ]"), Qt::SkipEmptyParts);
         // 兼容格式：ID, NodeID, Direction, Value, StepID
         // 基本格式：ID, NodeID, Direction, Value, StepID, StartTime, EndTime
         // 扩展格式：ID, NodeID, Direction, Value, StepID, StartTime, EndTime, FunctionType, Params...
         if (strlist_load.size() < 5)
         {
+            m_LastError = QStringLiteral("节点力荷载数据格式错误: %1").arg(strdata);
             qDebug().noquote() << QStringLiteral("Error: 节点力荷载数据格式错误: ") << strdata;
             return false;
         }
@@ -1271,6 +1265,7 @@ bool Input_Model::InputForceNode(QTextStream& flow, const QStringList& /*list_st
         auto node = m_Structure->FindNode(idNode);
         if (!node)
         {
+            m_LastError = QStringLiteral("节点力荷载引用了不存在的节点: %1").arg(idNode);
             qDebug().noquote() << QStringLiteral("Error: 节点力荷载引用了不存在的节点: ") << idNode;
             return false;
         }
@@ -1289,15 +1284,15 @@ bool Input_Model::InputForceNode(QTextStream& flow, const QStringList& /*list_st
             if (funcType == "SIN" || funcType == "COS")
             {
                 parametersValid = strlist_load.size() >= 12 && ParseFiniteDouble(strlist_load[8], pLoad->m_Amplitude) &&
-                                   ParseFiniteDouble(strlist_load[9], pLoad->m_Frequency) &&
-                                   ParseFiniteDouble(strlist_load[10], pLoad->m_Phase) &&
-                                   ParseFiniteDouble(strlist_load[11], pLoad->m_Offset);
+                                  ParseFiniteDouble(strlist_load[9], pLoad->m_Frequency) &&
+                                  ParseFiniteDouble(strlist_load[10], pLoad->m_Phase) &&
+                                  ParseFiniteDouble(strlist_load[11], pLoad->m_Offset);
                 pLoad->m_FunctionType = funcType == "SIN" ? TimeFunctionType::SIN : TimeFunctionType::COS;
             }
             else if (funcType == "RAMP")
             {
                 parametersValid = strlist_load.size() >= 10 && ParseFiniteDouble(strlist_load[8], pLoad->m_RampT0) &&
-                                   ParseFiniteDouble(strlist_load[9], pLoad->m_RampT1);
+                                  ParseFiniteDouble(strlist_load[9], pLoad->m_RampT1);
                 pLoad->m_FunctionType = TimeFunctionType::RAMP;
             }
             else if (funcType == "EXPONENTIAL")
@@ -1313,7 +1308,7 @@ bool Input_Model::InputForceNode(QTextStream& flow, const QStringList& /*list_st
             else if (funcType == "SQUARE")
             {
                 parametersValid = strlist_load.size() >= 10 && ParseFiniteDouble(strlist_load[8], pLoad->m_Period) &&
-                                   ParseFiniteDouble(strlist_load[9], pLoad->m_DutyCycle);
+                                  ParseFiniteDouble(strlist_load[9], pLoad->m_DutyCycle);
                 pLoad->m_FunctionType = TimeFunctionType::SQUARE;
             }
             else if (funcType == "CONSTANT" || funcType.isEmpty())
@@ -1356,6 +1351,7 @@ bool Input_Model::InputForceElement(QTextStream& flow, const QStringList& /*list
     {
         if (!ReadLine(flow, strdata))
         {
+            m_LastError = QStringLiteral("单元压力荷载数据不够");
             qDebug() << QStringLiteral("Error: 单元压力荷载数据不够");
             return false;
         }
@@ -1363,21 +1359,28 @@ bool Input_Model::InputForceElement(QTextStream& flow, const QStringList& /*list
         // 检查是否误读到下一个关键字行
         if (strdata.startsWith("*"))
         {
+            m_LastError = QStringLiteral("单元力荷载数据不足，遇到下一个关键字: %1").arg(strdata);
             qDebug().noquote() << QStringLiteral("Error: 单元力荷载数据不足，遇到下一个关键字: ") << strdata;
             return false;
         }
 
-        QStringList strlist_load = strdata.split(QRegularExpression("[\\t, ]"), Qt::SkipEmptyParts);
+        QStringList strlist_load = strdata.split(QRegularExpression("[\t, ]"), Qt::SkipEmptyParts);
         // ID, EelmentID, Direction, Value
         if (strlist_load.size() != 4)
         {
+            m_LastError = QStringLiteral("单元力荷载数据格式错误: %1").arg(strdata);
             qDebug().noquote() << QStringLiteral("Error: 单元力荷载数据格式错误: ") << strdata;
             return false;
         }
 
-        int idElement = strlist_load[1].toInt();
-        int direction = strlist_load[2].toInt();
-        double value = strlist_load[3].toDouble();
+        int idElement = 0, direction = 0;
+        double value = 0.0;
+        if (!ParsePositiveId(strlist_load[1], idElement) || !ParseSpringDOF(strlist_load[2], direction) ||
+            !ParseFiniteDouble(strlist_load[3], value))
+        {
+            m_LastError = QStringLiteral("单元荷载的单元编号、方向或数值无效：%1").arg(strdata);
+            return false;
+        }
 
         int autoId = static_cast<int>(m_Structure->m_Load.size()) + 1;
 
@@ -1386,6 +1389,7 @@ bool Input_Model::InputForceElement(QTextStream& flow, const QStringList& /*list
         auto element = m_Structure->FindElement(idElement);
         if (!element)
         {
+            m_LastError = QStringLiteral("单元荷载引用了不存在的单元: %1").arg(idElement);
             qDebug().noquote() << QStringLiteral("Error: 单元荷载引用了不存在的单元: ") << idElement;
             return false;
         }
@@ -1398,13 +1402,14 @@ bool Input_Model::InputForceElement(QTextStream& flow, const QStringList& /*list
     return true;
 }
 
-bool Input_Model::InputForceGravity(QTextStream& flow, const QStringList& list_str, int nLoad)
+bool Input_Model::InputForceGravity(QTextStream& flow, const QStringList& /*list_str*/, int nLoad)
 {
     QString strdata;
     for (int i = 0; i < nLoad; i++)
     {
         if (!ReadLine(flow, strdata))
         {
+            m_LastError = QStringLiteral("单元重力数据不够");
             qDebug() << QStringLiteral("Error: 单元重力数据不够");
             return false;
         }
@@ -1412,45 +1417,50 @@ bool Input_Model::InputForceGravity(QTextStream& flow, const QStringList& list_s
         // 检查是否误读到下一个关键字行
         if (strdata.startsWith("*"))
         {
+            m_LastError = QStringLiteral("单元重力数据不足，遇到下一个关键字: %1").arg(strdata);
             qDebug().noquote() << QStringLiteral("Error: 单元重力数据不足，遇到下一个关键字: ") << strdata;
             return false;
         }
 
-        QStringList strlist_load = strdata.split(QRegularExpression("[\\t, ]"), Qt::SkipEmptyParts);
+        QStringList strlist_load = strdata.split(QRegularExpression("[\t, ]"), Qt::SkipEmptyParts);
         // ID, Direction, Value, StepID
         if (strlist_load.size() != 4)
         {
+            m_LastError = QStringLiteral("单元重力数据格式错误: %1").arg(strdata);
             qDebug().noquote() << QStringLiteral("Error: 单元重力数据格式错误: ") << strdata;
             return false;
         }
 
-        g_Direction = strlist_load[1].toInt();
-        double value = strlist_load[2].toDouble();
-        int stepid = strlist_load[3].toInt();
+        double value = 0.0;
+        int stepid = 0, direction = 0;
+        if (!ParseNonNegativeInteger(strlist_load[1], direction) || direction > 2 ||
+            !ParseFiniteDouble(strlist_load[2], value) || !ParseNonNegativeInteger(strlist_load[3], stepid))
+        {
+            m_LastError = QStringLiteral("重力或风荷载的方向、数值或分析步编号无效：%1").arg(strdata);
+            return false;
+        }
 
         int autoId = static_cast<int>(m_Structure->m_Load.size()) + 1;
 
         auto pLoad = std::make_shared<Force_Gravity>();
         pLoad->m_Id = autoId;
 
-        pLoad->m_Direction = static_cast<EnumKeyword::Direction>(g_Direction);
-        if (0 != value)
-        {
-            pLoad->m_g = value;
-        }
+        pLoad->m_Direction = static_cast<EnumKeyword::Direction>(direction);
+        pLoad->m_g = value;
         pLoad->m_StepId = stepid;
         m_Structure->m_Load.insert(std::make_pair(autoId, pLoad));
     }
     return true;
 }
 
-bool Input_Model::InputForceWind(QTextStream& flow, const QStringList& list_str, int nLoad)
+bool Input_Model::InputForceWind(QTextStream& flow, const QStringList& /*list_str*/, int nLoad)
 {
     QString strdata;
     for (int i = 0; i < nLoad; i++)
     {
         if (!ReadLine(flow, strdata))
         {
+            m_LastError = QStringLiteral("单元风荷载数据不够");
             qDebug() << QStringLiteral("Error: 单元风荷载数据不够");
             return false;
         }
@@ -1458,32 +1468,36 @@ bool Input_Model::InputForceWind(QTextStream& flow, const QStringList& list_str,
         // 检查是否误读到下一个关键字行
         if (strdata.startsWith("*"))
         {
+            m_LastError = QStringLiteral("单元风荷载数据不足，遇到下一个关键字: %1").arg(strdata);
             qDebug().noquote() << QStringLiteral("Error: 单元风荷载数据不足，遇到下一个关键字: ") << strdata;
             return false;
         }
 
-        QStringList strlist_load = strdata.split(QRegularExpression("[\\t, ]"), Qt::SkipEmptyParts);
+        QStringList strlist_load = strdata.split(QRegularExpression("[\t, ]"), Qt::SkipEmptyParts);
         // ID, Direction, Value, StepID
         if (strlist_load.size() != 4)
         {
+            m_LastError = QStringLiteral("单元风荷载数据格式错误: %1").arg(strdata);
             qDebug().noquote() << QStringLiteral("Error: 单元风荷载数据格式错误: ") << strdata;
             return false;
         }
 
-        g_Direction = strlist_load[1].toInt();
-        double value = strlist_load[2].toDouble();
-        int stepid = strlist_load[3].toInt();
+        double value = 0.0;
+        int stepid = 0, direction = 0;
+        if (!ParseNonNegativeInteger(strlist_load[1], direction) || direction > 2 ||
+            !ParseFiniteDouble(strlist_load[2], value) || !ParseNonNegativeInteger(strlist_load[3], stepid))
+        {
+            m_LastError = QStringLiteral("重力或风荷载的方向、数值或分析步编号无效：%1").arg(strdata);
+            return false;
+        }
 
         int autoId = static_cast<int>(m_Structure->m_Load.size()) + 1;
 
         auto pLoad = std::make_shared<Force_Wind>();
         pLoad->m_Id = autoId;
 
-        pLoad->m_Direction = static_cast<EnumKeyword::Direction>(g_Direction);
-        if (0 != value)
-        {
-            pLoad->m_velocity = value;
-        }
+        pLoad->m_Direction = static_cast<EnumKeyword::Direction>(direction);
+        pLoad->m_velocity = value;
         pLoad->m_StepId = stepid;
         m_Structure->m_Load.insert(std::make_pair(autoId, pLoad));
     }
@@ -1492,7 +1506,7 @@ bool Input_Model::InputForceWind(QTextStream& flow, const QStringList& list_str,
 
 bool Input_Model::InputConstraint(QTextStream& flow, const QStringList& list_str)
 {
-    if (!RequireKeywordFieldCount(list_str, 2, "CONSTRAINT"))
+    if (!RequireKeywordFieldCount(list_str, 2, "CONSTRAINT", m_LastError))
         return false;
     int nConstraint = list_str[1].toInt();
 
@@ -1501,6 +1515,7 @@ bool Input_Model::InputConstraint(QTextStream& flow, const QStringList& list_str
     {
         if (!ReadLine(flow, strdata))
         { //没有读取到有效数据，退出
+            m_LastError = QStringLiteral("约束数据不够");
             qDebug() << QStringLiteral("Error: 约束数据不够");
             return false;
         }
@@ -1508,6 +1523,7 @@ bool Input_Model::InputConstraint(QTextStream& flow, const QStringList& list_str
         QStringList strlist_con = strdata.split(QRegularExpression("[\t, ]"), Qt::SkipEmptyParts); //利用空格,分解字符串
         if (strlist_con.size() != 4)
         {
+            m_LastError = QStringLiteral("约束数据格式错误，需要4个字段: %1").arg(strdata);
             qDebug().noquote() << QStringLiteral("Error: 约束数据格式错误，需要4个字段: ") << strdata;
             return false;
         }
@@ -1520,14 +1536,17 @@ bool Input_Model::InputConstraint(QTextStream& flow, const QStringList& list_str
         const int idNode = strlist_con[1].toInt(&nodeIdOk);
         const int direction = strlist_con[2].toInt(&directionOk);
         const double value = strlist_con[3].toDouble(&valueOk);
-        if (!idOk || !nodeIdOk || !directionOk || !valueOk || constraintId <= 0 || !std::isfinite(value))
+        if (!idOk || !nodeIdOk || !directionOk || !valueOk || constraintId <= 0 || direction < 0 || direction > 5 ||
+            !std::isfinite(value))
         {
+            m_LastError = QStringLiteral("约束包含无效字段: %1").arg(strdata);
             qDebug().noquote() << QStringLiteral("Error: 约束包含无效字段: ") << strdata;
             return false;
         }
 
         if (m_Structure->m_Constraint.find(constraintId) != m_Structure->m_Constraint.end())
         {
+            m_LastError = QStringLiteral("约束编号重复: %1").arg(constraintId);
             qDebug().noquote() << QStringLiteral("Error: 约束编号重复: ") << constraintId;
             return false;
         }
@@ -1535,6 +1554,7 @@ bool Input_Model::InputConstraint(QTextStream& flow, const QStringList& list_str
         auto node = m_Structure->FindNode(idNode);
         if (!node)
         {
+            m_LastError = QStringLiteral("约束引用了不存在的节点: %1").arg(idNode);
             qDebug().noquote() << QStringLiteral("Error: 约束引用了不存在的节点: ") << idNode;
             return false;
         }
@@ -1552,13 +1572,14 @@ bool Input_Model::InputConstraint(QTextStream& flow, const QStringList& list_str
 
 bool Input_Model::InputMPC(QTextStream& flow, const QStringList& list_str)
 {
-    if (!RequireKeywordFieldCount(list_str, 2, "MPC"))
+    if (!RequireKeywordFieldCount(list_str, 2, "MPC", m_LastError))
         return false;
 
     bool countOk = false;
     const int count = list_str[1].toInt(&countOk);
     if (!countOk || count < 1)
     {
+        m_LastError = QStringLiteral("MPC数量必须为正整数");
         qDebug().noquote() << QStringLiteral("Error: MPC数量必须为正整数");
         return false;
     }
@@ -1568,12 +1589,15 @@ bool Input_Model::InputMPC(QTextStream& flow, const QStringList& list_str)
         QString line;
         if (!ReadLine(flow, line) || line.startsWith("*"))
         {
+            m_LastError = QStringLiteral("MPC数据不足");
             qDebug().noquote() << QStringLiteral("Error: MPC数据不足");
             return false;
         }
-        const QStringList fields = line.split(QRegularExpression("[\\t, ]"), Qt::SkipEmptyParts);
+        const QStringList fields = line.split(QRegularExpression("[\t, ]"), Qt::SkipEmptyParts);
         if (fields.size() != 4)
         {
+            m_LastError =
+                QStringLiteral("MPC数据需要4个字段: MPC_ID, MasterNode, SlaveNode, SlaveDirection: %1").arg(line);
             qDebug().noquote() << QStringLiteral("Error: MPC数据需要4个字段: "
                                                  "MPC_ID, MasterNode, SlaveNode, SlaveDirection: ")
                                << line;
@@ -1590,11 +1614,13 @@ bool Input_Model::InputMPC(QTextStream& flow, const QStringList& list_str)
         if (!idOk || !masterOk || !slaveOk || id <= 0 || masterId <= 0 || slaveId <= 0 || masterId == slaveId ||
             directionText.isEmpty())
         {
+            m_LastError = QStringLiteral("MPC包含无效字段: %1").arg(line);
             qDebug().noquote() << QStringLiteral("Error: MPC包含无效字段: ") << line;
             return false;
         }
         if (m_Structure->m_MPCConstraints.find(id) != m_Structure->m_MPCConstraints.cend())
         {
+            m_LastError = QStringLiteral("MPC编号重复: %1").arg(id);
             qDebug().noquote() << QStringLiteral("Error: MPC编号重复: ") << id;
             return false;
         }
@@ -1603,6 +1629,7 @@ bool Input_Model::InputMPC(QTextStream& flow, const QStringList& list_str)
         const auto slave = m_Structure->FindNode(slaveId);
         if (!master || !slave)
         {
+            m_LastError = QStringLiteral("MPC引用了不存在的节点: %1 %2").arg(masterId).arg(slaveId);
             qDebug().noquote() << QStringLiteral("Error: MPC引用了不存在的节点: ") << masterId << slaveId;
             return false;
         }
@@ -1613,12 +1640,14 @@ bool Input_Model::InputMPC(QTextStream& flow, const QStringList& list_str)
         {
             if (!character.isDigit())
             {
+                m_LastError = QStringLiteral("MPC从自由度只能由0到5组成: %1").arg(directionText);
                 qDebug().noquote() << QStringLiteral("Error: MPC从自由度只能由0到5组成: ") << directionText;
                 return false;
             }
             const int direction = character.digitValue();
             if (direction < 0 || direction > 5 || !uniqueDirections.insert(direction).second)
             {
+                m_LastError = QStringLiteral("MPC从自由度无效或重复: %1").arg(directionText);
                 qDebug().noquote() << QStringLiteral("Error: MPC从自由度无效或重复: ") << directionText;
                 return false;
             }
@@ -1655,6 +1684,8 @@ bool Input_Model::InputMPC(QTextStream& flow, const QStringList& list_str)
         }
         else
         {
+            m_LastError =
+                QStringLiteral("当前MPC求解阶段支持单个平移从自由度或完整平移自由度012: %1").arg(directionText);
             qDebug().noquote() << QStringLiteral("Error: 当前MPC求解阶段支持单个平移从自由度"
                                                  "或完整平移自由度012: ")
                                << directionText;
@@ -1670,7 +1701,7 @@ bool Input_Model::InputMPC(QTextStream& flow, const QStringList& list_str)
 
 bool Input_Model::InputConstraintTabular(QTextStream& flow, const QStringList& list_str)
 {
-    if (!RequireKeywordFieldCount(list_str, 3, "CONSTRAINT_TABULAR"))
+    if (!RequireKeywordFieldCount(list_str, 3, "CONSTRAINT_TABULAR", m_LastError))
     {
         return false;
     }
@@ -1681,6 +1712,7 @@ bool Input_Model::InputConstraintTabular(QTextStream& flow, const QStringList& l
     const int pointCount = list_str[2].toInt(&pointCountOk);
     if (!constraintIdOk || !pointCountOk || constraintId <= 0 || pointCount < 2)
     {
+        m_LastError = QStringLiteral("CONSTRAINT_TABULAR需要有效约束编号，且数据点不少于2个");
         qDebug().noquote() << QStringLiteral("Error: CONSTRAINT_TABULAR需要有效约束编号，且数据点不少于2个");
         return false;
     }
@@ -1688,6 +1720,7 @@ bool Input_Model::InputConstraintTabular(QTextStream& flow, const QStringList& l
     const auto constraintIt = m_Structure->m_Constraint.find(constraintId);
     if (constraintIt == m_Structure->m_Constraint.end() || !constraintIt->second)
     {
+        m_LastError = QStringLiteral("CONSTRAINT_TABULAR引用了不存在的约束: %1").arg(constraintId);
         qDebug().noquote() << QStringLiteral("Error: CONSTRAINT_TABULAR引用了不存在的约束: ") << constraintId;
         return false;
     }
@@ -1695,17 +1728,18 @@ bool Input_Model::InputConstraintTabular(QTextStream& flow, const QStringList& l
     const std::shared_ptr<Constraint>& constraint = constraintIt->second;
     if (constraint->HasTimePoints())
     {
+        m_LastError = QStringLiteral("约束已绑定TABULAR时程，不能重复绑定: %1").arg(constraintId);
         qDebug().noquote() << QStringLiteral("Error: 约束已绑定TABULAR时程，不能重复绑定: ") << constraintId;
         return false;
     }
 
     std::vector<ConstraintTimePoint> points;
-    points.reserve(static_cast<size_t>(pointCount));
     for (int pointIndex = 0; pointIndex < pointCount; ++pointIndex)
     {
         QString pointLine;
         if (!ReadLine(flow, pointLine) || pointLine.startsWith("*"))
         {
+            m_LastError = QStringLiteral("CONSTRAINT_TABULAR时程数据不足，约束编号: %1").arg(constraintId);
             qDebug().noquote() << QStringLiteral("Error: CONSTRAINT_TABULAR时程数据不足，约束编号: ") << constraintId;
             return false;
         }
@@ -1713,6 +1747,7 @@ bool Input_Model::InputConstraintTabular(QTextStream& flow, const QStringList& l
         const QStringList pointFields = pointLine.split(QRegularExpression("[\t, ]"), Qt::SkipEmptyParts);
         if (pointFields.size() != 2)
         {
+            m_LastError = QStringLiteral("CONSTRAINT_TABULAR数据行需要“时间, 系数”: %1").arg(pointLine);
             qDebug().noquote() << QStringLiteral("Error: CONSTRAINT_TABULAR数据行需要“时间, 系数”: ") << pointLine;
             return false;
         }
@@ -1723,6 +1758,7 @@ bool Input_Model::InputConstraintTabular(QTextStream& flow, const QStringList& l
         const double scale = pointFields[1].toDouble(&scaleOk);
         if (!timeOk || !scaleOk || !std::isfinite(time) || !std::isfinite(scale))
         {
+            m_LastError = QStringLiteral("CONSTRAINT_TABULAR包含无效数值: %1").arg(pointLine);
             qDebug().noquote() << QStringLiteral("Error: CONSTRAINT_TABULAR包含无效数值: ") << pointLine;
             return false;
         }
@@ -1735,6 +1771,7 @@ bool Input_Model::InputConstraintTabular(QTextStream& flow, const QStringList& l
     }
     catch (const std::invalid_argument& error)
     {
+        m_LastError = QStringLiteral("CONSTRAINT_TABULAR时程无效: %1").arg(QString::fromUtf8(error.what()));
         qDebug().noquote() << QStringLiteral("Error: CONSTRAINT_TABULAR时程无效: ") << error.what();
         return false;
     }
@@ -1744,7 +1781,7 @@ bool Input_Model::InputConstraintTabular(QTextStream& flow, const QStringList& l
 
 bool Input_Model::InputElement_Stress(QTextStream& flow, const QStringList& list_str)
 {
-    if (!RequireKeywordFieldCount(list_str, 2, "STRESS"))
+    if (!RequireKeywordFieldCount(list_str, 2, "STRESS", m_LastError))
         return false;
     int nStress = list_str[1].toInt();
 
@@ -1753,6 +1790,7 @@ bool Input_Model::InputElement_Stress(QTextStream& flow, const QStringList& list
     {
         if (!ReadLine(flow, strdata))
         { //没有读取到有效数据，退出
+            m_LastError = QStringLiteral("单元应力数据不够");
             qDebug() << QStringLiteral("Error: 单元应力数据不够");
             return false;
         }
@@ -1760,16 +1798,23 @@ bool Input_Model::InputElement_Stress(QTextStream& flow, const QStringList& list
         QStringList strlist_con = strdata.split(QRegularExpression("[\t, ]"), Qt::SkipEmptyParts); //利用空格,分解字符串
         if (strlist_con.size() != 2)
         {
+            m_LastError = QStringLiteral("单元应力数据格式错误，需要2个字段: %1").arg(strdata);
             qDebug().noquote() << QStringLiteral("Error: 单元应力数据格式错误，需要2个字段: ") << strdata;
             return false;
         }
 
         int idElement = strlist_con[0].toInt();
-        double stress = strlist_con[1].toDouble();
+        double stress = 0.0;
+        if (!ParseFiniteDouble(strlist_con[1], stress))
+        {
+            m_LastError = QStringLiteral("初始应力必须为有限数值：%1").arg(strdata);
+            return false;
+        }
 
         auto pElement = m_Structure->FindElement(idElement);
         if (!pElement)
         {
+            m_LastError = QStringLiteral("单元应力引用了不存在的单元: %1").arg(idElement);
             qDebug().noquote() << QStringLiteral("Error: 单元应力引用了不存在的单元: ") << idElement;
             return false;
         }
@@ -1782,7 +1827,7 @@ bool Input_Model::InputElement_Stress(QTextStream& flow, const QStringList& list
 bool Input_Model::InputAnalysisStep(QTextStream& flow, const QStringList& list_str)
 {
     // *ANALYSIS_STEP, N
-    if (!RequireKeywordFieldCount(list_str, 2, "ANALYSIS_STEP"))
+    if (!RequireKeywordFieldCount(list_str, 2, "ANALYSIS_STEP", m_LastError))
         return false;
     int nStep = list_str[1].toInt();
 
@@ -1791,6 +1836,7 @@ bool Input_Model::InputAnalysisStep(QTextStream& flow, const QStringList& list_s
     {
         if (!ReadLine(flow, strdata))
         {
+            m_LastError = QStringLiteral("分析步数据不够");
             qDebug().noquote() << QStringLiteral("Error: 分析步数据不够");
             return false;
         }
@@ -1798,6 +1844,7 @@ bool Input_Model::InputAnalysisStep(QTextStream& flow, const QStringList& list_s
         // 检查是否误读到下一个关键字行
         if (strdata.startsWith("*"))
         {
+            m_LastError = QStringLiteral("分析步数据不足，遇到下一个关键字: %1").arg(strdata);
             qDebug().noquote() << QStringLiteral("Error: 分析步数据不足，遇到下一个关键字: ") << strdata;
             return false;
         }
@@ -1806,25 +1853,33 @@ bool Input_Model::InputAnalysisStep(QTextStream& flow, const QStringList& list_s
         // ID, Type, Time, StepSize, Tolerance, MaxIterations
         if (strlist_step.size() != 6)
         {
+            m_LastError = QStringLiteral("分析步数据格式错误，需要6个字段: %1").arg(strdata);
             qDebug().noquote() << QStringLiteral("Error: 分析步数据格式错误，需要6个字段: ") << strdata;
             return false;
         }
 
         QString typeStr = strlist_step[1].toUpper();
-        double time = strlist_step[2].toDouble();
-        double stepSize = strlist_step[3].toDouble();
-        double tolerance = strlist_step[4].toDouble();
-        int maxIterations = strlist_step[5].toInt();
+        double time = 0.0, stepSize = 0.0, tolerance = 0.0;
+        int maxIterations = 0;
+        if (!ParseFiniteDouble(strlist_step[2], time) || !ParseFiniteDouble(strlist_step[3], stepSize) ||
+            !ParseFiniteDouble(strlist_step[4], tolerance) || !ParsePositiveId(strlist_step[5], maxIterations) ||
+            tolerance <= 0.0)
+        {
+            m_LastError = QStringLiteral("分析步参数必须为有限数值，容差和最大迭代数必须大于零：%1").arg(strdata);
+            return false;
+        }
 
         AnalysisStepConfig config;
         config.type = EnumKeyword::MapStepType.value(typeStr, EnumKeyword::StepType::UNKNOWN);
         if (config.type == EnumKeyword::StepType::UNKNOWN)
         {
+            m_LastError = QStringLiteral("未知的分析步类型: %1").arg(typeStr);
             qDebug().noquote() << QStringLiteral("Error: 未知的分析步类型: ") << typeStr;
             return false;
         }
         if (time < 0.0 || stepSize <= 0.0)
         {
+            m_LastError = QStringLiteral("分析步时间参数无效: %1").arg(strdata);
             qDebug().noquote() << QStringLiteral("Error: 分析步时间参数无效: ") << strdata;
             return false;
         }

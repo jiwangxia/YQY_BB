@@ -11,12 +11,21 @@ struct AerodynamicSectionState
     Eigen::Vector3d firstVelocity = Eigen::Vector3d::Zero();
     Eigen::Vector3d secondVelocity = Eigen::Vector3d::Zero();
     Eigen::Vector3d windVelocity = Eigen::Vector3d::Zero();
+    Eigen::Vector3d modelUp = Eigen::Vector3d::UnitZ();
+    // 普通空间梁保留截面方向，避免节点主值转角跨 pi 后平均得到错误攻角。
+    Eigen::Vector3d firstSectionAxis = Eigen::Vector3d::UnitX();
+    Eigen::Vector3d secondSectionAxis = Eigen::Vector3d::UnitX();
+    Eigen::Vector3d firstSectionDirection = Eigen::Vector3d::UnitZ();
+    Eigen::Vector3d secondSectionDirection = Eigen::Vector3d::UnitZ();
     double firstTwist = 0.0;
     double secondTwist = 0.0;
     double firstTwistRate = 0.0;
     double secondTwistRate = 0.0;
     double radius = 0.0;
     double initialAttack = 0.0;
+    bool referenceTssbn = false;
+    bool diagnosticReferenceFixedWindSpeed = false;
+    bool useBeamSectionDirections = false;
 };
 
 struct AerodynamicSectionResult
@@ -35,10 +44,17 @@ struct AerodynamicSectionResult
 class AerodynamicLoadCalculator
 {
 public:
-    // Angles are radians. Cl/Cd/Cm are evaluated by the caller at the returned
-    // attackAngle, allowing AeroManager to remain the coefficient repository.
+    // 攻角单位为弧度；调用方按返回攻角查询气动系数。
     static AerodynamicSectionResult ComputeKinematics(const AerodynamicSectionState& state);
 
     static void ComputeLineLoad(_OUT AerodynamicSectionResult& result, double airDensity, double diameter,
-                                double liftCoefficient, double dragCoefficient, double momentCoefficient);
+                                double liftCoefficient, double dragCoefficient, double momentCoefficient,
+                                bool diagnosticFixedForceDirections = false);
+
+private:
+    static Eigen::Vector3d AlignBeamSectionDirection(const Eigen::Vector3d& sectionAxis,
+                                                     const Eigen::Vector3d& sectionDirection,
+                                                     const Eigen::Vector3d& commonAxis);
+    static double ComputeBeamMeanTwist(const AerodynamicSectionState& state,
+                                       const AerodynamicSectionResult& frame);
 };

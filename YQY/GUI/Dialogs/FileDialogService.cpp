@@ -34,13 +34,14 @@ QStringList selectOpenFiles(QWidget* parent, const QString& title, const QString
 }
 
 QString selectSaveFile(QWidget* parent, const QString& title, const QString& defaultFilePath, const QString& nameFilter,
-                       const QString& settingsKey)
+                       const QString& settingsKey, bool rememberLastDirectory)
 {
     const QFileInfo defaultFileInfo(defaultFilePath);
-    const QString initialPath =
-        QDir(lastDirectory(settingsKey, defaultFileInfo.absolutePath())).absoluteFilePath(defaultFileInfo.fileName());
+    const QString initialPath = rememberLastDirectory ? QDir(lastDirectory(settingsKey, defaultFileInfo.absolutePath()))
+                                                            .absoluteFilePath(defaultFileInfo.fileName())
+                                                      : defaultFileInfo.absoluteFilePath();
     const QString selectedFile = QFileDialog::getSaveFileName(parent, title, initialPath, nameFilter);
-    if (!selectedFile.isEmpty())
+    if (rememberLastDirectory && !selectedFile.isEmpty())
         rememberDirectory(settingsKey, selectedFile);
     return selectedFile;
 }

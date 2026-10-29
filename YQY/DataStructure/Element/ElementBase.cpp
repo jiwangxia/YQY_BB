@@ -1,11 +1,87 @@
 ﻿#include "ElementBase.h"
 #include "DataStructure/Node/Node.h"
+#include "Solver/Dynamic/Damping/LocalRayleighMatrix.h"
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 #include <numeric>
 
 ElementBase::ElementBase()
 {
+}
+
+bool ElementBase::TryGetEnergySectionInertia(_OUT double& Iy, _OUT double& Iz, _OUT double& J) const
+{
+    const auto property = m_pProperty.lock();
+    const auto section = property ? property->m_pSection.lock() : nullptr;
+    return section && section->TryGetEnergyInertia(Iy, Iz, J);
+}
+
+bool ElementBase::TryGetStrainEnergy(_OUT double& energy) const
+{
+    energy = std::numeric_limits<double>::quiet_NaN();
+    return false;
+}
+
+bool ElementBase::TryGetKineticEnergy(_OUT double& energy)
+{
+    energy = std::numeric_limits<double>::quiet_NaN();
+    std::vector<int> counts;
+    GetNodeLocalDOFCounts(counts);
+    if (counts.size() != static_cast<std::size_t>(m_pNode.size()))
+        return false;
+    const int dofCount = std::accumulate(counts.cbegin(), counts.cend(), 0);
+    if (dofCount <= 0)
+        return false;
+    VectorXd velocity(dofCount);
+    int offset = 0;
+    for (int index = 0; index < m_pNode.size(); ++index)
+    {
+        const auto node = m_pNode[index].lock();
+        const int count = counts[static_cast<std::size_t>(index)];
+        if (!node || count < 0 || node->m_Velocity.size() < static_cast<std::size_t>(count))
+            return false;
+        for (int component = 0; component < count; ++component)
+            velocity[offset++] = node->m_Velocity[component];
+    }
+    if (!velocity.allFinite())
+        return false;
+    if (velocity.isZero(0.0))
+    {
+        energy = 0.0;
+        return true;
+    }
+    MatrixXd mass;
+    Get_me_Physical(mass);
+    if (mass.rows() != dofCount || mass.cols() != dofCount || !mass.allFinite())
+        return false;
+    const double value = 0.5 * velocity.dot(mass * velocity);
+    if (!std::isfinite(value) || value < 0.0)
+        return false;
+    energy = value;
+    return true;
+}
+
+void ElementBase::Get_me_Physical(_OUT MatrixXd& me)
+{
+    Get_me_Consistent(me);
+}
+
+void ElementBase::GetRayleighDamping(const std::array<double, 4>& coefficients, _OUT MatrixXd& damping)
+{
+    MatrixXd stiffness;
+    MatrixXd mass;
+    Get_ke(stiffness);
+    Get_me_Physical(mass);
+    GetRayleighDamping(coefficients, stiffness, mass, damping);
+}
+
+void ElementBase::GetRayleighDamping(const std::array<double, 4>& coefficients, const MatrixXd& stiffness,
+                                   const MatrixXd& physicalMass, _OUT MatrixXd& damping) const
+{
+    SolverNameSpace::BuildProportionalRayleighMatrix(stiffness, physicalMass, coefficients[0], coefficients[1],
+                                                     damping);
 }
 
 void ElementBase::Get_InertiaForce(_OUT VectorXd& inertiaForce)

@@ -1,0 +1,25 @@
+{
+  "complex_step_invariance_relative": 1.5339303599565994e-16,
+  "translation_resultant_relative": 2.876045150357986e-17,
+  "rigid_rotation_resultant_relative": 3.068085747727219e-17,
+  "finite_directional_derivative": [
+    {
+      "step": 0.0001,
+      "derivative": 23081.13548563597,
+      "scaled_error": 3.2526449511920892e-09
+    },
+    {
+      "step": 5e-05,
+      "derivative": 23081.13542949286,
+      "scaled_error": 8.202209416369323e-10
+    },
+    {
+      "step": 2.5e-05,
+      "derivative": 23081.135416018697,
+      "scaled_error": 2.364470601925835e-10
+    }
+  ],
+  "quaternion_matrix_crosscheck_max": 1.1102230246251565e-16,
+  "independent_force_directional_derivative": 23081.13541056123,
+  "passed": true
+}

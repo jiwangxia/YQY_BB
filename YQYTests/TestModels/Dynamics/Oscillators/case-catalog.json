@@ -1,0 +1,48 @@
+{
+  "schema": "newmark-literature-case-catalog-v1",
+  "algorithm": "SolverFactory fixed Newmark, beta=0.25, gamma=0.5",
+  "registration": "Default GoogleTest; direct typed benchmark functions; no Python or external solver needed at test runtime",
+  "input_plan": "validation-plan.json",
+  "independent_reference": "regression-reference.json",
+  "independent_reference_sha256": "1cd12d5a541c5f0e73516a08391cf5e0618e33e14a997558cb8304b9a69a2262",
+  "cases": [
+    {
+      "id": "newmark-chopra",
+      "test": "NewmarkLiteratureTest.ChopraDampedElasticAndPlasticHistory",
+      "title_zh": "Chopra阻尼线性与理想弹塑性动力",
+      "subruns": ["chopra-linear", "chopra-elastoplastic"],
+      "source": "OpenSees official NewmarkIntegrator.tcl citing Chopra, Dynamics of Structures, 4th ed.",
+      "source_url": "https://github.com/OpenSees/OpenSees/blob/ddf7b364e0a089a8e05c75a0576e759f3a5eba91/EXAMPLES/verification/NewmarkIntegrator.tcl",
+      "checks_zh": [
+        "生产工厂实际选择固定平均加速度Newmark；阻尼与半正弦外载作用下的逐步位移、速度、加速度",
+        "与官方原表位移及实际独立OpenSees全精度离散解对比",
+        "理想弹塑性进入屈服、塑性历史提交及弹性卸载，不以无记忆包络替代历史模型",
+        "逐帧动力平衡、Newmark位移/速度离散关系、完整终点、固定步列及无拒步/精度受限接受"
+      ],
+      "limits_zh": "测试专用一维物理模型；不验证生产塑性材料或真实杆索梁装配。原表v/a有印刷异常，不作为原表硬门；新增全精度q/v/a独立对比门仍严格执行。"
+    },
+    {
+      "id": "newmark-liang",
+      "test": "NewmarkLiteratureTest.LiangNonlinearPendulumSecondOrder",
+      "title_zh": "Liang–Mosalam非线性单摆与二阶收敛",
+      "subrun_count": 12,
+      "source": "Liang and Mosalam (2016), PEER2016/10 Section4.5 / JEM142(5)04016022",
+      "source_url": "https://peer.berkeley.edu/sites/default/files/publications/2016_10_xiao_liang_khalid_m._mosalam.pdf",
+      "checks_zh": [
+        "theta''+sin(theta)=0，两幅值0.10pi与0.50pi的非线性平衡及状态更新",
+        "h/T=.04/.08/.10与论文Implicit Newmark图示周期延长/振幅衰减对比",
+        "h/T=.01/.005/.0025在5T内与椭圆函数解析q/v/a逐帧比较，检验二阶收敛与最细精度",
+        "完整终点、固定步列、Newton平衡残差和Newmark离散关系，禁止将粗步相位误差误判为代码错误"
+      ],
+      "limits_zh": "标量角度ODE，不是有限元摆或生产Node有限转动。5T及首个返回Hermite峰是新增明确条件；论文图只作0.2个百分点范围的图示级符合。"
+    }
+  ],
+  "certified_scope_zh": "指定参数与时窗下的标量Newmark积分系数、有效切线求解及非线性平衡路径",
+  "separate_validation_required_zh": [
+    "真实杆、索、梁的内力、刚度、质量及约束装配",
+    "有限转动、状态相关惯性及MPC",
+    "气动力、攻角、局部坐标变换及气动力切线",
+    "自适应控制器和其余积分算法",
+    "未被本轮触发的拒步与失败回滚路径"
+  ]
+}

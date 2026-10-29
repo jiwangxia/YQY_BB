@@ -1,0 +1,29 @@
+{
+  "schema": "newmark-production-beam-bending-input-v1",
+  "length": 2.0,
+  "width": 0.1,
+  "height": 0.2,
+  "young": 200000000000.0,
+  "poisson": 0.3,
+  "density": 7800.0,
+  "transverse_amplitude_scale": 1e-7,
+  "duration_periods": 3.0,
+  "damped_modal_ratio": 0.02,
+  "elements": 1,
+  "node_dofs": 6,
+  "root_fixed_components": [0, 1, 2, 3, 4, 5],
+  "tip_free_components": [1, 5],
+  "initial_condition": "q0=(0,0); v0=A*omega1*(1,r1); a0 restored by actual production consistent acceleration initialization",
+  "external_load": "zero",
+  "section_axis_convention": "Iy=width*height^3/12, Iz=height*width^3/12; global-Y bending uses Iz",
+  "physical_mass_model": "linear N1,N2 translation and spatial-spin interpolation, two-point Gauss; root-fixed planar block M=diag(rho*A*L/3,rho*Iz*L/3)",
+  "stiffness_model": "Euler-Bernoulli small-local-strain corotational, exact zero-state block K=E*Iz*[[12/L^3,-6/L^2],[-6/L^2,4/L]]",
+  "damping_model": "actual production automatic full-structure modal Rayleigh, translation reference modes 1 and 2, both target zeta=.02; no injected explicit C",
+  "sources": {
+    "geometry_and_Euler_unit_load_theory": "https://code-aster.org/doc/v17/manuals/man_v/v3/v3.01.102/index.html",
+    "official_unit_load_input": "https://gitlab.com/codeaster/src/-/raw/main/astest/ssll102a.comm",
+    "linearized_Euler_frequency_theory_and_density": "https://code-aster.org/doc/v17/manuals/man_v/v2/v2.02.101/Solution_de_r_f_rence.html",
+    "density_source_input": "https://gitlab.com/codeaster/src/-/raw/main/astest/sdll101b.comm"
+  },
+  "scope": "New independently specified semidiscrete micro-amplitude bending problem derived from public straight-beam theory; not a reproduction of Aster's original mesh, Hermite mass, loading or transient golden table. No large-rotation claim. Spatial continuum convergence and higher-mode accuracy are separate."
+}

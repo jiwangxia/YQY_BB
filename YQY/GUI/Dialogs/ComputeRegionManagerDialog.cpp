@@ -1,342 +1,454 @@
 #include "ComputeRegionManagerDialog.h"
+#include "Widgets/DialogSizing.h"
+#include "Utility/UiIcons.h"
+
 #include "ModelSetManagerDialog.h"
 
+#include "DataStructure/Element/ElementTruss.h"
+#include "DataStructure/Region/ModelSet.h"
 #include "DataStructure/Structure/StructureData.h"
 
-#include <QCheckBox>
 #include <QDialogButtonBox>
 #include <QFormLayout>
-#include <QHeaderView>
 #include <QHBoxLayout>
+#include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMessageBox>
 #include <QPushButton>
-#include <QRegularExpression>
 #include <QTableWidget>
-#include <QTextEdit>
 #include <QVBoxLayout>
 
-static bool ParseIds(const QString& text, std::set<int>& ids, QString& errorMessage)
+#include <map>
+#include <set>
+#include <vector>
+
+namespace
 {
-    ids.clear();
-    const QStringList tokens = text.split(QRegularExpression(QStringLiteral("[,;\\s]+")), Qt::SkipEmptyParts);
-    for (const QString& token : tokens)
+
+struct TopologyCollection
+{
+    QString name;
+    int nodeSetId = 0;
+    int elementSetId = 0;
+    int nodeCount = 0;
+    int elementCount = 0;
+};
+
+QString collectionName(const QString& setName, ModelSetType type)
+{
+    const QString suffix = type == ModelSetType::Node ? QStringLiteral(" · 节点") : QStringLiteral(" · 单元");
+    return setName.endsWith(suffix) ? setName.left(setName.size() - suffix.size()).trimmed() : setName.trimmed();
+}
+
+std::vector<TopologyCollection> buildTopologyCollections(const StructureData& structure)
+{
+    std::map<QString, TopologyCollection> grouped;
+    for (const auto& [setId, set] : structure.m_ModelSets)
     {
-        const QStringList range = token.split(QLatin1Char('-'), Qt::SkipEmptyParts);
-        bool firstOk = false;
-        const int first = range.value(0).toInt(&firstOk);
-        if (!firstOk || first <= 0 || range.size() > 2)
-        {
-            errorMessage = QStringLiteral("无法识别 ID：%1").arg(token);
-            return false;
-        }
-        if (range.size() == 1)
-        {
-            ids.insert(first);
+        if (!set)
             continue;
-        }
-        bool lastOk = false;
-        const int last = range.at(1).toInt(&lastOk);
-        if (!lastOk || last < first)
+
+        const QString name = collectionName(set->m_Name, set->m_Type);
+        if (name.isEmpty())
+            continue;
+
+        auto& collection = grouped[name];
+        collection.name = name;
+        if (set->m_Type == ModelSetType::Node)
         {
-            errorMessage = QStringLiteral("无效 ID 范围：%1").arg(token);
-            return false;
+            collection.nodeSetId = setId;
+            collection.nodeCount = static_cast<int>(set->m_Ids.size());
         }
-        for (int id = first;; ++id)
+        else
         {
-            ids.insert(id);
-            if (id == last)
-            {
-                break;
-            }
+            collection.elementSetId = setId;
+            collection.elementCount = static_cast<int>(set->m_Ids.size());
         }
     }
-    return true;
+
+    std::vector<TopologyCollection> result;
+    for (const auto& [name, collection] : grouped)
+    {
+        Q_UNUSED(name);
+        // 计算集合必须包含单元；仅含节点的集合不能独立组成计算区域，因此不在此显示。
+        if (collection.elementSetId > 0 && collection.elementCount > 0)
+            result.push_back(collection);
+    }
+    return result;
 }
 
-static QString FormatIds(const std::set<int>& ids)
+int convertedFemTrussCount(const StructureData& structure)
 {
-    QStringList values;
-    for (int id : ids)
-        values.append(QString::number(id));
-    return values.join(QStringLiteral(", "));
+    int count = 0;
+    for (const auto& [elementId, element] : structure.m_Elements)
+    {
+        Q_UNUSED(elementId);
+        const auto truss = std::dynamic_pointer_cast<ElementTruss>(element);
+        if (truss && truss->m_UseEngineeringStrain)
+            ++count;
+    }
+    return count;
 }
 
-class ComputeRegionEditorDialog final : public QDialog
+class RegionFromCollectionsDialog final : public QDialog
 {
 public:
-    ComputeRegionEditorDialog(const std::shared_ptr<StructureData>& structure,
-                              const std::shared_ptr<ComputeRegion>& region, QWidget* parent)
+    RegionFromCollectionsDialog(const std::vector<TopologyCollection>& collections, QWidget* parent)
         : QDialog(parent)
     {
-        setWindowTitle(region ? QStringLiteral("编辑计算区域") : QStringLiteral("新增计算区域"));
-        setMinimumWidth(520);
-        auto* root = new QVBoxLayout(this);
-        auto* form = new QFormLayout();
-        m_name = new QLineEdit(this);
-        m_enabled = new QCheckBox(QStringLiteral("参与计算"), this);
-        m_nodeIds = new QTextEdit(this);
-        m_elementIds = new QTextEdit(this);
-        m_sourceSets = new QListWidget(this);
-        m_nodeIds->setPlaceholderText(QStringLiteral("节点 ID，例如：1, 2, 10-20；可留空并由单元自动补齐"));
-        m_elementIds->setPlaceholderText(QStringLiteral("单元 ID，例如：1, 2, 10-20"));
-        m_nodeIds->setMaximumHeight(90);
-        m_elementIds->setMaximumHeight(90);
-        form->addRow(QStringLiteral("名称"), m_name);
-        form->addRow(QStringLiteral("状态"), m_enabled);
-        form->addRow(QStringLiteral("节点 ID"), m_nodeIds);
-        form->addRow(QStringLiteral("单元 ID"), m_elementIds);
-        form->addRow(QStringLiteral("来源集合"), m_sourceSets);
-        root->addLayout(form);
-        root->addWidget(new QLabel(QStringLiteral("共享节点或单元的区域将在保存后自动合并。"), this));
+        setWindowTitle(QStringLiteral("由集合新建计算区域"));
+        setWindowIcon(UiIcons::applicationIcon());
+        setMinimumSize(500, 360);
+        resize(620, 460);
+        DialogSizing::lockCurrentHeight(this);
+
+        auto* layout = new QVBoxLayout(this);
+        layout->setContentsMargins(16, 16, 16, 16);
+        layout->setSpacing(12);
+        auto* intro = new QLabel(QStringLiteral("勾选导入 H5 "
+                                                "中的线路对象即可组成计算区域。程序会自动展开节点、单元、端点约束和关联"
+                                                "关系；不需要输入节点或单元 ID。"),
+                                 this);
+        intro->setWordWrap(true);
+        intro->setProperty("secondaryText", true);
+        layout->addWidget(intro);
+
+        auto* form = new QFormLayout;
+        form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+        form->setLabelAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        m_nameEdit = new QLineEdit(this);
+        m_nameEdit->setPlaceholderText(QStringLiteral("例如：耐张段 1 快速计算区域"));
+        form->addRow(QStringLiteral("区域名称"), m_nameEdit);
+        layout->addLayout(form);
+
+        layout->addWidget(new QLabel(QStringLiteral("选择线路对象"), this));
+        m_collectionList = new QListWidget(this);
+        m_collectionList->setSpacing(2);
+        m_collectionList->setSelectionMode(QAbstractItemView::SingleSelection);
+        m_collectionList->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
+        for (const auto& collection : collections)
+        {
+            auto* item = new QListWidgetItem(QStringLiteral("%1（节点 %2，单元 %3）")
+                                                 .arg(collection.name)
+                                                 .arg(collection.nodeCount)
+                                                 .arg(collection.elementCount),
+                                             m_collectionList);
+            item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+            item->setCheckState(Qt::Unchecked);
+            item->setData(Qt::UserRole, collection.nodeSetId);
+            item->setData(Qt::UserRole + 1, collection.elementSetId);
+        }
+        layout->addWidget(m_collectionList, 1);
+
+        auto* note = new QLabel(QStringLiteral("相连的线路对象会自动合并为一个完整的物理计算区域。删除区域只删除计算配"
+                                               "置，不会删除模型、节点、单元或集合。"),
+                                this);
+        note->setWordWrap(true);
+        note->setProperty("secondaryText", true);
+        layout->addWidget(note);
+
         auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
-        buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("确定"));
+        buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("创建"));
+        buttons->button(QDialogButtonBox::Ok)->setDefault(true);
+        buttons->button(QDialogButtonBox::Ok)->setProperty("primaryAction", true);
         buttons->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
-        root->addWidget(buttons);
+        buttons->button(QDialogButtonBox::Cancel)->setAutoDefault(false);
         connect(buttons, &QDialogButtonBox::accepted, this,
                 [this]()
                 {
-                    QString error;
-                    if (!ParseIds(m_nodeIds->toPlainText(), m_nodes, error) ||
-                        !ParseIds(m_elementIds->toPlainText(), m_elements, error))
+                    if (m_nameEdit->text().trimmed().isEmpty())
                     {
-                        QMessageBox::information(this, QStringLiteral("ID 格式错误"), error);
+                        QMessageBox::warning(this, QStringLiteral("缺少名称"), QStringLiteral("请填写计算区域名称。"));
+                        m_nameEdit->setFocus();
                         return;
                     }
-                    if (m_nodes.empty() && m_elements.empty() && sourceSetIds().empty())
+                    if (sourceSetIds().empty())
                     {
-                        QMessageBox::information(this, QStringLiteral("区域为空"),
-                                                 QStringLiteral("请至少输入一个节点 ID 或单元 ID。"));
+                        QMessageBox::warning(this, QStringLiteral("未选择集合"),
+                                             QStringLiteral("请至少选择一个线路对象。"));
+                        m_collectionList->setFocus();
                         return;
                     }
                     accept();
                 });
         connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
-
-        m_enabled->setChecked(true);
-        if (structure)
-        {
-            for (const auto& [setId, modelSet] : structure->m_ModelSets)
-            {
-                if (!modelSet)
-                    continue;
-                auto* item = new QListWidgetItem(QStringLiteral("%1（%2，%3 项）")
-                                                     .arg(modelSet->m_Name, modelSet->m_Type == ModelSetType::Node
-                                                                                ? QStringLiteral("节点集")
-                                                                                : QStringLiteral("单元集"))
-                                                     .arg(modelSet->m_Ids.size()),
-                                                 m_sourceSets);
-                item->setData(Qt::UserRole, setId);
-                item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
-                item->setCheckState(region && region->m_SourceSetIds.find(setId) != region->m_SourceSetIds.cend()
-                                        ? Qt::Checked
-                                        : Qt::Unchecked);
-            }
-        }
-        if (region)
-        {
-            m_name->setText(region->m_Name);
-            m_enabled->setChecked(region->m_Enabled);
-            m_nodeIds->setPlainText(FormatIds(region->m_DirectNodeIds));
-            m_elementIds->setPlainText(FormatIds(region->m_DirectElementIds));
-        }
+        layout->addWidget(buttons);
+        m_nameEdit->setFocus();
     }
 
-    QString name() const
+    QString regionName() const
     {
-        return m_name->text().trimmed();
-    }
-
-    bool enabled() const
-    {
-        return m_enabled->isChecked();
-    }
-
-    const std::set<int>& nodeIds() const
-    {
-        return m_nodes;
-    }
-
-    const std::set<int>& elementIds() const
-    {
-        return m_elements;
+        return m_nameEdit->text().trimmed();
     }
 
     std::set<int> sourceSetIds() const
     {
         std::set<int> result;
-        for (int row = 0; row < m_sourceSets->count(); ++row)
+        for (int row = 0; row < m_collectionList->count(); ++row)
         {
-            const auto* item = m_sourceSets->item(row);
-            if (item->checkState() == Qt::Checked)
-                result.insert(item->data(Qt::UserRole).toInt());
+            const auto* item = m_collectionList->item(row);
+            if (item->checkState() != Qt::Checked)
+                continue;
+            const int nodeSetId = item->data(Qt::UserRole).toInt();
+            const int elementSetId = item->data(Qt::UserRole + 1).toInt();
+            if (nodeSetId > 0)
+                result.insert(nodeSetId);
+            if (elementSetId > 0)
+                result.insert(elementSetId);
         }
         return result;
     }
 
 private:
-    QLineEdit* m_name = nullptr;
-    QCheckBox* m_enabled = nullptr;
-    QTextEdit* m_nodeIds = nullptr;
-    QTextEdit* m_elementIds = nullptr;
-    QListWidget* m_sourceSets = nullptr;
-    std::set<int> m_nodes;
-    std::set<int> m_elements;
+    QLineEdit* m_nameEdit = nullptr;
+    QListWidget* m_collectionList = nullptr;
 };
+
+} // namespace
 
 ComputeRegionManagerDialog::ComputeRegionManagerDialog(const std::shared_ptr<StructureData>& structure, QWidget* parent)
     : QDialog(parent)
     , m_structure(structure)
 {
-    setWindowTitle(QStringLiteral("计算区域管理器"));
-    resize(820, 460);
-    auto* root = new QVBoxLayout(this);
+    setWindowTitle(QStringLiteral("线路计算区域"));
+    setWindowIcon(UiIcons::applicationIcon());
+    setObjectName(QStringLiteral("computeRegionManagerDialog"));
+    setMinimumSize(660, 380);
+    resize(840, 520);
+    DialogSizing::lockCurrentHeight(this);
+
+    auto* layout = new QVBoxLayout(this);
+    layout->setContentsMargins(16, 16, 16, 16);
+    layout->setSpacing(12);
+    auto* hint = new QLabel(QStringLiteral("导入 FEM H5 "
+                                           "后，耐张段、相线、地线等线路对象会成为可选集合。由一个或多个集合创建计算区"
+                                           "域；具体计算哪几个区域，请在“分析步 → 计算区域”中勾选。"),
+                            this);
+    hint->setWordWrap(true);
+    hint->setProperty("secondaryText", true);
+    layout->addWidget(hint);
+
+    const int convertedCount = m_structure ? convertedFemTrussCount(*m_structure) : 0;
+    auto* stressStatus = new QLabel(this);
+    if (convertedCount > 0)
+    {
+        stressStatus->setText(
+            QStringLiteral(
+                "预张力状态：已识别 %1 个 FEM 预张力桁架。初始张力已转换为无应力长度参与求解，因此“附加初始应力”显示为 "
+                "0 不代表没有导入。")
+                .arg(convertedCount));
+    }
+    else
+    {
+        stressStatus->setText(
+            QStringLiteral("预张力状态：当前模型未识别到 FEM 预张力桁架；请用新版 FEM 导出的 H5 重新导入后再检查。"));
+    }
+    stressStatus->setWordWrap(true);
+    layout->addWidget(stressStatus);
+
     m_table = new QTableWidget(this);
     m_table->setColumnCount(5);
-    m_table->setHorizontalHeaderLabels({QStringLiteral("名称"), QStringLiteral("启用"), QStringLiteral("节点数"),
+    m_table->setHorizontalHeaderLabels({QStringLiteral("参与"), QStringLiteral("计算区域"), QStringLiteral("节点数"),
                                         QStringLiteral("单元数"), QStringLiteral("来源集合")});
+    m_table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    m_table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+    m_table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    m_table->horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+    m_table->horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_table->setSelectionMode(QAbstractItemView::SingleSelection);
     m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_table->setAlternatingRowColors(true);
+    m_table->setShowGrid(false);
+    m_table->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
     m_table->verticalHeader()->setVisible(false);
-    m_table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
-    m_table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
-    root->addWidget(m_table);
+    m_table->verticalHeader()->setDefaultSectionSize(36);
+    layout->addWidget(m_table, 1);
 
-    auto* actions = new QHBoxLayout();
-    auto* addButton = new QPushButton(QStringLiteral("新增"), this);
-    auto* editButton = new QPushButton(QStringLiteral("编辑"), this);
-    auto* deleteButton = new QPushButton(QStringLiteral("删除"), this);
-    auto* setsButton = new QPushButton(QStringLiteral("集合管理"), this);
-    auto* closeButton = new QPushButton(QStringLiteral("关闭"), this);
-    actions->addWidget(addButton);
-    actions->addWidget(editButton);
+    auto* actions = new QHBoxLayout;
+    auto* collectionsButton = new QPushButton(QStringLiteral("集合管理器"), this);
+    auto* createButton = new QPushButton(QStringLiteral("由集合新建区域"), this);
+    auto* deleteButton = new QPushButton(QStringLiteral("删除区域"), this);
+    createButton->setProperty("primaryAction", true);
+    deleteButton->setProperty("dangerAction", true);
+    deleteButton->setEnabled(false);
+    actions->setSpacing(8);
+    actions->addWidget(createButton);
+    actions->addWidget(collectionsButton);
     actions->addWidget(deleteButton);
-    actions->addWidget(setsButton);
-    actions->addStretch();
-    actions->addWidget(closeButton);
-    root->addLayout(actions);
+    actions->addStretch(1);
 
-    connect(addButton, &QPushButton::clicked, this,
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);
+    buttons->button(QDialogButtonBox::Close)->setText(QStringLiteral("关闭"));
+    for (QPushButton* button : {collectionsButton, createButton, deleteButton, buttons->button(QDialogButtonBox::Close)})
+        button->setAutoDefault(false);
+    connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+    connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
+    actions->addWidget(buttons);
+    layout->addLayout(actions);
+
+    connect(collectionsButton, &QPushButton::clicked, this,
             [this]()
             {
-                editRegion();
+                ModelSetManagerDialog manager(m_structure, this);
+                manager.exec();
             });
-    connect(editButton, &QPushButton::clicked, this,
-            [this]()
-            {
-                editRegion(selectedRegionId());
-            });
+    connect(createButton, &QPushButton::clicked, this, &ComputeRegionManagerDialog::createRegionFromCollections);
     connect(deleteButton, &QPushButton::clicked, this, &ComputeRegionManagerDialog::deleteSelectedRegion);
-    connect(setsButton, &QPushButton::clicked, this, &ComputeRegionManagerDialog::manageSets);
-    connect(closeButton, &QPushButton::clicked, this, &QDialog::accept);
-    connect(m_table, &QTableWidget::cellDoubleClicked, this,
-            [this](int, int)
+    connect(m_table, &QTableWidget::itemSelectionChanged, this,
+            [this, deleteButton]()
             {
-                editRegion(selectedRegionId());
+                deleteButton->setEnabled(selectedRegionId() > 0);
             });
+    connect(m_table, &QTableWidget::itemChanged, this,
+            [this](QTableWidgetItem* item)
+            {
+                if (m_refreshing || !m_structure || item->column() != 0)
+                    return;
+                const int regionId = item->data(Qt::UserRole).toInt();
+                const auto it = m_structure->m_ComputeRegions.find(regionId);
+                if (it == m_structure->m_ComputeRegions.end() || !it->second)
+                    return;
+
+                const bool enabled = item->checkState() == Qt::Checked;
+                it->second->m_Enabled = enabled;
+                for (auto& [stepId, step] : m_structure->m_AnalysisStep)
+                {
+                    Q_UNUSED(stepId);
+                    if (!step)
+                        continue;
+                    if (enabled)
+                    {
+                        // “参与”表示该区域重新加入现有分析配置；全部区域模式本来就会
+                        // 自动包含它，显式选择模式则补上引用。
+                        if (step->m_RegionScope == AnalysisRegionScope::SelectedRegions)
+                            step->m_ComputeRegionIds.insert(regionId);
+                        continue;
+                    }
+
+                    // 全部区域模式若直接保留，会在区域再次启用时悄悄重新勾选它。
+                    // 转成显式列表并保存其余启用区域，使两个界面的状态始终一致。
+                    if (step->m_RegionScope == AnalysisRegionScope::AllEnabledRegions)
+                    {
+                        step->m_RegionScope = AnalysisRegionScope::SelectedRegions;
+                        step->m_ComputeRegionIds.clear();
+                        for (const auto& [candidateId, candidate] : m_structure->m_ComputeRegions)
+                        {
+                            if (candidateId != regionId && candidate && candidate->m_Enabled)
+                                step->m_ComputeRegionIds.insert(candidateId);
+                        }
+                    }
+                    else
+                    {
+                        step->m_ComputeRegionIds.erase(regionId);
+                    }
+                }
+                m_structure->SynchronizeComputeRegionEnablementFromSteps();
+            });
+
     refreshTable();
 }
 
 void ComputeRegionManagerDialog::refreshTable(int preferredRegionId)
 {
+    m_refreshing = true;
     m_table->setRowCount(0);
-    if (!m_structure)
-        return;
-    for (const auto& [regionId, region] : m_structure->m_ComputeRegions)
+    if (m_structure)
     {
-        if (!region)
-            continue;
-        const int row = m_table->rowCount();
-        m_table->insertRow(row);
-        auto* nameItem = new QTableWidgetItem(region->m_Name);
-        nameItem->setData(Qt::UserRole, regionId);
-        m_table->setItem(row, 0, nameItem);
-        m_table->setItem(row, 1, new QTableWidgetItem(region->m_Enabled ? QStringLiteral("是") : QStringLiteral("否")));
-        m_table->setItem(row, 2, new QTableWidgetItem(QString::number(region->m_NodeIds.size())));
-        m_table->setItem(row, 3, new QTableWidgetItem(QString::number(region->m_ElementIds.size())));
-        m_table->setItem(row, 4, new QTableWidgetItem(QString::number(region->m_SourceSetIds.size())));
-        if (regionId == preferredRegionId)
-            m_table->selectRow(row);
+        int row = 0;
+        for (const auto& [regionId, region] : m_structure->m_ComputeRegions)
+        {
+            if (!region)
+                continue;
+            m_table->insertRow(row);
+            auto* enabled = new QTableWidgetItem;
+            enabled->setFlags(enabled->flags() | Qt::ItemIsUserCheckable);
+            enabled->setCheckState(region->m_Enabled ? Qt::Checked : Qt::Unchecked);
+            enabled->setData(Qt::UserRole, regionId);
+            m_table->setItem(row, 0, enabled);
+            m_table->setItem(row, 1, new QTableWidgetItem(region->m_Name));
+            m_table->setItem(row, 2, new QTableWidgetItem(QString::number(region->m_NodeIds.size())));
+            m_table->setItem(row, 3, new QTableWidgetItem(QString::number(region->m_ElementIds.size())));
+            m_table->setItem(row, 4, new QTableWidgetItem(QString::number(region->m_SourceSetIds.size())));
+            for (int column = 2; column < m_table->columnCount(); ++column)
+                m_table->item(row, column)->setTextAlignment(Qt::AlignCenter);
+            for (int column = 1; column < m_table->columnCount(); ++column)
+                m_table->item(row, column)->setToolTip(m_table->item(row, column)->text());
+            if (regionId == preferredRegionId)
+                m_table->selectRow(row);
+            ++row;
+        }
     }
     if (m_table->currentRow() < 0 && m_table->rowCount() > 0)
         m_table->selectRow(0);
-}
-
-void ComputeRegionManagerDialog::editRegion(int regionId)
-{
-    if (!m_structure)
-        return;
-    std::shared_ptr<ComputeRegion> existing;
-    const auto existingIt = m_structure->m_ComputeRegions.find(regionId);
-    if (existingIt != m_structure->m_ComputeRegions.end())
-        existing = existingIt->second;
-
-    ComputeRegionEditorDialog editor(m_structure, existing, this);
-    if (editor.exec() != QDialog::Accepted)
-        return;
-
-    QString error;
-    int selectedId = regionId;
-    if (!existing)
-    {
-        selectedId = m_structure->AddComputeRegion(editor.name(), editor.nodeIds(), editor.elementIds(),
-                                                   editor.sourceSetIds(), editor.enabled(), &error);
-        if (selectedId <= 0)
-        {
-            QMessageBox::critical(this, QStringLiteral("无法创建计算区域"), error);
-            return;
-        }
-    }
-    else
-    {
-        const ComputeRegion backup = *existing;
-        existing->m_Name = editor.name().isEmpty() ? backup.m_Name : editor.name();
-        existing->m_Enabled = editor.enabled();
-        existing->m_AutoGenerated = false;
-        existing->m_DirectNodeIds = editor.nodeIds();
-        existing->m_DirectElementIds = editor.elementIds();
-        existing->m_SourceSetIds = editor.sourceSetIds();
-        if (!m_structure->RebuildAndMergeComputeRegions(&error))
-        {
-            *existing = backup;
-            QMessageBox::critical(this, QStringLiteral("无法修改计算区域"), error);
-            return;
-        }
-    }
-    refreshTable(selectedId);
-}
-
-void ComputeRegionManagerDialog::deleteSelectedRegion()
-{
-    const int regionId = selectedRegionId();
-    if (!m_structure || regionId <= 0)
-        return;
-    if (QMessageBox::question(this, QStringLiteral("删除计算区域"),
-                              QStringLiteral("确定删除选中的计算区域吗？分析步中的对应引用也会删除。")) !=
-        QMessageBox::Yes)
-    {
-        return;
-    }
-    m_structure->RemoveComputeRegion(regionId);
-    refreshTable();
-}
-
-void ComputeRegionManagerDialog::manageSets()
-{
-    if (!m_structure)
-    {
-        return;
-    }
-    ModelSetManagerDialog manager(m_structure, this);
-    manager.exec();
-    refreshTable();
+    m_refreshing = false;
 }
 
 int ComputeRegionManagerDialog::selectedRegionId() const
 {
-    const int row = m_table ? m_table->currentRow() : -1;
-    return row >= 0 && m_table->item(row, 0) ? m_table->item(row, 0)->data(Qt::UserRole).toInt() : -1;
+    const int row = m_table->currentRow();
+    if (row < 0 || !m_table->item(row, 0))
+        return 0;
+    return m_table->item(row, 0)->data(Qt::UserRole).toInt();
+}
+
+void ComputeRegionManagerDialog::createRegionFromCollections()
+{
+    if (!m_structure)
+        return;
+    const auto collections = buildTopologyCollections(*m_structure);
+    if (collections.empty())
+    {
+        QMessageBox::information(
+            this, QStringLiteral("没有可用集合"),
+            QStringLiteral("当前模型没有从 FEM H5 导入的线路集合。请用新版 FEM 导出 H5 后重新导入模型。"));
+        return;
+    }
+
+    RegionFromCollectionsDialog editor(collections, this);
+    if (editor.exec() != QDialog::Accepted)
+        return;
+
+    QString error;
+    const int regionId =
+        m_structure->AddComputeRegionFromSets(editor.regionName(), editor.sourceSetIds(), true, &error);
+    if (regionId <= 0)
+    {
+        QMessageBox::critical(this, QStringLiteral("无法创建计算区域"),
+                              error.isEmpty() ? QStringLiteral("所选集合无法形成有效的计算区域。") : error);
+        return;
+    }
+    for (auto& [stepId, step] : m_structure->m_AnalysisStep)
+    {
+        Q_UNUSED(stepId);
+        if (step && step->m_RegionScope == AnalysisRegionScope::SelectedRegions)
+            step->m_ComputeRegionIds.insert(regionId);
+    }
+    m_structure->SynchronizeComputeRegionEnablementFromSteps();
+    refreshTable(regionId);
+}
+
+void ComputeRegionManagerDialog::deleteSelectedRegion()
+{
+    if (!m_structure)
+        return;
+    const int regionId = selectedRegionId();
+    const auto it = m_structure->m_ComputeRegions.find(regionId);
+    if (regionId <= 0 || it == m_structure->m_ComputeRegions.end() || !it->second)
+    {
+        QMessageBox::information(this, QStringLiteral("未选择区域"), QStringLiteral("请先在表格中选择一个计算区域。"));
+        return;
+    }
+
+    if (QMessageBox::question(
+            this, QStringLiteral("删除计算区域"),
+            QStringLiteral("确定删除“%1”吗？\n这只删除计算区域配置和分析步引用，不会删除模型、节点、单元或导入集合。")
+                .arg(it->second->m_Name),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes)
+        return;
+
+    m_structure->RemoveComputeRegion(regionId);
+    refreshTable();
 }

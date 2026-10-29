@@ -1,0 +1,91 @@
+{
+  "schema": "runge-kutta-production-planar-cr-beam-frozen-v2",
+  "frozen_before_candidate_runs": true,
+  "algorithms": [
+    "Factory RungeKutta4",
+    "Factory AdaptiveRungeKutta4"
+  ],
+  "relative_tolerances": [
+    0.001,
+    1e-05,
+    1e-07
+  ],
+  "absolute_tolerance_scale_fraction": 0.01,
+  "absolute_tolerance_policy": "atol_q=rtol*.01*min(qY_scale,qRZ_scale), atol_v=rtol*.01*min(vY_scale,vRZ_scale). One q atol is numerically shared by m/rad and one v atol by m/s/rad/s; no per-DOF tolerance facility is implied.",
+  "safety_factor": 0.9,
+  "minimum_scale_factor": 0.2,
+  "maximum_growth_factor": 2.0,
+  "solve_failure_factor": 0.5,
+  "maximum_rejected_attempts_per_time": 32,
+  "physical_residual_absolute_limit": 1e-07,
+  "RK_Newton_tolerance_or_precision_count": null,
+  "RK_equilibrium_qualification": "Every accepted physical state is independently reassembled and its force balance norm is compared with1e-7. This is a mass-solve/physical-equilibrium check, not a Newton iteration tolerance; RK has no Newton precision-limited counter.",
+  "bending": {
+    "input_sha256": "c06c2e667ae7febfa28703ce7b85a290638b956a47a7de5b7513b64be76e3ffd",
+    "mode": "Highest of the independently derived two-DOF bending M,K eigenpairs; Newmark's original low-mode case is unchanged",
+    "angular_amplitude_scale": 1e-07,
+    "omega_low": 109.6065623733335,
+    "omega_high": 8772.635877980947,
+    "mode_theta_over_y": -1599.7501171508816,
+    "transverse_amplitude_scale": 6.250976257348099e-11,
+    "reference_period": 0.0007162254759655752,
+    "duration_reference_periods": 3,
+    "initial_state": "q0=0; v0=omega_high*(Ay,r_high*Ay); actual consistent acceleration includes formal modal damping",
+    "damping": "Undamped and actual automatic modal Rayleigh with the original two low/high reference modes, both zeta=.02; check high-mode damping projection",
+    "fixed_steps_per_period": [
+      16,
+      32,
+      64
+    ],
+    "initial_step_over_reference_period": 0.0625,
+    "maximum_step_over_reference_period": 0.125,
+    "minimum_step_over_reference_period": 1e-08,
+    "physical_mass_relative_limit": 1e-11,
+    "force_formula_scaled_limit": 1e-10,
+    "potential_formula_scaled_limit": 1e-10,
+    "model_error_qualification": "Both Y and RZ remain within twice their high-mode micro scales. Exact planar force terms beyond the linearized eigenmode are negligible at theta<=2e-7; the candidate is still checked against exact nonlinear force/potential and all six analytic state channels. No general spatial or continuum claim."
+  },
+  "nonlinear": {
+    "input_sha256": "dda1c8559c2d5eca507cc71aa714b4ae3cd15c835aa9de25b6ae4d8e096e35e6",
+    "reference_sha256": "98a5e7c54590ce6a9393cd4b5fcaa3481aeb408d9c5a8aa3af39be530c81b97b",
+    "physical_model": "Original single CR beam finite-amplitude Y/RZ, y0=.2m, theta0=0, zero velocity/load/damping, original two-high-frequency-period window",
+    "fixed_steps_per_period": [
+      32,
+      64,
+      128
+    ],
+    "initial_step_over_duration": 0.0625,
+    "maximum_step_over_duration": 0.0625,
+    "minimum_step_over_duration": 1e-08,
+    "frozen_reference_maximum_tangent_frequency_rad_s": 8772.609325380412,
+    "tangent_frequency_audit": "Analytic symmetric Hessian of frozen exact U at all1025 finest independent reference positions, mass-normalized largest eigenvalue; maximum below zero-state omega_high. Not a candidate-derived step choice."
+  },
+  "stability": {
+    "require_omega_high_times_fixed_h_below": 2.8284271247461903,
+    "bending_coarsest_omega_h": 0.39269908169872414,
+    "nonlinear_coarsest_omega_h": 0.19634954084936207,
+    "qualification": "This is the RK4 imaginary-axis linear stability bound. Nonlinear validity is additionally checked by the actual full response, exact force/mass, and frozen reference; initial spectrum alone is not a proof of nonlinear stability."
+  },
+  "acceptance": {
+    "finest_each_six_state_normalized_limit": 0.0015,
+    "fixed_order_lower": 3.5,
+    "fixed_order_upper": 4.5,
+    "adaptive_allow_error_rejections": true,
+    "adaptive_tightening_q_v_a_envelope_ratio_upper": 0.9,
+    "adaptive_fixed_h_order_claimed": false,
+    "require_t0_complete_finite_strictly_increasing_all_state_times": true,
+    "require_every_accepted_frame_physical_mass_force_potential_and_balance": true,
+    "reference_evaluation": "Analytic selected high-mode damped/undamped q/v/a at actual times, and original finite-amplitude finest quintic Hermite q/v plus independent force/M acceleration; root also independently evaluates dense DOP853 at actual times. No linear interpolation of fixed-step candidate output.",
+    "fixed_require_complete_nominal_grid_and_no_LTE_rejection": true,
+    "RK_stage_state_restore_call_count_is_diagnostic_only": true,
+    "Newmark_original_zero_rollback_gate_unchanged": true
+  },
+  "limitations": [
+    "Adaptive RK sees nonempty CR auxiliary rotations and currently uses a p=2 augmented-state controller. Coaxial planar Z rotations leave the principal inertia unchanged, so this does not force observed q/v/a order2; adaptive acceptance is tested by tolerance tightening, not a fixed-step order assertion.",
+    "Bending uses the actual AnalysisStep::Solve workflow to prepare formal modal damping; private RK counters are unavailable. Export raw successful checkpoint pushes, accepted frames and completed-run rejection estimate; fixed RK uses no adaptive checkpoint and rejection estimate is not invented.",
+    "No Newton residual/iteration or precision-limited count is attributed to RK; accepted physical residual is separately named.",
+    "All original fixed/adaptive Newmark inputs, modes, plans and gates retain their existing behavior."
+  ],
+  "previous_plan_sha256": "26a46f0d60ed726a19a495f5a563a4455ed2209305a3409d048ea4b67c730a41",
+  "test_semantics_correction": "RK stage state restores are not rejected time intervals. Fixed RK requires actual fixed Factory identity, complete nominal grid and its no-LTE-rejection control path; restore call count is diagnostic only. All physical/state/stability/order/tolerance thresholds unchanged."
+}

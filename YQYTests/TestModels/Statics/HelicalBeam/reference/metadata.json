@@ -1,0 +1,110 @@
+{
+  "source": {
+    "author": "Jean-Marc Battini",
+    "title": "Co-rotational beam elements in instability problems",
+    "year": 2002,
+    "institution": "Royal Institute of Technology, Department of Mechanics",
+    "local_filename": "Battini - Co-rotational beam elements in instability problem.pdf",
+    "sha256": "a09001df441b61bcb5501d6e8d03be9fcc76aaa200bdbf43e85c380f5dc42834",
+    "section": "7.2 Example 2, helical beam",
+    "paper_pages": [
+      119,
+      120
+    ],
+    "pdf_page_numbers_one_based": [
+      135,
+      136
+    ],
+    "figure": "7.4",
+    "figure_pdf_page_number_one_based": 136
+  },
+  "reference": {
+    "filename": "figure7_4_tip_z.csv",
+    "columns": [
+      "pseudo_time",
+      "tip_uz_graphical"
+    ],
+    "points": 755,
+    "sha256_original_crlf": "9e5b5879a0315b2a7e19297e310e0059daed6d98ab43dfe89cd133664257f619",
+    "sha256_canonical_lf": "9acca01231e4cc527e4a1859e94554a34fe23e060f699f7be5550884f410d5b4",
+    "hash_normalization": "校验前将 CRLF 统一为 LF，其余字节不变。",
+    "type": "论文 PDF 矢量图线读数；不是作者原始数值数据。",
+    "branch": "图 7.4 intrinsic rotation vector 主响应实线，正确转换后的转动向量曲线与其重合。"
+  },
+  "digitization": {
+    "tool": "pypdf.generic.ContentStream",
+    "page_index_zero_based": 135,
+    "page_size_pdf_points": [
+      612,
+      792
+    ],
+    "path_index_zero_based": [
+      21,
+      22,
+      23,
+      24,
+      25,
+      26
+    ],
+    "selected_path_vertices": [
+      {
+        "index": 21,
+        "vertices": 132
+      },
+      {
+        "index": 22,
+        "vertices": 133
+      },
+      {
+        "index": 23,
+        "vertices": 152
+      },
+      {
+        "index": 24,
+        "vertices": 154
+      },
+      {
+        "index": 25,
+        "vertices": 182
+      },
+      {
+        "index": 26,
+        "vertices": 8
+      }
+    ],
+    "path_index_rule": "按包含 m/l 顶点且以 S/s/n/B/f 终止的非空路径顺序编号。",
+    "selection_basis": "页面叠图核对路径 21..26 覆盖主响应实线；排除路径 19..20 的未转换虚线分支及其他轴线、文字。",
+    "axis_calibration": {
+      "horizontal_pdf_points": [
+        150.545,
+        462.187
+      ],
+      "horizontal_data_tip_z": [
+        -2,
+        6
+      ],
+      "vertical_pdf_points": [
+        507.941,
+        753.763
+      ],
+      "vertical_data_pseudo_time": [
+        0,
+        6
+      ],
+      "tip_z_formula": "(pdf_x-150.545)/(462.187-150.545)*8-2",
+      "pseudo_time_formula": "(pdf_y-507.941)/(753.763-507.941)*6",
+      "calibration_source": "图框及其 -2/6 和 0/6 轴端刻度；未使用候选求解结果调整。"
+    },
+    "duplicate_rule": "按伪时间排序；与原排序前一点的伪时间差不超过 1e-5 时删除重复端点。",
+    "line_width_pdf_points": 0.698,
+    "line_width_equivalent_tip_z": 0.017917995648853487,
+    "line_width_equivalent_pseudo_time": 0.017036717624948128,
+    "uncertainty": "整线宽约对应 0.018 位移；有限顶点采样、轴定位和伪时间横向读数另有误差。这不是严格误差界。"
+  },
+  "acceptance": {
+    "comparison": "在全部 755 个参考伪时间处线性插值候选 uz。",
+    "max_abs_tip_z_difference_limit": 0.02,
+    "meaning": "图示级主响应验收，不代表作者原始数值解误差或原 t3dl 单元逐项复现。",
+    "rms": "仅报告 RMS，不另设通过阈值。"
+  }
+}

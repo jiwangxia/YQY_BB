@@ -1,6 +1,7 @@
 <RCC>
     <qresource prefix="/YQY">
         <file alias="app_icon.ico">app_icon.ico</file>
+        <file alias="app_icon_source.png">app_icon_source.png</file>
         <file alias="icon_importline.svg">icon_importline.svg</file>
         <file alias="icon_replay.svg">icon_replay.svg</file>
         <file alias="icon_cursor.svg">icon_cursor.svg</file>

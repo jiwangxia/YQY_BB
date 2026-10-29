@@ -190,7 +190,27 @@ bool DistanceMPCConstraint::Evaluate(int fixedDofs, int freeDofs, SolverNameSpac
         }
     }
     data.hessians[0].setFromTriplets(entries.begin(), entries.end());
-    data.slaveDofs.push_back(FreeIndex(*slave, m_SlaveDirection, fixedDofs, freeDofs));
+    int slaveDirection = m_SlaveDirection;
+    if (slaveDirection == -1)
+    {
+        if (slave != nodeA && slave != nodeB)
+            return false;
+        double largestComponent = -1.0;
+        for (int component = 0; component < 3; ++component)
+        {
+            if (FreeIndex(*slave, component, fixedDofs, freeDofs) < 0)
+                continue;
+            const double magnitude = std::abs(direction[component]);
+            if (magnitude > largestComponent)
+            {
+                largestComponent = magnitude;
+                slaveDirection = component;
+            }
+        }
+        if (largestComponent <= 1.0e-12)
+            return false;
+    }
+    data.slaveDofs.push_back(FreeIndex(*slave, slaveDirection, fixedDofs, freeDofs));
     return data.IsValid(freeDofs);
 }
 
@@ -236,8 +256,7 @@ void DistanceMPCConstraint::AccumulateReactions(int fixedDofs, const Eigen::Vect
     if (length <= 1.0e-14)
         return;
     const Eigen::Vector3d gradient = delta / length;
-    // The reduced equations use R - G^T*Y. Therefore the physical
-    // constraint-force contribution is -G^T*Y.
+    // 缩减方程使用 R - G^T*Y，因此物理约束力贡献为 -G^T*Y。
     for (int direction = 0; direction < 3; ++direction)
     {
         AddFixedReaction(*nodeA, direction, fixedDofs, -gradient[direction] * multipliers[0]);
@@ -469,8 +488,7 @@ bool PlanarShearReleaseMPCConstraint::Evaluate(int fixedDofs, int freeDofs,
     const double us = slave->m_Displacement[0];
     const double ws = slave->m_Displacement[1];
 
-    // Use the relative rotation for the equality equation so that a full
-    // revolution does not create an artificial atan2 branch jump.
+    // 等式约束使用相对转角，避免整圈转动引起人为的 atan2 分支跳变。
     const Eigen::Matrix3d relative = master->m_Rg.transpose() * slave->m_Rg;
     const double relativeAngle = std::atan2(relative(1, 0), relative(0, 0));
 
@@ -519,9 +537,7 @@ bool PlanarShearReleaseMPCConstraint::Evaluate(int fixedDofs, int freeDofs,
     data.hessians[1].resize(freeDofs, freeDofs);
     data.hessians[1].setZero();
 
-    // The paper's constraint is fully coupled. Select the translational
-    // slave column with the larger pivot so the elimination remains regular
-    // while the beam rolls through 90 and 270 degrees.
+    // 论文约束完全耦合；选择主元较大的从节点平动列，使梁转过 90 和 270 度时消元仍保持稳定。
     data.slaveDofs = {std::abs(cs) >= std::abs(ss) ? sX : sY, sRz};
     return data.IsValid(freeDofs);
 }

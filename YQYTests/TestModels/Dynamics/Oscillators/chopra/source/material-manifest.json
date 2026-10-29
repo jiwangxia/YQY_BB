@@ -1,0 +1,8 @@
+{
+  "commit": "ddf7b364e0a089a8e05c75a0576e759f3a5eba91",
+  "path": "SRC/material/uniaxial/ElasticPPMaterial.cpp",
+  "raw_url": "https://raw.githubusercontent.com/OpenSees/OpenSees/ddf7b364e0a089a8e05c75a0576e759f3a5eba91/SRC/material/uniaxial/ElasticPPMaterial.cpp",
+  "sha256": "cd19714c625e12bcca453986416273e89fafa7d5877e23495eeccf43be46a74b",
+  "bytes": 9006,
+  "role": "frozen external reference for material history/tangent interpretation; not copied into production"
+}

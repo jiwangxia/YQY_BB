@@ -51,9 +51,10 @@ public:
 
     /**
      * @brief 仅导出模型与分析配置，不创建 RESULT 分组。
+     * @param [in] directWrite 仅用于独占临时快照；正式文件仍使用原子替换。
      */
     bool ExportModelHdf5(const QString& fileName, const StructureData* pData,
-                         const QString& sourceModelName = QString()) const;
+                         const QString& sourceModelName = QString(), bool directWrite = false) const;
 
     /**
      * @brief 开始 H5/HDF5 结果流式输出。
@@ -112,11 +113,15 @@ public:
      */
     bool InspectHdf5(const QString& fileName, _OUT Hdf5ResultSummary& summary) const;
 
-    // Opens one result file and keeps an ASCII-path temporary copy alive so
-    // individual frames can be read efficiently by their HDF5 index records.
+    // 打开结果文件并维持 ASCII 路径临时副本的生命周期，供各帧按 HDF5 索引高效读取。
     bool OpenResultFile(const QString& fileName, _OUT std::vector<Hdf5ResultFrameInfo>& frames);
+    // 能量查询只读取结果域和能量布局，不创建节点或单元索引缓存。
+    bool OpenEnergyHistory(const QString& fileName, _OUT std::vector<Hdf5ResultFrameInfo>& frames);
     bool ReadResultRanges(_OUT Hdf5ResultRanges& ranges) const;
     bool ReadResultFrame(int frameIndex, _OUT Hdf5ResultFrame& frame) const;
+    bool ReadNodalDisplacementHistory(int nodeId, _OUT std::vector<Hdf5NodalDisplacementHistorySample>& samples) const;
+    // stepId <= 0 读取全部分析步；旧文件没有能量数据时成功返回空集合。
+    bool ReadEnergyHistory(int stepId, _OUT std::vector<Hdf5EnergyHistorySample>& samples) const;
     bool RestoreLastDynamicState(const QString& fileName, StructureData* pData, _OUT double* time = nullptr,
                                  _OUT int* stepId = nullptr);
     bool ReadSolverIterationHistory(_OUT std::vector<SolverIterationRecord>& records) const;

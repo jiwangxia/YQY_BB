@@ -1,60 +1,74 @@
 #include "AnalysisManagerDialog.h"
-#include "Widgets/TableAppearance.h"
-
-#include "DataStructure/Structure/StructureData.h"
-#include "DataStructure/Aerodynamics/AeroManager.h"
-#include "DataStructure/Load/Force_Gravity.h"
-#include "Widgets/CompactDoubleSpinBox.h"
-#include "Widgets/DialogSizing.h"
-#include "ui_AnalysisManagerDialog.h"
-#include "ui_StepEditorDialog.h"
-#include "ui_LoadEditorDialog.h"
-#include "ui_ConstraintEditorDialog.h"
-
-#include <QDialogButtonBox>
-#include <QAbstractSpinBox>
-#include <QCheckBox>
+#include "Utility/AnalysisDisplay.h"
+#include "StepEditorDialog.h"
+#include "LoadEditorDialog.h"
+#include "MPCEditorDialog.h"
+#include "ConstraintEditorDialog.h"
+#include <QVariant>
+#include <QAbstractButton>
+#include <QApplication>
 #include <QComboBox>
-#include <QDoubleSpinBox>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QFormLayout>
-#include <QGroupBox>
-#include <QGridLayout>
-#include <QHeaderView>
-#include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QSpinBox>
+#include <QVBoxLayout>
+#include "Widgets/CompactDoubleSpinBox.h"
+#include <QHBoxLayout>
+#include <QHeaderView>
+#include <QPushButton>
+#include <QSpacerItem>
+#include <QTableWidget>
+#include <QWidget>
+#include "AnalysisEditor.h"
+#include "Utility/UiIcons.h"
+#include "Widgets/TableAppearance.h"
+#include "DataStructure/Structure/StructureData.h"
+#include "DataStructure/Aerodynamics/AeroManager.h"
+#include "DataStructure/Factory/LoadFactory.h"
+#include "DataStructure/Load/Force_Gravity.h"
+#include "DataStructure/Load/Force_Wind.h"
+#include "Solver/Factory/SolverFactory.h"
+#include "Widgets/DialogSizing.h"
+#include <QAbstractSpinBox>
+#include <QCheckBox>
+#include <QDoubleSpinBox>
+#include <QGroupBox>
+#include <QGridLayout>
 #include <QListWidget>
 #include <QMessageBox>
 #include <QPainter>
-#include <QPainterPath>
 #include <QPixmap>
-#include <QPushButton>
-#include <QSpinBox>
+#include <QResizeEvent>
+#include <QSignalBlocker>
+#include <QScreen>
+#include <QScrollArea>
+#include <QScrollBar>
+#include <QSplitter>
 #include <QStackedWidget>
-#include <QTableWidget>
+#include <QStackedLayout>
+#include <QStyle>
+#include <QStyledItemDelegate>
+#include <QTabBar>
+#include <QTabWidget>
 #include <QTimer>
-#include <QVBoxLayout>
-
 #include <algorithm>
 #include <array>
 #include <limits>
+#include <set>
 #include <variant>
 #include <vector>
 
-namespace
-{
 enum class ManagerGlyph
 {
     Add,
     Edit,
-    Delete,
-    Steps,
-    Load,
-    Constraint,
-    MPC
+    Delete
 };
 
-QIcon managerIcon(ManagerGlyph glyph, const QPalette& palette)
+static QIcon managerIcon(ManagerGlyph glyph, const QPalette& palette)
 {
     QPixmap pixmap(48, 48);
     pixmap.fill(Qt::transparent);
@@ -87,49 +101,18 @@ QIcon managerIcon(ManagerGlyph glyph, const QPalette& palette)
             painter.drawLine(QPointF(6.5, 7), QPointF(6.5, 11));
             painter.drawLine(QPointF(9.5, 7), QPointF(9.5, 11));
             break;
-        case ManagerGlyph::Steps:
-            painter.drawPolyline(
-                QPolygonF{QPointF(2, 12), QPointF(5, 12), QPointF(5, 8), QPointF(9, 8), QPointF(9, 4), QPointF(14, 4)});
-            painter.setBrush(accent);
-            painter.setPen(Qt::NoPen);
-            painter.drawEllipse(QPointF(5, 12), 1.25, 1.25);
-            painter.drawEllipse(QPointF(9, 8), 1.25, 1.25);
-            painter.drawEllipse(QPointF(14, 4), 1.25, 1.25);
-            break;
-        case ManagerGlyph::Load:
-            painter.drawLine(QPointF(8, 1.5), QPointF(8, 10));
-            painter.drawLine(QPointF(5, 7), QPointF(8, 10));
-            painter.drawLine(QPointF(11, 7), QPointF(8, 10));
-            painter.setPen(QPen(accent, 1.4, Qt::SolidLine, Qt::RoundCap));
-            painter.drawLine(QPointF(3, 13), QPointF(13, 13));
-            break;
-        case ManagerGlyph::Constraint:
-            painter.drawLine(QPointF(3, 2), QPointF(3, 14));
-            painter.drawLine(QPointF(3, 5), QPointF(8, 5));
-            painter.drawLine(QPointF(3, 11), QPointF(8, 11));
-            painter.setPen(QPen(accent, 1.5, Qt::SolidLine, Qt::RoundCap));
-            painter.drawLine(QPointF(8, 3), QPointF(8, 13));
-            painter.drawLine(QPointF(11, 3), QPointF(11, 13));
-            break;
-        case ManagerGlyph::MPC:
-            painter.drawEllipse(QPointF(4, 8), 2.2, 2.2);
-            painter.drawEllipse(QPointF(12, 8), 2.2, 2.2);
-            painter.drawLine(QPointF(6.3, 8), QPointF(9.7, 8));
-            painter.setPen(QPen(accent, 1.6, Qt::SolidLine, Qt::RoundCap));
-            painter.drawLine(QPointF(8, 4), QPointF(8, 12));
-            break;
     }
     return QIcon(pixmap);
 }
 
-template <typename Map> int nextId(const Map& values)
+template <typename Map> static int nextId(const Map& values)
 {
     return values.empty() ? 1 : values.rbegin()->first + 1;
 }
 
 template <typename Resource>
-bool isEffectiveAtStep(const std::shared_ptr<Resource>& resource, int stepId,
-                       const std::shared_ptr<AnalysisStep>& targetStep)
+static bool isEffectiveAtStep(const std::shared_ptr<Resource>& resource, int stepId,
+                              const std::shared_ptr<AnalysisStep>& targetStep)
 {
     // StepId=0 表示初始/全局资源；更早分析步的资源也会被后续分析步继承。
     if (!resource)
@@ -145,1522 +128,41 @@ bool isEffectiveAtStep(const std::shared_ptr<Resource>& resource, int stepId,
     return sourceStepId < stepId;
 }
 
-QString stepDisplayName(int id, const std::shared_ptr<AnalysisStep>& step)
-{
-    return step && !step->m_Name.trimmed().isEmpty() ? step->m_Name.trimmed() : QStringLiteral("Step-%1").arg(id);
-}
-
-class AdaptiveTssbnSettingsEditor final : public QGroupBox
-{
-public:
-    using Settings = SolverNameSpace::AdaptiveTssbnSettings;
-
-    explicit AdaptiveTssbnSettingsEditor(QWidget* parent)
-        : QGroupBox(QStringLiteral("自适应 TSSBN 参数"), parent)
-    {
-        auto* contentLayout = new QVBoxLayout(this);
-        contentLayout->setSpacing(10);
-        const std::array<QString, 3> sectionTitles{QStringLiteral("积分与步长"), QStringLiteral("误差控制"),
-                                                   QStringLiteral("步长调整与迭代")};
-        std::array<QGridLayout*, 3> sectionLayouts{};
-        for (std::size_t sectionIndex = 0; sectionIndex < sectionTitles.size(); ++sectionIndex)
-        {
-            auto* sectionTitle = new QLabel(sectionTitles[sectionIndex], this);
-            QFont titleFont = sectionTitle->font();
-            titleFont.setBold(true);
-            sectionTitle->setFont(titleFont);
-            contentLayout->addWidget(sectionTitle);
-            sectionLayouts[sectionIndex] = new QGridLayout;
-            sectionLayouts[sectionIndex]->setContentsMargins(0, 0, 0, 0);
-            sectionLayouts[sectionIndex]->setHorizontalSpacing(10);
-            sectionLayouts[sectionIndex]->setVerticalSpacing(8);
-            contentLayout->addLayout(sectionLayouts[sectionIndex]);
-        }
-        const std::array<FieldSpec, 10> fields{
-            {{QStringLiteral("高频半径"), QStringLiteral("高频谱半径 ρ∞"), &Settings::spectralRadiusInfinity, 0.0, 1.0,
-              6, 0, 0, 0},
-             {QStringLiteral("最小步长"), QStringLiteral("最小时间步"), &Settings::minimumTimeStep, 1.0e-12, 1.0e12, 12,
-              0, 0, 1},
-             {QStringLiteral("最大步长"), QStringLiteral("最大时间步"), &Settings::maximumTimeStep, 1.0e-12, 1.0e12, 12,
-              0, 0, 2},
-             {QStringLiteral("相对 LTE"), QStringLiteral("相对 LTE 容限"), &Settings::relativeTolerance, 1.0e-12, 1.0,
-              12, 1, 0, 0},
-             {QStringLiteral("绝对 LTE"), QStringLiteral("绝对 LTE 容限"), &Settings::absoluteTolerance, 1.0e-14, 1.0,
-              14, 1, 0, 1},
-             {QStringLiteral("安全系数"), QStringLiteral("步长安全系数"), &Settings::safetyFactor, 0.01, 1.0, 6, 1, 0,
-              2},
-             {QStringLiteral("缩步系数"), QStringLiteral("最小缩步系数"), &Settings::shrinkFactor, 0.01, 0.99, 6, 2, 0,
-              0},
-             {QStringLiteral("增长系数"), QStringLiteral("最大增长系数"), &Settings::maximumGrowthFactor, 1.0, 100.0, 6,
-              2, 0, 1},
-             {QStringLiteral("牛顿总上限"), QStringLiteral("C1+C2 每步最大牛顿修正总数"),
-              &Settings::maximumTotalNewtonIterations, 1.0, 1000.0, 0, 2, 1, 0},
-             {QStringLiteral("拒绝上限"), QStringLiteral("最大连续拒绝次数"), &Settings::maximumRejectedAttempts, 1.0,
-              1000.0, 0, 2, 1, 1}}};
-
-        for (const FieldSpec& field : fields)
-        {
-            QAbstractSpinBox* editor = nullptr;
-            if (std::holds_alternative<DoubleMember>(field.member))
-            {
-                auto* spin = new CompactDoubleSpinBox(this);
-                spin->setRange(field.minimum, field.maximum);
-                spin->setDecimals(field.decimals);
-                spin->setKeyboardTracking(false);
-                editor = spin;
-            }
-            else
-            {
-                auto* spin = new QSpinBox(this);
-                spin->setRange(static_cast<int>(field.minimum), static_cast<int>(field.maximum));
-                editor = spin;
-            }
-            editor->setToolTip(field.toolTip);
-            editor->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-            bindings_.push_back({field.member, editor});
-            auto* fieldWidget = new QWidget(this);
-            auto* fieldLayout = new QVBoxLayout(fieldWidget);
-            fieldLayout->setContentsMargins(0, 0, 0, 0);
-            fieldLayout->setSpacing(5);
-            auto* label = new QLabel(field.label, fieldWidget);
-            label->setToolTip(field.toolTip);
-            fieldLayout->addWidget(label);
-            fieldLayout->addWidget(editor);
-            sectionLayouts[field.section]->addWidget(fieldWidget, field.row, field.column);
-        }
-        for (QGridLayout* sectionLayout : sectionLayouts)
-        {
-            for (int column = 0; column < sectionLayout->columnCount(); ++column)
-                sectionLayout->setColumnStretch(column, 1);
-        }
-        setSettings(Settings{});
-    }
-
-    void setSettings(const Settings& settings)
-    {
-        for (const Binding& binding : bindings_)
-        {
-            if (const auto member = std::get_if<DoubleMember>(&binding.member))
-                static_cast<QDoubleSpinBox*>(binding.editor)->setValue(settings.*(*member));
-            else
-                static_cast<QSpinBox*>(binding.editor)->setValue(settings.*std::get<IntMember>(binding.member));
-        }
-    }
-
-    Settings settings() const
-    {
-        Settings value;
-        for (const Binding& binding : bindings_)
-        {
-            if (const auto member = std::get_if<DoubleMember>(&binding.member))
-                value.*(*member) = static_cast<QDoubleSpinBox*>(binding.editor)->value();
-            else
-                value.*std::get<IntMember>(binding.member) = static_cast<QSpinBox*>(binding.editor)->value();
-        }
-        return value;
-    }
-
-    void commitEditors()
-    {
-        for (const Binding& binding : bindings_)
-            binding.editor->interpretText();
-    }
-
-private:
-    using DoubleMember = double Settings::*;
-    using IntMember = int Settings::*;
-    using Member = std::variant<DoubleMember, IntMember>;
-
-    struct FieldSpec
-    {
-        QString label;
-        QString toolTip;
-        Member member;
-        double minimum;
-        double maximum;
-        int decimals;
-        std::size_t section;
-        int row;
-        int column;
-    };
-
-    struct Binding
-    {
-        Member member;
-        QAbstractSpinBox* editor;
-    };
-
-    std::vector<Binding> bindings_;
-};
-
-class AdaptiveTimeStepSettingsEditor final : public QGroupBox
-{
-public:
-    using Settings = SolverNameSpace::AdaptiveTimeStepSettings;
-
-    explicit AdaptiveTimeStepSettingsEditor(QWidget* parent)
-        : QGroupBox(QStringLiteral("Newmark / RK 自适应步长参数"), parent)
-    {
-        auto* contentLayout = new QVBoxLayout(this);
-        contentLayout->setSpacing(10);
-        auto* stepTitle = createSectionTitle(QStringLiteral("步长范围"));
-        contentLayout->addWidget(stepTitle);
-        auto* stepLayout = new QGridLayout;
-        contentLayout->addLayout(stepLayout);
-        addDoubleField(stepLayout, 0, 0, QStringLiteral("最小步长"), 1.0e-12, 1.0e12, 12, m_minimumTimeStep);
-        addDoubleField(stepLayout, 0, 1, QStringLiteral("最大步长"), 1.0e-12, 1.0e12, 12, m_maximumTimeStep);
-
-        auto* errorTitle = createSectionTitle(QStringLiteral("逐自由度最大误差"));
-        contentLayout->addWidget(errorTitle);
-        auto* errorLayout = new QGridLayout;
-        contentLayout->addLayout(errorLayout);
-        addDoubleField(errorLayout, 0, 0, QStringLiteral("位移相对容差"), 1.0e-12, 1.0, 12,
-                       m_relativeTolerance);
-        addDoubleField(errorLayout, 0, 1, QStringLiteral("位移绝对容差"), 1.0e-14, 1.0, 14,
-                       m_absoluteTolerance);
-        m_includeVelocity = new QCheckBox(QStringLiteral("同时控制速度误差"), this);
-        errorLayout->addWidget(m_includeVelocity, 1, 0, 1, 2);
-        addDoubleField(errorLayout, 2, 0, QStringLiteral("速度相对容差"), 1.0e-12, 1.0, 12,
-                       m_velocityRelativeTolerance);
-        addDoubleField(errorLayout, 2, 1, QStringLiteral("速度绝对容差"), 1.0e-14, 1.0, 14,
-                       m_velocityAbsoluteTolerance);
-
-        auto* controlTitle = createSectionTitle(QStringLiteral("步长调整"));
-        contentLayout->addWidget(controlTitle);
-        auto* controlLayout = new QGridLayout;
-        contentLayout->addLayout(controlLayout);
-        addDoubleField(controlLayout, 0, 0, QStringLiteral("安全系数"), 0.01, 1.0, 6, m_safetyFactor);
-        addDoubleField(controlLayout, 0, 1, QStringLiteral("最小倍率"), 0.01, 0.99, 6, m_minimumScaleFactor);
-        addDoubleField(controlLayout, 1, 0, QStringLiteral("最大增长倍率"), 1.0, 100.0, 6,
-                       m_maximumGrowthFactor);
-        addDoubleField(controlLayout, 1, 1, QStringLiteral("求解失败倍率"), 0.01, 0.99, 6,
-                       m_solveFailureFactor);
-        auto* rejectedLabel = new QLabel(QStringLiteral("连续拒绝上限"), this);
-        m_maximumRejectedAttempts = new QSpinBox(this);
-        m_maximumRejectedAttempts->setRange(1, 1000);
-        controlLayout->addWidget(rejectedLabel, 2, 0);
-        controlLayout->addWidget(m_maximumRejectedAttempts, 2, 1);
-
-        for (QGridLayout* layout : {stepLayout, errorLayout, controlLayout})
-        {
-            layout->setHorizontalSpacing(10);
-            layout->setVerticalSpacing(8);
-            layout->setColumnStretch(0, 1);
-            layout->setColumnStretch(1, 1);
-        }
-        connect(m_includeVelocity, &QCheckBox::toggled, this,
-                [this](bool enabled)
-                {
-                    m_velocityRelativeTolerance->setEnabled(enabled);
-                    m_velocityAbsoluteTolerance->setEnabled(enabled);
-                });
-        setSettings(Settings{});
-    }
-
-    void setSettings(const Settings& settings)
-    {
-        m_minimumTimeStep->setValue(settings.minimumTimeStep);
-        m_maximumTimeStep->setValue(settings.maximumTimeStep);
-        m_relativeTolerance->setValue(settings.relativeTolerance);
-        m_absoluteTolerance->setValue(settings.absoluteTolerance);
-        m_includeVelocity->setChecked(settings.includeVelocityInError);
-        m_velocityRelativeTolerance->setValue(settings.velocityRelativeTolerance);
-        m_velocityAbsoluteTolerance->setValue(settings.velocityAbsoluteTolerance);
-        m_safetyFactor->setValue(settings.safetyFactor);
-        m_minimumScaleFactor->setValue(settings.minimumScaleFactor);
-        m_maximumGrowthFactor->setValue(settings.maximumGrowthFactor);
-        m_solveFailureFactor->setValue(settings.solveFailureFactor);
-        m_maximumRejectedAttempts->setValue(settings.maximumRejectedAttempts);
-    }
-
-    Settings settings() const
-    {
-        Settings value;
-        value.minimumTimeStep = m_minimumTimeStep->value();
-        value.maximumTimeStep = m_maximumTimeStep->value();
-        value.relativeTolerance = m_relativeTolerance->value();
-        value.absoluteTolerance = m_absoluteTolerance->value();
-        value.includeVelocityInError = m_includeVelocity->isChecked();
-        value.velocityRelativeTolerance = m_velocityRelativeTolerance->value();
-        value.velocityAbsoluteTolerance = m_velocityAbsoluteTolerance->value();
-        value.safetyFactor = m_safetyFactor->value();
-        value.minimumScaleFactor = m_minimumScaleFactor->value();
-        value.maximumGrowthFactor = m_maximumGrowthFactor->value();
-        value.solveFailureFactor = m_solveFailureFactor->value();
-        value.maximumRejectedAttempts = m_maximumRejectedAttempts->value();
-        return value;
-    }
-
-    void commitEditors()
-    {
-        for (QDoubleSpinBox* editor : m_doubleEditors)
-            editor->interpretText();
-        m_maximumRejectedAttempts->interpretText();
-    }
-
-private:
-    QLabel* createSectionTitle(const QString& text)
-    {
-        auto* label = new QLabel(text, this);
-        QFont font = label->font();
-        font.setBold(true);
-        label->setFont(font);
-        return label;
-    }
-
-    void addDoubleField(QGridLayout* layout, int row, int column, const QString& text, double minimum,
-                        double maximum, int decimals, _OUT QDoubleSpinBox*& editor)
-    {
-        auto* field = new QWidget(this);
-        auto* fieldLayout = new QVBoxLayout(field);
-        fieldLayout->setContentsMargins(0, 0, 0, 0);
-        fieldLayout->setSpacing(5);
-        fieldLayout->addWidget(new QLabel(text, field));
-        auto* spin = new CompactDoubleSpinBox(field);
-        spin->setRange(minimum, maximum);
-        spin->setDecimals(decimals);
-        spin->setKeyboardTracking(false);
-        spin->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-        fieldLayout->addWidget(spin);
-        layout->addWidget(field, row, column);
-        editor = spin;
-        m_doubleEditors.push_back(spin);
-    }
-
-    QDoubleSpinBox* m_minimumTimeStep = nullptr;
-    QDoubleSpinBox* m_maximumTimeStep = nullptr;
-    QDoubleSpinBox* m_relativeTolerance = nullptr;
-    QDoubleSpinBox* m_absoluteTolerance = nullptr;
-    QCheckBox* m_includeVelocity = nullptr;
-    QDoubleSpinBox* m_velocityRelativeTolerance = nullptr;
-    QDoubleSpinBox* m_velocityAbsoluteTolerance = nullptr;
-    QDoubleSpinBox* m_safetyFactor = nullptr;
-    QDoubleSpinBox* m_minimumScaleFactor = nullptr;
-    QDoubleSpinBox* m_maximumGrowthFactor = nullptr;
-    QDoubleSpinBox* m_solveFailureFactor = nullptr;
-    QSpinBox* m_maximumRejectedAttempts = nullptr;
-    std::vector<QDoubleSpinBox*> m_doubleEditors;
-};
-
-class StepEditorDialog final : public QDialog
-{
-public:
-    explicit StepEditorDialog(int id, const std::shared_ptr<StructureData>& structure,
-                              const std::shared_ptr<AnalysisStep>& step, QWidget* parent)
-        : QDialog(parent)
-        , m_id(id)
-    {
-        Ui::StepEditorDialogClass form;
-        form.setupUi(this);
-        setObjectName(QStringLiteral("analysisStepEditorDialog"));
-        setWindowTitle(step ? QStringLiteral("编辑分析步") : QStringLiteral("新增分析步"));
-        setModal(true);
-        m_name = form.nameEdit;
-        m_name->setPlaceholderText(QStringLiteral("Step-%1").arg(id));
-        m_type = form.typeCombo;
-        m_type->setItemData(0, static_cast<int>(EnumKeyword::StepType::STATIC));
-        m_type->setItemData(1, static_cast<int>(EnumKeyword::StepType::DYNAMIC));
-        m_time = form.timeSpin;
-        m_increment = form.incrementSpin;
-        m_tolerance = form.toleranceSpin;
-        m_iterations = form.iterationsSpin;
-        // 在新容器中重建 Designer 表单；直接移动布局会使标签项仍归旧父布局所有。
-        auto* sharedParametersGroup =
-            new QGroupBox(QString::fromUtf8("\xE9\x80\x9A\xE7\x94\xA8\xE5\x8F\x82\xE6\x95\xB0"), this);
-        QLayoutItem* sharedFormItem = form.rootLayout->takeAt(0);
-        auto* previousSharedLayout = sharedFormItem ? sharedFormItem->layout() : nullptr;
-        if (previousSharedLayout)
-        {
-            previousSharedLayout->removeWidget(form.nameLabel);
-            previousSharedLayout->removeWidget(m_name);
-            previousSharedLayout->removeWidget(form.typeLabel);
-            previousSharedLayout->removeWidget(m_type);
-            previousSharedLayout->removeWidget(form.timeLabel);
-            previousSharedLayout->removeWidget(m_time);
-            previousSharedLayout->removeWidget(form.incrementLabel);
-            previousSharedLayout->removeWidget(m_increment);
-            previousSharedLayout->removeWidget(form.toleranceLabel);
-            previousSharedLayout->removeWidget(m_tolerance);
-            previousSharedLayout->removeWidget(form.iterationsLabel);
-            previousSharedLayout->removeWidget(m_iterations);
-        }
-        auto* sharedParametersLayout = new QFormLayout(sharedParametersGroup);
-        sharedParametersLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
-        sharedParametersLayout->addRow(form.nameLabel, m_name);
-        sharedParametersLayout->addRow(form.typeLabel, m_type);
-        sharedParametersLayout->addRow(form.timeLabel, m_time);
-        sharedParametersLayout->addRow(form.incrementLabel, m_increment);
-        sharedParametersLayout->addRow(form.toleranceLabel, m_tolerance);
-        sharedParametersLayout->addRow(form.iterationsLabel, m_iterations);
-        delete sharedFormItem;
-        auto* columns = new QWidget(this);
-        auto* columnsLayout = new QHBoxLayout(columns);
-        columnsLayout->setContentsMargins(0, 0, 0, 0);
-        columnsLayout->setSpacing(14);
-        auto* commonColumn = new QWidget(columns);
-        auto* commonColumnLayout = new QVBoxLayout(commonColumn);
-        commonColumnLayout->setContentsMargins(0, 0, 0, 0);
-        commonColumnLayout->setSpacing(14);
-        commonColumn->setMinimumWidth(420);
-        commonColumn->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
-        auto* solverColumn = new QWidget(columns);
-        auto* solverColumnLayout = new QVBoxLayout(solverColumn);
-        solverColumnLayout->setContentsMargins(0, 0, 0, 0);
-        solverColumnLayout->setSpacing(14);
-        solverColumn->setMinimumWidth(420);
-        solverColumn->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
-        auto* tssbnColumn = new QWidget(columns);
-        auto* tssbnColumnLayout = new QVBoxLayout(tssbnColumn);
-        tssbnColumnLayout->setContentsMargins(0, 0, 0, 0);
-        tssbnColumnLayout->setSpacing(14);
-        tssbnColumn->setMinimumWidth(440);
-        tssbnColumn->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
-        columnsLayout->addWidget(commonColumn, 1);
-        columnsLayout->addWidget(solverColumn, 1);
-        columnsLayout->addWidget(tssbnColumn, 1);
-        columns->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Maximum);
-        form.rootLayout->insertWidget(0, columns);
-        setMinimumWidth(760);
-        auto* solverGroup = new QGroupBox(QStringLiteral("动力求解器"), this);
-        auto* solverLayout = new QFormLayout(solverGroup);
-        m_dynamicSolver = new QComboBox(solverGroup);
-        m_dynamicSolver->addItem(QStringLiteral("Newmark-β"), static_cast<int>(SolverNameSpace::SolverType::Newmark));
-        m_dynamicSolver->addItem(QStringLiteral("Newmark-β（自适应）"),
-                                 static_cast<int>(SolverNameSpace::SolverType::AdaptiveNewmark));
-        m_dynamicSolver->addItem(QStringLiteral("Runge-Kutta 4（显式）"),
-                                 static_cast<int>(SolverNameSpace::SolverType::RungeKutta4));
-        m_dynamicSolver->addItem(QStringLiteral("Runge-Kutta 4（显式，自适应）"),
-                                 static_cast<int>(SolverNameSpace::SolverType::AdaptiveRungeKutta4));
-        m_dynamicSolver->addItem(QStringLiteral("自适应 TSSBN"),
-                                 static_cast<int>(SolverNameSpace::SolverType::AdaptiveTSSBN));
-        solverLayout->addRow(QStringLiteral("积分方法"), m_dynamicSolver);
-        auto* initialStateGroup = new QGroupBox(QStringLiteral("初始平衡状态"), this);
-        auto* initialStateLayout = new QFormLayout(initialStateGroup);
-        m_inheritStaticState = new QCheckBox(QStringLiteral("使用静力步作为初始状态"), initialStateGroup);
-        m_initialStaticStep = new QComboBox(initialStateGroup);
-        if (structure)
-        {
-            for (const auto& [candidateId, candidate] : structure->m_AnalysisStep)
-            {
-                if (candidateId >= id || !candidate || candidate->m_Type != EnumKeyword::StepType::STATIC)
-                    continue;
-                m_initialStaticStep->addItem(stepDisplayName(candidateId, candidate), candidateId);
-            }
-        }
-        m_inheritStaticState->setEnabled(m_initialStaticStep->count() > 0);
-        m_inheritStaticState->setToolTip(
-            m_initialStaticStep->count() > 0
-                ? QStringLiteral("先独立计算所选静力步，再复制其平衡构型和内力启动当前动力分支。"
-                                 "前置静力步中有效的重力及其他基础荷载会持续作用；不会包含其他动力步的荷载。")
-                : QStringLiteral("当前模型没有可用的静力初态，请先创建静力分析步。"));
-        initialStateLayout->addRow(m_inheritStaticState);
-        initialStateLayout->addRow(QStringLiteral("初态来源"), m_initialStaticStep);
-        m_inheritedBaseLoads = new QLabel(initialStateGroup);
-        m_inheritedBaseLoads->setWordWrap(true);
-        initialStateLayout->addRow(QStringLiteral("基础荷载"), m_inheritedBaseLoads);
-        auto* gallopingGroup = new QGroupBox(QStringLiteral("舞动工况"), this);
-        auto* gallopingLayout = new QFormLayout(gallopingGroup);
-        m_aerodynamicTangentMode = new QComboBox(gallopingGroup);
-        m_aerodynamicTangentMode->addItem(
-            QStringLiteral("关闭（准 Newton）"), static_cast<int>(SolverNameSpace::AerodynamicTangentMode::Disabled));
-        m_aerodynamicTangentMode->addItem(
-            QStringLiteral("每时间步/隐式阶段一次"),
-            static_cast<int>(SolverNameSpace::AerodynamicTangentMode::OncePerTimeStepOrStage));
-        m_aerodynamicTangentMode->addItem(
-            QStringLiteral("每轮 Newton"),
-            static_cast<int>(SolverNameSpace::AerodynamicTangentMode::EveryNewtonIteration));
-        m_aerodynamicTangentMode->setToolTip(
-            QStringLiteral("仅在启用舞动气动力时生效，可配合 Newmark 或 TSSBN 使用。"));
-        m_enableGalloping = new QCheckBox(QStringLiteral("启用舞动气动力"), gallopingGroup);
-        m_gallopingIceThickness = new QComboBox(gallopingGroup);
-        for (int thickness : AeroManager::supportedIceThicknesses())
-            m_gallopingIceThickness->addItem(QStringLiteral("%1 mm").arg(thickness), thickness);
-        m_gallopingInitialAttack = new QDoubleSpinBox(gallopingGroup);
-        m_gallopingInitialAttack->setRange(-1000000.0, 1000000.0);
-        m_gallopingInitialAttack->setDecimals(6);
-        m_gallopingInitialAttack->setValue(45.0);
-        m_gallopingInitialAttack->setSuffix(QStringLiteral("°"));
-        gallopingLayout->addRow(m_enableGalloping);
-        gallopingLayout->addRow(QStringLiteral("覆冰厚度"), m_gallopingIceThickness);
-        gallopingLayout->addRow(QStringLiteral("初始风攻角"), m_gallopingInitialAttack);
-        gallopingLayout->addRow(QStringLiteral("气动切线"), m_aerodynamicTangentMode);
-        auto* structuralDampingGroup = new QGroupBox(QStringLiteral("结构阻尼"), this);
-        auto* structuralDampingLayout = new QVBoxLayout(structuralDampingGroup);
-        structuralDampingLayout->setSpacing(12);
-        m_enableStructuralDamping =
-            new QCheckBox(QStringLiteral("静力平衡后自动生成模态阻尼矩阵"), structuralDampingGroup);
-        m_translationDampingRatio = new CompactDoubleSpinBox(structuralDampingGroup);
-        m_translationDampingRatio->setRange(0.0, 100.0);
-        m_translationDampingRatio->setSingleStep(0.05);
-        m_translationDampingRatio->setSuffix(QStringLiteral(" %"));
-        m_torsionDampingRatio = new CompactDoubleSpinBox(structuralDampingGroup);
-        m_torsionDampingRatio->setRange(0.0, 100.0);
-        m_torsionDampingRatio->setSingleStep(0.1);
-        m_torsionDampingRatio->setSuffix(QStringLiteral(" %"));
-        m_dampingMaximumFrequency = new CompactDoubleSpinBox(structuralDampingGroup);
-        m_dampingMaximumFrequency->setRange(0.1, 100.0);
-        m_dampingMaximumFrequency->setSingleStep(0.5);
-        m_dampingMaximumFrequency->setSuffix(QStringLiteral(" Hz"));
-        auto* dampingParameters = new QWidget(structuralDampingGroup);
-        auto* dampingParametersLayout = new QGridLayout(dampingParameters);
-        dampingParametersLayout->setContentsMargins(0, 0, 0, 0);
-        dampingParametersLayout->setHorizontalSpacing(10);
-        dampingParametersLayout->setVerticalSpacing(6);
-        auto* translationDampingLabel = new QLabel(QStringLiteral("平动阻尼比"), dampingParameters);
-        auto* torsionDampingLabel = new QLabel(QStringLiteral("扭转阻尼比"), dampingParameters);
-        auto* maximumFrequencyLabel = new QLabel(QStringLiteral("最高关注频率"), dampingParameters);
-        dampingParametersLayout->addWidget(translationDampingLabel, 0, 0);
-        dampingParametersLayout->addWidget(torsionDampingLabel, 0, 1);
-        dampingParametersLayout->addWidget(maximumFrequencyLabel, 0, 2);
-        dampingParametersLayout->addWidget(m_translationDampingRatio, 1, 0);
-        dampingParametersLayout->addWidget(m_torsionDampingRatio, 1, 1);
-        dampingParametersLayout->addWidget(m_dampingMaximumFrequency, 1, 2);
-        dampingParametersLayout->setColumnStretch(0, 1);
-        dampingParametersLayout->setColumnStretch(1, 1);
-        dampingParametersLayout->setColumnStretch(2, 1);
-        m_translationDampingRatio->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-        m_torsionDampingRatio->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-        m_dampingMaximumFrequency->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-        auto* dampingNote =
-            new QLabel(QStringLiteral("平动与扭转分别输入。程序自动扩展模态范围以识别扭转模态，并回代校核阻尼比。"),
-                       structuralDampingGroup);
-        dampingNote->setWordWrap(true);
-        dampingNote->setStyleSheet(QStringLiteral("color: #667085;"));
-        structuralDampingLayout->addWidget(m_enableStructuralDamping);
-        structuralDampingLayout->addWidget(dampingParameters);
-        structuralDampingLayout->addWidget(dampingNote);
-        auto* regionGroup = new QGroupBox(QStringLiteral("计算区域"), this);
-        auto* regionLayout = new QVBoxLayout(regionGroup);
-        m_allRegions = new QCheckBox(QStringLiteral("全部启用计算区域"), regionGroup);
-        m_regionList = new QListWidget(regionGroup);
-        regionLayout->addWidget(m_allRegions);
-        regionLayout->addWidget(m_regionList);
-
-        // 两列按内容高度配平：左侧放置求解器和公共设置，右侧集中动力分析的附加工况。
-        commonColumnLayout->addWidget(solverGroup);
-        commonColumnLayout->addWidget(sharedParametersGroup);
-        commonColumnLayout->addWidget(regionGroup);
-        solverColumnLayout->addWidget(initialStateGroup);
-        solverColumnLayout->addWidget(structuralDampingGroup);
-        solverColumnLayout->addWidget(gallopingGroup);
-        solverColumnLayout->addStretch(1);
-        m_tssbnEditor = new AdaptiveTssbnSettingsEditor(tssbnColumn);
-        auto* tssbnGroup = m_tssbnEditor;
-        m_adaptiveTimeStepEditor = new AdaptiveTimeStepSettingsEditor(tssbnColumn);
-        auto* adaptiveTimeStepGroup = m_adaptiveTimeStepEditor;
-        tssbnColumnLayout->addWidget(adaptiveTimeStepGroup);
-        tssbnColumnLayout->addWidget(tssbnGroup);
-        tssbnColumnLayout->addStretch(1);
-        if (structure)
-        {
-            for (const auto& [regionId, region] : structure->m_ComputeRegions)
-            {
-                if (!region)
-                    continue;
-                auto* item = new QListWidgetItem(QStringLiteral("%1（节点 %2，单元 %3）")
-                                                     .arg(region->m_Name)
-                                                     .arg(region->m_NodeIds.size())
-                                                     .arg(region->m_ElementIds.size()),
-                                                 m_regionList);
-                item->setData(Qt::UserRole, regionId);
-                item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
-                item->setCheckState(Qt::Unchecked);
-            }
-        }
-        // 区域选择通常是短列表，按最多四行设置高度，不让其拉伸至对话框底部。
-        const int regionRows = std::clamp(m_regionList->count(), 1, 4);
-        const int regionRowHeight = std::max(26, m_regionList->sizeHintForRow(0));
-        m_regionList->setFixedHeight(regionRows * regionRowHeight + 2 * m_regionList->frameWidth() + 4);
-        connect(m_allRegions, &QCheckBox::toggled, m_regionList, &QListWidget::setDisabled);
-
-        const auto resizeToVisibleContent = [this, columns]()
-        {
-            // 可见性变化在下一次事件循环中完成，此后测量可保证展开和折叠尺寸可靠。
-            QTimer::singleShot(0, this,
-                               [this, columns]()
-                               {
-                                   columns->updateGeometry();
-                                   if (auto* rootLayout = layout())
-                                   {
-                                       rootLayout->invalidate();
-                                       rootLayout->activate();
-                                   }
-                                   setMinimumHeight(0);
-                                   setMaximumHeight(QWIDGETSIZE_MAX);
-                                   const QSize target = sizeHint();
-                                   resize(std::max(minimumWidth(), target.width()), target.height());
-                               });
-        };
-        const auto updateInheritedBaseLoads = [this, structure]()
-        {
-            if (!m_inheritStaticState->isChecked() || m_initialStaticStep->currentIndex() < 0)
-            {
-                m_inheritedBaseLoads->setText(QStringLiteral("未继承前置静力荷载"));
-                return;
-            }
-            const int sourceStepId = m_initialStaticStep->currentData().toInt();
-            int gravityCount = 0;
-            int otherLoadCount = 0;
-            if (structure)
-            {
-                for (const auto& [loadId, load] : structure->m_Load)
-                {
-                    Q_UNUSED(loadId);
-                    if (!load || (load->m_StepId > 0 && load->m_StepId > sourceStepId))
-                        continue;
-                    if (std::dynamic_pointer_cast<Force_Gravity>(load))
-                        ++gravityCount;
-                    else
-                        ++otherLoadCount;
-                }
-            }
-            QStringList parts;
-            if (gravityCount > 0)
-                parts.push_back(QStringLiteral("重力 ×%1（持续作用）").arg(gravityCount));
-            if (otherLoadCount > 0)
-                parts.push_back(QStringLiteral("其他前置荷载 ×%1").arg(otherLoadCount));
-            m_inheritedBaseLoads->setText(parts.isEmpty() ? QStringLiteral("未发现前置基础荷载")
-                                                          : parts.join(QStringLiteral("；")));
-        };
-        const auto updateDynamicState = [this, commonColumn, solverColumn, solverGroup, adaptiveTimeStepGroup,
-                                         tssbnGroup, tssbnColumn, gallopingGroup, structuralDampingGroup,
-                                         dampingParameters, initialStateGroup, resizeToVisibleContent,
-                                         updateInheritedBaseLoads]()
-        {
-            const bool dynamic =
-                static_cast<EnumKeyword::StepType>(m_type->currentData().toInt()) == EnumKeyword::StepType::DYNAMIC;
-            solverGroup->setEnabled(dynamic);
-            initialStateGroup->setEnabled(dynamic);
-            m_initialStaticStep->setEnabled(dynamic && m_inheritStaticState->isChecked() &&
-                                            m_initialStaticStep->count() > 0);
-            const bool adaptiveTssbn =
-                dynamic && static_cast<SolverNameSpace::SolverType>(m_dynamicSolver->currentData().toInt()) ==
-                               SolverNameSpace::SolverType::AdaptiveTSSBN;
-            const auto solverType = static_cast<SolverNameSpace::SolverType>(m_dynamicSolver->currentData().toInt());
-            const bool adaptiveTimeStep = dynamic && (solverType == SolverNameSpace::SolverType::AdaptiveNewmark ||
-                                                       solverType == SolverNameSpace::SolverType::AdaptiveRungeKutta4);
-            tssbnColumn->setVisible(adaptiveTssbn || adaptiveTimeStep);
-            adaptiveTimeStepGroup->setVisible(adaptiveTimeStep);
-            adaptiveTimeStepGroup->setEnabled(adaptiveTimeStep);
-            tssbnGroup->setVisible(adaptiveTssbn);
-            tssbnGroup->setEnabled(adaptiveTssbn);
-            gallopingGroup->setEnabled(dynamic);
-            structuralDampingGroup->setEnabled(dynamic);
-            dampingParameters->setEnabled(dynamic && m_enableStructuralDamping->isChecked());
-            m_gallopingIceThickness->setEnabled(m_enableGalloping->isChecked());
-            m_gallopingInitialAttack->setEnabled(m_enableGalloping->isChecked());
-            m_aerodynamicTangentMode->setEnabled(m_enableGalloping->isChecked());
-            updateInheritedBaseLoads();
-            resizeToVisibleContent();
-        };
-        connect(m_type, qOverload<int>(&QComboBox::currentIndexChanged), this,
-                [updateDynamicState](int)
-                {
-                    updateDynamicState();
-                });
-        connect(m_dynamicSolver, qOverload<int>(&QComboBox::currentIndexChanged), this,
-                [updateDynamicState](int)
-                {
-                    updateDynamicState();
-                });
-        connect(m_enableGalloping, &QCheckBox::toggled, this,
-                [updateDynamicState](bool)
-                {
-                    updateDynamicState();
-                });
-        connect(m_enableStructuralDamping, &QCheckBox::toggled, this,
-                [updateDynamicState](bool)
-                {
-                    updateDynamicState();
-                });
-        connect(m_inheritStaticState, &QCheckBox::toggled, this,
-                [updateDynamicState](bool)
-                {
-                    updateDynamicState();
-                });
-        connect(m_initialStaticStep, qOverload<int>(&QComboBox::currentIndexChanged), this,
-                [updateDynamicState](int)
-                {
-                    updateDynamicState();
-                });
-        m_time->setRange(1.0e-12, 1.0e12);
-        m_increment->setRange(1.0e-12, 1.0e12);
-        m_tolerance->setRange(1.0e-14, 1.0);
-        auto* buttons = form.buttonBox;
-        buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("确定"));
-        buttons->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
-        connect(
-            buttons, &QDialogButtonBox::accepted, this,
-            [this]()
-            {
-                commitNumericEditors();
-                const bool adaptiveTssbn =
-                    static_cast<EnumKeyword::StepType>(m_type->currentData().toInt()) ==
-                        EnumKeyword::StepType::DYNAMIC &&
-                    static_cast<SolverNameSpace::SolverType>(m_dynamicSolver->currentData().toInt()) ==
-                        SolverNameSpace::SolverType::AdaptiveTSSBN;
-                const auto tssbn = m_tssbnEditor->settings();
-                const auto adaptiveTimeStepSettings = m_adaptiveTimeStepEditor->settings();
-                const auto solverType =
-                    static_cast<SolverNameSpace::SolverType>(m_dynamicSolver->currentData().toInt());
-                const bool adaptiveTimeStep =
-                    static_cast<EnumKeyword::StepType>(m_type->currentData().toInt()) ==
-                        EnumKeyword::StepType::DYNAMIC &&
-                    (solverType == SolverNameSpace::SolverType::AdaptiveNewmark ||
-                     solverType == SolverNameSpace::SolverType::AdaptiveRungeKutta4);
-                if (adaptiveTimeStep &&
-                    (adaptiveTimeStepSettings.minimumTimeStep > adaptiveTimeStepSettings.maximumTimeStep ||
-                     m_increment->value() < adaptiveTimeStepSettings.minimumTimeStep ||
-                     m_increment->value() > adaptiveTimeStepSettings.maximumTimeStep))
-                {
-                    QMessageBox::warning(this, QStringLiteral("自适应步长参数无效"),
-                                         QStringLiteral("必须满足：最小时间步 ≤ 初始时间步 ≤ 最大时间步。"));
-                    return;
-                }
-                if (adaptiveTssbn &&
-                    (tssbn.minimumTimeStep > tssbn.maximumTimeStep || m_increment->value() < tssbn.minimumTimeStep ||
-                     m_increment->value() > tssbn.maximumTimeStep))
-                {
-                    QMessageBox::warning(this, QStringLiteral("TSSBN 参数无效"),
-                                         QStringLiteral("必须满足：最小时间步 ≤ 初始时间步 ≤ 最大时间步。"));
-                    return;
-                }
-                const bool dynamic =
-                    static_cast<EnumKeyword::StepType>(m_type->currentData().toInt()) == EnumKeyword::StepType::DYNAMIC;
-                if (dynamic && m_inheritStaticState->isChecked() && m_initialStaticStep->currentIndex() < 0)
-                {
-                    QMessageBox::information(this, QStringLiteral("缺少前置静力步"),
-                                             QStringLiteral("请先创建静力分析步，或取消“使用静力步作为初始状态”。"));
-                    return;
-                }
-                if (adaptiveTssbn && tssbn.minimumDerivativeFactor > tssbn.maximumDerivativeFactor)
-                {
-                    QMessageBox::warning(this, QStringLiteral("TSSBN 参数无效"),
-                                         QStringLiteral("误差变化因子下限不能大于上限。"));
-                    return;
-                }
-                if (!m_allRegions->isChecked())
-                {
-                    bool hasCheckedRegion = false;
-                    for (int row = 0; row < m_regionList->count(); ++row)
-                    {
-                        if (m_regionList->item(row)->checkState() == Qt::Checked)
-                        {
-                            hasCheckedRegion = true;
-                            break;
-                        }
-                    }
-                    if (!hasCheckedRegion)
-                    {
-                        QMessageBox::information(this, QStringLiteral("请选择计算区域"),
-                                                 QStringLiteral("分析步至少需要选择一个计算区域。"));
-                        return;
-                    }
-                }
-                accept();
-            });
-        connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
-        if (step)
-        {
-            m_name->setText(step->m_Name);
-            m_type->setCurrentIndex(qMax(0, m_type->findData(static_cast<int>(step->m_Type))));
-            m_time->setValue(step->m_Time);
-            m_increment->setValue(step->m_StepSize);
-            m_tolerance->setValue(step->m_Tolerance);
-            m_iterations->setValue(step->m_MaxIterations);
-            m_dynamicSolver->setCurrentIndex(
-                qMax(0, m_dynamicSolver->findData(static_cast<int>(step->m_DynamicSolverType))));
-            m_aerodynamicTangentMode->setCurrentIndex(
-                qMax(0, m_aerodynamicTangentMode->findData(
-                            static_cast<int>(step->m_GallopingAerodynamicTangentMode))));
-            const int inheritedIndex = m_initialStaticStep->findData(step->m_InitialStaticStepId);
-            m_inheritStaticState->setChecked(step->m_Type == EnumKeyword::StepType::DYNAMIC && inheritedIndex >= 0);
-            if (inheritedIndex >= 0)
-                m_initialStaticStep->setCurrentIndex(inheritedIndex);
-            m_tssbnEditor->setSettings(step->m_AdaptiveTssbn);
-            m_adaptiveTimeStepEditor->setSettings(step->m_AdaptiveTimeStep);
-            m_enableStructuralDamping->setChecked(step->m_StructuralDamping.settings.enabled);
-            m_translationDampingRatio->setValue(step->m_StructuralDamping.settings.translationDampingRatio * 100.0);
-            m_torsionDampingRatio->setValue(step->m_StructuralDamping.settings.torsionDampingRatio * 100.0);
-            m_dampingMaximumFrequency->setValue(step->m_StructuralDamping.settings.maximumFrequencyHz);
-            m_enableGalloping->setChecked(step->m_EnableGalloping);
-            m_gallopingIceThickness->setCurrentIndex(
-                qMax(0, m_gallopingIceThickness->findData(step->m_GallopingIceThickness)));
-            m_gallopingInitialAttack->setValue(step->m_GallopingInitialAttackDegrees);
-            m_allRegions->setChecked(step->m_RegionScope == AnalysisRegionScope::AllEnabledRegions);
-            for (int row = 0; row < m_regionList->count(); ++row)
-            {
-                auto* item = m_regionList->item(row);
-                const int regionId = item->data(Qt::UserRole).toInt();
-                item->setCheckState(step->m_ComputeRegionIds.find(regionId) != step->m_ComputeRegionIds.cend()
-                                        ? Qt::Checked
-                                        : Qt::Unchecked);
-            }
-        }
-        else
-        {
-            m_time->setValue(1.0);
-            m_increment->setValue(0.01);
-            m_tolerance->setValue(1.0e-5);
-            m_iterations->setValue(50);
-            m_dynamicSolver->setCurrentIndex(
-                m_dynamicSolver->findData(static_cast<int>(SolverNameSpace::SolverType::Newmark)));
-            m_translationDampingRatio->setValue(0.5);
-            m_torsionDampingRatio->setValue(3.8);
-            m_dampingMaximumFrequency->setValue(3.0);
-            if (m_initialStaticStep->count() > 0)
-            {
-                m_initialStaticStep->setCurrentIndex(m_initialStaticStep->count() - 1);
-                m_inheritStaticState->setChecked(true);
-            }
-            m_allRegions->setChecked(true);
-        }
-        updateDynamicState();
-    }
-
-    AnalysisStepConfig config() const
-    {
-        AnalysisStepConfig value;
-        value.id = m_id;
-        value.name = m_name->text().trimmed();
-        value.type = static_cast<EnumKeyword::StepType>(m_type->currentData().toInt());
-        value.totalTime = m_time->value();
-        value.stepSize = m_increment->value();
-        value.tolerance = m_tolerance->value();
-        value.maxIterations = m_iterations->value();
-        value.dynamicSolverType = value.type == EnumKeyword::StepType::DYNAMIC
-                                      ? static_cast<SolverNameSpace::SolverType>(m_dynamicSolver->currentData().toInt())
-                                      : SolverNameSpace::SolverType::Newmark;
-        value.gallopingAerodynamicTangentMode = static_cast<SolverNameSpace::AerodynamicTangentMode>(
-            m_aerodynamicTangentMode->currentData().toInt());
-        value.initialStaticStepId = value.type == EnumKeyword::StepType::DYNAMIC && m_inheritStaticState->isChecked()
-                                        ? m_initialStaticStep->currentData().toInt()
-                                        : 0;
-        value.adaptiveTssbn = m_tssbnEditor->settings();
-        value.adaptiveTimeStep = m_adaptiveTimeStepEditor->settings();
-        value.structuralDamping.enabled = value.type == EnumKeyword::StepType::DYNAMIC && m_enableStructuralDamping->isChecked();
-        value.structuralDamping.translationDampingRatio = m_translationDampingRatio->value() / 100.0;
-        value.structuralDamping.torsionDampingRatio = m_torsionDampingRatio->value() / 100.0;
-        value.structuralDamping.maximumFrequencyHz = m_dampingMaximumFrequency->value();
-        value.enableGalloping = value.type == EnumKeyword::StepType::DYNAMIC && m_enableGalloping->isChecked();
-        value.gallopingIceThickness = m_gallopingIceThickness->currentData().toInt();
-        value.gallopingInitialAttackDegrees = m_gallopingInitialAttack->value();
-        value.regionScope =
-            m_allRegions->isChecked() ? AnalysisRegionScope::AllEnabledRegions : AnalysisRegionScope::SelectedRegions;
-        for (int row = 0; row < m_regionList->count(); ++row)
-        {
-            const auto* item = m_regionList->item(row);
-            if (item->checkState() == Qt::Checked)
-                value.computeRegionIds.insert(item->data(Qt::UserRole).toInt());
-        }
-        return value;
-    }
-
-private:
-    void commitNumericEditors()
-    {
-        m_time->interpretText();
-        m_increment->interpretText();
-        m_tolerance->interpretText();
-        m_translationDampingRatio->interpretText();
-        m_torsionDampingRatio->interpretText();
-        m_dampingMaximumFrequency->interpretText();
-        m_gallopingInitialAttack->interpretText();
-        m_tssbnEditor->commitEditors();
-        m_adaptiveTimeStepEditor->commitEditors();
-    }
-
-    int m_id = 0;
-    QLineEdit* m_name = nullptr;
-    QComboBox* m_type = nullptr;
-    QDoubleSpinBox* m_time = nullptr;
-    QDoubleSpinBox* m_increment = nullptr;
-    QDoubleSpinBox* m_tolerance = nullptr;
-    QSpinBox* m_iterations = nullptr;
-    QComboBox* m_dynamicSolver = nullptr;
-    QComboBox* m_aerodynamicTangentMode = nullptr;
-    QCheckBox* m_inheritStaticState = nullptr;
-    QComboBox* m_initialStaticStep = nullptr;
-    QLabel* m_inheritedBaseLoads = nullptr;
-    AdaptiveTssbnSettingsEditor* m_tssbnEditor = nullptr;
-    AdaptiveTimeStepSettingsEditor* m_adaptiveTimeStepEditor = nullptr;
-    QCheckBox* m_enableStructuralDamping = nullptr;
-    QDoubleSpinBox* m_translationDampingRatio = nullptr;
-    QDoubleSpinBox* m_torsionDampingRatio = nullptr;
-    QDoubleSpinBox* m_dampingMaximumFrequency = nullptr;
-    QCheckBox* m_enableGalloping = nullptr;
-    QComboBox* m_gallopingIceThickness = nullptr;
-    QDoubleSpinBox* m_gallopingInitialAttack = nullptr;
-    QCheckBox* m_allRegions = nullptr;
-    QListWidget* m_regionList = nullptr;
-};
-
-QString directionName(EnumKeyword::Direction direction)
-{
-    return EnumKeyword::MapDirection.key(direction, QStringLiteral("--"));
-}
-
-QString loadTypeName(EnumKeyword::LoadType type)
-{
-    switch (type)
-    {
-        case EnumKeyword::LoadType::FORCE_NODE:
-            return QStringLiteral("节点力");
-        case EnumKeyword::LoadType::FORCE_ELEMENT:
-            return QStringLiteral("单元荷载");
-        case EnumKeyword::LoadType::FORCE_GRAVITY:
-            return QStringLiteral("重力");
-        case EnumKeyword::LoadType::FORCE_WIND:
-            return QStringLiteral("风荷载");
-        default:
-            return QStringLiteral("未知");
-    }
-}
-
-QString loadDisplayName(int id, const std::shared_ptr<LoadBase>& load)
-{
-    return load && !load->m_Name.trimmed().isEmpty() ? load->m_Name.trimmed() : QStringLiteral("Load-%1").arg(id);
-}
-
-int loadTargetId(const std::shared_ptr<LoadBase>& load)
-{
-    if (const auto nodeLoad = std::dynamic_pointer_cast<Force_Node>(load))
-    {
-        const auto node = nodeLoad->m_pNode.lock();
-        return node ? node->m_Id : -1;
-    }
-    if (const auto elementLoad = std::dynamic_pointer_cast<Force_Element>(load))
-    {
-        const auto element = elementLoad->m_pElement.lock();
-        return element ? element->m_Id : -1;
-    }
-    return -1;
-}
-
-double loadValue(const std::shared_ptr<LoadBase>& load)
-{
-    if (const auto nodeLoad = std::dynamic_pointer_cast<Force_Node>(load))
-        return nodeLoad->m_Value;
-    if (const auto elementLoad = std::dynamic_pointer_cast<Force_Element>(load))
-        return elementLoad->m_Value;
-    if (const auto gravity = std::dynamic_pointer_cast<Force_Gravity>(load))
-        return gravity->m_g;
-    if (const auto wind = std::dynamic_pointer_cast<Force_Wind>(load))
-        return wind->m_velocity;
-    return 0.0;
-}
-
-class LoadEditorDialog final : public QDialog
-{
-public:
-    LoadEditorDialog(int id, const std::shared_ptr<StructureData>& structure, const std::shared_ptr<LoadBase>& load,
-                     QWidget* parent)
-        : QDialog(parent)
-        , m_id(id)
-        , m_structure(structure)
-        , m_original(load)
-    {
-        Ui::LoadEditorDialogClass form;
-        form.setupUi(this);
-        setObjectName(QStringLiteral("analysisLoadEditorDialog"));
-        setWindowTitle(load ? QStringLiteral("编辑荷载") : QStringLiteral("新增荷载"));
-        setModal(true);
-        DialogSizing::lockHeightToContents(this);
-        m_name = form.nameEdit;
-        m_name->setPlaceholderText(QStringLiteral("Load-%1").arg(id));
-        m_step = form.stepCombo;
-        m_step->addItem(QStringLiteral("初始 / 全局"), 0);
-        for (const auto& [stepId, step] : structure->m_AnalysisStep)
-            if (step)
-                m_step->addItem(stepDisplayName(stepId, step), stepId);
-        m_type = form.typeCombo;
-        m_type->setItemData(0, static_cast<int>(EnumKeyword::LoadType::FORCE_NODE));
-        m_type->setItemData(1, static_cast<int>(EnumKeyword::LoadType::FORCE_ELEMENT));
-        m_type->setItemData(2, static_cast<int>(EnumKeyword::LoadType::FORCE_GRAVITY));
-        m_type->setItemData(3, static_cast<int>(EnumKeyword::LoadType::FORCE_WIND));
-        m_target = form.targetSpin;
-        m_direction = form.directionCombo;
-        for (int value = static_cast<int>(EnumKeyword::Direction::X);
-             value <= static_cast<int>(EnumKeyword::Direction::RZ); ++value)
-        {
-            const auto direction = static_cast<EnumKeyword::Direction>(value);
-            m_direction->addItem(directionName(direction), value);
-        }
-        m_directionLabel = form.directionLabel;
-        m_directionStack = new QStackedWidget(this);
-        form.formLayout->removeWidget(m_direction);
-        m_directionStack->addWidget(m_direction);
-        auto* windDirectionWidget = new QWidget(m_directionStack);
-        auto* windDirectionLayout = new QHBoxLayout(windDirectionWidget);
-        windDirectionLayout->setContentsMargins(0, 0, 0, 0);
-        for (int component = 0; component < 3; ++component)
-        {
-            m_windDirection[component] = new QDoubleSpinBox(windDirectionWidget);
-            m_windDirection[component]->setRange(-1.0e6, 1.0e6);
-            m_windDirection[component]->setDecimals(6);
-            m_windDirection[component]->setPrefix(QString(component == 0 ? "X " : component == 1 ? "Y " : "Z "));
-            windDirectionLayout->addWidget(m_windDirection[component]);
-        }
-        // 导线 X、竖直 Z 坐标系以 -Y 为参考来流方向，这是旧版 TSSBN X/Y（竖直）/Z（风向）约定的
-        // 右手映射，使正升力系数 Cl 指向 +Z。
-        m_windDirection[1]->setValue(-1.0);
-        m_directionStack->addWidget(windDirectionWidget);
-        form.formLayout->setWidget(4, QFormLayout::FieldRole, m_directionStack);
-        m_value = form.valueSpin;
-        m_valueLabel = form.valueLabel;
-        m_valueStack = new QStackedWidget(this);
-        form.formLayout->removeWidget(m_value);
-        m_valueStack->addWidget(m_value);
-        m_windSpeed = new QComboBox(m_valueStack);
-        for (int speed : AeroManager::supportedWindSpeeds())
-            m_windSpeed->addItem(QStringLiteral("%1 m/s").arg(speed), speed);
-        m_valueStack->addWidget(m_windSpeed);
-        form.formLayout->setWidget(5, QFormLayout::FieldRole, m_valueStack);
-        auto* buttons = form.buttonBox;
-        buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("确定"));
-        buttons->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
-        connect(buttons, &QDialogButtonBox::accepted, this, &LoadEditorDialog::accept);
-        connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
-        connect(m_type, qOverload<int>(&QComboBox::currentIndexChanged), this,
-                [this](int)
-                {
-                    updateTargetState();
-                });
-        if (load)
-        {
-            m_name->setText(load->m_Name);
-            int stepIndex = m_step->findData(load->m_StepId);
-            if (stepIndex < 0)
-            {
-                m_step->addItem(QStringLiteral("Step-%1（缺失）").arg(load->m_StepId), load->m_StepId);
-                stepIndex = m_step->count() - 1;
-            }
-            m_step->setCurrentIndex(stepIndex);
-            m_type->setCurrentIndex(qMax(0, m_type->findData(static_cast<int>(load->m_LoadType))));
-            m_direction->setCurrentIndex(qMax(0, m_direction->findData(static_cast<int>(load->m_Direction))));
-            const int targetId = loadTargetId(load);
-            if (targetId > 0)
-                m_target->setValue(targetId);
-            m_value->setValue(loadValue(load));
-            if (const auto wind = std::dynamic_pointer_cast<Force_Wind>(load))
-            {
-                for (int component = 0; component < 3; ++component)
-                    m_windDirection[component]->setValue(wind->m_direction[component]);
-                int windIndex = m_windSpeed->findData(wind->m_velocity);
-                if (windIndex < 0)
-                {
-                    m_windSpeed->addItem(QStringLiteral("%1 m/s（旧模型，不支持舞动）").arg(wind->m_velocity),
-                                         wind->m_velocity);
-                    windIndex = m_windSpeed->count() - 1;
-                }
-                m_windSpeed->setCurrentIndex(windIndex);
-            }
-        }
-        else
-        {
-            if (m_step->count() > 1)
-                m_step->setCurrentIndex(1);
-            if (!structure->m_Nodes.empty())
-                m_target->setValue(structure->m_Nodes.begin()->first);
-        }
-        updateTargetState();
-    }
-
-    std::shared_ptr<LoadBase> value() const
-    {
-        return m_result;
-    }
-
-protected:
-    void accept() override
-    {
-        const auto type = static_cast<EnumKeyword::LoadType>(m_type->currentData().toInt());
-        std::shared_ptr<LoadBase> result;
-        switch (type)
-        {
-            case EnumKeyword::LoadType::FORCE_NODE:
-            {
-                const auto node = m_structure->FindNode(m_target->value());
-                if (!node)
-                {
-                    QMessageBox::warning(this, QStringLiteral("无效目标"),
-                                         QStringLiteral("节点 %1 不存在。").arg(m_target->value()));
-                    return;
-                }
-                auto item = std::make_shared<Force_Node>();
-                item->m_pNode = node;
-                item->m_Value = m_value->value();
-                result = item;
-                break;
-            }
-            case EnumKeyword::LoadType::FORCE_ELEMENT:
-            {
-                const auto element = m_structure->FindElement(m_target->value());
-                if (!element)
-                {
-                    QMessageBox::warning(this, QStringLiteral("无效目标"),
-                                         QStringLiteral("单元 %1 不存在。").arg(m_target->value()));
-                    return;
-                }
-                auto item = std::make_shared<Force_Element>();
-                item->m_pElement = element;
-                item->m_Value = m_value->value();
-                result = item;
-                break;
-            }
-            case EnumKeyword::LoadType::FORCE_GRAVITY:
-            {
-                auto item = std::make_shared<Force_Gravity>();
-                item->m_g = m_value->value();
-                result = item;
-                break;
-            }
-            case EnumKeyword::LoadType::FORCE_WIND:
-            {
-                const Eigen::Vector3d direction(m_windDirection[0]->value(), m_windDirection[1]->value(),
-                                                m_windDirection[2]->value());
-                if (!direction.allFinite() || direction.norm() <= 1.0e-12)
-                {
-                    QMessageBox::warning(this, QStringLiteral("无效风向"), QStringLiteral("全局风向向量不能为零。"));
-                    return;
-                }
-                auto item = std::make_shared<Force_Wind>();
-                item->m_velocity = m_windSpeed->currentData().toDouble();
-                item->m_direction = direction.normalized();
-                result = item;
-                break;
-            }
-            default:
-                return;
-        }
-        if (!result)
-            return;
-        result->m_Id = m_id;
-        result->m_Name = m_name->text().trimmed();
-        result->m_StepId = m_step->currentData().toInt();
-        result->m_Direction = type == EnumKeyword::LoadType::FORCE_WIND
-                                  ? EnumKeyword::Direction::UNKNOWN
-                                  : static_cast<EnumKeyword::Direction>(m_direction->currentData().toInt());
-        if (m_original)
-        {
-            result->m_StartTime = m_original->m_StartTime;
-            result->m_EndTime = m_original->m_EndTime;
-            result->m_FunctionType = m_original->m_FunctionType;
-            result->m_Amplitude = m_original->m_Amplitude;
-            result->m_Frequency = m_original->m_Frequency;
-            result->m_Phase = m_original->m_Phase;
-            result->m_Offset = m_original->m_Offset;
-            result->m_RampT0 = m_original->m_RampT0;
-            result->m_RampT1 = m_original->m_RampT1;
-            result->m_Decay = m_original->m_Decay;
-            result->m_Period = m_original->m_Period;
-            result->m_DutyCycle = m_original->m_DutyCycle;
-            const auto oldWind = std::dynamic_pointer_cast<Force_Wind>(m_original);
-            const auto newWind = std::dynamic_pointer_cast<Force_Wind>(result);
-            if (oldWind && newWind)
-                newWind->m_windDensity = oldWind->m_windDensity;
-        }
-        m_result = result;
-        QDialog::accept();
-    }
-
-private:
-    void updateTargetState()
-    {
-        const auto type = static_cast<EnumKeyword::LoadType>(m_type->currentData().toInt());
-        const bool hasTarget =
-            type == EnumKeyword::LoadType::FORCE_NODE || type == EnumKeyword::LoadType::FORCE_ELEMENT;
-        m_target->setEnabled(hasTarget);
-        m_target->setToolTip(type == EnumKeyword::LoadType::FORCE_NODE      ? QStringLiteral("节点编号")
-                             : type == EnumKeyword::LoadType::FORCE_ELEMENT ? QStringLiteral("单元编号")
-                                                                            : QStringLiteral("该荷载作用于整个模型"));
-        const bool wind = type == EnumKeyword::LoadType::FORCE_WIND;
-        m_directionStack->setCurrentIndex(wind ? 1 : 0);
-        m_directionLabel->setText(wind ? QStringLiteral("全局风向") : QStringLiteral("方向"));
-        m_valueStack->setCurrentIndex(wind ? 1 : 0);
-        m_valueLabel->setText(wind ? QStringLiteral("风速") : QStringLiteral("数值"));
-    }
-
-    int m_id = 0;
-    std::shared_ptr<StructureData> m_structure;
-    std::shared_ptr<LoadBase> m_original;
-    std::shared_ptr<LoadBase> m_result;
-    QLineEdit* m_name = nullptr;
-    QComboBox* m_step = nullptr;
-    QComboBox* m_type = nullptr;
-    QSpinBox* m_target = nullptr;
-    QComboBox* m_direction = nullptr;
-    QLabel* m_directionLabel = nullptr;
-    QStackedWidget* m_directionStack = nullptr;
-    QDoubleSpinBox* m_windDirection[3] = {};
-    QDoubleSpinBox* m_value = nullptr;
-    QLabel* m_valueLabel = nullptr;
-    QStackedWidget* m_valueStack = nullptr;
-    QComboBox* m_windSpeed = nullptr;
-};
-
-QString constraintDisplayName(int id, const std::shared_ptr<Constraint>& constraint)
-{
-    return constraint && !constraint->m_Name.trimmed().isEmpty() ? constraint->m_Name.trimmed()
-                                                                 : QStringLiteral("Constraint-%1").arg(id);
-}
-
-QString mpcDisplayName(int id, const std::shared_ptr<NonlinearMPCConstraint>& mpc)
-{
-    return mpc && !mpc->m_Name.trimmed().isEmpty() ? mpc->m_Name.trimmed() : QStringLiteral("MPC-%1").arg(id);
-}
-
-QString mpcDirectionText(const std::shared_ptr<NonlinearMPCConstraint>& mpc)
-{
-    QString result;
-    if (mpc)
-        for (const int direction : mpc->m_SlaveDirections)
-            result.append(QString::number(direction));
-    return result;
-}
-
-QString mpcRelationText(const std::shared_ptr<NonlinearMPCConstraint>& mpc)
-{
-    if (std::dynamic_pointer_cast<DistanceMPCConstraint>(mpc))
-        return QStringLiteral("定长");
-    if (std::dynamic_pointer_cast<RigidOffsetMPCConstraint>(mpc))
-        return QStringLiteral("刚性偏置");
-    if (std::dynamic_pointer_cast<PlanarShearReleaseMPCConstraint>(mpc))
-        return QStringLiteral("非线性剪力释放");
-    return QStringLiteral("非线性关系");
-}
-
-class MPCEditorDialog final : public QDialog
-{
-public:
-    MPCEditorDialog(int id, const std::shared_ptr<StructureData>& structure,
-                    const std::shared_ptr<NonlinearMPCConstraint>& mpc, QWidget* parent)
-        : QDialog(parent)
-        , m_id(id)
-        , m_structure(structure)
-    {
-        setObjectName(QStringLiteral("analysisMPCEditorDialog"));
-        setWindowTitle(mpc ? QStringLiteral("编辑 MPC") : QStringLiteral("新增 MPC"));
-        setModal(true);
-        resize(480, 310);
-        DialogSizing::lockHeightToContents(this);
-
-        auto* root = new QVBoxLayout(this);
-        auto* form = new QFormLayout();
-        m_name = new QLineEdit(this);
-        m_name->setPlaceholderText(QStringLiteral("MPC-%1").arg(id));
-        m_step = new QComboBox(this);
-        m_step->addItem(QStringLiteral("初始 / 全局"), 0);
-        if (structure)
-        {
-            for (const auto& [stepId, step] : structure->m_AnalysisStep)
-                if (step)
-                    m_step->addItem(stepDisplayName(stepId, step), stepId);
-        }
-        m_master = new QSpinBox(this);
-        m_slave = new QSpinBox(this);
-        m_master->setRange(1, std::numeric_limits<int>::max());
-        m_slave->setRange(1, std::numeric_limits<int>::max());
-        m_direction = new QComboBox(this);
-        m_direction->setEditable(true);
-        m_direction->addItems({QStringLiteral("0"), QStringLiteral("1"), QStringLiteral("2"), QStringLiteral("05"),
-                               QStringLiteral("012")});
-        m_direction->setToolTip(QStringLiteral("输入从节点消元自由度。当前求解器支持单个平动方向 0/1/2，"
-                                               "非线性剪力释放 05，以及完整平动方向 012。"));
-        form->addRow(QStringLiteral("名称"), m_name);
-        form->addRow(QStringLiteral("生效分析步"), m_step);
-        form->addRow(QStringLiteral("主节点"), m_master);
-        form->addRow(QStringLiteral("从节点"), m_slave);
-        form->addRow(QStringLiteral("从节点方向"), m_direction);
-        root->addLayout(form);
-
-        auto* hint = new QLabel(QStringLiteral("关系由程序根据 SlaveDirection 自动建立：单方向使用初始定长关系，"
-                                               "05 使用论文非线性剪力释放关系，012 使用大转动刚性偏置关系。"),
-                                this);
-        hint->setWordWrap(true);
-        hint->setObjectName(QStringLiteral("analysisMPCHint"));
-        root->addWidget(hint);
-        auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
-        buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("确定"));
-        buttons->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
-        root->addWidget(buttons);
-        connect(buttons, &QDialogButtonBox::accepted, this, &MPCEditorDialog::accept);
-        connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
-
-        if (mpc)
-        {
-            m_name->setText(mpc->m_Name);
-            int stepIndex = m_step->findData(mpc->m_StepId);
-            if (stepIndex < 0)
-            {
-                m_step->addItem(QStringLiteral("Step-%1（缺失）").arg(mpc->m_StepId), mpc->m_StepId);
-                stepIndex = m_step->count() - 1;
-            }
-            m_step->setCurrentIndex(stepIndex);
-            const std::vector<int> nodeIds = mpc->GetNodeIds();
-            if (nodeIds.size() == 2)
-            {
-                m_master->setValue(nodeIds[0]);
-                m_slave->setValue(nodeIds[1]);
-            }
-            m_direction->setCurrentText(mpcDirectionText(mpc));
-        }
-        else if (structure && !structure->m_Nodes.empty())
-        {
-            m_master->setValue(structure->m_Nodes.cbegin()->first);
-            auto slaveIt = structure->m_Nodes.cbegin();
-            if (slaveIt != structure->m_Nodes.cend())
-                ++slaveIt;
-            m_slave->setValue(slaveIt != structure->m_Nodes.cend() ? slaveIt->first
-                                                                   : structure->m_Nodes.cbegin()->first);
-        }
-    }
-
-    std::shared_ptr<NonlinearMPCConstraint> value() const
-    {
-        return m_result;
-    }
-
-protected:
-    void accept() override
-    {
-        if (!m_structure)
-            return;
-        const auto master = m_structure->FindNode(m_master->value());
-        const auto slave = m_structure->FindNode(m_slave->value());
-        if (!master || !slave || master == slave)
-        {
-            QMessageBox::warning(this, QStringLiteral("无效主从节点"),
-                                 QStringLiteral("主节点和从节点必须存在，并且不能是同一个节点。"));
-            return;
-        }
-
-        const QString directionText = m_direction->currentText().trimmed();
-        std::vector<int> directions;
-        std::set<int> uniqueDirections;
-        for (const QChar character : directionText)
-        {
-            if (!character.isDigit())
-            {
-                QMessageBox::warning(this, QStringLiteral("无效从节点方向"),
-                                     QStringLiteral("SlaveDirection 只能由数字 0 到 5 组成。"));
-                return;
-            }
-            const int direction = character.digitValue();
-            if (direction < 0 || direction > 5 || !uniqueDirections.insert(direction).second)
-            {
-                QMessageBox::warning(this, QStringLiteral("无效从节点方向"),
-                                     QStringLiteral("SlaveDirection 包含越界或重复自由度。"));
-                return;
-            }
-            directions.push_back(direction);
-        }
-        if (!((directions.size() == 1 && directions.front() < 3) || directions == std::vector<int>({0, 5}) ||
-              directions == std::vector<int>({0, 1, 2})))
-        {
-            QMessageBox::information(this, QStringLiteral("当前求解范围"),
-                                     QStringLiteral("当前阶段支持单个平动方向 0/1/2、非线性剪力释放 05，"
-                                                    "或完整平动方向 012。"));
-            return;
-        }
-        for (const int direction : directions)
-        {
-            if (direction >= slave->m_DOF.size())
-            {
-                QMessageBox::warning(this, QStringLiteral("从自由度越界"),
-                                     QStringLiteral("节点 %1 没有自由度 %2。").arg(slave->m_Id).arg(direction));
-                return;
-            }
-            for (const auto& [constraintId, constraint] : m_structure->m_Constraint)
-            {
-                const auto constrainedNode = constraint ? constraint->m_pNode.lock() : nullptr;
-                if (constrainedNode && constrainedNode->m_Id == slave->m_Id &&
-                    static_cast<int>(constraint->m_Direction) == direction)
-                {
-                    QMessageBox::warning(this, QStringLiteral("从自由度冲突"),
-                                         QStringLiteral("节点 %1 的自由度 %2 已被位移约束 %3 固定。")
-                                             .arg(slave->m_Id)
-                                             .arg(direction)
-                                             .arg(constraintId));
-                    return;
-                }
-            }
-        }
-
-        for (const auto& [otherId, other] : m_structure->m_MPCConstraints)
-        {
-            if (otherId == m_id || !other)
-                continue;
-            const std::vector<int> otherNodes = other->GetNodeIds();
-            if (otherNodes.size() != 2 || otherNodes[1] != slave->m_Id)
-                continue;
-            for (const int direction : directions)
-            {
-                if (std::find(other->m_SlaveDirections.cbegin(), other->m_SlaveDirections.cend(), direction) !=
-                    other->m_SlaveDirections.cend())
-                {
-                    QMessageBox::warning(this, QStringLiteral("从自由度重复"),
-                                         QStringLiteral("节点 %1 的自由度 %2 已被 MPC %3 使用。")
-                                             .arg(slave->m_Id)
-                                             .arg(direction)
-                                             .arg(otherId));
-                    return;
-                }
-            }
-        }
-
-        std::shared_ptr<NonlinearMPCConstraint> result;
-        if (directions.size() == 1)
-        {
-            auto distance = std::make_shared<DistanceMPCConstraint>();
-            distance->m_pNodeA = slave;
-            distance->m_pNodeB = master;
-            distance->m_pSlaveNode = slave;
-            distance->m_SlaveDirection = directions.front();
-            distance->m_Length =
-                Eigen::Vector3d(slave->m_X - master->m_X, slave->m_Y - master->m_Y, slave->m_Z - master->m_Z).norm();
-            result = std::move(distance);
-        }
-        else if (directions == std::vector<int>({0, 5}))
-        {
-            auto release = std::make_shared<PlanarShearReleaseMPCConstraint>();
-            release->m_pMasterNode = master;
-            release->m_pSlaveNode = slave;
-            result = std::move(release);
-        }
-        else
-        {
-            auto rigid = std::make_shared<RigidOffsetMPCConstraint>();
-            rigid->m_pMasterNode = master;
-            rigid->m_pSlaveNode = slave;
-            rigid->m_Offset =
-                Eigen::Vector3d(slave->m_X - master->m_X, slave->m_Y - master->m_Y, slave->m_Z - master->m_Z);
-            result = std::move(rigid);
-        }
-        result->m_Id = m_id;
-        result->m_Name = m_name->text().trimmed();
-        result->m_StepId = m_step->currentData().toInt();
-        result->m_SlaveDirections = std::move(directions);
-        m_result = std::move(result);
-        QDialog::accept();
-    }
-
-private:
-    int m_id = 0;
-    std::shared_ptr<StructureData> m_structure;
-    std::shared_ptr<NonlinearMPCConstraint> m_result;
-    QLineEdit* m_name = nullptr;
-    QComboBox* m_step = nullptr;
-    QSpinBox* m_master = nullptr;
-    QSpinBox* m_slave = nullptr;
-    QComboBox* m_direction = nullptr;
-};
-
-class ConstraintEditorDialog final : public QDialog
-{
-public:
-    ConstraintEditorDialog(int id, const std::shared_ptr<StructureData>& structure,
-                           const std::shared_ptr<Constraint>& constraint, QWidget* parent)
-        : QDialog(parent)
-        , m_structure(structure)
-    {
-        Ui::ConstraintEditorDialogClass form;
-        form.setupUi(this);
-        setObjectName(QStringLiteral("analysisConstraintEditorDialog"));
-        setWindowTitle(constraint ? QStringLiteral("编辑约束") : QStringLiteral("新增约束"));
-        setModal(true);
-        DialogSizing::lockHeightToContents(this);
-        m_name = form.nameEdit;
-        m_name->setPlaceholderText(QStringLiteral("Constraint-%1").arg(id));
-        m_step = form.stepCombo;
-        m_step->addItem(QStringLiteral("初始 / 全局"), 0);
-        for (const auto& [stepId, step] : structure->m_AnalysisStep)
-            if (step)
-                m_step->addItem(stepDisplayName(stepId, step), stepId);
-        m_node = form.nodeSpin;
-        m_direction = form.directionCombo;
-        for (int value = static_cast<int>(EnumKeyword::Direction::X);
-             value <= static_cast<int>(EnumKeyword::Direction::RZ); ++value)
-        {
-            const auto direction = static_cast<EnumKeyword::Direction>(value);
-            m_direction->addItem(directionName(direction), value);
-        }
-        m_value = form.valueSpin;
-        auto* buttons = form.buttonBox;
-        buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("确定"));
-        buttons->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
-        connect(buttons, &QDialogButtonBox::accepted, this, &ConstraintEditorDialog::accept);
-        connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
-        if (constraint)
-        {
-            m_name->setText(constraint->m_Name);
-            m_step->setCurrentIndex(qMax(0, m_step->findData(constraint->m_StepId)));
-            const auto node = constraint->m_pNode.lock();
-            if (node)
-                m_node->setValue(node->m_Id);
-            m_direction->setCurrentIndex(qMax(0, m_direction->findData(static_cast<int>(constraint->m_Direction))));
-            m_value->setValue(constraint->m_Value);
-        }
-        else
-        {
-            if (m_step->count() > 1)
-                m_step->setCurrentIndex(1);
-            if (!structure->m_Nodes.empty())
-                m_node->setValue(structure->m_Nodes.begin()->first);
-        }
-    }
-
-    QString name() const
-    {
-        return m_name->text().trimmed();
-    }
-    int stepId() const
-    {
-        return m_step->currentData().toInt();
-    }
-    std::shared_ptr<Node> node() const
-    {
-        return m_nodeValue;
-    }
-    EnumKeyword::Direction direction() const
-    {
-        return static_cast<EnumKeyword::Direction>(m_direction->currentData().toInt());
-    }
-    double displacement() const
-    {
-        return m_value->value();
-    }
-
-protected:
-    void accept() override
-    {
-        m_nodeValue = m_structure->FindNode(m_node->value());
-        if (!m_nodeValue)
-        {
-            QMessageBox::warning(this, QStringLiteral("无效节点"),
-                                 QStringLiteral("节点 %1 不存在。").arg(m_node->value()));
-            return;
-        }
-        QDialog::accept();
-    }
-
-private:
-    std::shared_ptr<StructureData> m_structure;
-    std::shared_ptr<Node> m_nodeValue;
-    QLineEdit* m_name = nullptr;
-    QComboBox* m_step = nullptr;
-    QSpinBox* m_node = nullptr;
-    QComboBox* m_direction = nullptr;
-    QDoubleSpinBox* m_value = nullptr;
-};
-
-QTableWidgetItem* tableItem(const QString& text, int id = -1)
+static QTableWidgetItem* tableItem(const QString& text, int id = -1)
 {
     auto* item = new QTableWidgetItem(text);
     if (id >= 0)
         item->setData(Qt::UserRole, id);
     return item;
 }
+std::unique_ptr<AnalysisStepEditor> AnalysisEditorFactory::CreateStep(int id,
+                                                                      const std::shared_ptr<StructureData>& structure,
+                                                                      const std::shared_ptr<AnalysisStep>& existing,
+                                                                      QWidget* parent)
+{
+    return std::make_unique<StepEditorDialog>(id, structure, existing, parent);
+}
+
+std::unique_ptr<AnalysisLoadEditor> AnalysisEditorFactory::CreateLoad(int id,
+                                                                      const std::shared_ptr<StructureData>& structure,
+                                                                      const std::shared_ptr<LoadBase>& existing,
+                                                                      QWidget* parent)
+{
+    return std::make_unique<LoadEditorDialog>(id, structure, existing, parent);
+}
+
+std::unique_ptr<AnalysisConstraintEditor> AnalysisEditorFactory::CreateConstraint(
+    int id, const std::shared_ptr<StructureData>& structure, const std::shared_ptr<Constraint>& existing,
+    QWidget* parent)
+{
+    return std::make_unique<ConstraintEditorDialog>(id, structure, existing, parent);
+}
+
+std::unique_ptr<AnalysisMPCEditor> AnalysisEditorFactory::CreateMPC(
+    int id, const std::shared_ptr<StructureData>& structure, const std::shared_ptr<NonlinearMPCConstraint>& existing,
+    QWidget* parent)
+{
+    return std::make_unique<MPCEditorDialog>(id, structure, existing, parent);
 }
 
 AnalysisManagerDialog::AnalysisManagerDialog(const std::shared_ptr<StructureData>& structure, Page initialPage,
@@ -1669,8 +171,7 @@ AnalysisManagerDialog::AnalysisManagerDialog(const std::shared_ptr<StructureData
     , m_structure(structure)
     , m_page(initialPage)
 {
-    Ui::AnalysisManagerDialogClass form;
-    form.setupUi(this);
+    initializeUi();
     const bool isStepManager = initialPage == Page::Steps;
     const bool isLoadManager = initialPage == Page::Loads;
     const bool isConstraintManager = initialPage == Page::Constraints;
@@ -1682,19 +183,17 @@ AnalysisManagerDialog::AnalysisManagerDialog(const std::shared_ptr<StructureData
                    : isLoadManager       ? QStringLiteral("荷载管理器")
                    : isConstraintManager ? QStringLiteral("边界条件管理器")
                                          : QStringLiteral("MPC 管理器"));
-    setWindowIcon(managerIcon(isStepManager         ? ManagerGlyph::Steps
-                              : isLoadManager       ? ManagerGlyph::Load
-                              : isConstraintManager ? ManagerGlyph::Constraint
-                                                    : ManagerGlyph::MPC,
-                              palette()));
+    setWindowIcon(UiIcons::applicationIcon());
     setModal(false);
     setWindowModality(Qt::NonModal);
-    resize(920, 560);
-    QTableWidget* table = form.resourceTable;
+    resize(isLoadManager ? 1120 : 920, 500);
+    DialogSizing::lockCurrentHeight(this);
+    QTableWidget* table = m_resourceTable;
     applyCenteredTableAppearance(table);
-    QPushButton* addButton = form.addButton;
-    QPushButton* editButton = form.editButton;
-    QPushButton* deleteButton = form.deleteButton;
+    table->setItemDelegateForColumn(0, new QStyledItemDelegate(table));
+    QPushButton* addButton = m_addButton;
+    QPushButton* editButton = m_editButton;
+    QPushButton* deleteButton = m_deleteButton;
     std::function<void()> addHandler;
     std::function<void()> editHandler;
     std::function<void()> deleteHandler;
@@ -1722,8 +221,9 @@ AnalysisManagerDialog::AnalysisManagerDialog(const std::shared_ptr<StructureData
     else if (isLoadManager)
     {
         m_loadTable = table;
-        headers = {QStringLiteral("名称"), QStringLiteral("分析步"), QStringLiteral("类型"),
-                   QStringLiteral("目标"), QStringLiteral("方向"),   QStringLiteral("数值")};
+        headers = {QStringLiteral("名称"),     QStringLiteral("分析步"),  QStringLiteral("物理类型"),
+                   QStringLiteral("目标"),     QStringLiteral("分量"),    QStringLiteral("基值"),
+                   QStringLiteral("作用时间"), QStringLiteral("时程函数")};
         addHandler = [this]()
         {
             editLoad();
@@ -1758,8 +258,8 @@ AnalysisManagerDialog::AnalysisManagerDialog(const std::shared_ptr<StructureData
     else
     {
         m_mpcTable = table;
-        headers = {QStringLiteral("名称"),   QStringLiteral("分析步"),         QStringLiteral("主节点"),
-                   QStringLiteral("从节点"), QStringLiteral("SlaveDirection"), QStringLiteral("约束关系")};
+        headers = {QStringLiteral("名称"),   QStringLiteral("分析步"),     QStringLiteral("主节点"),
+                   QStringLiteral("从节点"), QStringLiteral("从节点方向"), QStringLiteral("约束关系")};
         addHandler = [this]()
         {
             editMPC();
@@ -1776,11 +276,14 @@ AnalysisManagerDialog::AnalysisManagerDialog(const std::shared_ptr<StructureData
     table->setColumnCount(headers.size());
     table->setHorizontalHeaderLabels(headers);
     table->verticalHeader()->setVisible(false);
+    table->verticalHeader()->setDefaultSectionSize(36);
     table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
     table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
     addButton->setObjectName(QStringLiteral("analysisAddButton"));
     editButton->setObjectName(QStringLiteral("analysisEditButton"));
     deleteButton->setObjectName(QStringLiteral("analysisDeleteButton"));
+    addButton->setProperty("primaryAction", true);
+    deleteButton->setProperty("dangerAction", true);
     addButton->setIcon(managerIcon(ManagerGlyph::Add, palette()));
     editButton->setIcon(managerIcon(ManagerGlyph::Edit, palette()));
     deleteButton->setIcon(managerIcon(ManagerGlyph::Delete, palette()));
@@ -1822,9 +325,10 @@ AnalysisManagerDialog::AnalysisManagerDialog(const std::shared_ptr<StructureData
                 editButton->setEnabled(selected);
                 deleteButton->setEnabled(selected);
             });
-    form.buttonBox->setObjectName(QStringLiteral("analysisManagerButtonBox"));
-    form.buttonBox->button(QDialogButtonBox::Close)->setText(QStringLiteral("关闭"));
-    connect(form.buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
+    m_buttonBox->setObjectName(QStringLiteral("analysisManagerButtonBox"));
+    m_buttonBox->button(QDialogButtonBox::Close)->setText(QStringLiteral("关闭"));
+    m_buttonBox->button(QDialogButtonBox::Close)->setAutoDefault(false);
+    connect(m_buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
     refreshAll();
 }
 
@@ -1931,7 +435,7 @@ void AnalysisManagerDialog::refreshStepTable(int preferredId)
         }
         const int row = m_stepTable->rowCount();
         m_stepTable->insertRow(row);
-        m_stepTable->setItem(row, 0, tableItem(stepDisplayName(stepId, step), stepId));
+        m_stepTable->setItem(row, 0, tableItem(AnalysisDisplay::stepDisplayName(stepId, step), stepId));
         QString typeText = step->m_Type == EnumKeyword::StepType::STATIC    ? QStringLiteral("静力")
                            : step->m_Type == EnumKeyword::StepType::DYNAMIC ? QStringLiteral("动力")
                                                                             : QStringLiteral("未知");
@@ -1940,7 +444,7 @@ void AnalysisManagerDialog::refreshStepTable(int preferredId)
             const auto initialIt = m_structure->m_AnalysisStep.find(step->m_InitialStaticStepId);
             typeText += QStringLiteral("（初态：%1）")
                             .arg(initialIt != m_structure->m_AnalysisStep.cend()
-                                     ? stepDisplayName(initialIt->first, initialIt->second)
+                                     ? AnalysisDisplay::stepDisplayName(initialIt->first, initialIt->second)
                                      : QStringLiteral("Step-%1 缺失").arg(step->m_InitialStaticStepId));
         }
         m_stepTable->setItem(row, 1, tableItem(typeText));
@@ -1984,7 +488,7 @@ void AnalysisManagerDialog::refreshLoadTable(int preferredId)
         {
             const auto step = m_structure->m_AnalysisStep.find(load->m_StepId);
             stepName = step != m_structure->m_AnalysisStep.end()
-                           ? stepDisplayName(step->first, step->second)
+                           ? AnalysisDisplay::stepDisplayName(step->first, step->second)
                            : QStringLiteral("Step-%1（缺失）").arg(load->m_StepId);
         }
         // 每个荷载只有一个所有者，不为每个动力分支复制重力荷载，只列出继承该荷载的分支。
@@ -1997,20 +501,20 @@ void AnalysisManagerDialog::refreshLoadTable(int preferredId)
                 continue;
             }
             if (load->m_StepId <= step->m_InitialStaticStepId)
-                inheritedBy << stepDisplayName(stepId, step);
+                inheritedBy << AnalysisDisplay::stepDisplayName(stepId, step);
         }
         const QString stepScope = inheritedBy.isEmpty()
                                       ? stepName
                                       : QStringLiteral("%1  \u2192  %2\uFF08\u7EE7\u627F\uFF09")
                                             .arg(stepName, inheritedBy.join(QStringLiteral("\u3001")));
-        const int targetId = loadTargetId(load);
+        const int targetId = AnalysisDisplay::loadTargetId(load);
         const QString target = targetId > 0 ? (load->m_LoadType == EnumKeyword::LoadType::FORCE_NODE
                                                    ? QStringLiteral("节点 %1").arg(targetId)
                                                    : QStringLiteral("单元 %1").arg(targetId))
                                             : QStringLiteral("全模型");
         const int row = m_loadTable->rowCount();
         m_loadTable->insertRow(row);
-        m_loadTable->setItem(row, 0, tableItem(loadDisplayName(loadId, load), loadId));
+        m_loadTable->setItem(row, 0, tableItem(AnalysisDisplay::loadDisplayName(loadId, load), loadId));
         auto* stepItem = tableItem(stepScope);
         if (!inheritedBy.isEmpty())
         {
@@ -2021,10 +525,12 @@ void AnalysisManagerDialog::refreshLoadTable(int preferredId)
                     .arg(stepName, inheritedBy.join(QStringLiteral("\u3001"))));
         }
         m_loadTable->setItem(row, 1, stepItem);
-        m_loadTable->setItem(row, 2, tableItem(loadTypeName(load->m_LoadType)));
+        m_loadTable->setItem(row, 2, tableItem(AnalysisDisplay::loadPhysicalTypeName(load)));
         m_loadTable->setItem(row, 3, tableItem(target));
-        m_loadTable->setItem(row, 4, tableItem(directionName(load->m_Direction)));
-        m_loadTable->setItem(row, 5, tableItem(QString::number(loadValue(load), 'g', 12)));
+        m_loadTable->setItem(row, 4, tableItem(AnalysisDisplay::loadComponentText(load)));
+        m_loadTable->setItem(row, 5, tableItem(AnalysisDisplay::loadValueText(load)));
+        m_loadTable->setItem(row, 6, tableItem(AnalysisDisplay::loadTimeWindowText(load)));
+        m_loadTable->setItem(row, 7, tableItem(AnalysisDisplay::timeFunctionName(load->m_FunctionType)));
     }
     selectId(m_loadTable, preferredId);
 }
@@ -2046,16 +552,17 @@ void AnalysisManagerDialog::refreshConstraintTable(int preferredId)
         {
             const auto step = m_structure->m_AnalysisStep.find(constraint->m_StepId);
             stepName = step != m_structure->m_AnalysisStep.end()
-                           ? stepDisplayName(step->first, step->second)
+                           ? AnalysisDisplay::stepDisplayName(step->first, step->second)
                            : QStringLiteral("Step-%1（缺失）").arg(constraint->m_StepId);
         }
         const auto node = constraint->m_pNode.lock();
         const int row = m_constraintTable->rowCount();
         m_constraintTable->insertRow(row);
-        m_constraintTable->setItem(row, 0, tableItem(constraintDisplayName(constraintId, constraint), constraintId));
+        m_constraintTable->setItem(
+            row, 0, tableItem(AnalysisDisplay::constraintDisplayName(constraintId, constraint), constraintId));
         m_constraintTable->setItem(row, 1, tableItem(stepName));
         m_constraintTable->setItem(row, 2, tableItem(node ? QString::number(node->m_Id) : QStringLiteral("--")));
-        m_constraintTable->setItem(row, 3, tableItem(directionName(constraint->m_Direction)));
+        m_constraintTable->setItem(row, 3, tableItem(AnalysisDisplay::directionName(constraint->m_Direction)));
         m_constraintTable->setItem(row, 4, tableItem(QString::number(constraint->m_Value, 'g', 12)));
     }
     selectId(m_constraintTable, preferredId);
@@ -2079,20 +586,20 @@ void AnalysisManagerDialog::refreshMPCTable(int preferredId)
         {
             const auto step = m_structure->m_AnalysisStep.find(mpc->m_StepId);
             stepName = step != m_structure->m_AnalysisStep.cend()
-                           ? stepDisplayName(step->first, step->second)
+                           ? AnalysisDisplay::stepDisplayName(step->first, step->second)
                            : QStringLiteral("Step-%1（缺失）").arg(mpc->m_StepId);
         }
         const std::vector<int> nodeIds = mpc->GetNodeIds();
         const int row = m_mpcTable->rowCount();
         m_mpcTable->insertRow(row);
-        m_mpcTable->setItem(row, 0, tableItem(mpcDisplayName(mpcId, mpc), mpcId));
+        m_mpcTable->setItem(row, 0, tableItem(AnalysisDisplay::mpcDisplayName(mpcId, mpc), mpcId));
         m_mpcTable->setItem(row, 1, tableItem(stepName));
         m_mpcTable->setItem(row, 2,
                             tableItem(nodeIds.size() == 2 ? QString::number(nodeIds[0]) : QStringLiteral("--")));
         m_mpcTable->setItem(row, 3,
                             tableItem(nodeIds.size() == 2 ? QString::number(nodeIds[1]) : QStringLiteral("--")));
-        m_mpcTable->setItem(row, 4, tableItem(mpcDirectionText(mpc)));
-        m_mpcTable->setItem(row, 5, tableItem(mpcRelationText(mpc)));
+        m_mpcTable->setItem(row, 4, tableItem(AnalysisDisplay::mpcDirectionText(mpc)));
+        m_mpcTable->setItem(row, 5, tableItem(AnalysisDisplay::mpcRelationText(mpc)));
     }
     selectId(m_mpcTable, preferredId);
 }
@@ -2114,10 +621,23 @@ void AnalysisManagerDialog::editStep(int stepId)
         stepId = nextId(m_structure->m_AnalysisStep);
     }
 
-    StepEditorDialog editor(stepId, m_structure, existing, this);
-    if (editor.exec() != QDialog::Accepted)
+    auto editor = AnalysisEditorFactory::CreateStep(stepId, m_structure, existing, this);
+    if (editor->exec() != QDialog::Accepted)
         return;
-    const AnalysisStepConfig value = editor.config();
+    const AnalysisStepConfig value = editor->config();
+    m_structure->m_AeroManager.setShapePreservingInterpolation(editor->shapePreservingAerodynamicInterpolation());
+    if (value.enableGalloping &&
+        value.gallopingProfileBindingMode == GallopingProfileBindingMode::ExplicitElementProfile)
+    {
+        const auto profiles = editor->quadWireProfiles();
+        for (const auto& [elementId, element] : m_structure->m_Elements)
+        {
+            Q_UNUSED(elementId);
+            if (element && element->m_AeroBundleCount == 4 && element->m_WireId >= 0 && element->m_WireId < 4 &&
+                profiles[element->m_WireId] >= 0)
+                element->m_AeroProfileId = profiles[element->m_WireId];
+        }
+    }
     if (existing)
     {
         existing->m_Name = value.name.isEmpty() ? QStringLiteral("Step-%1").arg(stepId) : value.name;
@@ -2131,11 +651,15 @@ void AnalysisManagerDialog::editStep(int stepId)
         existing->m_GallopingAerodynamicTangentMode = value.gallopingAerodynamicTangentMode;
         existing->m_InitialStaticStepId = existing->isDynamic ? value.initialStaticStepId : 0;
         existing->m_AdaptiveTssbn = value.adaptiveTssbn;
+        existing->m_AdaptiveTimeStep = value.adaptiveTimeStep;
         existing->m_StructuralDamping.settings = value.structuralDamping;
         existing->m_StructuralDamping.Reset();
-        existing->m_EnableGalloping = existing->isDynamic && value.enableGalloping;
+        existing->m_EnableGalloping = value.enableGalloping;
+        existing->m_GallopingProfileBindingMode = value.gallopingProfileBindingMode;
         existing->m_GallopingIceThickness = value.gallopingIceThickness;
         existing->m_GallopingInitialAttackDegrees = value.gallopingInitialAttackDegrees;
+        existing->m_GallopingInitialVerticalPerturbationMeters = value.gallopingInitialVerticalPerturbationMeters;
+        existing->m_GallopingInitialVerticalPerturbationWaves = value.gallopingInitialVerticalPerturbationWaves;
         existing->m_RegionScope = value.regionScope;
         existing->m_ComputeRegionIds = value.computeRegionIds;
     }
@@ -2143,7 +667,18 @@ void AnalysisManagerDialog::editStep(int stepId)
     {
         m_structure->AddAnalysisStep(value);
     }
-    markModelChanged({stepId});
+
+    // 区域参与状态是全部分析步引用关系的汇总，只允许这一处公共规则计算，
+    // 避免导入、编辑或删除分析步后两个窗口出现不同状态。
+    m_structure->SynchronizeComputeRegionEnablementFromSteps();
+
+    QSet<int> affectedStepIds;
+    for (const auto& [affectedStepId, affectedStep] : m_structure->m_AnalysisStep)
+    {
+        if (affectedStep)
+            affectedStepIds.insert(affectedStepId);
+    }
+    markModelChanged(affectedStepIds);
     selectId(m_stepTable, stepId);
 }
 void AnalysisManagerDialog::editLoad(int loadId)
@@ -2168,11 +703,11 @@ void AnalysisManagerDialog::editLoad(int loadId)
         loadId = nextId(m_structure->m_Load);
     }
     const int oldStepId = existing ? existing->m_StepId : -1;
-    LoadEditorDialog editor(loadId, m_structure, existing, this);
-    if (editor.exec() != QDialog::Accepted || !editor.value())
+    auto editor = AnalysisEditorFactory::CreateLoad(loadId, m_structure, existing, this);
+    if (editor->exec() != QDialog::Accepted || !editor->value())
         return;
-    m_structure->m_Load[loadId] = editor.value();
-    QSet<int> affected = affectedStepsFrom(editor.value()->m_StepId);
+    m_structure->m_Load[loadId] = editor->value();
+    QSet<int> affected = affectedStepsFrom(editor->value()->m_StepId);
     if (oldStepId >= 0)
         affected.unite(affectedStepsFrom(oldStepId));
     markModelChanged(affected);
@@ -2195,16 +730,16 @@ void AnalysisManagerDialog::editConstraint(int constraintId)
         constraintId = nextId(m_structure->m_Constraint);
     }
     const int oldStepId = existing ? existing->m_StepId : -1;
-    ConstraintEditorDialog editor(constraintId, m_structure, existing, this);
-    if (editor.exec() != QDialog::Accepted || !editor.node())
+    auto editor = AnalysisEditorFactory::CreateConstraint(constraintId, m_structure, existing, this);
+    if (editor->exec() != QDialog::Accepted || !editor->node())
         return;
     auto constraint = existing ? existing : std::make_shared<Constraint>();
     constraint->m_Id = constraintId;
-    constraint->m_Name = editor.name();
-    constraint->m_StepId = editor.stepId();
-    constraint->m_pNode = editor.node();
-    constraint->m_Direction = editor.direction();
-    constraint->m_Value = editor.displacement();
+    constraint->m_Name = editor->name();
+    constraint->m_StepId = editor->stepId();
+    constraint->m_pNode = editor->node();
+    constraint->m_Direction = editor->direction();
+    constraint->m_Value = editor->displacement();
     m_structure->m_Constraint[constraintId] = constraint;
     QSet<int> affected = affectedStepsFrom(constraint->m_StepId);
     if (oldStepId >= 0)
@@ -2230,11 +765,11 @@ void AnalysisManagerDialog::editMPC(int mpcId)
         mpcId = nextId(m_structure->m_MPCConstraints);
     }
     const int oldStepId = existing ? existing->m_StepId : -1;
-    MPCEditorDialog editor(mpcId, m_structure, existing, this);
-    if (editor.exec() != QDialog::Accepted || !editor.value())
+    auto editor = AnalysisEditorFactory::CreateMPC(mpcId, m_structure, existing, this);
+    if (editor->exec() != QDialog::Accepted || !editor->value())
         return;
 
-    m_structure->m_MPCConstraints[mpcId] = editor.value();
+    m_structure->m_MPCConstraints[mpcId] = editor->value();
     QString regionError;
     if (!m_structure->RebuildAndMergeComputeRegions(&regionError))
     {
@@ -2247,7 +782,7 @@ void AnalysisManagerDialog::editMPC(int mpcId)
         return;
     }
 
-    QSet<int> affected = affectedStepsFrom(editor.value()->m_StepId);
+    QSet<int> affected = affectedStepsFrom(editor->value()->m_StepId);
     if (oldStepId >= 0)
         affected.unite(affectedStepsFrom(oldStepId));
     markModelChanged(affected);
@@ -2292,7 +827,7 @@ void AnalysisManagerDialog::deleteSelectedStep()
     }
     const QString prompt = QStringLiteral("确定删除“%1”吗？\n同时会删除归属于该步的 %2 个荷载、"
                                           "%3 个约束和 %4 个 MPC。\n另有 %5 个动力步继承该静力步，删除后将改为不继承。")
-                               .arg(stepDisplayName(stepId, found->second))
+                               .arg(AnalysisDisplay::stepDisplayName(stepId, found->second))
                                .arg(loadCount)
                                .arg(constraintCount)
                                .arg(mpcCount)
@@ -2318,6 +853,7 @@ void AnalysisManagerDialog::deleteSelectedStep()
     {
         it = it->second && it->second->m_StepId == stepId ? m_structure->m_MPCConstraints.erase(it) : std::next(it);
     }
+    m_structure->SynchronizeComputeRegionEnablementFromSteps();
     markModelChanged(affectedStepIds);
 }
 void AnalysisManagerDialog::deleteSelectedLoad()
@@ -2328,9 +864,10 @@ void AnalysisManagerDialog::deleteSelectedLoad()
     const auto found = m_structure->m_Load.find(loadId);
     if (found == m_structure->m_Load.end())
         return;
-    if (QMessageBox::question(this, QStringLiteral("删除荷载"),
-                              QStringLiteral("确定删除“%1”吗？").arg(loadDisplayName(loadId, found->second)),
-                              QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes)
+    if (QMessageBox::question(
+            this, QStringLiteral("删除荷载"),
+            QStringLiteral("确定删除“%1”吗？").arg(AnalysisDisplay::loadDisplayName(loadId, found->second)),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes)
         return;
     const int firstAffectedStep = found->second ? found->second->m_StepId : 0;
     m_structure->m_Load.erase(found);
@@ -2346,7 +883,7 @@ void AnalysisManagerDialog::deleteSelectedConstraint()
         return;
     if (QMessageBox::question(
             this, QStringLiteral("删除约束"),
-            QStringLiteral("确定删除“%1”吗？").arg(constraintDisplayName(constraintId, found->second)),
+            QStringLiteral("确定删除“%1”吗？").arg(AnalysisDisplay::constraintDisplayName(constraintId, found->second)),
             QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes)
         return;
     const int firstAffectedStep = found->second ? found->second->m_StepId : 0;
@@ -2362,9 +899,10 @@ void AnalysisManagerDialog::deleteSelectedMPC()
     const auto found = m_structure->m_MPCConstraints.find(mpcId);
     if (found == m_structure->m_MPCConstraints.end())
         return;
-    if (QMessageBox::question(this, QStringLiteral("删除 MPC"),
-                              QStringLiteral("确定删除“%1”吗？").arg(mpcDisplayName(mpcId, found->second)),
-                              QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes)
+    if (QMessageBox::question(
+            this, QStringLiteral("删除 MPC"),
+            QStringLiteral("确定删除“%1”吗？").arg(AnalysisDisplay::mpcDisplayName(mpcId, found->second)),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes)
     {
         return;
     }
@@ -2372,4 +910,77 @@ void AnalysisManagerDialog::deleteSelectedMPC()
     m_structure->m_MPCConstraints.erase(found);
     m_structure->RebuildAndMergeComputeRegions();
     markModelChanged(affectedStepsFrom(firstAffectedStep));
+}
+
+void AnalysisManagerDialog::initializeUi()
+{
+    if (this->objectName().isEmpty())
+    {
+        setObjectName("AnalysisManagerDialogClass");
+    }
+    setMinimumSize(QSize(720, 380));
+    QVBoxLayout* rootLayout = new QVBoxLayout(this);
+    rootLayout->setSpacing(12);
+    rootLayout->setObjectName("rootLayout");
+    rootLayout->setContentsMargins(16, 16, 16, 16);
+    QWidget* managerPage = new QWidget(this);
+    managerPage->setObjectName("managerPage");
+    QVBoxLayout* pageLayout = new QVBoxLayout(managerPage);
+    pageLayout->setObjectName("pageLayout");
+    pageLayout->setContentsMargins(0, 0, 0, 0);
+    m_resourceTable = new QTableWidget(managerPage);
+    m_resourceTable->setObjectName("resourceTable");
+    m_resourceTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_resourceTable->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_resourceTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_resourceTable->setAlternatingRowColors(true);
+    m_resourceTable->setShowGrid(false);
+    m_resourceTable->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
+
+    pageLayout->addWidget(m_resourceTable);
+
+    rootLayout->addWidget(managerPage);
+
+    QHBoxLayout* actionLayout = new QHBoxLayout();
+    actionLayout->setSpacing(8);
+    actionLayout->setObjectName("actionLayout");
+    m_addButton = new QPushButton(this);
+    m_addButton->setObjectName("addButton");
+    m_addButton->setAutoDefault(false);
+
+    actionLayout->addWidget(m_addButton);
+
+    m_editButton = new QPushButton(this);
+    m_editButton->setObjectName("editButton");
+    m_editButton->setEnabled(false);
+    m_editButton->setAutoDefault(false);
+
+    actionLayout->addWidget(m_editButton);
+
+    m_deleteButton = new QPushButton(this);
+    m_deleteButton->setObjectName("deleteButton");
+    m_deleteButton->setEnabled(false);
+    m_deleteButton->setAutoDefault(false);
+
+    actionLayout->addWidget(m_deleteButton);
+
+    QSpacerItem* actionSpacer = new QSpacerItem(40, 20, QSizePolicy::Policy::Expanding, QSizePolicy::Policy::Minimum);
+
+    actionLayout->addItem(actionSpacer);
+
+    m_buttonBox = new QDialogButtonBox(this);
+    m_buttonBox->setObjectName("buttonBox");
+    m_buttonBox->setStandardButtons(QDialogButtonBox::Close);
+
+    actionLayout->addWidget(m_buttonBox);
+
+    rootLayout->addLayout(actionLayout);
+
+    QWidget::setTabOrder(m_resourceTable, m_addButton);
+    QWidget::setTabOrder(m_addButton, m_editButton);
+    QWidget::setTabOrder(m_editButton, m_deleteButton);
+
+    m_addButton->setText(QCoreApplication::translate("AnalysisManagerDialogClass", "新增", nullptr));
+    m_editButton->setText(QCoreApplication::translate("AnalysisManagerDialogClass", "编辑", nullptr));
+    m_deleteButton->setText(QCoreApplication::translate("AnalysisManagerDialogClass", "删除", nullptr));
 }

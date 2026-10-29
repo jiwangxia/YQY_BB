@@ -1,0 +1,127 @@
+{
+  "schema": "tssbn-spatial-plan-v1",
+  "frozen_before_candidate_execution": true,
+  "frozen_utc": "2026-10-20T02:49:20.826724+00:00",
+  "algorithms": [
+    "adaptive-tssbn",
+    "reference-tssbn"
+  ],
+  "spectral_radius": 1.0,
+  "default_settings": {
+    "spectral_radius_infinity": 1.0,
+    "safety_factor": 0.9,
+    "shrink_factor": 0.8,
+    "maximum_growth_factor": 3.0,
+    "target_newton_iterations": 8,
+    "maximum_total_newton_iterations": 32,
+    "derivative_gain": 0.1,
+    "minimum_derivative_factor": 0.5,
+    "maximum_derivative_factor": 1.5,
+    "maximum_rejected_attempts": 24
+  },
+  "algorithm_policies": {
+    "adaptive-tssbn": {
+      "factory_solver_type": "AdaptiveTSSBN",
+      "solver_type_id": 3,
+      "solver_name": "Adaptive-TSSBN",
+      "error_norm_mode": "ComponentwiseMax",
+      "use_duan_controller": false,
+      "use_reference_extrapolated_acceleration": false,
+      "reference_independent_error_control": false,
+      "effective_velocity_absolute_tolerance": "requested velocity_absolute_tolerance",
+      "controller_scope": "production default Mahnken-style LTE proportional controller; no Duan settings substituted"
+    },
+    "reference-tssbn": {
+      "factory_solver_type": "ReferenceTSSBN",
+      "solver_type_id": 8,
+      "solver_name": "Reference-TSSBN-Galloping",
+      "error_norm_mode": "LegacyGlobal",
+      "use_duan_controller": true,
+      "use_reference_extrapolated_acceleration": true,
+      "reference_independent_error_control": false,
+      "effective_velocity_absolute_tolerance": "absolute_tolerance, overwritten by production factory",
+      "controller_scope": "unchanged reference factory legacy norm/extrapolation/controller; no independent-velocity repair enabled"
+    }
+  },
+  "model": "Same two-real-CR-element spatial right-angle frame; production Node/ElementBeam_CR and factory-created integrator through IAnalysisModel adapter, not full AnalysisStep task/static/aero orchestration.",
+  "input_path": "Published/CorotationalDynamics/right-angle/input.json",
+  "input_sha256": "7811b7dba37eaf216ba43e0db969d2d5b0bc0aadc93858810b6b47842da272c6",
+  "duration": 2.5,
+  "elements_per_leg": 1,
+  "initial_highest_omega": 261.864,
+  "normal_newton_tolerance": 1e-09,
+  "maximum_newton_iterations": 48,
+  "relative_tolerances": [
+    1e-05,
+    1e-07,
+    1e-09
+  ],
+  "initial_step": 0.001,
+  "minimum_step": 1e-07,
+  "maximum_step": 0.01,
+  "absolute_displacement_tolerance": [
+    1e-11,
+    1e-13,
+    1e-15
+  ],
+  "absolute_velocity_tolerance": [
+    1e-11,
+    1e-13,
+    1e-15
+  ],
+  "runs": [
+    {
+      "level": 0,
+      "relative_tolerance": 1e-05,
+      "absolute_tolerance": 1.0000000000000001e-11,
+      "velocity_absolute_tolerance": 1.0000000000000001e-11,
+      "initial_time_step": 0.001,
+      "minimum_time_step": 1e-07,
+      "maximum_time_step": 0.01
+    },
+    {
+      "level": 1,
+      "relative_tolerance": 1e-07,
+      "absolute_tolerance": 9.999999999999999e-14,
+      "velocity_absolute_tolerance": 9.999999999999999e-14,
+      "initial_time_step": 0.001,
+      "minimum_time_step": 1e-07,
+      "maximum_time_step": 0.01
+    },
+    {
+      "level": 2,
+      "relative_tolerance": 1e-09,
+      "absolute_tolerance": 1e-15,
+      "velocity_absolute_tolerance": 1e-15,
+      "initial_time_step": 0.001,
+      "minimum_time_step": 1e-07,
+      "maximum_time_step": 0.01
+    }
+  ],
+  "reference_dense_sha256": "04453fbc779f803dda59d26ae29aa139f6a606c8cc7d1f41afdccc5518b3d2d6",
+  "reference_summary_sha256": "e31156168200af30c2a723e527fdba8a29c144d6ed484eba94112d7d4da207bf",
+  "reference_scale_rule": "Original frozen reference.csv per-node/component amplitude with floor1e-4; rotation by relative SO(3) angle.",
+  "reference_csv_sha256": "1296fc276108a7891395709821aaf30235de6f94968ed573915742551b95c111",
+  "criteria": {
+    "all_expected_runs_present": true,
+    "complete_finite_actual_time_history": true,
+    "time_zero_initial_state": true,
+    "endpoint_time_absolute_limit": 1e-09,
+    "frame_time_absolute_limit": 1e-09,
+    "rejection_is_allowed": true,
+    "normal_precision_limited_stage_count": 0,
+    "successive_error_ratio_maximum": 0.9,
+    "finest_maximum_step_cap_fraction_upper_exclusive": 0.5,
+    "cap_fraction_definition": "Nonterminal accepted steps >=hmax*(1-1e-6), divided by nonterminal count. Prevent cap-dominated finest runs from masquerading as tolerance control.",
+    "fixed_step_order_gate_applies": false,
+    "physical_gates": "Existing independent initial q/v/a, fixed DOF and mass/stiffness checks retained. Endpoint equilibrium is a normal-TSSBN check only; Reference extrapolated-a endpoint residual is separately reported diagnostic, not a master gate. No Newmark full-H kinematics asserted.",
+    "reference_endpoint_acceleration_qualification": "Reference legacy accepts extrapolated endpoint acceleration by design. Compare actually exported q/v/a to independent full-history reference under original precision limits; separately report exact endpoint M*a+f-fext residual and whether it meets the old strict limit, without making that residual a Reference master pass/fail gate or automatically labeling a theory-consistent discrepancy implementation wrong.",
+    "finest_each_state_normalized_error": 0.001,
+    "rotation_orthogonality_absolute_limit": 1e-09,
+    "initial_state_normalized_limit": 1e-10,
+    "execution_accuracy_trend_reported_separately": true
+  },
+  "balance_qualification": "Do not reconstruct accepted Gauss orientations from macro endpoint nodal increments. Current solver stages/embedded endpoint policy differ; compare all six actual state types to the independent continuous reference.",
+  "qualification": "Public right-angle geometry and coefficients, but current two-element linear inertia CR model and T2.5 are declared derived. Both production numerical variants are tested as they are; no original HHT/Duan paper-reproduction claim and no passing result assumed.",
+  "newton_tolerance_rationale": "Pre-candidate choice: raw nonlinear tolerance1e-9 rather than prior Newmark1e-6, so Newton truncation is below tight LTE target; any precision-limited failure remains a failure under unchanged execution/state gates."
+}

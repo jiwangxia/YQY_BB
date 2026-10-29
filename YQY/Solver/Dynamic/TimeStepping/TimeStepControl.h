@@ -26,7 +26,7 @@ struct AdaptiveTimeStepSettings
     double maximumTimeStep = 0.5;              ///< 增步上限；避免平稳阶段无限放大时间步。
     double relativeTolerance = 1.0e-3;         ///< 与当前位移量级相乘的相对容差。
     double absoluteTolerance = 1.0e-6;         ///< 位移接近零时仍允许的绝对误差。
-    bool includeVelocityInError = true;        ///< 是否同时控制速度误差；长时振动建议保持启用。
+    bool includeVelocityInError = true;        ///< 旧配置兼容字段；当前始终组合位移和速度误差。
     double velocityRelativeTolerance = 1.0e-3; ///< 与当前速度量级相乘的相对容差。
     double velocityAbsoluteTolerance = 1.0e-6; ///< 速度接近零时仍允许的绝对误差。
     double safetyFactor = 0.9;                 ///< 理论步长乘以该系数，给误差预测留出余量。
@@ -86,7 +86,7 @@ public:
      * @brief 根据已完成试算的归一化误差判定是否接受本步。
      * @param currentTimeStep 刚刚完成试算的时间步长。
      * @param normalizedError 误差估计器返回的无量纲误差；不大于 1 表示满足容差。
-     * @param methodOrder 积分器全局阶数，例如 Newmark 为 2、经典 RK4 为 4。
+     * @param methodOrder 积分器全局阶数，例如默认 Newmark 为 2、经典 RK4 为 4。
      * @return 当前误差合格时 accepted 为 true，同时给出受上下限约束后的下一步步长。
      */
     TimeStepDecision Decide(double currentTimeStep, double normalizedError, int methodOrder) const;

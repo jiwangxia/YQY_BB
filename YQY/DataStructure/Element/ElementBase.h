@@ -7,6 +7,8 @@
 #include "DataStructure/Node/Node.h"
 #include "Utility/CR.h"
 
+#include <array>
+
 enum class ElementRole
 {
     Generic = 0,
@@ -24,6 +26,7 @@ class ElementBase : public Base
 {
 protected:
     MatrixXd m_ke, m_me, m_ce;
+    bool TryGetEnergySectionInertia(_OUT double& Iy, _OUT double& Iz, _OUT double& J) const;
 
 public:
     ElementBase();
@@ -69,7 +72,17 @@ public:
      */
     virtual void Get_ke(_OUT MatrixXd& ke) = 0;
     virtual void Get_me_Lumped(_OUT MatrixXd& me) = 0;     //集中质量矩阵
-    virtual void Get_me_Consistent(_OUT MatrixXd& me) = 0; //一致质量矩阵
+    // 历史动力接口；有限转动单元可返回隐式增量切线质量，不能直接用于空间加速度求解。
+    virtual void Get_me_Consistent(_OUT MatrixXd& me) = 0;
+    /** @brief 惯性力对空间加速度的物理质量矩阵；普通单元默认使用一致质量。 */
+    virtual void Get_me_Physical(_OUT MatrixXd& me);
+    /** @brief 查询当前状态能量；未支持的本构返回 false，不以零代替缺失值。 */
+    virtual bool TryGetStrainEnergy(_OUT double& energy) const;
+    virtual bool TryGetKineticEnergy(_OUT double& energy);
+    /** @brief 使用当前单元物理质量及切线刚度计算阻尼；普通单元使用前两个系数，索可独立指定轴扭转系数。 */
+    void GetRayleighDamping(const std::array<double, 4>& coefficients, _OUT MatrixXd& damping);
+    virtual void GetRayleighDamping(const std::array<double, 4>& coefficients, const MatrixXd& stiffness,
+                                    const MatrixXd& physicalMass, _OUT MatrixXd& damping) const;
     /**
      * @brief 计算当前试探状态的单元惯性力
      *

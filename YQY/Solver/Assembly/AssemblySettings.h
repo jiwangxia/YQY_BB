@@ -6,7 +6,7 @@
 
 namespace SolverNameSpace
 {
-// Process-wide settings for the shared-memory element assembly workers.
+// 共享内存单元装配线程的全局设置。
 class AssemblySettings final
 {
 public:

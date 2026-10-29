@@ -1,5 +1,7 @@
 #include "Outputter.h"
+#include "DataStructure/Element/ElementTruss.h"
 #include "DataStructure/Element/ElementSpringBase.h"
+#include "DataStructure/Section/SectionCircular.h"
 #include "DataStructure/Structure/StructureData.h"
 #include "Export/Hdf5ModelIO.h"
 #include "Export/Hdf5ResultWriter.h"
@@ -22,6 +24,16 @@ Outputter::~Outputter()
 
 void Outputter::MergeFramesFrom(const Outputter& source)
 {
+    m_invalidEnergySteps.insert(source.m_invalidEnergySteps.cbegin(), source.m_invalidEnergySteps.cend());
+    for (const DataFrame& frame : m_DataSet)
+        m_energyExpectedContributions.emplace(frame.m_stepId, 1);
+    std::map<int, size_t> sourceContributions = source.m_energyExpectedContributions;
+    for (const DataFrame& frame : source.m_DataSet)
+        sourceContributions.emplace(frame.m_stepId, 1);
+    if (source.m_DataSet.empty() && source.m_currentStepId > 0)
+        sourceContributions.emplace(source.m_currentStepId, 1);
+    for (const auto& contribution : sourceContributions)
+        m_energyExpectedContributions[contribution.first] += contribution.second;
     m_solverIterationRecords.insert(m_solverIterationRecords.end(), source.m_solverIterationRecords.cbegin(),
                                     source.m_solverIterationRecords.cend());
     for (const DataFrame& sourceFrame : source.m_DataSet)
@@ -40,9 +52,28 @@ void Outputter::MergeFramesFrom(const Outputter& source)
             m_DataSet.push_back(sourceFrame);
             continue;
         }
+        const bool overlapsNodes = std::any_of(sourceFrame.m_nodeDatas.cbegin(), sourceFrame.m_nodeDatas.cend(),
+                                               [&targetIt](const auto& node)
+                                               {
+                                                   return targetIt->m_nodeDatas.count(node.first) != 0;
+                                               });
+        const bool overlapsElements =
+            std::any_of(sourceFrame.m_elementDatas.cbegin(), sourceFrame.m_elementDatas.cend(),
+                        [&targetIt](const auto& element)
+                        {
+                            return targetIt->m_elementDatas.count(element.first) != 0;
+                        });
+        if (overlapsNodes || overlapsElements)
+            targetIt->m_energy = {};
+        else
+            targetIt->m_energy.Accumulate(sourceFrame.m_energy);
+        targetIt->m_energyContributions += sourceFrame.m_energyContributions;
         targetIt->m_nodeDatas.insert(sourceFrame.m_nodeDatas.cbegin(), sourceFrame.m_nodeDatas.cend());
         targetIt->m_elementDatas.insert(sourceFrame.m_elementDatas.cbegin(), sourceFrame.m_elementDatas.cend());
     }
+    for (DataFrame& frame : m_DataSet)
+        frame.m_energyComplete = m_invalidEnergySteps.count(frame.m_stepId) == 0 &&
+                                 frame.m_energyContributions == m_energyExpectedContributions[frame.m_stepId];
     std::sort(m_DataSet.begin(), m_DataSet.end(),
               [](const DataFrame& lhs, const DataFrame& rhs)
               {
@@ -52,6 +83,18 @@ void Outputter::MergeFramesFrom(const Outputter& source)
                       return lhs.m_currentTime < rhs.m_currentTime;
                   return lhs.m_increment < rhs.m_increment;
               });
+}
+
+void Outputter::InvalidateEnergy(int stepId)
+{
+    m_invalidEnergySteps.insert(stepId);
+    for (DataFrame& frame : m_DataSet)
+    {
+        if (frame.m_stepId != stepId)
+            continue;
+        frame.m_energy = {};
+        frame.m_energyComplete = false;
+    }
 }
 
 void Outputter::RecordSolverIteration(double time, int iterations)
@@ -151,6 +194,12 @@ void NodeData::ExtractFromNode(const Node* pNode)
         m_f2 = pNode->m_Force[1];
     if (pNode->m_Force.size() >= 3)
         m_f3 = pNode->m_Force[2];
+    if (pNode->m_Force.size() >= 6)
+    {
+        m_m1 = pNode->m_Force[3];
+        m_m2 = pNode->m_Force[4];
+        m_m3 = pNode->m_Force[5];
+    }
 
     // 读取转角 (DOF 3-5)
     if (pNode->m_Displacement.size() >= 4)
@@ -273,7 +322,13 @@ void ElementData::ExtractFromElement(const ElementBase* pElement)
 
     if (std::fabs(area) > 0.0)
     {
-        m_axialForce = m_currentStress * area;
+        double resultArea = area;
+        if (const auto truss = dynamic_cast<const ElementTruss*>(pElement))
+        {
+            if (!truss->m_UseEngineeringStrain && truss->L0 > 0.0 && truss->L > 0.0)
+                resultArea = area * truss->L0 / truss->L;
+        }
+        m_axialForce = m_currentStress * resultArea;
     }
 
     if (std::fabs(young) > 0.0)
@@ -333,10 +388,26 @@ double DataFrame::GetElementData(int idElement, EnumKeyword::ElementResultType t
     return 0.0;
 }
 
-void Outputter::SaveDataFromNodes(double time, StructureData* pData)
+void Outputter::SaveDataFromNodes(double time, StructureData* pData, const EnergyResult& energy)
 {
     if (!pData)
         return;
+
+    if (!m_keepFramesInMemory && !m_stream && !m_hdf5Stream)
+    {
+        // 弹簧结果提取会刷新接受态缓存，即使不保存结果帧也保留这一步。
+        for (const auto& elementPair : pData->m_Elements)
+        {
+            if (auto* spring = dynamic_cast<ElementSpringBase*>(elementPair.second.get()))
+            {
+                MatrixXd stiffness;
+                spring->Get_ke(stiffness);
+            }
+        }
+        // 没有结果接收方时仅推进帧序号，避免构造随后被丢弃的完整结果帧。
+        ++m_hdf5NextIncrement;
+        return;
+    }
 
     // 创建新帧
     DataFrame frame;
@@ -344,6 +415,9 @@ void Outputter::SaveDataFromNodes(double time, StructureData* pData)
     frame.m_stepId = m_currentStepId;
     frame.m_increment = m_hdf5NextIncrement;
     frame.m_analysisType = m_currentAnalysisType;
+    frame.m_energy = energy;
+    frame.m_energy.FinalizeTotals();
+    frame.m_energyComplete = m_invalidEnergySteps.count(frame.m_stepId) == 0;
 
     for (auto& nodePair : pData->m_Nodes)
     {
@@ -797,6 +871,8 @@ void Outputter::Clear()
     EndBdfResultStream();
     EndHdf5ResultStream(false);
     m_DataSet.clear();
+    m_energyExpectedContributions.clear();
+    m_invalidEnergySteps.clear();
     m_solverIterationRecords.clear();
 }
 
@@ -1044,7 +1120,7 @@ bool Outputter::SaveBdfModel(const QString& fileName, StructureData* pData)
     if (!pData->m_Section.empty())
     {
         stream << "\n*SECTION, " << pData->m_Section.size() << "\n";
-        stream << "** ID  Area 或 Width Height\n";
+        stream << "** ID  Area 或 Width Height；扩展圆截面：ID A Iy Iz J JrhoX JrhoY JrhoZ FirstX FirstY FirstZ Radius\n";
         for (const auto& pair : pData->m_Section)
         {
             auto pSec = pair.second;
@@ -1055,7 +1131,42 @@ bool Outputter::SaveBdfModel(const QString& fileName, StructureData* pData)
             }
             else
             {
-                stream << FmtDouble(pSec->m_Area) << "\n";
+                const double areaRadius = pSec->m_Area > 0.0 ? std::sqrt(pSec->m_Area / std::acos(-1.0)) : 0.0;
+                const bool independentRadius =
+                    std::abs(pSec->m_Radius - areaRadius) > 1.0e-12 * std::max(1.0, areaRadius);
+                const bool extended = pSec->m_HasExplicitSectionInertia ||
+                                      pSec->m_MassInertiaPerLength.squaredNorm() > 0.0 ||
+                                      pSec->m_MassFirstMomentPerLength.squaredNorm() > 0.0 || independentRadius;
+                if (!extended)
+                {
+                    stream << FmtDouble(pSec->m_Area) << "\n";
+                    continue;
+                }
+                double iy = 0.0, iz = 0.0, polarMoment = 0.0;
+                if (pSec->m_HasExplicitSectionInertia)
+                {
+                    iy = pSec->m_ExplicitIy;
+                    iz = pSec->m_ExplicitIz;
+                    polarMoment = pSec->m_ExplicitJ;
+                }
+                else if (std::dynamic_pointer_cast<SectionCircular>(pSec))
+                {
+                    iy = iz = pSec->m_Area * pSec->m_Area / (4.0 * std::acos(-1.0));
+                    polarMoment = iy + iz;
+                }
+                else
+                {
+                    pSec->Calculate_I(iy, iz, polarMoment);
+                }
+                const auto precise = [](double value)
+                { return QString::number(value, 'g', 17); };
+                stream << precise(pSec->m_Area) << " " << precise(iy) << " " << precise(iz) << " "
+                       << precise(polarMoment);
+                for (int component = 0; component < 3; ++component)
+                    stream << " " << precise(pSec->m_MassInertiaPerLength[component]);
+                for (int component = 0; component < 3; ++component)
+                    stream << " " << precise(pSec->m_MassFirstMomentPerLength[component]);
+                stream << " " << precise(pSec->m_Radius) << "\n";
             }
         }
     }

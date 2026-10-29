@@ -51,6 +51,7 @@ public:
     std::weak_ptr<Node> m_pNodeA;
     std::weak_ptr<Node> m_pNodeB;
     std::weak_ptr<Node> m_pSlaveNode;
+    // -1 按当前杆方向自动选择从节点的自由平动分量，避免大幅运动穿过固定消元坐标的奇异点。
     int m_SlaveDirection = 0;
     double m_Length = -1.0;
 

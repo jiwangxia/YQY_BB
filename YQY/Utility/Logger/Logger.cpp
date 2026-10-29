@@ -1,6 +1,9 @@
 #include "Logger.h"
 
+#include "Application/ApplicationPaths.h"
+
 #include <QDateTime>
+#include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
 #include <QMutexLocker>
@@ -59,6 +62,20 @@ void Logger::InitializeConsoleEncoding()
 Logger::~Logger()
 {
     Stop(false, QStringLiteral("日志系统析构时仍处于开启状态"));
+}
+
+bool Logger::DetailedOutputEnabled()
+{
+    const QStringList arguments = QCoreApplication::arguments();
+    if (arguments.contains(QStringLiteral("--quiet-log")))
+        return false;
+    if (arguments.contains(QStringLiteral("--verbose-log")))
+        return true;
+    const QString configured = qEnvironmentVariable("YQY_VERBOSE_LOG");
+    if (!configured.isEmpty())
+        return configured == QStringLiteral("1") ||
+               configured.compare(QStringLiteral("true"), Qt::CaseInsensitive) == 0;
+    return false;
 }
 
 bool Logger::Start(const QString& modelFileName, int maxBackupCount)
@@ -132,6 +149,21 @@ void Logger::Stop(bool success, const QString& summary)
 void Logger::Debug(const QString& message)
 {
     Write(Level::Debug, message);
+}
+
+void Logger::Diagnostic(const QString& message)
+{
+    {
+        QMutexLocker locker(&m_mutex);
+        if (m_active)
+        {
+            WriteRawLine(QStringLiteral("[%1] [DEBUG] %2")
+                             .arg(QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz"))
+                             .arg(message));
+        }
+    }
+    if (DetailedOutputEnabled())
+        WriteNativeConsole(message, false);
 }
 
 void Logger::Info(const QString& message)
@@ -258,11 +290,7 @@ void Logger::RotateLogFiles(const QString& filePath, int maxBackupCount)
 
 QString Logger::BuildLogFilePath(const QString& modelFileName) const
 {
-    QDir logDir(QDir::current().filePath("Utility/Logger/Log"));
-    if (!logDir.exists())
-    {
-        QDir().mkpath(logDir.absolutePath());
-    }
+    const QDir logDir(ApplicationPaths::logDirectory());
 
     QString baseName = QFileInfo(modelFileName).completeBaseName();
     if (baseName.isEmpty())

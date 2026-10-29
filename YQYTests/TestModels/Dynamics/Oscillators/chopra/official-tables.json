@@ -1,0 +1,600 @@
+{
+  "source": {
+    "retrieved_utc": "2026-10-19T05:05:49.079210+00:00",
+    "repository": "https://github.com/OpenSees/OpenSees",
+    "path": "EXAMPLES/verification/NewmarkIntegrator.tcl",
+    "commit": "ddf7b364e0a089a8e05c75a0576e759f3a5eba91",
+    "commit_url": "https://github.com/OpenSees/OpenSees/commit/ddf7b364e0a089a8e05c75a0576e759f3a5eba91",
+    "file_commit_date": "2018-10-02T11:45:40Z",
+    "raw_url": "https://raw.githubusercontent.com/OpenSees/OpenSees/ddf7b364e0a089a8e05c75a0576e759f3a5eba91/EXAMPLES/verification/NewmarkIntegrator.tcl",
+    "file_sha256": "0a4a745d27c368814f061ab1ecf2e36f5d98a0117aa8e2b758448abe65628591",
+    "bytes": 6508,
+    "python": "3.12.2 (tags/v3.12.2:6abddd9, Feb  6 2024, 21:26:36) [MSC v.1937 64 bit (AMD64)]"
+  },
+  "reference_label": "OpenSees official NewmarkIntegrator.tcl, citing Chopra 4th edition (2012)",
+  "source_example_labels": {
+    "header": "linear Examples 5.3/5.4; nonlinear Examples 5.5/5.6",
+    "body_comments": "Section 5.4 linear; Section 5.7 nonlinear",
+    "limitation": "source labels retained as written; textbook page/edition mapping has not been independently verified"
+  },
+  "parameters": {
+    "mass": 0.2533,
+    "initial_stiffness": 10.0,
+    "damping_ratio": 0.05,
+    "natural_angular_frequency": 6.283222007842957,
+    "rayleigh_mass_coefficient": 0.6283222007842957,
+    "viscous_damping_coefficient": 0.15915401345866212,
+    "positive_yield_displacement": 0.75,
+    "negative_yield_displacement": -0.75,
+    "positive_yield_force": 7.5,
+    "negative_yield_force": -7.5,
+    "initial_plastic_offset": 0.0,
+    "initial_u_v_a": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "force": "10*sin(2*pi*t/1.2) for 0<=t<=.6, zero outside",
+    "time_step": 0.1
+  },
+  "units": {
+    "declared_in_official_tcl": null,
+    "used_here": "original consistent numerical units, no conversion",
+    "limitation": "physical kip/in unit labels must not be claimed from this script alone"
+  },
+  "official_assertions": {
+    "table_displacement_absolute_tolerance": 0.001,
+    "table_velocity_asserted": false,
+    "table_acceleration_asserted": false,
+    "newton_test": "NormDispIncr",
+    "newton_test_tolerance": 0.0001,
+    "maximum_newton_iterations": 6,
+    "system": "ProfileSPD",
+    "constraint_handler": "Plain"
+  },
+  "reference_quality": "rounded hand/discrete Newmark table at h=.1, not the exact continuous physical trajectory",
+  "limitations": [
+    "Nonlinear table contains a t=1 row, but official script checks only 9 steps through t=.9",
+    "Linear-acceleration beta=1/6 table is preserved as source metadata; current YQY average-acceleration verification must not count it as its own configuration",
+    "ElasticPP requires committed plastic history; a memoryless force-displacement envelope is not equivalent"
+  ],
+  "tables": [
+    {
+      "name": "linear-average",
+      "model": "linear-elastic",
+      "gamma": 0.5,
+      "beta": 0.25,
+      "equilibrium_algorithm": "Linear",
+      "source_table_line_1based": 75,
+      "official_checked_steps": 10,
+      "official_checked_end": 1.0,
+      "source_table_rows": 10,
+      "source_table_end": 1.0,
+      "rows": [
+        {
+          "time": 0.1,
+          "official_script_checks_this_row": true,
+          "u": 0.0437,
+          "v": 0.8733,
+          "a": 17.4666,
+          "printed": {
+            "u": "0.0437",
+            "v": "0.8733",
+            "a": "17.4666"
+          }
+        },
+        {
+          "time": 0.2,
+          "official_script_checks_this_row": true,
+          "u": 0.2326,
+          "v": 2.9057,
+          "a": 23.1801,
+          "printed": {
+            "u": "0.2326",
+            "v": "2.9057",
+            "a": "23.1801"
+          }
+        },
+        {
+          "time": 0.3,
+          "official_script_checks_this_row": true,
+          "u": 0.6121,
+          "v": 4.6833,
+          "a": 12.3719,
+          "printed": {
+            "u": "0.6121",
+            "v": "4.6833",
+            "a": "12.3719"
+          }
+        },
+        {
+          "time": 0.4,
+          "official_script_checks_this_row": true,
+          "u": 1.0825,
+          "v": 4.426,
+          "a": -11.5175,
+          "printed": {
+            "u": "1.0825",
+            "v": "4.4260",
+            "a": "-11.5175"
+          }
+        },
+        {
+          "time": 0.5,
+          "official_script_checks_this_row": true,
+          "u": 1.4309,
+          "v": 2.2421,
+          "a": -38.1611,
+          "printed": {
+            "u": "1.4309",
+            "v": "2.2421",
+            "a": "-38.1611"
+          }
+        },
+        {
+          "time": 0.6,
+          "official_script_checks_this_row": true,
+          "u": 1.4231,
+          "v": -2.3996,
+          "a": -54.6722,
+          "printed": {
+            "u": "1.4231",
+            "v": "-2.3996",
+            "a": "-54.6722"
+          }
+        },
+        {
+          "time": 0.7,
+          "official_script_checks_this_row": true,
+          "u": 0.9622,
+          "v": -6.8192,
+          "a": -33.6997,
+          "printed": {
+            "u": "0.9622",
+            "v": "-6.8192",
+            "a": "-33.6997"
+          }
+        },
+        {
+          "time": 0.8,
+          "official_script_checks_this_row": true,
+          "u": 0.1908,
+          "v": -8.6092,
+          "a": -2.1211,
+          "printed": {
+            "u": "0.1908",
+            "v": "-8.6092",
+            "a": "-2.1211"
+          }
+        },
+        {
+          "time": 0.9,
+          "official_script_checks_this_row": true,
+          "u": -0.6044,
+          "v": -7.2932,
+          "a": 28.4423,
+          "printed": {
+            "u": "-0.6044",
+            "v": "-7.2932",
+            "a": "28.4423"
+          }
+        },
+        {
+          "time": 1.0,
+          "official_script_checks_this_row": true,
+          "u": -1.1442,
+          "v": -3.5026,
+          "a": 47.3701,
+          "printed": {
+            "u": "-1.1442",
+            "v": "-3.5026",
+            "a": "47.3701"
+          }
+        }
+      ]
+    },
+    {
+      "name": "linear-acceleration",
+      "model": "linear-elastic",
+      "gamma": 0.5,
+      "beta": 0.16666666666666666,
+      "equilibrium_algorithm": "Linear",
+      "source_table_line_1based": 75,
+      "official_checked_steps": 10,
+      "official_checked_end": 1.0,
+      "source_table_rows": 10,
+      "source_table_end": 1.0,
+      "rows": [
+        {
+          "time": 0.1,
+          "official_script_checks_this_row": true,
+          "u": 0.03,
+          "v": 0.8995,
+          "a": 17.9904,
+          "printed": {
+            "u": "0.0300",
+            "v": "0.8995",
+            "a": "17.9904"
+          }
+        },
+        {
+          "time": 0.2,
+          "official_script_checks_this_row": true,
+          "u": 0.2193,
+          "v": 2.9819,
+          "a": 23.6566,
+          "printed": {
+            "u": "0.2193",
+            "v": "2.9819",
+            "a": "23.6566"
+          }
+        },
+        {
+          "time": 0.3,
+          "official_script_checks_this_row": true,
+          "u": 0.6166,
+          "v": 4.7716,
+          "a": 12.1372,
+          "printed": {
+            "u": "0.6166",
+            "v": "4.7716",
+            "a": "12.1372"
+          }
+        },
+        {
+          "time": 0.4,
+          "official_script_checks_this_row": true,
+          "u": 1.113,
+          "v": 4.7419,
+          "a": -12.7305,
+          "printed": {
+            "u": "1.1130",
+            "v": "4.7419",
+            "a": "-12.7305"
+          }
+        },
+        {
+          "time": 0.5,
+          "official_script_checks_this_row": true,
+          "u": 1.4782,
+          "v": 2.1802,
+          "a": -39.9425,
+          "printed": {
+            "u": "1.4782",
+            "v": "2.1802",
+            "a": "-39.9425"
+          }
+        },
+        {
+          "time": 0.6,
+          "official_script_checks_this_row": true,
+          "u": 1.4625,
+          "v": -2.6911,
+          "a": -56.0447,
+          "printed": {
+            "u": "1.4625",
+            "v": "-2.6911",
+            "a": "-56.0447"
+          }
+        },
+        {
+          "time": 0.7,
+          "official_script_checks_this_row": true,
+          "u": 0.9514,
+          "v": -7.1468,
+          "a": -33.0689,
+          "printed": {
+            "u": "0.9514",
+            "v": "-7.1468",
+            "a": "-33.0689"
+          }
+        },
+        {
+          "time": 0.8,
+          "official_script_checks_this_row": true,
+          "u": 0.1273,
+          "v": -8.7758,
+          "a": 0.4892,
+          "printed": {
+            "u": "0.1273",
+            "v": "-8.7758",
+            "a": "0.4892"
+          }
+        },
+        {
+          "time": 0.9,
+          "official_script_checks_this_row": true,
+          "u": -0.6954,
+          "v": -7.1539,
+          "a": 31.9491,
+          "printed": {
+            "u": "-0.6954",
+            "v": "-7.1539",
+            "a": "31.9491"
+          }
+        },
+        {
+          "time": 1.0,
+          "official_script_checks_this_row": true,
+          "u": -1.2208,
+          "v": -3.0508,
+          "a": 50.1114,
+          "printed": {
+            "u": "-1.2208",
+            "v": "-3.0508",
+            "a": "50.1114"
+          }
+        }
+      ]
+    },
+    {
+      "name": "elastoplastic-newton",
+      "model": "elastic-perfectly-plastic",
+      "gamma": 0.5,
+      "beta": 0.25,
+      "equilibrium_algorithm": "Newton",
+      "source_table_line_1based": 144,
+      "official_checked_steps": 9,
+      "official_checked_end": 0.9,
+      "source_table_rows": 10,
+      "source_table_end": 1.0,
+      "rows": [
+        {
+          "time": 0.1,
+          "official_script_checks_this_row": true,
+          "u": 0.0437,
+          "v": 0.8733,
+          "a": 17.4666,
+          "printed": {
+            "u": "0.0437",
+            "v": "0.8733",
+            "a": "17.4666"
+          }
+        },
+        {
+          "time": 0.2,
+          "official_script_checks_this_row": true,
+          "u": 0.2326,
+          "v": 2.9057,
+          "a": 23.1801,
+          "printed": {
+            "u": "0.2326",
+            "v": "2.9057",
+            "a": "23.1801"
+          }
+        },
+        {
+          "time": 0.3,
+          "official_script_checks_this_row": true,
+          "u": 0.6121,
+          "v": 4.6833,
+          "a": 12.3719,
+          "printed": {
+            "u": "0.6121",
+            "v": "4.6833",
+            "a": "12.3719"
+          }
+        },
+        {
+          "time": 0.4,
+          "official_script_checks_this_row": true,
+          "u": 1.1143,
+          "v": 5.3624,
+          "a": 1.2103,
+          "printed": {
+            "u": "1.1143",
+            "v": "5.3624",
+            "a": "1.2103"
+          }
+        },
+        {
+          "time": 0.5,
+          "official_script_checks_this_row": true,
+          "u": 1.6214,
+          "v": 4.7792,
+          "a": -12.8735,
+          "printed": {
+            "u": "1.6214",
+            "v": "4.7792",
+            "a": "-12.8735"
+          }
+        },
+        {
+          "time": 0.6,
+          "official_script_checks_this_row": true,
+          "u": 1.9891,
+          "v": 2.5742,
+          "a": -31.227,
+          "printed": {
+            "u": "1.9891",
+            "v": "2.5742",
+            "a": "-31.2270"
+          }
+        },
+        {
+          "time": 0.7,
+          "official_script_checks_this_row": true,
+          "u": 2.0951,
+          "v": -0.4534,
+          "a": -29.3242,
+          "printed": {
+            "u": "2.0951",
+            "v": "-0.4534",
+            "a": "-29.3242"
+          }
+        },
+        {
+          "time": 0.8,
+          "official_script_checks_this_row": true,
+          "u": 1.924,
+          "v": -2.96,
+          "a": -20.9876,
+          "printed": {
+            "u": "1.9240",
+            "v": "-2.960",
+            "a": "-20.9876"
+          }
+        },
+        {
+          "time": 0.9,
+          "official_script_checks_this_row": true,
+          "u": 1.5602,
+          "v": -4.3075,
+          "a": -5.783,
+          "printed": {
+            "u": "1.5602",
+            "v": "-4.3075",
+            "a": "-5.7830"
+          }
+        },
+        {
+          "time": 1.0,
+          "official_script_checks_this_row": false,
+          "u": 1.415,
+          "v": -4.0668,
+          "a": 10.5962,
+          "printed": {
+            "u": "1.415",
+            "v": "-4.0668",
+            "a": "10.5962"
+          }
+        }
+      ]
+    },
+    {
+      "name": "elastoplastic-modified-newton",
+      "model": "elastic-perfectly-plastic",
+      "gamma": 0.5,
+      "beta": 0.25,
+      "equilibrium_algorithm": "ModifiedNewton",
+      "source_table_line_1based": 144,
+      "official_checked_steps": 9,
+      "official_checked_end": 0.9,
+      "source_table_rows": 10,
+      "source_table_end": 1.0,
+      "rows": [
+        {
+          "time": 0.1,
+          "official_script_checks_this_row": true,
+          "u": 0.0437,
+          "v": 0.8733,
+          "a": 17.4666,
+          "printed": {
+            "u": "0.0437",
+            "v": "0.8733",
+            "a": "17.4666"
+          }
+        },
+        {
+          "time": 0.2,
+          "official_script_checks_this_row": true,
+          "u": 0.2326,
+          "v": 2.9057,
+          "a": 23.1801,
+          "printed": {
+            "u": "0.2326",
+            "v": "2.9057",
+            "a": "23.1801"
+          }
+        },
+        {
+          "time": 0.3,
+          "official_script_checks_this_row": true,
+          "u": 0.6121,
+          "v": 4.6833,
+          "a": 12.3719,
+          "printed": {
+            "u": "0.6121",
+            "v": "4.6833",
+            "a": "12.3719"
+          }
+        },
+        {
+          "time": 0.4,
+          "official_script_checks_this_row": true,
+          "u": 1.1143,
+          "v": 5.3623,
+          "a": 1.2095,
+          "printed": {
+            "u": "1.1143",
+            "v": "5.3623",
+            "a": "1.2095"
+          }
+        },
+        {
+          "time": 0.5,
+          "official_script_checks_this_row": true,
+          "u": 1.6214,
+          "v": 4.7791,
+          "a": -12.8734,
+          "printed": {
+            "u": "1.6214",
+            "v": "4.7791",
+            "a": "-12.8734"
+          }
+        },
+        {
+          "time": 0.6,
+          "official_script_checks_this_row": true,
+          "u": 1.9891,
+          "v": 2.5741,
+          "a": -31.227,
+          "printed": {
+            "u": "1.9891",
+            "v": "2.5741",
+            "a": "-31.2270"
+          }
+        },
+        {
+          "time": 0.7,
+          "official_script_checks_this_row": true,
+          "u": 2.0951,
+          "v": -0.4534,
+          "a": -29.3242,
+          "printed": {
+            "u": "2.0951",
+            "v": "-0.4534",
+            "a": "-29.3242"
+          }
+        },
+        {
+          "time": 0.8,
+          "official_script_checks_this_row": true,
+          "u": 1.924,
+          "v": -2.96,
+          "a": -20.9879,
+          "printed": {
+            "u": "1.9240",
+            "v": "-2.960",
+            "a": "-20.9879"
+          }
+        },
+        {
+          "time": 0.9,
+          "official_script_checks_this_row": true,
+          "u": 1.5602,
+          "v": -4.3076,
+          "a": -5.7824,
+          "printed": {
+            "u": "1.5602",
+            "v": "-4.3076",
+            "a": "-5.7824"
+          }
+        },
+        {
+          "time": 1.0,
+          "official_script_checks_this_row": false,
+          "u": 1.414,
+          "v": -4.0668,
+          "a": 10.5969,
+          "printed": {
+            "u": "1.414",
+            "v": "-4.0668",
+            "a": "10.5969"
+          }
+        }
+      ]
+    }
+  ],
+  "extractor_sha256": "eed1492726b2602038cab30ef9a712cbe78348ff94f404a99c33fb40837cc0a9"
+}

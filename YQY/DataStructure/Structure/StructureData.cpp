@@ -1,4 +1,6 @@
 #include "StructureData.h"
+#include "DataStructure/Factory/LoadFactory.h"
+#include "DataStructure/Factory/SectionFactory.h"
 #include <set>
 #include <cmath>
 #include <vector>
@@ -9,6 +11,31 @@
 #include <unordered_set>
 #include <algorithm>
 #include <iterator>
+#include <stdexcept>
+#include <utility>
+
+template <typename Entity>
+static int NextAvailableEntityId(const std::map<int, std::shared_ptr<Entity>>& entities)
+{
+    if (entities.empty() || entities.rbegin()->first < 1)
+        return 1;
+    if (entities.rbegin()->first < std::numeric_limits<int>::max())
+        return entities.rbegin()->first + 1;
+
+    int candidate = 1;
+    for (const auto& [id, entity] : entities)
+    {
+        Q_UNUSED(entity);
+        if (id < candidate)
+            continue;
+        if (id > candidate)
+            break;
+        if (candidate == std::numeric_limits<int>::max())
+            throw std::overflow_error("模型实体编号已用尽");
+        ++candidate;
+    }
+    return candidate;
+}
 
 StructureData::~StructureData() = default;
 
@@ -22,6 +49,7 @@ void StructureData::Clear()
     m_Material.clear();
     m_Section.clear();
     m_Property.clear();
+    m_SpringBehaviors.clear();
     m_Constraint.clear();
     m_MPCConstraints.clear();
     m_RigidBodyInertias.clear();
@@ -33,6 +61,29 @@ void StructureData::Clear()
     // Clear 表示恢复为一个全新的空模型，不能保留上一次导入或求解的状态。
     m_OutputControl = OutputControl{};
     m_AeroManager = AeroManager{};
+}
+
+void StructureData::ReplaceModelFrom(StructureData&& source)
+{
+    if (this == &source)
+        return;
+
+    Clear();
+    m_Nodes = std::move(source.m_Nodes);
+    m_Elements = std::move(source.m_Elements);
+    m_Material = std::move(source.m_Material);
+    m_Section = std::move(source.m_Section);
+    m_Property = std::move(source.m_Property);
+    m_SpringBehaviors = std::move(source.m_SpringBehaviors);
+    m_Constraint = std::move(source.m_Constraint);
+    m_MPCConstraints = std::move(source.m_MPCConstraints);
+    m_RigidBodyInertias = std::move(source.m_RigidBodyInertias);
+    m_Load = std::move(source.m_Load);
+    m_AnalysisStep = std::move(source.m_AnalysisStep);
+    m_ModelSets = std::move(source.m_ModelSets);
+    m_ComputeRegions = std::move(source.m_ComputeRegions);
+    m_OutputControl = std::move(source.m_OutputControl);
+    m_AeroManager = std::move(source.m_AeroManager);
 }
 
 std::shared_ptr<StructureData> StructureData::CloneForAnalysis(QString* errorMessage) const
@@ -67,12 +118,10 @@ std::shared_ptr<StructureData> StructureData::CloneForAnalysis(QString* errorMes
     {
         if (!source)
             return fail(QStringLiteral("截面 %1 为空").arg(id));
-        if (const auto circular = std::dynamic_pointer_cast<SectionCircular>(source))
-            clone->m_Section.emplace(id, std::make_shared<SectionCircular>(*circular));
-        else if (const auto rectangle = std::dynamic_pointer_cast<SectionRectangle>(source))
-            clone->m_Section.emplace(id, std::make_shared<SectionRectangle>(*rectangle));
-        else
+        auto target = SectionFactory::Clone(source);
+        if (!target)
             return fail(QStringLiteral("截面 %1 类型不受支持").arg(id));
+        clone->m_Section.emplace(id, std::move(target));
     }
 
     for (const auto& [id, source] : m_Property)
@@ -111,8 +160,15 @@ std::shared_ptr<StructureData> StructureData::CloneForAnalysis(QString* errorMes
             return fail(QStringLiteral("单元 %1 为空").arg(id));
 
         std::shared_ptr<ElementBase> target;
-        if (std::dynamic_pointer_cast<ElementTruss>(source))
-            target = std::make_shared<ElementTruss>();
+        if (const auto truss = std::dynamic_pointer_cast<ElementTruss>(source))
+        {
+            // FEM H5 导入的桁架以“无应力长度 + 工程应变”保存预张力。区域求解
+            // 必须完整保留该本构标记；否则这里新建的副本会退回到对数应变，导致
+            // 即使荷载为零也产生错误的预应力松弛位移。
+            auto trussTarget = std::make_shared<ElementTruss>();
+            trussTarget->m_UseEngineeringStrain = truss->m_UseEngineeringStrain;
+            target = std::move(trussTarget);
+        }
         else if (const auto cable = std::dynamic_pointer_cast<ElementCable>(source))
         {
             auto cableTarget = std::make_shared<ElementCable>();
@@ -124,6 +180,7 @@ std::shared_ptr<StructureData> StructureData::CloneForAnalysis(QString* errorMes
             auto beamTarget = std::make_shared<ElementBeam_CR>();
             beamTarget->q0 = beam->q0;
             beamTarget->R0 = beam->R0;
+            beamTarget->CopyRuntimeState(*beam);
             target = std::move(beamTarget);
         }
         else if (const auto spring1 = std::dynamic_pointer_cast<ElementSpring1>(source))
@@ -189,116 +246,9 @@ std::shared_ptr<StructureData> StructureData::CloneForAnalysis(QString* errorMes
         clone->m_Elements.emplace(id, std::move(target));
     }
 
-    for (const auto& [id, source] : m_Constraint)
-    {
-        if (!source)
-            return fail(QStringLiteral("约束 %1 为空").arg(id));
-        auto target = std::make_shared<Constraint>(*source);
-        if (const auto sourceNode = source->m_pNode.lock())
-        {
-            const auto found = clone->m_Nodes.find(sourceNode->m_Id);
-            if (found == clone->m_Nodes.end())
-                return fail(QStringLiteral("约束 %1 的节点引用无效").arg(id));
-            target->m_pNode = found->second;
-        }
-        clone->m_Constraint.emplace(id, std::move(target));
-    }
-
-    for (const auto& [id, source] : m_MPCConstraints)
-    {
-        if (!source)
-            return fail(QStringLiteral("MPC %1 为空").arg(id));
-        auto target = source->Clone(clone->m_Nodes);
-        if (!target)
-            return fail(QStringLiteral("MPC %1 的节点引用无效").arg(id));
-        clone->m_MPCConstraints.emplace(id, std::move(target));
-    }
-
-    for (const auto& [id, source] : m_RigidBodyInertias)
-    {
-        if (!source)
-            return fail(QStringLiteral("刚体集中惯性 %1 为空").arg(id));
-        const auto sourceNode = source->m_pNode.lock();
-        const auto targetNode = sourceNode ? clone->m_Nodes.find(sourceNode->m_Id) : clone->m_Nodes.end();
-        if (!sourceNode || targetNode == clone->m_Nodes.end())
-            return fail(QStringLiteral("刚体集中惯性 %1 的节点引用无效").arg(id));
-        auto target = std::make_shared<RigidBodyInertia>(*source);
-        target->m_pNode = targetNode->second;
-        clone->m_RigidBodyInertias.emplace(id, std::move(target));
-    }
-
-    const auto copyLoadBase = [](const LoadBase& source, LoadBase& target)
-    {
-        target.m_Id = source.m_Id;
-        target.m_Name = source.m_Name;
-        target.m_LoadType = source.m_LoadType;
-        target.m_Direction = source.m_Direction;
-        target.m_StepId = source.m_StepId;
-        target.m_StartTime = source.m_StartTime;
-        target.m_EndTime = source.m_EndTime;
-        target.m_FunctionType = source.m_FunctionType;
-        target.m_Amplitude = source.m_Amplitude;
-        target.m_Frequency = source.m_Frequency;
-        target.m_Phase = source.m_Phase;
-        target.m_Offset = source.m_Offset;
-        target.m_RampT0 = source.m_RampT0;
-        target.m_RampT1 = source.m_RampT1;
-        target.m_Decay = source.m_Decay;
-        target.m_Period = source.m_Period;
-        target.m_DutyCycle = source.m_DutyCycle;
-    };
-
-    for (const auto& [id, source] : m_Load)
-    {
-        if (!source)
-            return fail(QStringLiteral("荷载 %1 为空").arg(id));
-        std::shared_ptr<LoadBase> target;
-        if (const auto nodeLoad = std::dynamic_pointer_cast<Force_Node>(source))
-        {
-            auto copied = std::make_shared<Force_Node>();
-            copied->m_Value = nodeLoad->m_Value;
-            if (const auto sourceNode = nodeLoad->m_pNode.lock())
-            {
-                const auto found = clone->m_Nodes.find(sourceNode->m_Id);
-                if (found == clone->m_Nodes.end())
-                    return fail(QStringLiteral("节点荷载 %1 的节点引用无效").arg(id));
-                copied->m_pNode = found->second;
-            }
-            target = std::move(copied);
-        }
-        else if (const auto elementLoad = std::dynamic_pointer_cast<Force_Element>(source))
-        {
-            auto copied = std::make_shared<Force_Element>();
-            copied->m_Value = elementLoad->m_Value;
-            if (const auto sourceElement = elementLoad->m_pElement.lock())
-            {
-                const auto found = clone->m_Elements.find(sourceElement->m_Id);
-                if (found == clone->m_Elements.end())
-                    return fail(QStringLiteral("单元荷载 %1 的单元引用无效").arg(id));
-                copied->m_pElement = found->second;
-            }
-            target = std::move(copied);
-        }
-        else if (const auto gravity = std::dynamic_pointer_cast<Force_Gravity>(source))
-        {
-            auto copied = std::make_shared<Force_Gravity>();
-            copied->m_g = gravity->m_g;
-            target = std::move(copied);
-        }
-        else if (const auto wind = std::dynamic_pointer_cast<Force_Wind>(source))
-        {
-            auto copied = std::make_shared<Force_Wind>();
-            copied->m_velocity = wind->m_velocity;
-            copied->m_direction = wind->m_direction;
-            copied->m_windDensity = wind->m_windDensity;
-            copied->m_EnableAerodynamicMoment = wind->m_EnableAerodynamicMoment;
-            target = std::move(copied);
-        }
-        else
-            return fail(QStringLiteral("荷载 %1 类型不受支持").arg(id));
-        copyLoadBase(*source, *target);
-        clone->m_Load.emplace(id, std::move(target));
-    }
+    QString bindingCopyError;
+    if (!clone->CopyAnalysisBindingsFrom(*this, &bindingCopyError))
+        return fail(bindingCopyError);
 
     for (const auto& [id, source] : m_AnalysisStep)
     {
@@ -318,12 +268,21 @@ std::shared_ptr<StructureData> StructureData::CloneForAnalysis(QString* errorMes
         config.adaptiveTssbn = source->m_AdaptiveTssbn;
         config.structuralDamping = source->m_StructuralDamping.settings;
         config.enableGalloping = source->m_EnableGalloping;
+        config.gallopingProfileBindingMode = source->m_GallopingProfileBindingMode;
         config.gallopingAerodynamicTangentMode = source->m_GallopingAerodynamicTangentMode;
         config.gallopingIceThickness = source->m_GallopingIceThickness;
         config.gallopingInitialAttackDegrees = source->m_GallopingInitialAttackDegrees;
+        config.gallopingInitialVerticalPerturbationMeters = source->m_GallopingInitialVerticalPerturbationMeters;
+        config.gallopingInitialVerticalPerturbationWaves = source->m_GallopingInitialVerticalPerturbationWaves;
         config.regionScope = source->m_RegionScope;
         config.computeRegionIds = source->m_ComputeRegionIds;
         clone->AddAnalysisStep(config);
+        auto& copiedStep = clone->m_AnalysisStep.at(id);
+        copiedStep->SetReferenceGravityEquilibrium(source->IsReferenceGravityEquilibrium());
+        copiedStep->m_DiagnosticTssbnCacheExternalForcePerStage =
+            source->m_DiagnosticTssbnCacheExternalForcePerStage;
+        copiedStep->m_DiagnosticTssbnErrorTrace = source->m_DiagnosticTssbnErrorTrace;
+        copiedStep->m_DiagnosticProfileGallopingForce = source->m_DiagnosticProfileGallopingForce;
     }
 
     for (const auto& [id, source] : m_ModelSets)
@@ -341,6 +300,91 @@ std::shared_ptr<StructureData> StructureData::CloneForAnalysis(QString* errorMes
     }
 
     return clone;
+}
+
+bool StructureData::CopyAnalysisBindingsFrom(const StructureData& source, _OUT QString* errorMessage)
+{
+    if (errorMessage)
+        errorMessage->clear();
+    const auto fail = [errorMessage](const QString& message)
+    {
+        if (errorMessage)
+            *errorMessage = message;
+        return false;
+    };
+    std::map<int, std::shared_ptr<Constraint>> constraints;
+    std::map<int, std::shared_ptr<NonlinearMPCConstraint>> mpcConstraints;
+    std::map<int, std::shared_ptr<RigidBodyInertia>> rigidBodyInertias;
+    std::map<int, std::shared_ptr<LoadBase>> loads;
+    for (const auto& [id, sourceConstraint] : source.m_Constraint)
+    {
+        if (!sourceConstraint)
+            return fail(QStringLiteral("约束 %1 为空").arg(id));
+        const auto sourceNode = sourceConstraint->m_pNode.lock();
+        const auto found = sourceNode ? m_Nodes.find(sourceNode->m_Id) : m_Nodes.end();
+        if (found == m_Nodes.end() || !found->second)
+            return fail(QStringLiteral("约束 %1 的节点引用无效").arg(id));
+        auto target = std::make_shared<Constraint>(*sourceConstraint);
+        target->m_pNode = found->second;
+        constraints.emplace(id, std::move(target));
+    }
+    for (const auto& [id, sourceMpc] : source.m_MPCConstraints)
+    {
+        if (!sourceMpc)
+            return fail(QStringLiteral("MPC %1 为空").arg(id));
+        for (int nodeId : sourceMpc->GetNodeIds())
+        {
+            const auto found = m_Nodes.find(nodeId);
+            if (found == m_Nodes.end() || !found->second)
+                return fail(QStringLiteral("MPC %1 的节点引用无效").arg(id));
+        }
+        auto target = sourceMpc->Clone(m_Nodes);
+        if (!target)
+            return fail(QStringLiteral("MPC %1 的节点引用无效").arg(id));
+        mpcConstraints.emplace(id, std::move(target));
+    }
+    for (const auto& [id, sourceInertia] : source.m_RigidBodyInertias)
+    {
+        if (!sourceInertia)
+            return fail(QStringLiteral("刚体集中惯性 %1 为空").arg(id));
+        const auto sourceNode = sourceInertia->m_pNode.lock();
+        const auto found = sourceNode ? m_Nodes.find(sourceNode->m_Id) : m_Nodes.end();
+        if (found == m_Nodes.end() || !found->second)
+            return fail(QStringLiteral("刚体集中惯性 %1 的节点引用无效").arg(id));
+        auto target = std::make_shared<RigidBodyInertia>(*sourceInertia);
+        target->m_pNode = found->second;
+        rigidBodyInertias.emplace(id, std::move(target));
+    }
+    for (const auto& [id, sourceLoad] : source.m_Load)
+    {
+        if (!sourceLoad)
+            return fail(QStringLiteral("荷载 %1 为空").arg(id));
+        auto target = LoadFactory::Clone(sourceLoad);
+        if (!target)
+            return fail(QStringLiteral("荷载 %1 类型不受支持").arg(id));
+        if (const auto nodeLoad = std::dynamic_pointer_cast<Force_Node>(target))
+        {
+            const auto sourceNode = nodeLoad->m_pNode.lock();
+            const auto found = sourceNode ? m_Nodes.find(sourceNode->m_Id) : m_Nodes.end();
+            if (found == m_Nodes.end() || !found->second)
+                return fail(QStringLiteral("节点荷载 %1 的节点引用无效").arg(id));
+            nodeLoad->m_pNode = found->second;
+        }
+        else if (const auto elementLoad = std::dynamic_pointer_cast<Force_Element>(target))
+        {
+            const auto sourceElement = elementLoad->m_pElement.lock();
+            const auto found = sourceElement ? m_Elements.find(sourceElement->m_Id) : m_Elements.end();
+            if (found == m_Elements.end() || !found->second)
+                return fail(QStringLiteral("单元荷载 %1 的单元引用无效").arg(id));
+            elementLoad->m_pElement = found->second;
+        }
+        loads.emplace(id, std::move(target));
+    }
+    m_Constraint.swap(constraints);
+    m_MPCConstraints.swap(mpcConstraints);
+    m_RigidBodyInertias.swap(rigidBodyInertias);
+    m_Load.swap(loads);
+    return true;
 }
 
 int StructureData::AddModelSet(const QString& name, ModelSetType type, const std::set<int>& ids, QString* errorMessage)
@@ -654,6 +698,7 @@ bool StructureData::RebuildAndMergeComputeRegions(QString* errorMessage)
             }
         }
     }
+    SynchronizeComputeRegionEnablementFromSteps();
     return ValidateComputeRegions(errorMessage);
 }
 
@@ -751,6 +796,33 @@ void StructureData::EnsureDefaultAnalysisConfiguration()
         config.regionScope = AnalysisRegionScope::AllEnabledRegions;
         AddAnalysisStep(config);
     }
+
+    SynchronizeComputeRegionEnablementFromSteps();
+}
+
+void StructureData::SynchronizeComputeRegionEnablementFromSteps()
+{
+    if (m_AnalysisStep.empty())
+        return;
+
+    bool anyStepUsesAllRegions = false;
+    std::set<int> referencedRegionIds;
+    for (const auto& [stepId, step] : m_AnalysisStep)
+    {
+        Q_UNUSED(stepId);
+        if (!step)
+            continue;
+        if (step->m_RegionScope == AnalysisRegionScope::AllEnabledRegions)
+            anyStepUsesAllRegions = true;
+        else
+            referencedRegionIds.insert(step->m_ComputeRegionIds.begin(), step->m_ComputeRegionIds.end());
+    }
+
+    for (auto& [regionId, region] : m_ComputeRegions)
+    {
+        if (region)
+            region->m_Enabled = anyStepUsesAllRegions || referencedRegionIds.contains(regionId);
+    }
 }
 
 std::vector<int> StructureData::ResolveAnalysisStepRegionIds(const AnalysisStep& step) const
@@ -820,13 +892,123 @@ std::shared_ptr<StructureData> StructureData::CloneRegionForAnalysis(int regionI
         else
             ++it;
     }
+
+    // 原模型中导线节点可能与塔架梁相连，因而被提升为 6 自由度。区域计算移除塔架
+    // 后若仍保留这些转角自由度，纯桁架区域会出现零刚度行，静力线性方程必然奇异。
+    // 依据区域副本中实际保留的单元重新确定每个节点的自由度数。
+    std::map<int, int> requiredNodeDofs;
+    for (const auto& [nodeId, node] : clone->m_Nodes)
+    {
+        if (!node)
+        {
+            if (errorMessage)
+                *errorMessage = QStringLiteral("计算区域 %1 含有空节点 %2。").arg(regionId).arg(nodeId);
+            return nullptr;
+        }
+        requiredNodeDofs.emplace(nodeId, 3);
+    }
+    for (const auto& [elementId, element] : clone->m_Elements)
+    {
+        if (!element)
+        {
+            if (errorMessage)
+                *errorMessage = QStringLiteral("计算区域 %1 含有空单元 %2。").arg(regionId).arg(elementId);
+            return nullptr;
+        }
+        const int elementDofs = std::max(3, element->Get_NodeDOF());
+        for (const auto& nodeRef : element->m_pNode)
+        {
+            const auto node = nodeRef.lock();
+            if (!node)
+            {
+                if (errorMessage)
+                    *errorMessage = QStringLiteral("计算区域 %1 的单元 %2 含有失效节点。").arg(regionId).arg(elementId);
+                return nullptr;
+            }
+            const auto requirement = requiredNodeDofs.find(node->m_Id);
+            if (requirement == requiredNodeDofs.cend())
+            {
+                if (errorMessage)
+                    *errorMessage = QStringLiteral("计算区域 %1 的单元 %2 引用了区域外节点 %3。")
+                                        .arg(regionId)
+                                        .arg(elementId)
+                                        .arg(node->m_Id);
+                return nullptr;
+            }
+            requirement->second = std::max(requirement->second, elementDofs);
+        }
+        if (const auto spring = std::dynamic_pointer_cast<ElementSpring1>(element); spring && spring->m_DOF >= 3)
+        {
+            const auto node = spring->m_pNode[0].lock();
+            if (node)
+                requiredNodeDofs.at(node->m_Id) = 6;
+        }
+        if (const auto spring = std::dynamic_pointer_cast<ElementSpring2>(element))
+        {
+            const auto first = spring->m_pNode[0].lock();
+            const auto second = spring->m_pNode[1].lock();
+            if (first && spring->m_FirstDOF >= 3)
+                requiredNodeDofs.at(first->m_Id) = 6;
+            if (second && spring->m_SecondDOF >= 3)
+                requiredNodeDofs.at(second->m_Id) = 6;
+        }
+    }
+    for (const auto& [nodeId, requiredDofs] : requiredNodeDofs)
+        clone->m_Nodes.at(nodeId)->SetExactNumDOFs(requiredDofs);
     for (auto it = clone->m_Constraint.begin(); it != clone->m_Constraint.end();)
     {
         const auto node = it->second ? it->second->m_pNode.lock() : nullptr;
-        if (!node || clone->m_Nodes.find(node->m_Id) == clone->m_Nodes.cend())
+        if (!node || clone->m_Nodes.find(node->m_Id) == clone->m_Nodes.cend() ||
+            static_cast<int>(it->second->m_Direction) >= node->m_DOF.size())
             it = clone->m_Constraint.erase(it);
         else
             ++it;
+    }
+
+    // 区域只保留一根导线（或局部构件）时，塔架等外部连接单元会被裁剪。
+    // 这些被裁剪单元连接到区域的节点就是子模型的截断边界；若不施加支座，
+    // 局部模型会整体刚体漂移，出现“看似求解成功但位移数米/数十米”的假结果。
+    // 在分析副本中固定该边界节点的保留自由度，原模型、集合和用户原始约束均不改动。
+    std::set<int> cutBoundaryNodeIds;
+    for (const auto& [sourceElementId, sourceElement] : m_Elements)
+    {
+        if (!sourceElement || region->m_ElementIds.contains(sourceElementId))
+            continue;
+        for (const auto& nodeRef : sourceElement->m_pNode)
+        {
+            const auto node = nodeRef.lock();
+            if (node && clone->m_Nodes.contains(node->m_Id))
+                cutBoundaryNodeIds.insert(node->m_Id);
+        }
+    }
+    int nextConstraintId = clone->m_Constraint.empty() ? 1 : clone->m_Constraint.rbegin()->first + 1;
+    for (int nodeId : cutBoundaryNodeIds)
+    {
+        const auto nodeIt = clone->m_Nodes.find(nodeId);
+        if (nodeIt == clone->m_Nodes.cend() || !nodeIt->second)
+            continue;
+        const int dofCount = static_cast<int>(nodeIt->second->m_DOF.size());
+        for (int direction = 0; direction < dofCount; ++direction)
+        {
+            const bool alreadyConstrained = std::any_of(
+                clone->m_Constraint.cbegin(), clone->m_Constraint.cend(), [nodeId, direction](const auto& entry)
+                {
+                    const auto& constraint = entry.second;
+                    const auto constraintNode = constraint ? constraint->m_pNode.lock() : nullptr;
+                    return constraintNode && constraintNode->m_Id == nodeId &&
+                           static_cast<int>(constraint->m_Direction) == direction;
+                });
+            if (alreadyConstrained)
+                continue;
+            auto support = std::make_shared<Constraint>();
+            support->m_Id = nextConstraintId++;
+            support->m_Name = QStringLiteral("区域截断支座");
+            support->m_StepId = 0;
+            support->m_pNode = nodeIt->second;
+            support->m_Direction = static_cast<EnumKeyword::Direction>(direction);
+            support->m_Value = 0.0;
+            clone->m_Constraint.emplace(support->m_Id, std::move(support));
+        }
     }
     for (auto it = clone->m_MPCConstraints.begin(); it != clone->m_MPCConstraints.end();)
     {
@@ -844,8 +1026,7 @@ std::shared_ptr<StructureData> StructureData::CloneRegionForAnalysis(int regionI
             return nullptr;
         }
 
-        // MPC remains permanently stored in the source model.  A regional
-        // analysis clone owns it exactly when it owns the master node.
+        // MPC 始终保留在源模型中；区域分析副本仅保留主节点属于该区域的 MPC。
         if (!region->ContainsNode(nodeIds[0]))
         {
             it = clone->m_MPCConstraints.erase(it);
@@ -966,6 +1147,8 @@ std::shared_ptr<Property> StructureData::Create_Property(int id_material, int id
     for (const auto& pair : m_Property)
     {
         auto existingProp = pair.second;
+        if (!existingProp)
+            continue;
         auto existingMat = existingProp->m_pMaterial.lock();
         auto existingSec = existingProp->m_pSection.lock();
 
@@ -977,11 +1160,11 @@ std::shared_ptr<Property> StructureData::Create_Property(int id_material, int id
     }
 
     // 不存在，创建新的 Property
-    int property_id = static_cast<int>(m_Property.size()) + 1;
+    int property_id = NextAvailableEntityId(m_Property);
     auto property = std::make_shared<Property>();
 
     auto iterMat = m_Material.find(id_material);
-    if (iterMat != m_Material.end())
+    if (iterMat != m_Material.end() && iterMat->second)
     {
         property->m_pMaterial = iterMat->second;
     }
@@ -992,7 +1175,7 @@ std::shared_ptr<Property> StructureData::Create_Property(int id_material, int id
     }
 
     auto iterSec = m_Section.find(id_section);
-    if (iterSec != m_Section.end())
+    if (iterSec != m_Section.end() && iterSec->second)
     {
         property->m_pSection = iterSec->second;
     }
@@ -1010,7 +1193,7 @@ std::shared_ptr<Property> StructureData::Create_Property(int id_material, int id
 void StructureData::Add_Property(double E, double density, double Area, double* v, double* S, double* e)
 {
     auto pMaterial = std::make_shared<Material>();
-    pMaterial->m_Id = int(m_Material.size()) + 1;
+    pMaterial->m_Id = NextAvailableEntityId(m_Material);
     pMaterial->m_Young = E;
     pMaterial->m_Density = density;
 
@@ -1039,12 +1222,9 @@ void StructureData::Add_Property(double E, double density, double Area, double* 
 
     m_Material.insert(std::make_pair(pMaterial->m_Id, pMaterial));
 
-    int autoId = static_cast<int>(m_Section.size()) + 1;
+    int autoId = NextAvailableEntityId(m_Section);
 
-    auto pSection = std::make_shared<SectionCircular>();
-    pSection->m_Id = autoId;
-    pSection->m_Area = Area;
-    pSection->Calculate_Radius();
+    auto pSection = SectionFactory::CreateCircular(autoId, Area);
     m_Section.insert(std::make_pair(autoId, pSection));
 }
 
@@ -1067,7 +1247,7 @@ int StructureData::Add_Constraint(std::vector<int> Nodeid, std::vector<int> dire
         for (int i = 0; i < num; ++i)
         {
             auto pConstraint = std::make_shared<Constraint>();
-            pConstraint->m_Id = static_cast<int>(m_Constraint.size()) + 1;
+            pConstraint->m_Id = NextAvailableEntityId(m_Constraint);
             pConstraint->m_pNode = pNode;
             pConstraint->m_Direction = static_cast<EnumKeyword::Direction>(direaction[i]);
             pConstraint->m_Value = value[i];
@@ -1079,7 +1259,7 @@ int StructureData::Add_Constraint(std::vector<int> Nodeid, std::vector<int> dire
 
 void StructureData::Add_Gravity(int direction, int idStep)
 {
-    int autoId = static_cast<int>(m_Load.size()) + 1;
+    int autoId = NextAvailableEntityId(m_Load);
 
     auto pLoad = std::make_shared<Force_Gravity>();
     pLoad->m_Id = autoId;
@@ -1093,7 +1273,7 @@ void StructureData::Add_Gravity(int direction, int idStep)
 void StructureData::AddAnalysisStep(const AnalysisStepConfig& config)
 {
     auto pStep = std::make_shared<AnalysisStep>();
-    pStep->m_Id = config.id > 0 ? config.id : static_cast<int>(m_AnalysisStep.size()) + 1;
+    pStep->m_Id = config.id > 0 ? config.id : NextAvailableEntityId(m_AnalysisStep);
     pStep->m_Name =
         config.name.trimmed().isEmpty() ? QStringLiteral("Step-%1").arg(pStep->m_Id) : config.name.trimmed();
     pStep->m_Type = config.type;      //分析步类型
@@ -1111,13 +1291,17 @@ void StructureData::AddAnalysisStep(const AnalysisStepConfig& config)
                                          : AeroManager::supportedIceThicknesses().front();
     pStep->m_GallopingInitialAttackDegrees =
         std::isfinite(config.gallopingInitialAttackDegrees) ? config.gallopingInitialAttackDegrees : 45.0;
+    pStep->m_GallopingInitialVerticalPerturbationMeters = config.gallopingInitialVerticalPerturbationMeters;
+    pStep->m_GallopingInitialVerticalPerturbationWaves = config.gallopingInitialVerticalPerturbationWaves;
     pStep->m_RegionScope = config.regionScope;
     pStep->m_ComputeRegionIds = config.computeRegionIds;
     pStep->isDynamic = (config.type == EnumKeyword::StepType::DYNAMIC);
-    pStep->m_EnableGalloping = pStep->isDynamic && config.enableGalloping;
+    pStep->m_EnableGalloping = config.enableGalloping;
+    pStep->m_GallopingProfileBindingMode = config.gallopingProfileBindingMode;
     pStep->m_GallopingAerodynamicTangentMode = config.gallopingAerodynamicTangentMode;
 
     m_AnalysisStep.insert(std::make_pair(pStep->m_Id, pStep));
+    SynchronizeComputeRegionEnablementFromSteps();
 }
 
 // ===== 模型检查函数 =====
@@ -1141,7 +1325,6 @@ void StructureData::CleanupModel(double tolerance)
     }
 }
 
-//数据优化-----不用看这些代码-------------------
 // 临时节点结构（用于扁平化数据，提升缓存效率）
 struct TempNode
 {
@@ -1154,9 +1337,7 @@ void StructureData::MergeDuplicateNodes(double tolerance)
     if (m_Nodes.empty())
         return;
 
-    // Coincident master/slave nodes are meaningful for releases and must
-    // remain distinct. Merging either endpoint would destroy the MPC before
-    // the analysis starts.
+    // 重合的主从节点可用于端部释放，必须保持独立；合并任一节点都会破坏 MPC。
     std::unordered_set<int> mpcNodeIds;
     for (const auto& [mpcId, mpc] : m_MPCConstraints)
     {
@@ -1442,87 +1623,52 @@ void StructureData::RemoveOrphanNodes()
     if (m_Nodes.empty())
         return;
 
-    // 1. 找出当前最大的节点 ID，确定 vector 大小
-    int maxNodeId = m_Nodes.rbegin()->first;
-
-    // 2. 创建标记数组 (比 set 快几十倍)
-    std::vector<bool> isNodeUsed(maxNodeId + 1, false);
-
-    // 3. 遍历所有单元，标记用到的节点
-    for (const auto& elemPair : m_Elements)
+    // 外部节点编号可稀疏且接近 int 上限，只记录实际引用，避免按最大编号分配内存。
+    std::unordered_set<int> usedNodeIds;
+    usedNodeIds.reserve(m_Nodes.size());
+    for (const auto& [elementId, element] : m_Elements)
     {
-        for (const auto& nodeWeak : elemPair.second->m_pNode)
-        {
-            auto node = nodeWeak.lock();
-            if (node && node->m_Id <= maxNodeId)
-            {
-                isNodeUsed[node->m_Id] = true;
-            }
-        }
-    }
-
-    // 约束引用的节点也不能删
-    for (const auto& conPair : m_Constraint)
-    {
-        auto node = conPair.second->m_pNode.lock();
-        if (node && node->m_Id <= maxNodeId)
-        {
-            isNodeUsed[node->m_Id] = true;
-        }
-    }
-
-    for (const auto& mpcPair : m_MPCConstraints)
-    {
-        if (!mpcPair.second)
+        Q_UNUSED(elementId);
+        if (!element)
             continue;
-        for (const int nodeId : mpcPair.second->GetNodeIds())
-        {
-            if (nodeId >= 0 && nodeId <= maxNodeId)
-                isNodeUsed[nodeId] = true;
-        }
+        for (const auto& nodeReference : element->m_pNode)
+            if (const auto node = nodeReference.lock())
+                usedNodeIds.insert(node->m_Id);
     }
-
+    for (const auto& [constraintId, constraint] : m_Constraint)
+    {
+        Q_UNUSED(constraintId);
+        if (const auto node = constraint ? constraint->m_pNode.lock() : nullptr)
+            usedNodeIds.insert(node->m_Id);
+    }
+    for (const auto& [mpcId, mpc] : m_MPCConstraints)
+    {
+        Q_UNUSED(mpcId);
+        if (!mpc)
+            continue;
+        for (const int nodeId : mpc->GetNodeIds())
+            usedNodeIds.insert(nodeId);
+    }
     for (const auto& [inertiaId, inertia] : m_RigidBodyInertias)
     {
         Q_UNUSED(inertiaId);
-        const auto node = inertia ? inertia->m_pNode.lock() : nullptr;
-        if (node && node->m_Id >= 0 && node->m_Id <= maxNodeId)
-            isNodeUsed[node->m_Id] = true;
+        if (const auto node = inertia ? inertia->m_pNode.lock() : nullptr)
+            usedNodeIds.insert(node->m_Id);
+    }
+    for (const auto& [loadId, load] : m_Load)
+    {
+        Q_UNUSED(loadId);
+        const auto nodeLoad = std::dynamic_pointer_cast<Force_Node>(load);
+        if (const auto node = nodeLoad ? nodeLoad->m_pNode.lock() : nullptr)
+            usedNodeIds.insert(node->m_Id);
     }
 
-    // 荷载引用的节点也不能删
-    for (const auto& loadPair : m_Load)
+    for (auto node = m_Nodes.begin(); node != m_Nodes.end();)
     {
-        auto forceNode = std::dynamic_pointer_cast<Force_Node>(loadPair.second);
-        if (forceNode)
-        {
-            auto node = forceNode->m_pNode.lock();
-            if (node && node->m_Id <= maxNodeId)
-            {
-                isNodeUsed[node->m_Id] = true;
-            }
-        }
-    }
-
-    // 4. 收集孤立节点
-    std::vector<int> orphanNodes;
-    orphanNodes.reserve(m_Nodes.size() / 10);
-
-    for (const auto& nodePair : m_Nodes)
-    {
-        int id = nodePair.first;
-        if (id > maxNodeId || !isNodeUsed[id])
-        {
-            orphanNodes.push_back(id);
-        }
-    }
-
-    if (orphanNodes.empty())
-        return;
-
-    for (int id : orphanNodes)
-    {
-        m_Nodes.erase(id);
+        if (usedNodeIds.find(node->first) == usedNodeIds.end())
+            node = m_Nodes.erase(node);
+        else
+            ++node;
     }
 }
 

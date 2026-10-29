@@ -1,0 +1,27 @@
+{
+  "schema": "corotational-spatial-manufactured-dynamics-v1",
+  "purpose": "Real CR/AnalysisStep/Newmark noncommuting spatial inertia and rotation-update diagnostic",
+  "reference": "Closed-form Rz(.7t)Ry(.4t)Rx(.9t), analytic nodal translation derivatives and Euler inertia",
+  "external_load": "Independent exact linear-N consistent load: mu*L/6*(2*a_i+a_j); L/2*(I_s*alpha+omega cross I_s*omega)",
+  "reference_not_derived_from_candidate": true,
+  "prescribed_dofs": 0,
+  "newton_tolerance": 1e-10,
+  "maximum_iterations": 48,
+  "exact_fixed_steps": true,
+  "zero_rejected_steps": true,
+  "zero_precision_limited_steps": true,
+  "finest_error_limits": {
+    "position": 0.0005,
+    "rotation": 0.0005,
+    "velocity": 0.002,
+    "angular_velocity": 0.002,
+    "acceleration": 0.005,
+    "angular_acceleration": 0.005
+  },
+  "order_lower": 1.7,
+  "order_upper": 2.3,
+  "initial_mass_relative_limit": 1e-12,
+  "initial_residual_limit": 1e-10,
+  "qualification": "Manufactured rigid-motion dynamics diagnostic; not a published flexible-beam trajectory reproduction or a general theory certificate.",
+  "primary_dynamics_equations": "https://docs.software.vt.edu/abaqusv2025/English/SIMACAEBMKRefMap/simabmk-c-rigidbodymotion.htm"
+}

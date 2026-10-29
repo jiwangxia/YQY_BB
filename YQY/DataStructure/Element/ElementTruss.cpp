@@ -1,8 +1,59 @@
 #include "ElementTruss.h"
 
+#include <stdexcept>
+#include <cmath>
+#include <limits>
+
 ElementTruss::ElementTruss()
 {
     m_pNode.resize(2);
+}
+
+bool ElementTruss::TryGetStrainEnergy(_OUT double& energy) const
+{
+    energy = std::numeric_limits<double>::quiet_NaN();
+    const auto first = m_pNode[0].lock();
+    const auto second = m_pNode[1].lock();
+    const auto property = m_pProperty.lock();
+    const auto material = property ? property->m_pMaterial.lock() : nullptr;
+    const auto section = property ? property->m_pSection.lock() : nullptr;
+    if (!first || !second || !material || !section || L0 <= 0.0 ||
+        first->m_Displacement.size() < 3 || second->m_Displacement.size() < 3)
+        return false;
+    const Vector3d initial(second->m_X - first->m_X, second->m_Y - first->m_Y, second->m_Z - first->m_Z);
+    const Vector3d delta(second->m_Displacement[0] - first->m_Displacement[0],
+                         second->m_Displacement[1] - first->m_Displacement[1],
+                         second->m_Displacement[2] - first->m_Displacement[2]);
+    const double length = (initial + delta).norm();
+    if (length <= 0.0)
+        return false;
+    const double strain = m_UseEngineeringStrain ? (length - L0) / L0 : std::log(length / L0);
+    const double value = section->m_Area * L0 * (0.5 * material->m_Young * strain * strain + m_InitStress * strain);
+    if (!std::isfinite(value))
+        return false;
+    energy = value;
+    return true;
+}
+
+bool ElementTruss::TryGetKineticEnergy(_OUT double& energy)
+{
+    energy = std::numeric_limits<double>::quiet_NaN();
+    const auto first = m_pNode[0].lock();
+    const auto second = m_pNode[1].lock();
+    const auto property = m_pProperty.lock();
+    const auto material = property ? property->m_pMaterial.lock() : nullptr;
+    const auto section = property ? property->m_pSection.lock() : nullptr;
+    if (!first || !second || !material || !section || L0 <= 0.0 ||
+        first->m_Velocity.size() < 3 || second->m_Velocity.size() < 3)
+        return false;
+    const Vector3d firstVelocity(first->m_Velocity[0], first->m_Velocity[1], first->m_Velocity[2]);
+    const Vector3d secondVelocity(second->m_Velocity[0], second->m_Velocity[1], second->m_Velocity[2]);
+    const double value = material->m_Density * section->m_Area * L0 / 6.0 *
+                         (firstVelocity.squaredNorm() + firstVelocity.dot(secondVelocity) + secondVelocity.squaredNorm());
+    if (!std::isfinite(value) || value < 0.0)
+        return false;
+    energy = value;
+    return true;
 }
 
 void ElementTruss::Get_ke(MatrixXd& ke)
@@ -20,7 +71,7 @@ void ElementTruss::Get_ke(MatrixXd& ke)
     if (pNode0 == nullptr || pNode1 == nullptr)
     {
         qDebug().noquote() << QStringLiteral("Error: ElementTruss 节点指针为空");
-        return;
+        throw std::runtime_error("ElementTruss node reference is invalid");
     }
 
     //Get_L0();
@@ -32,6 +83,7 @@ void ElementTruss::Get_ke(MatrixXd& ke)
 
     // 当前长度
     double length_current = sqrt(dx_current * dx_current + dy_current * dy_current + dz_current * dz_current);
+    L = length_current;
 
     // 当前方向余弦
     double dirCos_x = dx_current / length_current;
@@ -42,8 +94,7 @@ void ElementTruss::Get_ke(MatrixXd& ke)
     VectorXd B_matrix = VectorXd::Zero(6);
     B_matrix << -dirCos_x, -dirCos_y, -dirCos_z, dirCos_x, dirCos_y, dirCos_z;
 
-    // 选择应变公式: true = 对数应变(体积不变), false = 工程应变
-    bool bUseLogStrain = true;
+    const bool bUseLogStrain = !m_UseEngineeringStrain;
 
     if (!bUseLogStrain)
     {
@@ -78,14 +129,14 @@ void ElementTruss::Get_ke(MatrixXd& ke)
     {
         // ===== 对数应变公式 (True Strain / Logarithmic Strain, 体积不变) =====
         // ε = ln(L / L0), 当前面积 A_current = A * L0 / L (体积守恒)
-        // Work-conjugate Hencky axial law: N = EA*ln(L/L0),
-        // hence dN/dL = EA/L.
-        double materialStiffness = E * A / length_current;
-        ke = B_matrix * B_matrix.transpose() * materialStiffness;
-
         double strain = log(length_current / L0); // 对数应变
         m_Stress = E * strain + m_InitStress;     // 真应力，保留单元初始应力
-        double axialForce = m_Stress * A;
+        // m_Stress 为当前真应力，体积不变时必须使用当前面积。
+        double currentArea = A * L0 / length_current;
+        double axialForce = m_Stress * currentArea;
+        // N = sigma * A_current，对应的一致材料切线 dN/dL。
+        double materialStiffness = currentArea * (E - m_Stress) / length_current;
+        ke = B_matrix * B_matrix.transpose() * materialStiffness;
 
         m_inforce = B_matrix * axialForce;
 
@@ -150,23 +201,18 @@ void ElementTruss::Get_L0()
     double dy0 = pNode1->m_Y - pNode0->m_Y;
     double dz0 = pNode1->m_Z - pNode0->m_Z;
 
-    L0 = sqrt(dx0 * dx0 + dy0 * dy0 + dz0 * dz0);
-    // 计算初始长度 L0
+    const double currentLength = sqrt(dx0 * dx0 + dy0 * dy0 + dz0 * dz0);
+
+    if (!m_UseEngineeringStrain || L0 <= 0.0)
+        L0 = currentLength;
+    L = currentLength;
 }
 
 void ElementTruss::Assemble(const std::vector<double>& damping, _OUT MatrixXd& ce)
 {
     if (damping.size() < 4)
     {
-        // 处理错误：抛出异常或设置空矩阵并返回
-        throw std::invalid_argument("damping vector must have at least 4 elements");
+        throw std::invalid_argument("阻尼向量至少四个数");
     }
-
-    MatrixXd ke;
-    MatrixXd me;
-    Get_L0();
-    Get_ke(ke);
-    Get_me_Consistent(me); //一致质量矩阵
-
-    ce = damping[0] * me + damping[1] * ke;
+    GetRayleighDamping({damping[0], damping[1], damping[2], damping[3]}, ce);
 }

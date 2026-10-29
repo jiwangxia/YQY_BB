@@ -1,0 +1,32 @@
+{
+  "schema": "newmark-production-planar-cr-beam-nonlinear-frozen-v1",
+  "frozen_before_candidate_runs": true,
+  "algorithm": "SolverFactory::Create(actual AnalysisStep), fixed Newmark beta=.25 gamma=.5; actual production AnalysisStep/Node/CR assembly and state transitions",
+  "factory_parameter_override": {"minimumTimeStep": 1e-8},
+  "override_qualification": "Only this declared test parameter changes after factory creation; factory default minimumTimeStep=1e-5 is incompatible with the planned fine h. Production source and all other numerical parameters remain unchanged.",
+  "newton_tolerance": 1e-7,
+  "newton_qualification": "Absolute production gate because external force is zero; nonlinear internal force scale is millions. The fixed value prevents a roundoff floor at unnecessarily tiny absolute force tolerance, while candidate accuracy remains checked independently.",
+  "finest_max_normalized_state_error": 0.0015,
+  "order_lower": 1.8,
+  "order_upper": 2.2,
+  "initial_state_normalized_limit": 1e-10,
+  "physical_mass_relative_limit": 1e-11,
+  "force_formula_scaled_limit": 1e-10,
+  "production_potential_scaled_limit": 1e-10,
+  "relative_mechanical_energy_limit": 0.001,
+  "all_runs_must_reach_endpoint_and_have_exact_fixed_step_count": true,
+  "all_runs_zero_rejected_and_precision_limited_solves": true,
+  "all_accepted_states_must_meet_normal_Newton_gate": true,
+  "normalization": "Each of six q/v/a Y/RZ channels uses its maximum absolute value from the pre-candidate independent fine reference, frozen in reference.json. No production response is read to choose normalization or thresholds.",
+  "reference_method": "Independent SciPy DOP853 with analytic force from the stated potential; rtol2.5e-13/maxstepThigh/128 and rtol5e-14/maxstepThigh/256 must agree before any production candidate",
+  "reference_dual_normalized_difference_limit": 1e-8,
+  "reference_relative_energy_limit": 1e-10,
+  "reference_potential_gradient_scaled_limit": 1e-7,
+  "continuum_and_general_spatial_large_rotation_certified": false,
+  "limitations": [
+    "Reference derives the same two-DOF semidiscrete planar mechanical model; it is not a continuum spatial accuracy certificate.",
+    "No gyroscopic cross-axis coupling is present because all rotations share the principal Z axis; general spatial rotation and auxiliary Gauss history need separate cases.",
+    "The short two-high-frequency-period window is frozen for temporal order; it does not establish long-window slow-mode phase accuracy.",
+    "This derived finite-amplitude problem must not be presented as a published same-input transient reproduction."
+  ]
+}

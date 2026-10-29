@@ -6,19 +6,21 @@
 class StructureData;
 class QTableWidget;
 
-// 编辑节点集和单元集的对话框。
+// 以“节点集 + 单元集”为一个逻辑线路集合进行管理，不向普通用户暴露实体 ID。
 class ModelSetManagerDialog final : public QDialog
 {
 public:
-    // 使用目标结构初始化模型集列表。
-    explicit ModelSetManagerDialog(const std::shared_ptr<StructureData>& structure, QWidget* parent = nullptr);
+    explicit ModelSetManagerDialog(const std::shared_ptr<StructureData>& structure, QWidget* parent = nullptr); // 创建模型线路集合管理窗口
 
 private:
-    void refreshTable(int preferredSetId = -1); // 刷新模型集表格并尝试保留选择
-    void editSet(int setId = -1); // 编辑或新建一个模型集
-    void deleteSelectedSet(); // 删除当前选中模型集
-    int selectedSetId() const; // 返回当前选中模型集编号
+    void refreshTable(const QString& preferredName = {});                                                       // 刷新线路集合列表并恢复指定集合选择
+    void createCombinedCollection();                                                                            // 创建配套的节点集和单元集
+    void renameSelectedCollection();                                                                            // 重命名选中的线路集合
+    void deleteSelectedCollection();                                                                            // 删除选中的线路集合
+    int selectedNodeSetId() const;                                                                              // 读取当前集合的节点集编号
+    int selectedElementSetId() const;                                                                           // 读取当前集合的单元集编号
+    QString selectedCollectionName() const;                                                                     // 读取当前选中的线路集合名称
 
-    std::shared_ptr<StructureData> m_structure; // 被编辑的结构数据
-    QTableWidget* m_table = nullptr; // 模型集列表表格
+    std::shared_ptr<StructureData> m_structure;
+    QTableWidget* m_table = nullptr;
 };

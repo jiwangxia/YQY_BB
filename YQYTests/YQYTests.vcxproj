@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="ReleaseVerification|x64">
+      <Configuration>ReleaseVerification</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{4CEC0591-8DBD-4DE7-8DCF-D0D3945E9000}</ProjectGuid>
+    <Keyword>QtVS_v304</Keyword>
+    <ShowAllFiles>true</ShowAllFiles>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <SolutionDir Condition="'$(SolutionDir)' == '' Or '$(SolutionDir)' == '*Undefined*'">$(ProjectDir)..\</SolutionDir>
+    <QtMsBuild Condition="'$(QtMsBuild)' == '' Or !Exists('$(QtMsBuild)\qt.targets')">$(ProjectDir)..\YQY\QtMsBuild</QtMsBuild>
+    <CudaRoot Condition="'$(CUDA_PATH)' != ''">$(CUDA_PATH)</CudaRoot>
+    <CudaRoot Condition="'$(CUDA_PATH)' == '' and Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0')">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0</CudaRoot>
+    <CudssRoot>$(SolutionDir)ThirdPartyLibrary\cuDSS\libcudss-windows-x86_64-0.8.0.10_cuda13-archive</CudssRoot>
+    <OneMklRoot Condition="'$(YQY_MKL_ROOT)' != ''">$(YQY_MKL_ROOT)</OneMklRoot>
+    <OneMklRoot Condition="'$(YQY_MKL_ROOT)' == '' and '$(VCPKG_ROOT)' != ''">$(VCPKG_ROOT)\installed\x64-windows-static-md</OneMklRoot>
+    <OneMklRoot Condition="'$(YQY_MKL_ROOT)' == '' and '$(VCPKG_ROOT)' == '' and Exists('$(SolutionDir)ThirdPartyLibrary\vcpkg_installed\x64-windows-static-md')">$(SolutionDir)ThirdPartyLibrary\vcpkg_installed\x64-windows-static-md</OneMklRoot>
+    <OneMklRoot Condition="'$(YQY_MKL_ROOT)' == '' and '$(VCPKG_ROOT)' == '' and !Exists('$(SolutionDir)ThirdPartyLibrary\vcpkg_installed\x64-windows-static-md')">D:\VS\Vcpkg\vcpkg\installed\x64-windows-static-md</OneMklRoot>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v143</PlatformToolset>
+    <!-- 与生产项目及现有 Qt/VTK 保持相同运行时，Debug 仍保留符号与关闭优化。 -->
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <CharacterSet>Unicode</CharacterSet>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <Import Project="$(QtMsBuild)\qt_defaults.props" />
+  <PropertyGroup Label="QtSettings">
+    <QtInstall>6.8.2_msvc2022_64</QtInstall>
+    <QtModules>core;gui;widgets;opengl;openglwidgets;concurrent;svg</QtModules>
+    <QtBuildConfig>release</QtBuildConfig>
+  </PropertyGroup>
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props"
+            Condition="Exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" />
+    <Import Project="$(QtMsBuild)\Qt.props" />
+    <Import Project="..\YQY\ThirdPartyLibrary\Config_Release.props" />
+  </ImportGroup>
+  <PropertyGroup>
+    <OutDir>$(ProjectDir)..\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(ProjectDir)..\$(Platform)\$(Configuration)\YQYTests\</IntDir>
+    <VcpkgXUseBuiltInApplocalDeps>true</VcpkgXUseBuiltInApplocalDeps>
+    <GoogleTestPackageDir>$(ProjectDir)..\packages\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.1.8.1.7</GoogleTestPackageDir>
+    <!-- 手动选择与生产代码一致的 /MD 库，并由 Runner/TestMain.cpp 提供统一入口。 -->
+    <Force-Disable-Microsoft-googletest-v140-windesktop-msvcstl-static-rt-dyn>true</Force-Disable-Microsoft-googletest-v140-windesktop-msvcstl-static-rt-dyn>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>Utility\pch.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderOutputFile>$(IntDir)YQYTests.pch</PrecompiledHeaderOutputFile>
+      <ForcedIncludeFiles>Utility\pch.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <PreprocessorDefinitions>X64;NDEBUG;_CONSOLE;YQY_VERIFICATION_BUILD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions Condition="'$(Configuration)' == 'ReleaseVerification'">X64;NDEBUG;_CONSOLE;YQY_VERIFICATION_BUILD;YQY_TEST_VERBOSE_DEFAULT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <WarningLevel>Level3</WarningLevel>
+      <TreatAngleIncludeAsExternal>true</TreatAngleIncludeAsExternal>
+      <ExternalWarningLevel>TurnOffAllWarnings</ExternalWarningLevel>
+      <ConformanceMode>true</ConformanceMode>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <ProcessorNumber Condition="'$(CL_MPCount)' == ''">2</ProcessorNumber>
+      <ProcessorNumber Condition="'$(CL_MPCount)' != ''">$(CL_MPCount)</ProcessorNumber>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <AdditionalOptions>/std:c++20 /utf-8 /bigobj %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)..\YQY;$(ProjectDir)..\YQY\GUI;$(ProjectDir)..\YQY\$(Platform)\$(Configuration)\qt\uic;$(GoogleTestPackageDir)\build\native\include;$(SolutionDir)ThirdPartyLibrary\spectra-1.2.0\include;$(CudaRoot)\include;$(CudssRoot)\include;$(OneMklRoot)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>$(CudaRoot)\lib\x64;$(CudssRoot)\lib;$(OneMklRoot)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>$(OutDir)YQYRuntime.lib;$(GoogleTestPackageDir)\lib\native\v140\windesktop\msvcstl\static\rt-dyn\x64\Release\gtest.lib;cudart.lib;cublas.lib;cusparse.lib;cudss.lib;mkl_intel_lp64.lib;mkl_intel_thread.lib;mkl_core.lib;$(OneMklRoot)\lib\libiomp5md.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)' == 'Debug'">
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)' != 'Debug'">
+    <ClCompile>
+      <Optimization>MaxSpeed</Optimization>
+    </ClCompile>
+    <Link>
+      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="Dynamics\AxialOscillation\AxialOscillationTest.cpp" />
+    <ClCompile Include="Dynamics\CableVibration\CableVibrationTest.cpp" />
+    <ClCompile Include="Dynamics\ConstrainedPendulum\ConstrainedPendulumTest.cpp" />
+    <ClCompile Include="Dynamics\DampedOscillator\RayleighDecayTest.cpp" />
+    <ClCompile Include="Dynamics\Oscillators\OscillatorCases.cpp" />
+    <ClCompile Include="Dynamics\Oscillators\OscillatorTests.cpp" />
+    <ClCompile Include="Dynamics\PlanarBeam\FiniteAmplitudeTest.cpp" />
+    <ClCompile Include="Dynamics\PlanarBeam\SmallAmplitudeTest.cpp" />
+    <ClCompile Include="Dynamics\SingleConductor\SingleConductorModel.cpp" />
+    <ClCompile Include="Dynamics\SingleConductor\SingleConductorTest.cpp" />
+    <ClCompile Include="Dynamics\SpatialBeam\SpatialFrameTest.cpp" />
+    <ClCompile Include="Dynamics\SpatialBeam\SpatialRigidMotionTest.cpp" />
+    <ClCompile Include="Dynamics\TrussVibration\TrussVibrationTest.cpp" />
+    <ClCompile Include="Runner\CaseRunner.cpp" />
+    <ClCompile Include="Runner\TestMain.cpp" />
+    <ClCompile Include="Statics\CantileverBeam\CantileverBeamTest.cpp" />
+    <ClCompile Include="Statics\HelicalBeam\HelicalBeamTest.cpp" />
+    <ClCompile Include="Statics\NonlinearSprings\NonlinearSpringsTest.cpp" />
+    <ClCompile Include="Statics\TrussAxial\TrussAxialTest.cpp" />
+    <ClCompile Include="Support\SolveModel.cpp" />
+    <ClCompile Include="Support\TestPaths.cpp" />
+    <ClCompile Include="Support\pch.cpp">
+      <PrecompiledHeader>Create</PrecompiledHeader>
+      <ForcedIncludeFiles />
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Dynamics\CableVibration\CableVibrationTest.h" />
+    <ClInclude Include="Dynamics\ConstrainedPendulum\ConstrainedPendulumTest.h" />
+    <ClInclude Include="Dynamics\Oscillators\OscillatorCases.h" />
+    <ClInclude Include="Dynamics\PlanarBeam\FiniteAmplitudeTest.h" />
+    <ClInclude Include="Dynamics\PlanarBeam\SmallAmplitudeTest.h" />
+    <ClInclude Include="Dynamics\SingleConductor\SingleConductorModel.h" />
+    <ClInclude Include="Dynamics\SingleConductor\SingleConductorTest.h" />
+    <ClInclude Include="Dynamics\SpatialBeam\SpatialFrameTest.h" />
+    <ClInclude Include="Dynamics\SpatialBeam\SpatialRigidMotionTest.h" />
+    <ClInclude Include="Dynamics\TrussVibration\TrussVibrationTest.h" />
+    <ClInclude Include="Runner\CaseRunner.h" />
+    <ClInclude Include="Statics\HelicalBeam\HelicalBeamTest.h" />
+    <ClInclude Include="Support\SolveModel.h" />
+    <ClInclude Include="Support\TestPaths.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
+    <None Include="README.md" />
+    <None Include="cases.json" />
+    <None Include="TestModels\**\*" />
+    <None Include="Pending\**\*.cpp" />
+    <None Include="Pending\**\*.h" />
+    <ProjectReference Include="..\YQY\YQY.vcxproj">
+      <Project>{89BC7349-8CFC-480B-8C9B-F9C8966111D5}</Project>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Import Project="$(QtMsBuild)\qt.targets" />
+  <Import Project="..\packages\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.1.8.1.7\build\native\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.targets"
+          Condition="Exists('..\packages\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.1.8.1.7\build\native\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.targets')" />
+  <!-- Qt.targets 会重设语言标准，在导入后统一恢复 C++20。 -->
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalOptions>/std:c++20 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <Target Name="EnsureTestDependencies" BeforeTargets="PrepareForBuild">
+    <Error Condition="!Exists('$(GoogleTestPackageDir)\build\native\include\gtest\gtest.h')"
+           Text="缺少 GoogleTest NuGet 包，请在解决方案中执行还原 NuGet 程序包。" />
+    <Error Condition="'$(Platform)' != 'x64'" Text="YQY 及其依赖目前仅支持 x64，请选择 x64 配置。" />
+  </Target>
+</Project>

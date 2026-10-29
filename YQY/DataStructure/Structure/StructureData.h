@@ -178,6 +178,7 @@ public:
     bool RebuildAndMergeComputeRegions(QString* errorMessage = nullptr);
     bool ValidateComputeRegions(QString* errorMessage = nullptr) const;
     void EnsureDefaultAnalysisConfiguration();
+    void SynchronizeComputeRegionEnablementFromSteps();
     std::vector<int> ResolveAnalysisStepRegionIds(const AnalysisStep& step) const;
 
     /**
@@ -194,12 +195,23 @@ public:
     void Clear();
 
     /**
+     * @brief 将已验证的临时模型提交到当前模型对象
+     *
+     * 先清理当前结果与实体，再移入模型定义、输出配置和气动数据；保持当前对象身份。
+     * 实体本身不复制，节点、属性与荷载之间的弱引用保持有效；临时模型的求解结果不移入。
+     * @param [in] source 已完成读取与校验的临时模型
+     */
+    void ReplaceModelFrom(StructureData&& source);
+
+    /**
      * @brief 创建完全独立的计算模型副本
      *
      * 重新创建全部实体并重绑节点、属性、约束和荷载引用，副本可在后台线程
      * 独立编号自由度和修改求解状态，不会影响界面模型或其他算例。
      */
     std::shared_ptr<StructureData> CloneForAnalysis(QString* errorMessage = nullptr) const;
+    /// 仅复制荷载、普通约束、MPC 和刚体集中惯性并重绑实体；全部成功后替换，保留节点及单元平衡状态。
+    bool CopyAnalysisBindingsFrom(const StructureData& source, _OUT QString* errorMessage = nullptr);
     std::shared_ptr<StructureData> CloneRegionForAnalysis(int regionId, int analysisStepId,
                                                           QString* errorMessage = nullptr) const;
     std::shared_ptr<StructureData> CloneRegionForAnalysis(int regionId, const std::set<int>& analysisStepIds,

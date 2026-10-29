@@ -1,0 +1,70 @@
+{
+    "active_local_first_moment_y_kg": 0,
+    "aero_force_model": "production relative wind and current force directions",
+    "aero_interpolation": "linear CSV",
+    "aero_source": "C:/APP/VS/YQY_CAE/YQY/YQY/Import/Aero_Data/Output_Data\\1分裂-风速10-厚度12.csv",
+    "air_density_kg_m3": 1.225,
+    "area_m2": 0.00045155,
+    "assumptions": [
+        "Table 7 1.732 interpreted as total line mass, not additional ice mass",
+        "area, Poisson ratio, initial tension, air density, mesh and end details assumed",
+        "bending inertia uses equivalent solid area; physical diameter is aerodynamic",
+        "first mass moment sign follows historical common model",
+        "Rayleigh coefficients supplied from taut-string estimates, not paper matrix"
+    ],
+    "axial_rotary_inertia_kg_m": 0.000268,
+    "bending_inertia_m4": 1.622563974573639e-08,
+    "bending_rigidity_nm2": 1135.7947822015474,
+    "bending_rotary_inertia_kg_m": 6.223631500302386e-05,
+    "boundary_scope": "translations and global rotation X fixed; rotation Y/Z free",
+    "build_succeeded": true,
+    "damping_scope": "CR3D all channels use y1*M+y2*K; c1/c2 unused",
+    "density_kg_m3": 3835.677112169195,
+    "diameter_m": 0.0276,
+    "duration_s": 300,
+    "dynamic_step_id": 2,
+    "eccentric_mass_and_gravity_supported": false,
+    "element": "CR3D",
+    "elements": 52,
+    "end_transition_length_m": 1,
+    "failure_reason": "",
+    "gravity_m_s2": 9.81,
+    "ice_mm": 12,
+    "initial_attack_degrees": 40,
+    "initial_horizontal_stress_pa": 60000000,
+    "initial_horizontal_tension_n": 27093,
+    "initial_perturbation_m": 0,
+    "input_file": "C:/APP/VS/YQY_CAE/tmp/newmark-duan-galloping-20261026/inputs/beam/model.h5",
+    "left_node": 1,
+    "line_mass_kg_m": 1.732,
+    "nodes": 53,
+    "poisson": 0.3,
+    "qualification": "Duan Table 7 based extension; not a strict reproduction of the paper",
+    "rayleigh_c1": 0.006428681471391675,
+    "rayleigh_c2": 3.4567309519243565e-05,
+    "rayleigh_y1": 0.0013097343646597613,
+    "rayleigh_y2": 0.0001696696889219597,
+    "requested_local_first_moment_y_kg": -0.000459,
+    "requested_segments": 50,
+    "right_node": 53,
+    "sample_nodes": [
+        {
+            "node_id": 14,
+            "span_fraction": 0.25
+        },
+        {
+            "node_id": 27,
+            "span_fraction": 0.5
+        },
+        {
+            "node_id": 40,
+            "span_fraction": 0.75
+        }
+    ],
+    "span_m": 200,
+    "static_step_id": 1,
+    "static_wind": false,
+    "torsional_rigidity_nm2": 101,
+    "wind_speed_m_s": 10,
+    "young_pa": 70000000000
+}

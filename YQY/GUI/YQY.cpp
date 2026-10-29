@@ -1,19 +1,45 @@
 #include "YQY.h"
-
+#include <QVariant>
+#include <QApplication>
+#include <QCheckBox>
+#include <QComboBox>
+#include <QFrame>
+#include <QGridLayout>
+#include <QHBoxLayout>
+#include <QHeaderView>
+#include <QLabel>
+#include <QMainWindow>
+#include <QPlainTextEdit>
+#include <QProgressBar>
+#include <QPushButton>
+#include <QScrollArea>
+#include <QSpacerItem>
+#include <QSplitter>
+#include <QStackedWidget>
+#include <QTabBar>
+#include <QTabWidget>
+#include <QToolButton>
+#include <QTreeWidget>
+#include <QVBoxLayout>
+#include <QWidget>
+#include "Widgets/WorkspaceSplitter.h"
 #include "Controllers/ModelController.h"
 #include "Controllers/ResultDataController.h"
 #include "Controllers/SolveTaskController.h"
 #include "Controllers/WorkspaceController.h"
 #include "Widgets/ModelViewport.h"
 #include "Widgets/NavigationButton.h"
+#include "Widgets/SingleLineLabel.h"
 #include "Widgets/SettingsPanel.h"
 #include "Widgets/ResultControlPanel.h"
+#include "Widgets/NodeTimeHistoryPanel.h"
 #include "Widgets/ResultControlInputWidgets.h"
 #include "Widgets/AnalysisSummaryPanel.h"
 #include "Widgets/PropertyModule.h"
 #include "Widgets/ConductorModule.h"
 #include "Dialogs/AnalysisManagerDialog.h"
 #include "Dialogs/ComputeRegionManagerDialog.h"
+#include "Dialogs/ModelSetManagerDialog.h"
 #include "Dialogs/SolveTaskManagerDialog.h"
 #include "Dialogs/PropertyItemEditorDialog.h"
 #include "Dialogs/PropertyLibraryDialog.h"
@@ -22,6 +48,7 @@
 #include "Dialogs/ResultPlotExportDialog.h"
 #include "Dialogs/FileDialogService.h"
 #include "Application/ApplicationPaths.h"
+#include "Utility/ResultExportPaths.h"
 #include "Solver/Assembly/AssemblySettings.h"
 #include "Solver/Linear/Gpu/GpuSettings.h"
 #include "Solver/Linear/LinearSolverSettings.h"
@@ -40,30 +67,36 @@
 #include "DataStructure/Section/SectionRectangle.h"
 #include "Conductor/PropertyLibrary.h"
 #include "Widgets/ProgressBarAnimation.h"
-
+#include "Utility/UiIcons.h"
 #include <cmath>
-#include <QComboBox>
+#include <QAction>
+#include <QActionGroup>
 #include <QAbstractSpinBox>
-#include <QCheckBox>
+#include <QClipboard>
+#include <QDateTime>
 #include <QDesktopServices>
 #include <QDir>
 #include <QEvent>
 #include <QFile>
 #include <QFileInfo>
 #include <QFutureWatcher>
+#include <QKeyEvent>
 #include <QLocale>
 #include <QMessageBox>
+#include <QMenu>
 #include <QPainter>
 #include <QPointer>
 #include <QProcess>
+#include <QScopedValueRollback>
 #include <QStyleOptionComboBox>
 #include <QStyleOptionButton>
 #include <QStyleOptionSpinBox>
+#include <QScrollBar>
+#include <QTextCursor>
 #include <QTextStream>
 #include <QTimer>
 #include <QUrl>
 #include <QtConcurrent/QtConcurrentRun>
-#include <QtSvg/QSvgRenderer>
 
 #ifdef Q_OS_WIN
 #ifndef NOMINMAX
@@ -81,8 +114,10 @@ public:
         : QWidget(target)
         , m_target(target)
     {
+        setObjectName(QStringLiteral("inputArrowOverlay"));
         setAttribute(Qt::WA_TransparentForMouseEvents);
         setAttribute(Qt::WA_NoSystemBackground);
+        setFocusPolicy(Qt::NoFocus);
         m_target->installEventFilter(this);
         updateGeometry();
         show();
@@ -91,11 +126,25 @@ public:
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override
     {
-        if (watched == m_target && (event->type() == QEvent::Resize || event->type() == QEvent::Show ||
-                                    event->type() == QEvent::StyleChange || event->type() == QEvent::EnabledChange ||
-                                    event->type() == QEvent::PaletteChange))
+        if (watched == m_target)
         {
-            QTimer::singleShot(0, this, [this]() { updateGeometry(); });
+            switch (event->type())
+            {
+                case QEvent::Resize:
+                case QEvent::Show:
+                case QEvent::StyleChange:
+                case QEvent::EnabledChange:
+                case QEvent::PaletteChange:
+                case QEvent::LayoutDirectionChange:
+                    updateGeometry();
+                    break;
+                case QEvent::Paint:
+                    // 值、范围和按钮模式改变也会触发原控件重绘。
+                    UpdateSpinState();
+                    break;
+                default:
+                    break;
+            }
         }
         return QWidget::eventFilter(watched, event);
     }
@@ -107,69 +156,131 @@ protected:
 
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing);
-        QColor color = m_target->palette().color(m_target->isEnabled() ? QPalette::Active : QPalette::Disabled,
-                                                  QPalette::Text);
-        color.setAlphaF(0.72F);
-        painter.setPen(QPen(color, 1.6, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
 
-        if (qobject_cast<QComboBox*>(m_target))
+        if (auto* combo = qobject_cast<QComboBox*>(m_target))
         {
-            const QPoint center = rect().center();
-            QPainterPath path;
-            path.moveTo(center.x() - 4, center.y() - 2);
-            path.lineTo(center.x(), center.y() + 2);
-            path.lineTo(center.x() + 4, center.y() - 2);
-            painter.drawPath(path);
+            QStyleOptionComboBox option;
+            option.initFrom(combo);
+            option.editable = combo->isEditable();
+            option.frame = combo->hasFrame();
+            option.iconSize = combo->iconSize();
+            const QRect arrowRect =
+                combo->style()->subControlRect(QStyle::CC_ComboBox, &option, QStyle::SC_ComboBoxArrow, combo);
+            DrawChevron(painter, arrowRect, false, combo->isEnabled(), true);
             return;
         }
 
-        painter.drawLine(0, 0, 0, height());
-        DrawChevron(painter, QRect(0, 0, width(), height() / 2), true);
-        DrawChevron(painter, QRect(0, height() / 2, width(), height() - height() / 2), false);
+        auto* spin = qobject_cast<QAbstractSpinBox*>(m_target);
+        if (!spin || spin->buttonSymbols() == QAbstractSpinBox::NoButtons)
+            return;
+
+        QStyleOptionSpinBox option;
+        option.initFrom(spin);
+        option.frame = spin->hasFrame();
+        option.buttonSymbols = spin->buttonSymbols();
+        option.stepEnabled = StepEnabled(spin);
+        const QRect up = spin->style()->subControlRect(QStyle::CC_SpinBox, &option, QStyle::SC_SpinBoxUp, spin);
+        const QRect down = spin->style()->subControlRect(QStyle::CC_SpinBox, &option, QStyle::SC_SpinBoxDown, spin);
+        const bool upEnabled = spin->isEnabled() && option.stepEnabled.testFlag(QAbstractSpinBox::StepUpEnabled);
+        const bool downEnabled = spin->isEnabled() && option.stepEnabled.testFlag(QAbstractSpinBox::StepDownEnabled);
+        if (option.buttonSymbols == QAbstractSpinBox::PlusMinus)
+        {
+            DrawPlusMinus(painter, up, true, upEnabled);
+            DrawPlusMinus(painter, down, false, downEnabled);
+            return;
+        }
+        DrawChevron(painter, up, true, upEnabled, false);
+        DrawChevron(painter, down, false, downEnabled, false);
     }
 
 private:
+    void UpdateSpinState()
+    {
+        const auto* spin = qobject_cast<QAbstractSpinBox*>(m_target);
+        if (!spin)
+            return;
+
+        const int state = static_cast<int>(StepEnabled(spin)) | (static_cast<int>(spin->buttonSymbols()) << 4);
+        if (state == m_spinVisualState)
+            return;
+        m_spinVisualState = state;
+        update();
+    }
+
     void updateGeometry()
     {
         if (!m_target)
             return;
 
-        QRect arrowRect;
-        if (qobject_cast<QComboBox*>(m_target))
-        {
-            QStyleOptionComboBox option;
-            option.initFrom(m_target);
-            option.rect = m_target->rect();
-            arrowRect = m_target->style()->subControlRect(QStyle::CC_ComboBox, &option, QStyle::SC_ComboBoxArrow,
-                                                           m_target);
-        }
-        else
-        {
-            QStyleOptionSpinBox option;
-            option.initFrom(m_target);
-            option.rect = m_target->rect();
-            const QRect up = m_target->style()->subControlRect(QStyle::CC_SpinBox, &option, QStyle::SC_SpinBoxUp,
-                                                                m_target);
-            const QRect down = m_target->style()->subControlRect(QStyle::CC_SpinBox, &option,
-                                                                  QStyle::SC_SpinBoxDown, m_target);
-            arrowRect = up.united(down);
-        }
-        setGeometry(arrowRect);
+        setGeometry(m_target->rect());
         raise();
         update();
     }
 
-    static void DrawChevron(QPainter& painter, const QRect& rect, bool upward)
+    static QAbstractSpinBox::StepEnabled StepEnabled(const QAbstractSpinBox* spin)
     {
-        const QPoint center = rect.center();
+        if (spin->isReadOnly())
+            return QAbstractSpinBox::StepNone;
+
+        bool up = true;
+        bool down = true;
+        if (const auto* number = qobject_cast<const QSpinBox*>(spin))
+        {
+            up = number->wrapping() || number->value() < number->maximum();
+            down = number->wrapping() || number->value() > number->minimum();
+        }
+        else if (const auto* number = qobject_cast<const QDoubleSpinBox*>(spin))
+        {
+            up = number->wrapping() || number->value() < number->maximum();
+            down = number->wrapping() || number->value() > number->minimum();
+        }
+        QAbstractSpinBox::StepEnabled result = QAbstractSpinBox::StepNone;
+        if (up)
+            result |= QAbstractSpinBox::StepUpEnabled;
+        if (down)
+            result |= QAbstractSpinBox::StepDownEnabled;
+        return result;
+    }
+
+    void SetArrowPen(_OUT QPainter& painter, bool enabled, qreal width) const
+    {
+        const QPalette::ColorGroup group = enabled ? QPalette::Active : QPalette::Disabled;
+        QColor color = m_target->palette().color(group, QPalette::Text);
+        color.setAlphaF(enabled ? 0.86 : 0.60);
+        painter.setPen(QPen(color, width, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    }
+
+    void DrawChevron(_OUT QPainter& painter, const QRect& rect, bool upward, bool enabled, bool combo) const
+    {
+        if (rect.isEmpty())
+            return;
+
+        SetArrowPen(painter, enabled, combo ? 1.6 : 1.45);
+        const QPointF center = QRectF(rect).center();
+        const qreal halfWidth = qMin(combo ? 4.0 : 3.2, rect.width() / 3.0);
+        const qreal halfHeight = qMin(combo ? 2.0 : 1.6, rect.height() / 4.0);
+        const qreal direction = upward ? -1.0 : 1.0;
         QPainterPath path;
-        path.moveTo(center.x() - 3, center.y() + (upward ? 1 : -1));
-        path.lineTo(center.x(), center.y() + (upward ? -2 : 2));
-        path.lineTo(center.x() + 3, center.y() + (upward ? 1 : -1));
+        path.moveTo(center.x() - halfWidth, center.y() - direction * halfHeight);
+        path.lineTo(center.x(), center.y() + direction * halfHeight);
+        path.lineTo(center.x() + halfWidth, center.y() - direction * halfHeight);
         painter.drawPath(path);
     }
 
+    void DrawPlusMinus(_OUT QPainter& painter, const QRect& rect, bool plus, bool enabled) const
+    {
+        if (rect.isEmpty())
+            return;
+
+        SetArrowPen(painter, enabled, 1.45);
+        const QPointF center = QRectF(rect).center();
+        painter.drawLine(center + QPointF(-3, 0), center + QPointF(3, 0));
+        if (plus)
+            painter.drawLine(center + QPointF(0, -3), center + QPointF(0, 3));
+    }
+
     QPointer<QWidget> m_target;
+    int m_spinVisualState = -1;
 };
 
 class CheckboxCheckmarkOverlay final : public QWidget
@@ -179,10 +290,16 @@ public:
         : QWidget(target)
         , m_target(target)
     {
+        setObjectName(QStringLiteral("checkboxCheckmarkOverlay"));
         setAttribute(Qt::WA_TransparentForMouseEvents);
         setAttribute(Qt::WA_NoSystemBackground);
+        setFocusPolicy(Qt::NoFocus);
         m_target->installEventFilter(this);
-        connect(m_target, &QCheckBox::toggled, this, [this](bool) { update(); });
+        connect(m_target, &QCheckBox::checkStateChanged, this,
+                [this](Qt::CheckState)
+                {
+                    update();
+                });
         updateGeometry();
         show();
     }
@@ -190,11 +307,12 @@ public:
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override
     {
-        if (watched == m_target && (event->type() == QEvent::Resize || event->type() == QEvent::Show ||
-                                    event->type() == QEvent::StyleChange || event->type() == QEvent::EnabledChange ||
-                                    event->type() == QEvent::PaletteChange))
+        if (watched == m_target &&
+            (event->type() == QEvent::Resize || event->type() == QEvent::Show || event->type() == QEvent::StyleChange ||
+             event->type() == QEvent::EnabledChange || event->type() == QEvent::PaletteChange ||
+             event->type() == QEvent::LayoutDirectionChange))
         {
-            QTimer::singleShot(0, this, [this]() { updateGeometry(); });
+            updateGeometry();
         }
         return QWidget::eventFilter(watched, event);
     }
@@ -206,9 +324,18 @@ protected:
 
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing);
-        QColor color(Qt::white);
-        color.setAlphaF(m_target->isEnabled() ? 0.95F : 0.45F);
+        QColor color =
+            m_target->isEnabled() ? QColor(Qt::white) : m_target->palette().color(QPalette::Disabled, QPalette::Text);
+        if (m_target->checkState() == Qt::PartiallyChecked)
+            color = m_target->palette().color(m_target->isEnabled() ? QPalette::Active : QPalette::Disabled,
+                                              QPalette::Text);
         painter.setPen(QPen(color, 2.2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+
+        if (m_target->checkState() == Qt::PartiallyChecked)
+        {
+            painter.drawLine(QPointF(width() * 0.30, height() * 0.50), QPointF(width() * 0.70, height() * 0.50));
+            return;
+        }
 
         QPainterPath path;
         path.moveTo(width() * 0.31, height() * 0.50);
@@ -225,7 +352,9 @@ private:
 
         QStyleOptionButton option;
         option.initFrom(m_target);
-        option.rect = m_target->rect();
+        option.text = m_target->text();
+        option.icon = m_target->icon();
+        option.iconSize = m_target->iconSize();
         setGeometry(m_target->style()->subElementRect(QStyle::SE_CheckBoxIndicator, &option, m_target));
         raise();
         update();
@@ -234,13 +363,15 @@ private:
     QPointer<QCheckBox> m_target;
 };
 
-void installInputControlOverlays(QWidget* root)
+static void installInputControlOverlays(QWidget* root)
 {
+    if (!root || root->objectName() == QStringLiteral("inputArrowOverlay") ||
+        root->objectName() == QStringLiteral("checkboxCheckmarkOverlay"))
+        return;
+
     const auto install = [](QWidget* target)
     {
-        if (!target || dynamic_cast<ResultSelectionComboBox*>(target) || dynamic_cast<ResultScaleSpinBox*>(target) ||
-            dynamic_cast<ChevronComboBox*>(target) || dynamic_cast<ChevronDoubleSpinBox*>(target) ||
-            dynamic_cast<ChevronSpinBox*>(target) || target->property("inputArrowOverlayInstalled").toBool())
+        if (!target || target->property("inputArrowOverlayInstalled").toBool())
             return;
         target->setProperty("inputArrowOverlayInstalled", true);
         new InputArrowOverlay(target);
@@ -267,6 +398,28 @@ void installInputControlOverlays(QWidget* root)
 
 QString solveTaskDisplayStatus(const SolveTaskController::TaskInfo& info)
 {
+    if (info.initialStatePreparation)
+    {
+        switch (info.status)
+        {
+            case SolveTaskController::Status::Ready:
+                return QStringLiteral("初态待运行");
+            case SolveTaskController::Status::Queued:
+                return QStringLiteral("初态排队中");
+            case SolveTaskController::Status::Running:
+                return QStringLiteral("初态计算中");
+            case SolveTaskController::Status::Completed:
+                return QStringLiteral("初态完成");
+            case SolveTaskController::Status::Failed:
+                return QStringLiteral("初态失败");
+            case SolveTaskController::Status::Cancelling:
+                return QStringLiteral("初态停止中");
+            case SolveTaskController::Status::Cancelled:
+                return QStringLiteral("初态已停止");
+        }
+    }
+    if (info.status == SolveTaskController::Status::Queued && info.waitingForInitialStatic)
+        return QStringLiteral("等待静力");
     if (info.partialResult)
     {
         return info.status == SolveTaskController::Status::Cancelled ? QStringLiteral("已停止·部分结果")
@@ -312,6 +465,7 @@ enum class ToolbarGlyph
     Zoom,
     Nodes,
     Elements,
+    Solid,
     NodeIds,
     ElementIds,
     Front,
@@ -338,6 +492,9 @@ enum class TreeGlyph
     Truss,
     Cable,
     Beam,
+    SpringGround,
+    Spring,
+    SpringAxial,
     Other,
     AnalysisSteps,
     AnalysisStep,
@@ -373,9 +530,11 @@ enum class ActionGlyph
     Stop,
     Library,
     CreateConductor,
+    CreateMultiSpanConductor,
     Refresh,
     Apply,
-    Export
+    Export,
+    Plot
 };
 
 constexpr auto ActionGlyphProperty = "semanticActionGlyph";
@@ -432,12 +591,12 @@ void applyWindowsWindowIcon(QWidget* widget)
 
     constexpr int applicationIconResourceId = 101;
     const HINSTANCE moduleHandle = GetModuleHandleW(nullptr);
-    const HICON smallIcon = static_cast<HICON>(
-        LoadImageW(moduleHandle, MAKEINTRESOURCEW(applicationIconResourceId), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON),
-                   GetSystemMetrics(SM_CYSMICON), LR_SHARED));
-    const HICON largeIcon = static_cast<HICON>(
-        LoadImageW(moduleHandle, MAKEINTRESOURCEW(applicationIconResourceId), IMAGE_ICON, GetSystemMetrics(SM_CXICON),
-                   GetSystemMetrics(SM_CYICON), LR_SHARED));
+    const int smallExtent = qRound(16 * widget->devicePixelRatioF());
+    const int largeExtent = qRound(32 * widget->devicePixelRatioF());
+    const HICON smallIcon = static_cast<HICON>(LoadImageW(moduleHandle, MAKEINTRESOURCEW(applicationIconResourceId),
+                                                          IMAGE_ICON, smallExtent, smallExtent, LR_SHARED));
+    const HICON largeIcon = static_cast<HICON>(LoadImageW(moduleHandle, MAKEINTRESOURCEW(applicationIconResourceId),
+                                                          IMAGE_ICON, largeExtent, largeExtent, LR_SHARED));
     const HWND windowHandle = reinterpret_cast<HWND>(widget->winId());
     if (smallIcon)
         SendMessageW(windowHandle, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(smallIcon));
@@ -504,17 +663,26 @@ public:
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override
     {
+        if (event->type() == QEvent::DevicePixelRatioChange)
+        {
+            auto* window = qobject_cast<QWidget*>(watched);
+            if (window && window->isWindow() && window->windowType() != Qt::Popup &&
+                window->windowType() != Qt::ToolTip)
+                applyWindowsWindowIcon(window);
+        }
         if (event->type() != QEvent::Show)
             return QObject::eventFilter(watched, event);
 
         auto* widget = qobject_cast<QWidget*>(watched);
         if (widget)
             installInputControlOverlays(widget);
-        if (widget && widget->isWindow())
+        if (widget && widget->isWindow() && widget->windowType() != Qt::Popup && widget->windowType() != Qt::ToolTip)
         {
+            widget->setWindowIcon(UiIcons::applicationIcon());
             QTimer::singleShot(0, widget,
                                [widget]()
                                {
+                                   applyWindowsWindowIcon(widget);
                                    applyWindowsTitleBarTheme(widget);
                                });
         }
@@ -558,13 +726,12 @@ QPolygonF viewFace(ToolbarGlyph glyph)
 
 QPixmap renderToolbarGlyph(ToolbarGlyph glyph, const QColor& color, const QColor& accent)
 {
-    QPixmap pixmap(48, 48);
+    QPixmap pixmap(96, 96);
     pixmap.fill(Qt::transparent);
-    pixmap.setDevicePixelRatio(2.0);
 
     QPainter painter(&pixmap);
     painter.setRenderHint(QPainter::Antialiasing, true);
-    painter.scale(2.0, 2.0);
+    painter.scale(4.0, 4.0);
     QPen pen(color, 1.7, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
     painter.setPen(pen);
     painter.setBrush(Qt::NoBrush);
@@ -704,6 +871,13 @@ QPixmap renderToolbarGlyph(ToolbarGlyph glyph, const QColor& color, const QColor
             painter.setBrush(accent);
             painter.drawEllipse(QPointF(12, 12), 1.7, 1.7);
             break;
+        case ToolbarGlyph::Solid:
+            painter.setBrush(accentFill);
+            painter.drawPolygon(QPolygonF{QPointF(4, 7), QPointF(12, 3), QPointF(20, 7), QPointF(12, 12)});
+            painter.drawPolygon(QPolygonF{QPointF(4, 7), QPointF(12, 12), QPointF(12, 21), QPointF(4, 16)});
+            painter.setBrush(accent);
+            painter.drawPolygon(QPolygonF{QPointF(12, 12), QPointF(20, 7), QPointF(20, 16), QPointF(12, 21)});
+            break;
         case ToolbarGlyph::NodeIds:
             painter.drawLine(QPointF(4, 18), QPointF(10, 11));
             painter.drawLine(QPointF(10, 11), QPointF(17, 18));
@@ -799,29 +973,15 @@ QPixmap renderToolbarGlyph(ToolbarGlyph glyph, const QColor& color, const QColor
 QIcon toolbarIcon(ToolbarGlyph glyph, const QColor& color, const QColor& accent)
 {
     QIcon icon;
-    icon.addPixmap(renderToolbarGlyph(glyph, color, accent), QIcon::Normal, QIcon::Off);
-    icon.addPixmap(renderToolbarGlyph(glyph, accent, accent), QIcon::Normal, QIcon::On);
-    return icon;
-}
-
-QIcon svgToolbarIcon(const QString& resourcePath)
-{
-    QSvgRenderer renderer(resourcePath);
-    if (!renderer.isValid())
-        return {};
-
-    constexpr int iconExtent = 96;
-    QPixmap pixmap(iconExtent, iconExtent);
-    pixmap.fill(Qt::transparent);
-
-    QPainter painter(&pixmap);
-    renderer.render(&painter, QRectF(0, 0, iconExtent, iconExtent));
-
-    QIcon icon;
-    icon.addPixmap(pixmap, QIcon::Normal, QIcon::Off);
-    icon.addPixmap(pixmap, QIcon::Normal, QIcon::On);
-    icon.addPixmap(pixmap, QIcon::Disabled, QIcon::Off);
-    icon.addPixmap(pixmap, QIcon::Disabled, QIcon::On);
+    const QPixmap normal = renderToolbarGlyph(glyph, color, accent);
+    const QPixmap checked = renderToolbarGlyph(glyph, accent, accent);
+    icon.addPixmap(normal, QIcon::Normal, QIcon::Off);
+    icon.addPixmap(checked, QIcon::Normal, QIcon::On);
+    icon.addPixmap(renderToolbarGlyph(glyph, accent, accent), QIcon::Active, QIcon::Off);
+    icon.addPixmap(checked, QIcon::Active, QIcon::On);
+    // 未加载模型时保留图标原色，操作是否可用仍由按钮状态控制。
+    icon.addPixmap(normal, QIcon::Disabled, QIcon::Off);
+    icon.addPixmap(checked, QIcon::Disabled, QIcon::On);
     return icon;
 }
 
@@ -996,6 +1156,20 @@ QPixmap renderActionGlyph(ActionGlyph glyph, const QColor& color, const QColor& 
             painter.drawLine(QPointF(22, 23), QPointF(32, 23));
             break;
         }
+        case ActionGlyph::CreateMultiSpanConductor:
+        {
+            for (int x : {3, 14, 25})
+                painter.drawLine(QPointF(x, 5), QPointF(x, 27));
+            QPainterPath wire;
+            wire.moveTo(3, 9);
+            wire.cubicTo(6, 23, 11, 23, 14, 9);
+            wire.cubicTo(17, 23, 22, 23, 25, 9);
+            painter.drawPath(wire);
+            painter.setPen(QPen(accent, 2.4, Qt::SolidLine, Qt::RoundCap));
+            painter.drawLine(QPointF(28, 20), QPointF(28, 28));
+            painter.drawLine(QPointF(24, 24), QPointF(32, 24));
+            break;
+        }
         case ActionGlyph::Refresh:
             painter.drawArc(QRectF(5, 5, 22, 22), 35 * 16, 285 * 16);
             arrowHead(QPointF(25, 7), QPointF(19, 7), QPointF(24, 13));
@@ -1013,6 +1187,11 @@ QPixmap renderActionGlyph(ActionGlyph glyph, const QColor& color, const QColor& 
             arrowHead(QPointF(16, 8), QPointF(11, 13), QPointF(21, 13));
             painter.setPen(QPen(accent, 2.4, Qt::SolidLine, Qt::RoundCap));
             painter.drawLine(QPointF(9, 24), QPointF(23, 24));
+            break;
+        case ActionGlyph::Plot:
+            painter.drawPolyline(QPolygonF{QPointF(4, 4), QPointF(4, 28), QPointF(28, 28)});
+            painter.setPen(QPen(accent, 2.4, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            painter.drawPolyline(QPolygonF{QPointF(7, 22), QPointF(12, 12), QPointF(18, 19), QPointF(26, 7)});
             break;
     }
     return pixmap;
@@ -1113,14 +1292,31 @@ QIcon treeIcon(TreeGlyph glyph, const QColor& color, const QColor& accent)
             painter.drawRoundedRect(QRectF(2, 11, 12, 3), 0.8, 0.8);
             break;
         case TreeGlyph::SpringBehavior:
-            painter.drawLine(QPointF(2, 2), QPointF(2, 14));
-            painter.drawLine(QPointF(2, 14), QPointF(14, 14));
-            painter.setPen(QPen(accent, 1.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-            painter.drawPolyline(
-                QPolygonF{QPointF(3.5, 12), QPointF(6, 9.5), QPointF(8, 10), QPointF(10.5, 5.5), QPointF(13, 3.5)});
+        case TreeGlyph::SpringGround:
+        case TreeGlyph::Spring:
+        case TreeGlyph::SpringAxial:
+            painter.drawLine(QPointF(1.5, 8), QPointF(3.5, 8));
+            painter.drawLine(QPointF(12.5, 8), QPointF(14.5, 8));
+            painter.setPen(QPen(accent, 1.35, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            painter.drawPolyline(QPolygonF{QPointF(3.5, 8), QPointF(4.5, 4.5), QPointF(6.5, 11.5), QPointF(8.5, 4.5),
+                                           QPointF(10.5, 11.5), QPointF(12.5, 8)});
+            painter.setPen(QPen(color, 1.15, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
             painter.setBrush(accent);
-            painter.drawEllipse(QPointF(3.5, 12), 1.0, 1.0);
-            painter.drawEllipse(QPointF(13, 3.5), 1.0, 1.0);
+            if (glyph == TreeGlyph::SpringGround)
+            {
+                painter.drawLine(QPointF(1.5, 3), QPointF(1.5, 13));
+                painter.drawLine(QPointF(1.5, 4), QPointF(0.5, 5.5));
+                painter.drawLine(QPointF(1.5, 10), QPointF(0.5, 11.5));
+            }
+            else
+                painter.drawEllipse(QPointF(1.5, 8), 0.8, 0.8);
+            painter.drawEllipse(QPointF(14.5, 8), 0.8, 0.8);
+            if (glyph == TreeGlyph::SpringAxial)
+            {
+                painter.drawLine(QPointF(5, 1.5), QPointF(11, 1.5));
+                painter.drawLine(QPointF(5, 1.5), QPointF(6.5, 0.5));
+                painter.drawLine(QPointF(11, 1.5), QPointF(9.5, 2.5));
+            }
             break;
         case TreeGlyph::ElementTypes:
             painter.drawPolygon(QPolygonF{QPointF(2, 5), QPointF(4, 2), QPointF(6, 5)});
@@ -1278,48 +1474,38 @@ ThemeColors themeColors(int themeIndex)
 {
     if (themeIndex == 3)
     {
-        return {QStringLiteral("#F4F7FB"), QStringLiteral("#FFFFFF"), QStringLiteral("#F7FAFF"),
-                QStringLiteral("#FFFFFF"), QStringLiteral("#F8FBFF"), QStringLiteral("#F8FBFF"),
-                QStringLiteral("#D9E3EF"), QStringLiteral("#D9E3EF"), QStringLiteral("#1D2B3A"),
-                QStringLiteral("#66758A"), QStringLiteral("#2F80ED"), QStringLiteral("#1E63C7"),
-                QStringLiteral("#D8E9FF"), QStringLiteral("#2F9E68"), QStringLiteral("#FFFFFF")};
+        return {QStringLiteral("#F3F5F8"), QStringLiteral("#FFFFFF"), QStringLiteral("#F7F9FC"),
+                QStringLiteral("#FFFFFF"), QStringLiteral("#F7F9FC"), QStringLiteral("#FFFFFF"),
+                QStringLiteral("#DFE4EC"), QStringLiteral("#B9C4D2"), QStringLiteral("#263445"),
+                QStringLiteral("#617186"), QStringLiteral("#2563C6"), QStringLiteral("#1D53AD"),
+                QStringLiteral("#E7EFFC"), QStringLiteral("#23835D"), QStringLiteral("#FFFFFF")};
     }
     if (themeIndex == 1)
     {
         return {QStringLiteral("#0b0712"), QStringLiteral("#1d112e"), QStringLiteral("#140c20"),
                 QStringLiteral("#1b102b"), QStringLiteral("#241638"), QStringLiteral("#180f26"),
                 QStringLiteral("#3f285c"), QStringLiteral("#684681"), QStringLiteral("#f5edff"),
-                QStringLiteral("#a995c4"), QStringLiteral("#8065ff"), QStringLiteral("#f05bff"),
+                QStringLiteral("#b9a9ce"), QStringLiteral("#7660CC"), QStringLiteral("#8B78DB"),
                 QStringLiteral("#38204e"), QStringLiteral("#59f0ce"), QStringLiteral("#ffffff")};
     }
     if (themeIndex == 2)
     {
-        return {QStringLiteral("qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #0a2027,stop:0.52 #102f35,stop:1 #17313a)"),
-                QStringLiteral("rgba(27,55,62,225)"),
-                QStringLiteral("rgba(14,39,46,235)"),
-                QStringLiteral("rgba(25,54,61,225)"),
-                QStringLiteral("rgba(35,68,75,220)"),
-                QStringLiteral("rgba(18,47,54,220)"),
-                QStringLiteral("#55777f"),
-                QStringLiteral("#78989f"),
-                QStringLiteral("#efffff"),
-                QStringLiteral("#9abdc3"),
-                QStringLiteral("#55b7ff"),
-                QStringLiteral("#55e0c2"),
-                QStringLiteral("#294e55"),
-                QStringLiteral("#6df1b7"),
-                QStringLiteral("#07191d")};
+        return {QStringLiteral("#10272D"), QStringLiteral("#1B373E"), QStringLiteral("#142E35"),
+                QStringLiteral("#19363D"), QStringLiteral("#23444B"), QStringLiteral("#122F36"),
+                QStringLiteral("#55777f"), QStringLiteral("#78989f"), QStringLiteral("#efffff"),
+                QStringLiteral("#9abdc3"), QStringLiteral("#267B73"), QStringLiteral("#348E85"),
+                QStringLiteral("#294e55"), QStringLiteral("#6df1b7"), QStringLiteral("#FFFFFF")};
     }
-    return {QStringLiteral("#0b1016"), QStringLiteral("#111923"), QStringLiteral("#0f151d"), QStringLiteral("#121923"),
-            QStringLiteral("#151d27"), QStringLiteral("#101720"), QStringLiteral("#263342"), QStringLiteral("#35485d"),
-            QStringLiteral("#dce7f4"), QStringLiteral("#8190a2"), QStringLiteral("#4f8cff"), QStringLiteral("#30c7d9"),
-            QStringLiteral("#1a2b39"), QStringLiteral("#3ddc97"), QStringLiteral("#071019")};
+    return {QStringLiteral("#111720"), QStringLiteral("#19222E"), QStringLiteral("#151D27"), QStringLiteral("#1A232F"),
+            QStringLiteral("#202B39"), QStringLiteral("#151E29"), QStringLiteral("#303D4E"), QStringLiteral("#4B5C71"),
+            QStringLiteral("#E3EAF3"), QStringLiteral("#A2B0C2"), QStringLiteral("#316FCC"), QStringLiteral("#4681DC"),
+            QStringLiteral("#243C5B"), QStringLiteral("#53B98A"), QStringLiteral("#FFFFFF")};
 }
 
 QString buildStyleSheet(const ThemeColors& c)
 {
     QString style = QStringLiteral(R"QSS(
-* { font-family: "Microsoft YaHei UI", "Segoe UI"; font-size: 13px; color: $TEXT; outline: none; }
+* { font-family: "Microsoft YaHei UI", "Segoe UI"; font-size: 13px; color: $TEXT; }
 QMainWindow, #centralWidget { background: $ROOT; }
 QDialog, QMessageBox { background: $PANEL; color: $TEXT; }
 QDialog QWidget, QMessageBox QWidget { color: $TEXT; }
@@ -1327,7 +1513,18 @@ QDialogButtonBox { background: transparent; border: none; }
 QMessageBox QLabel,
 QMessageBox QLabel#qt_msgbox_label,
 QMessageBox QLabel#qt_msgbox_informativelabel { background: transparent; color: $TEXT; }
-QMessageBox QPushButton { min-width: 76px; min-height: 26px; }
+QDialogButtonBox QPushButton, QMessageBox QPushButton { min-width: 76px; }
+QGroupBox {
+    background: $ELEVATED; border: 1px solid $BORDER; border-radius: 6px;
+    margin-top: 12px; padding: 12px 10px 10px;
+}
+QGroupBox::title {
+    subcontrol-origin: margin; left: 10px; padding: 0 5px; color: $TEXT; font-weight: 600;
+}
+QScrollArea, QScrollArea > QWidget > QWidget { background: $PANEL; border: none; }
+QLabel[secondaryText="true"] { color: $MUTED; background: transparent; }
+#mutedText, #spacerStatusLabel { color: $MUTED; background: transparent; }
+#cardTitle { font-size: 14px; font-weight: 600; background: transparent; }
 QDialog#analysisStepManagerDialog,
 QDialog#analysisLoadManagerDialog,
 QDialog#analysisConstraintManagerDialog,
@@ -1361,23 +1558,24 @@ QDialog#analysisLoadEditorDialog QLabel,
 QDialog#analysisConstraintEditorDialog QLabel,
 QDialog#analysisMPCEditorDialog QLabel {
     background: transparent;
-    color: $TEXT;
 }
 QDialog#nodeResultExportDialog QLabel { background: transparent; }
-QDialog#nodeResultExportDialog #exportDialogTitle { font-size: 20px; font-weight: 750; color: $TEXT; }
+QDialog #exportDialogTitle, QDialog #plotDialogTitle { font-size: 18px; font-weight: 600; color: $TEXT; }
+QDialog #exportDialogSubtitle, QDialog #plotDialogSubtitle, QDialog #exportFieldHint { color: $MUTED; }
+QDialog #exportValidationLabel { color: #D85A64; }
 QDialog#nodeResultExportDialog #exportDialogSubtitle,
 QDialog#nodeResultExportDialog #exportFieldHint { color: $MUTED; }
 QDialog#nodeResultExportDialog #exportSectionCard {
-    background: $ELEVATED; border: 1px solid $BORDER; border-radius: 12px;
+    background: $ELEVATED; border: 1px solid $BORDER; border-radius: 6px;
 }
 QDialog#resultPlotExportDialog #resultPlotSectionCard {
-    background: $ELEVATED; border: 1px solid $BORDER; border-radius: 12px;
+    background: $ELEVATED; border: 1px solid $BORDER; border-radius: 6px;
     margin-top: 10px; padding: 10px 12px 12px 12px;
 }
 QDialog#resultPlotExportDialog QGroupBox#resultPlotSectionCard::title {
     subcontrol-origin: margin; left: 10px; padding: 0 5px; color: $TEXT; font-weight: 700;
 }
-QDialog#resultPlotExportDialog #plotDialogTitle { font-size: 20px; font-weight: 750; color: $TEXT; }
+QDialog#resultPlotExportDialog #plotDialogTitle { font-size: 18px; font-weight: 600; color: $TEXT; }
 QDialog#resultPlotExportDialog #plotDialogSubtitle { color: $MUTED; }
 QDialog#resultPlotExportDialog #plotDialogErrorLabel { color: #F08080; }
 QDialog#resultPlotExportDialog #plotDialogQuietButton { background: $FIELD; }
@@ -1401,38 +1599,38 @@ QDialog#nodeResultExportDialog #exportQuietButton { background: $FIELD; }
 QDialog#nodeResultExportDialog #exportValidationLabel { color: #E05252; }
 QDialog#nodeResultExportDialog QDialogButtonBox#exportDialogButtons { background: transparent; border: none; }
 #appHeader { background: $HEADER; border-bottom: 1px solid $BORDER; }
-#logoLabel { background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 $ACCENT,stop:1 $ACCENT2); color: $SELECTION_TEXT; border-radius: 9px; font-size: 16px; font-weight: 800; }
-#appTitleLabel { font-size: 19px; font-weight: 750; }
+#logoLabel { background: $ACCENT; color: $SELECTION_TEXT; border-radius: 6px; font-size: 16px; font-weight: 700; }
+#appTitleLabel { font-size: 17px; font-weight: 600; }
 #themeLabel, #loadStatisticsLabel, #incrementLabel { color: $MUTED; }
 #navigationRail { background: $NAV; border-right: 1px solid $BORDER; }
 #projectPanel { background: $PANEL; }
 #projectPanel { border-right: 1px solid $BORDER; }
 #workspacePanel { background: $ROOT; }
 #statusFrame { background: $NAV; border-top: 1px solid $BORDER; }
-#projectTitleLabel { font-size: 19px; font-weight: 700; }
+#projectTitleLabel { font-size: 17px; font-weight: 600; }
+#modelModuleHint, #analysisModuleHint, #solveModuleHint, #resultModuleHint, #settingsModuleHint { color: $MUTED; }
+#modelSummaryCard { background: $ELEVATED; border: 1px solid $BORDER; border-radius: 6px; }
+#modelSummaryCard QLabel { background: transparent; }
+#modelNodeValue, #modelElementValue, #modelPropertyValue { color: $MUTED; }
 #readyLabel { color: $MUTED; }
 #viewportEmptyLabel { color: $MUTED; font-size: 14px; background: transparent; }
 
 QLineEdit, QComboBox, QDoubleSpinBox, QSpinBox, QPlainTextEdit {
-    background: $FIELD; border: 1px solid $BORDER_STRONG; border-radius: 7px; padding: 6px 10px; selection-background-color: $ACCENT; min-height: 20px;
+    background: $FIELD; border: 1px solid $BORDER_STRONG; border-radius: 5px; padding: 5px 9px;
+    selection-background-color: $ACCENT; selection-color: $SELECTION_TEXT; min-height: 20px;
 }
+QComboBox, QDoubleSpinBox, QSpinBox { padding-right: 28px; }
+QPlainTextEdit { padding: 8px; }
+#logEdit { padding: 4px 8px; }
 QComboBox { selection-background-color: $ACCENT_SOFT; selection-color: $TEXT; }
 QLineEdit:hover, QComboBox:hover, QDoubleSpinBox:hover, QSpinBox:hover { border-color: $ACCENT2; }
 QLineEdit:focus, QComboBox:focus, QDoubleSpinBox:focus, QSpinBox:focus { border: 1px solid $ACCENT; background: $ELEVATED; }
-QComboBox::drop-down { border: none; width: 28px; }
+QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; border: none; width: 28px; }
 QComboBox::down-arrow {
-    image: url(:/YQY/icon_chevron_down.svg);
-    width: 12px;
-    height: 12px;
+    image: none;
+    width: 0;
+    height: 0;
 }
-ResultSelectionComboBox::down-arrow,
-ResultScaleSpinBox::up-arrow,
-ResultScaleSpinBox::down-arrow,
-ChevronComboBox::down-arrow,
-ChevronDoubleSpinBox::up-arrow,
-ChevronDoubleSpinBox::down-arrow,
-ChevronSpinBox::up-arrow,
-ChevronSpinBox::down-arrow { image: none; }
 QComboBoxPrivateContainer {
     background: $ELEVATED;
     border: 1px solid $BORDER_STRONG;
@@ -1477,7 +1675,7 @@ QAbstractItemView::item:selected {
 QDoubleSpinBox::up-button, QSpinBox::up-button,
 QDoubleSpinBox::down-button, QSpinBox::down-button {
     subcontrol-origin: padding;
-    width: 22px;
+    width: 28px;
     background: transparent;
     border: none;
     border-left: 1px solid $BORDER;
@@ -1490,15 +1688,23 @@ QDoubleSpinBox::down-button, QSpinBox::down-button {
     subcontrol-position: bottom right;
     border-bottom-right-radius: 5px;
 }
+QDoubleSpinBox[layoutDirection="1"]::up-button, QSpinBox[layoutDirection="1"]::up-button {
+    border-left: none; border-right: 1px solid $BORDER;
+    border-top-right-radius: 0; border-top-left-radius: 5px;
+}
+QDoubleSpinBox[layoutDirection="1"]::down-button, QSpinBox[layoutDirection="1"]::down-button {
+    border-left: none; border-right: 1px solid $BORDER;
+    border-bottom-right-radius: 0; border-bottom-left-radius: 5px;
+}
 QDoubleSpinBox::up-arrow, QSpinBox::up-arrow {
-    image: url(:/YQY/icon_chevron_up.svg);
-    width: 12px;
-    height: 12px;
+    image: none;
+    width: 0;
+    height: 0;
 }
 QDoubleSpinBox::down-arrow, QSpinBox::down-arrow {
-    image: url(:/YQY/icon_chevron_down.svg);
-    width: 12px;
-    height: 12px;
+    image: none;
+    width: 0;
+    height: 0;
 }
 QDoubleSpinBox::up-button:hover, QSpinBox::up-button:hover,
 QDoubleSpinBox::down-button:hover, QSpinBox::down-button:hover { background: $ACCENT_SOFT; }
@@ -1531,12 +1737,23 @@ QListWidget::item:selected, QTreeView::item:selected {
 }
 
 QPushButton, QToolButton {
-    background: $ELEVATED; border: 1px solid $BORDER_STRONG; border-radius: 7px; padding: 7px 13px; min-height: 20px;
+    background: $ELEVATED; border: 1px solid $BORDER_STRONG; border-radius: 5px; padding: 6px 12px; min-height: 20px;
 }
 QPushButton:hover, QToolButton:hover { background: $ACCENT_SOFT; border-color: $ACCENT2; }
-QPushButton:pressed, QToolButton:pressed { background: $FIELD; border-color: $ACCENT; padding-top: 8px; padding-bottom: 6px; }
-QPushButton:disabled, QToolButton:disabled, QLineEdit:disabled, QComboBox:disabled, QDoubleSpinBox:disabled { color: $MUTED; background: $FIELD; border-color: $BORDER; }
-#startSolveButton { background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 $ACCENT,stop:1 $ACCENT2); color: $SELECTION_TEXT; border: none; font-weight: 750; padding-left: 18px; padding-right: 18px; }
+QPushButton:focus, QToolButton:focus { border-color: $ACCENT; }
+QPushButton:pressed, QToolButton:pressed { background: $FIELD; border-color: $ACCENT; }
+QPushButton:disabled, QToolButton:disabled, QLineEdit:disabled, QComboBox:disabled,
+QDoubleSpinBox:disabled, QSpinBox:disabled { color: $MUTED; background: $FIELD; border-color: $BORDER; }
+QDialog QPushButton:default, QPushButton[primaryAction="true"] {
+    background: $ACCENT; color: $SELECTION_TEXT; border-color: $ACCENT; font-weight: 600;
+}
+QDialog QPushButton:default:hover, QPushButton[primaryAction="true"]:hover { background: $ACCENT2; border-color: $ACCENT2; }
+QPushButton[dangerAction="true"] { color: #D85A64; }
+QPushButton[dangerAction="true"]:disabled { color: $MUTED; }
+QDialog QPushButton:default:disabled, QPushButton[primaryAction="true"]:disabled {
+    background: $FIELD; color: $MUTED; border-color: $BORDER;
+}
+#startSolveButton { background: $ACCENT; color: $SELECTION_TEXT; border: 1px solid $ACCENT; font-weight: 600; padding-left: 18px; padding-right: 18px; }
 #startSolveButton:hover { border: 1px solid $TEXT; }
 #stopButton { min-width: 84px; }
 #taskControlButton {
@@ -1563,10 +1780,16 @@ QPushButton:disabled, QToolButton:disabled, QLineEdit:disabled, QComboBox:disabl
 #toolBarCard { background: $ELEVATED; border: 1px solid $BORDER; border-radius: 9px; }
 #toolbarScrollArea, #toolbarScrollArea QWidget#qt_scrollarea_viewport { background: transparent; border: none; }
 #analysisParameterCard { background: $ELEVATED; border: 1px solid $BORDER; border-radius: 9px; }
-#toolBarCard QPushButton, #toolBarCard QToolButton { padding: 0; min-width: 36px; min-height: 34px; }
+#toolBarCard QPushButton, #toolBarCard QToolButton { background: transparent; border-color: transparent; padding: 0; min-width: 34px; min-height: 34px; }
+#toolBarCard QPushButton:hover, #toolBarCard QToolButton:hover { background: $ACCENT_SOFT; border-color: $BORDER_STRONG; }
+#toolBarCard QPushButton:focus, #toolBarCard QToolButton:focus { border-color: $ACCENT; }
 #toolBarCard #startSolveButton { padding: 0; }
 #toolBarCard QToolButton:checked { background: $ACCENT_SOFT; border-color: $ACCENT2; color: $TEXT; }
-#exportPlotButton { background: $ACCENT_SOFT; border-color: $ACCENT2; color: $TEXT; min-height: 34px; }
+#toolBarCard #toolbarSeparator { background: $BORDER_STRONG; border: none; }
+#resultControlPanel QPushButton { padding: 6px 8px; }
+#exportPlotButton {
+    background: $ACCENT_SOFT; border-color: $ACCENT2; color: $TEXT; min-height: 20px;
+}
 #exportPlotButton:hover { background: $ACCENT2; }
 
 QTreeWidget { background: transparent; border: none; alternate-background-color: transparent; padding: 2px; }
@@ -1591,7 +1814,7 @@ QTableView, QTableWidget {
 QTableView::item, QTableWidget::item {
     color: $TEXT;
     border-bottom: 1px solid $BORDER;
-    padding: 7px 9px;
+    padding: 4px 8px;
 }
 QTableView::item:hover, QTableWidget::item:hover { background: $ELEVATED; }
 QTableView::item:selected, QTableWidget::item:selected {
@@ -1612,8 +1835,8 @@ QHeaderView::section {
     border: none;
     border-right: 1px solid $BORDER;
     border-bottom: 1px solid $BORDER_STRONG;
-    padding: 9px 8px;
-    font-weight: 650;
+    padding: 7px 8px;
+    font-weight: 600;
 }
 QTableCornerButton::section { background: $PANEL; border: none; border-bottom: 1px solid $BORDER_STRONG; }
 #propertyPage { background: $PANEL; }
@@ -1623,9 +1846,9 @@ QTableCornerButton::section { background: $PANEL; border: none; border-bottom: 1
 
     style += QStringLiteral(R"QSS(
 
-/* The conductor page is created at runtime, so every background layer must
-   explicitly participate in the active theme instead of using the OS palette. */
+/* 导线入口与建模弹窗使用同一主题。 */
 #conductorPage,
+#conductorCreationDialog,
 #conductorScrollArea,
 #conductorScrollArea QWidget#qt_scrollarea_viewport,
 #conductorContent {
@@ -1633,15 +1856,17 @@ QTableCornerButton::section { background: $PANEL; border: none; border-bottom: 1
     color: $TEXT;
     border: none;
 }
-#conductorPropertyGroup, #conductorFormGroup {
+#conductorPropertyGroup, #conductorFormGroup,
+#conductorCreationDialog QGroupBox {
     background: $ELEVATED;
     color: $TEXT;
     border: 1px solid $BORDER;
     border-radius: 9px;
     margin-top: 12px;
-    padding-top: 8px;
+    padding: 0;
 }
-#conductorPropertyGroup::title, #conductorFormGroup::title {
+#conductorPropertyGroup::title, #conductorFormGroup::title,
+#conductorCreationDialog QGroupBox::title {
     color: $TEXT;
     subcontrol-origin: margin;
     subcontrol-position: top left;
@@ -1658,7 +1883,11 @@ QTableCornerButton::section { background: $PANEL; border: none; border-bottom: 1
 #conductorPage QLineEdit,
 #conductorPage QComboBox,
 #conductorPage QDoubleSpinBox,
-#conductorPage QSpinBox {
+#conductorPage QSpinBox,
+#conductorCreationDialog QLineEdit,
+#conductorCreationDialog QComboBox,
+#conductorCreationDialog QDoubleSpinBox,
+#conductorCreationDialog QSpinBox {
     background: $FIELD;
     color: $TEXT;
     border-color: $BORDER_STRONG;
@@ -1666,23 +1895,49 @@ QTableCornerButton::section { background: $PANEL; border: none; border-bottom: 1
 #conductorPage QLineEdit:focus,
 #conductorPage QComboBox:focus,
 #conductorPage QDoubleSpinBox:focus,
-#conductorPage QSpinBox:focus {
+#conductorPage QSpinBox:focus,
+#conductorCreationDialog QLineEdit:focus,
+#conductorCreationDialog QComboBox:focus,
+#conductorCreationDialog QDoubleSpinBox:focus,
+#conductorCreationDialog QSpinBox:focus {
     background: $ELEVATED;
     border-color: $ACCENT;
 }
+#conductorCreationDialog QLineEdit:disabled,
+#conductorCreationDialog QComboBox:disabled,
+#conductorCreationDialog QDoubleSpinBox:disabled,
+#conductorCreationDialog QSpinBox:disabled {
+    background: $PANEL;
+    color: $MUTED;
+    border-color: $BORDER;
+}
+#conductorCreationDialog QLabel:disabled { color: $MUTED; }
 #conductorCreateButton {
-    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 $ACCENT,stop:1 $ACCENT2);
+    background: $ACCENT;
     color: $SELECTION_TEXT;
     border: none;
     font-weight: 700;
 }
 #conductorCreateButton:hover { border: 1px solid $TEXT; }
+QPushButton[conductorModeSwitch="true"] { padding: 7px 14px; font-weight: 600; }
+QPushButton[conductorModeSwitch="true"]:checked { background: $ACCENT_SOFT; border-color: $ACCENT2; color: $TEXT; }
+#conductorSettingsTabs::pane { background: $PANEL; border: none; }
+#conductorSettingsTabs QTabBar::tab {
+    background: transparent; border: none; border-bottom: 2px solid transparent;
+    border-radius: 0px; padding: 7px 14px; margin-right: 10px;
+}
+#conductorSettingsTabs QTabBar::tab:selected { color: $TEXT; border-bottom: 2px solid $ACCENT2; }
 
 QTabBar::tab { background: transparent; color: $MUTED; border: 1px solid transparent; padding: 8px 16px; margin-right: 4px; border-radius: 7px; }
 QTabBar::tab:hover { color: $TEXT; background: $ELEVATED; }
 QTabBar::tab:selected { color: $TEXT; background: $ELEVATED; border-color: $BORDER_STRONG; }
 QTabWidget::pane { background: $ELEVATED; border: 1px solid $BORDER; border-radius: 9px; top: -1px; }
 QTabWidget QTabBar::tab { padding: 6px 13px; }
+QTabWidget#stepSettingsTabs QTabBar::tab {
+    background: transparent; border: none; border-bottom: 2px solid transparent;
+    border-radius: 0px; padding: 5px 12px; margin-right: 12px;
+}
+QTabWidget#stepSettingsTabs QTabBar::tab:selected { color: $TEXT; border-bottom: 2px solid $ACCENT2; }
 QTabBar::close-button { image: url(:/YQY/icon_close.svg); width: 14px; height: 14px; margin: 2px 4px; border-radius: 3px; }
 QTabBar::close-button:hover { background: $ACCENT_SOFT; }
 
@@ -1693,17 +1948,29 @@ QProgressBar#solveTaskProgress::chunk { border-radius: 6px; }
 QSlider::groove:horizontal { height: 5px; border-radius: 2px; background: $BORDER_STRONG; }
 QSlider::sub-page:horizontal { background: $ACCENT2; border-radius: 2px; }
 QSlider::handle:horizontal { background: $TEXT; border: 2px solid $ACCENT2; width: 14px; height: 14px; margin: -6px 0; border-radius: 8px; }
-QCheckBox { spacing: 10px; }
-QCheckBox::indicator { width: 34px; height: 18px; border-radius: 9px; background: $BORDER_STRONG; border: 1px solid $BORDER; }
-QCheckBox::indicator:checked { image: none; background: $ACCENT2; border-color: $ACCENT2; }
+QCheckBox, QRadioButton { spacing: 8px; min-height: 24px; background: transparent; }
+QCheckBox::indicator {
+    width: 16px; height: 16px; border-radius: 3px; background: $FIELD; border: 1px solid $BORDER_STRONG;
+}
+QCheckBox::indicator:hover, QCheckBox::indicator:focus { border-color: $ACCENT; }
+QCheckBox::indicator:checked {
+    image: none; background: $ACCENT; border-color: $ACCENT;
+}
+QCheckBox::indicator:indeterminate { background: $ACCENT_SOFT; border: 2px solid $ACCENT; }
+QCheckBox:disabled, QRadioButton:disabled { color: $MUTED; }
+QCheckBox::indicator:disabled { background: $ELEVATED; border-color: $BORDER; }
+QRadioButton::indicator { width: 16px; height: 16px; border-radius: 9px; background: $FIELD; border: 1px solid $BORDER_STRONG; }
+QRadioButton::indicator:checked { background: $ACCENT; border: 4px solid $FIELD; }
+QRadioButton::indicator:hover { border-color: $ACCENT; }
 QSplitter::handle { background: $BORDER; }
 QSplitter::handle:horizontal { width: 4px; }
 QSplitter::handle:vertical { height: 6px; }
 QSplitter::handle:hover { background: $ACCENT2; }
-QScrollBar:vertical { width: 8px; background: transparent; margin: 2px; }
+QSplitter#workspaceVerticalSplitter::handle { background: transparent; height: 12px; }
+QScrollBar:vertical { width: 12px; background: transparent; margin: 2px; }
 QScrollBar::handle:vertical { background: $BORDER_STRONG; border-radius: 4px; min-height: 28px; }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
-QScrollBar:horizontal { height: 8px; background: transparent; margin: 1px; }
+QScrollBar:horizontal { height: 12px; background: transparent; margin: 2px; }
 QScrollBar::handle:horizontal { background: $BORDER_STRONG; border-radius: 4px; min-width: 28px; }
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
 QToolTip, QLabel#qtooltip_label {
@@ -1741,7 +2008,12 @@ YQY::YQY(QWidget* parent)
     , m_resultDataController(std::make_unique<ResultDataController>())
     , m_workspaceController(std::make_unique<WorkspaceController>())
 {
-    ui.setupUi(this);
+    initializeUi();
+    const bool isolatedSolveEnabled = QCoreApplication::arguments().contains(QStringLiteral("--isolated-solve"));
+    m_solveTaskController->setIsolatedProcessEnabled(isolatedSolveEnabled);
+    if (isolatedSolveEnabled)
+        appendLogMessage(
+            QStringLiteral("[INFO] 独立进程试验模式已启用；完整算例使用工作进程，指定分析步仍使用原执行方式。"));
     setWindowIcon(QApplication::windowIcon());
     applyWindowsWindowIcon(this);
     if (!qApp->findChild<QObject*>(QStringLiteral("popupThemeFilter")))
@@ -1757,32 +2029,29 @@ YQY::YQY(QWidget* parent)
     initializePropertyModule();
     initializeResultModule();
     initializeSettingsModule();
-    ui.startSolveButton->hide();
-    ui.solvePageStartButton->hide();
+    m_startSolveButton->hide();
+    m_solvePageStartButton->hide();
     setMinimumSize(760, 520);
     initializeToolbarAppearance();
 
     // 导线、属性和分析编辑器需要为标签及原生子控件保留足够空间；初始面板过窄会造成字段显示错乱。
-    ui.mainSplitter->setSizes(m_normalMainSplitterSizes);
-    ui.modelDataTree->header()->setStretchLastSection(true);
-    ui.solveStepTree->setColumnCount(4);
-    ui.solveStepTree->setHeaderHidden(false);
-    ui.solveStepTree->setHeaderLabels(
+    m_mainSplitter->setSizes(m_normalMainSplitterSizes);
+    m_modelDataTree->header()->setStretchLastSection(true);
+    m_solveStepTree->setColumnCount(4);
+    m_solveStepTree->setHeaderHidden(false);
+    m_solveStepTree->setHeaderLabels(
         {QStringLiteral("算例"), QStringLiteral("进度"), QStringLiteral("结果"), QStringLiteral("耗时")});
-    ui.solveStepTree->header()->setDefaultAlignment(Qt::AlignCenter);
-    ui.solveStepTree->header()->setMinimumHeight(34);
-    ui.solveStepTree->setRootIsDecorated(false);
-    ui.solveStepTree->setIndentation(0);
-    ui.solveStepTree->header()->setSectionResizeMode(0, QHeaderView::Stretch);
-    ui.solveStepTree->header()->setSectionResizeMode(1, QHeaderView::Fixed);
-    ui.solveStepTree->header()->setSectionResizeMode(2, QHeaderView::Fixed);
-    ui.solveStepTree->header()->setSectionResizeMode(3, QHeaderView::Fixed);
-    ui.solveStepTree->setColumnWidth(1, 92);
-    ui.solveStepTree->setColumnWidth(2, 72);
-    ui.solveStepTree->setColumnWidth(3, 72);
-    m_solveCasesButton = ui.solveCasesButton;
-    m_solveAllCasesButton = ui.solveAllCasesButton;
-    m_solveRestartAllCasesButton = ui.solveRestartAllCasesButton;
+    m_solveStepTree->header()->setDefaultAlignment(Qt::AlignCenter);
+    m_solveStepTree->header()->setMinimumHeight(34);
+    m_solveStepTree->setRootIsDecorated(false);
+    m_solveStepTree->setIndentation(0);
+    m_solveStepTree->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+    m_solveStepTree->header()->setSectionResizeMode(1, QHeaderView::Fixed);
+    m_solveStepTree->header()->setSectionResizeMode(2, QHeaderView::Fixed);
+    m_solveStepTree->header()->setSectionResizeMode(3, QHeaderView::Fixed);
+    m_solveStepTree->setColumnWidth(1, 92);
+    m_solveStepTree->setColumnWidth(2, 72);
+    m_solveStepTree->setColumnWidth(3, 72);
     const QList<QPushButton*> solveBatchButtons = {m_solveCasesButton, m_solveAllCasesButton,
                                                    m_solveRestartAllCasesButton};
     for (QPushButton* button : solveBatchButtons)
@@ -1807,11 +2076,11 @@ YQY::YQY(QWidget* parent)
     connect(m_solveCasesButton, &QPushButton::clicked, this, &YQY::openSolveTaskManager);
     connect(m_solveAllCasesButton, &QPushButton::clicked, this, &YQY::startAllReadySolveTasks);
     connect(m_solveRestartAllCasesButton, &QPushButton::clicked, this, &YQY::restartAllSolveTasks);
-    ui.solveProgress->setObjectName(QStringLiteral("solveTaskProgress"));
-    connect(ui.solveProgress, &QProgressBar::valueChanged, ui.solveProgress,
+    m_solveProgress->setObjectName(QStringLiteral("solveTaskProgress"));
+    connect(m_solveProgress, &QProgressBar::valueChanged, m_solveProgress,
             [this](int value)
             {
-                ui.solveProgress->setFormat(QStringLiteral("%1%").arg(value / 10.0, 0, 'f', 1));
+                m_solveProgress->setFormat(QStringLiteral("%1%").arg(value / 10.0, 0, 'f', 1));
             });
     initializeAnalysisEditor();
     initializeResponsiveLayout();
@@ -1820,18 +2089,18 @@ YQY::YQY(QWidget* parent)
     initializeInteractions();
 
     if (propertyLibraryReady)
-        ui.logEdit->appendPlainText(QStringLiteral("[INFO] 启动属性库已加载：%1 种材料，%2 种截面")
-                                        .arg(m_propertyLibrary->materials().size())
-                                        .arg(m_propertyLibrary->sections().size()));
+        appendLogMessage(QStringLiteral("[INFO] 启动属性库已加载：%1 种材料，%2 种截面")
+                             .arg(m_propertyLibrary->materials().size())
+                             .arg(m_propertyLibrary->sections().size()));
     else
     {
-        m_conductorModule->createButton()->setEnabled(false);
-        ui.logEdit->appendPlainText(QStringLiteral("[ERROR] 启动属性库加载失败：%1").arg(propertyLibraryError));
+        m_conductorModule->setCreationEnabled(false);
+        appendLogMessage(QStringLiteral("[ERROR] 启动属性库加载失败：%1").arg(propertyLibraryError));
     }
 
     QSettings settings;
     const int savedTheme = qBound(0, settings.value(QStringLiteral("appearance/theme"), 0).toInt(), 3);
-    ui.themeComboBox->setCurrentIndex(savedTheme);
+    m_themeComboBox->setCurrentIndex(savedTheme);
     applyTheme(savedTheme);
 }
 
@@ -1839,7 +2108,7 @@ YQY::~YQY() = default;
 
 void YQY::initializeSettingsModule()
 {
-    m_settingsPanel = new SettingsPanel(ui.settingsModulePage);
+    m_settingsPanel = new SettingsPanel(m_settingsModulePage);
     auto* concurrencySpin = m_settingsPanel->concurrencySpin();
     auto* assemblyThreadsSpin = m_settingsPanel->assemblyThreadsSpin();
     auto* resultBatchFramesSpin = m_settingsPanel->resultBatchFramesSpin();
@@ -1863,12 +2132,12 @@ void YQY::initializeSettingsModule()
     QSettings settings;
     const bool adaptiveNodeLabels = settings.value(QStringLiteral("view/adaptiveNodeLabels"), false).toBool();
     nodeLabelModeCombo->setCurrentIndex(adaptiveNodeLabels ? 1 : 0);
-    ui.modelViewport->setAdaptiveNodeLabels(adaptiveNodeLabels);
+    m_modelViewport->setAdaptiveNodeLabels(adaptiveNodeLabels);
     connect(nodeLabelModeCombo, qOverload<int>(&QComboBox::currentIndexChanged), this,
             [this](int index)
             {
                 const bool adaptive = index == 1;
-                ui.modelViewport->setAdaptiveNodeLabels(adaptive);
+                m_modelViewport->setAdaptiveNodeLabels(adaptive);
                 QSettings().setValue(QStringLiteral("view/adaptiveNodeLabels"), adaptive);
                 setWorkspaceMessage(adaptive ? QStringLiteral("节点编号显示已切换为自适应")
                                              : QStringLiteral("节点编号显示已切换为全部"));
@@ -1883,11 +2152,10 @@ void YQY::initializeSettingsModule()
         qBound(1, settings.value(QStringLiteral("solver/assemblyThreads"), 1).toInt(), allowedThreads);
     assemblyThreadsSpin->setValue(savedAssemblyThreads);
     SolverNameSpace::AssemblySettings::SetThreadCount(savedAssemblyThreads);
-    const int savedResultBatchFrames =
-        qBound(ResultOutputSettings::MinimumFrameBatchSize,
-               settings.value(QStringLiteral("output/resultBatchFrames"), ResultOutputSettings::DefaultFrameBatchSize)
-                   .toInt(),
-               ResultOutputSettings::MaximumFrameBatchSize);
+    const int savedResultBatchFrames = qBound(
+        ResultOutputSettings::MinimumFrameBatchSize,
+        settings.value(QStringLiteral("output/resultBatchFrames"), ResultOutputSettings::DefaultFrameBatchSize).toInt(),
+        ResultOutputSettings::MaximumFrameBatchSize);
     resultBatchFramesSpin->setValue(savedResultBatchFrames);
     ResultOutputSettings::SetFrameBatchSize(savedResultBatchFrames);
     const bool backgroundResultWrite = settings.value(QStringLiteral("output/backgroundResultWrite"), true).toBool();
@@ -1951,8 +2219,8 @@ void YQY::initializeSettingsModule()
             {
                 SolverNameSpace::GpuSettings::SetEnabled(enabled);
                 QSettings().setValue(QStringLiteral("solver/useGpuSparseSolver"), enabled);
-                setWorkspaceMessage(enabled ? QStringLiteral("GPU 稀疏迭代求解已启用；失败时将回退到 CPU")
-                                            : QStringLiteral("GPU 稀疏迭代求解已关闭"));
+                setWorkspaceMessage(enabled ? SolverNameSpace::GpuSettings::CalibrationDescription()
+                                            : QStringLiteral("GPU 加速已关闭"));
             });
     connect(linearSolverModeCombo, qOverload<int>(&QComboBox::currentIndexChanged), this,
             [this](int index)
@@ -1973,8 +2241,8 @@ void YQY::initializeSettingsModule()
                         setWorkspaceMessage(QStringLiteral("线性求解方法已设置为 Eigen LU，可处理非对称矩阵"));
                         break;
                     case SolverNameSpace::LinearSolverMode::Pardiso:
-                        setWorkspaceMessage(
-                            QStringLiteral("线性求解方法已设置为 oneMKL PARDISO，对称矩阵使用 LDLT，非对称矩阵使用 LU"));
+                        setWorkspaceMessage(QStringLiteral(
+                            "线性求解方法已设置为 oneMKL PARDISO，对称矩阵使用 LDLT，非对称矩阵使用 LU"));
                         break;
                     case SolverNameSpace::LinearSolverMode::CudaIterative:
                         setWorkspaceMessage(QStringLiteral("线性求解方法已设置为 CUDA BiCGSTAB 通用非对称迭代法"));
@@ -1985,12 +2253,18 @@ void YQY::initializeSettingsModule()
                 }
             });
 
-    ui.settingsModuleLayout->insertWidget(1, m_settingsPanel);
+    m_settingsModuleLayout->insertWidget(1, m_settingsPanel);
+    m_settingsModuleLayout->setStretch(1, 1);
+    m_settingsModuleLayout->setStretch(2, 0);
 }
 
 bool YQY::event(QEvent* event)
 {
     const bool handled = QMainWindow::event(event);
+    if (event->type() == QEvent::DevicePixelRatioChange)
+    {
+        applyWindowsWindowIcon(this);
+    }
     if (event->type() == QEvent::ScreenChangeInternal || event->type() == QEvent::ApplicationFontChange ||
         event->type() == QEvent::StyleChange)
     {
@@ -2015,68 +2289,20 @@ bool YQY::openResult(const QString& filePath)
     return loadHdf5Result(filePath, false);
 }
 
-bool YQY::saveAnalysisManagerPreview(const QString& filePath, int managerIndex)
-{
-    const auto structure = m_modelController->model();
-    if (!structure || filePath.trimmed().isEmpty())
-        return false;
-    std::unique_ptr<AnalysisManagerDialog> manager;
-    if (managerIndex == 1)
-        manager = std::make_unique<AnalysisLoadManagerDialog>(structure, this);
-    else if (managerIndex == 2)
-        manager = std::make_unique<AnalysisConstraintManagerDialog>(structure, this);
-    else if (managerIndex == 3)
-        manager = std::make_unique<AnalysisMPCManagerDialog>(structure, this);
-    else
-        manager = std::make_unique<AnalysisStepManagerDialog>(structure, this);
-    manager->show();
-    QCoreApplication::processEvents(QEventLoop::AllEvents);
-    const bool saved = manager->grab().save(filePath);
-    manager->close();
-    return saved;
-}
-
-bool YQY::saveSolveTaskManagerPreview(const QString& filePath)
-{
-    if (!m_modelController->model() || m_solveTaskController->taskIds().isEmpty())
-        return false;
-    switchModule(Module::Solve);
-    openSolveTaskManager();
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
-    return m_solveTaskManager && m_solveTaskManager->grab().save(filePath);
-}
-
-bool YQY::saveNodeExportPreview(const QString& filePath)
-{
-    const auto structure = m_modelController->model();
-    const QString& resultFilePath = m_resultPanel->resultFilePath();
-    if (!structure || resultFilePath.isEmpty())
-        return false;
-    QSet<int> availableNodes;
-    for (const auto& [nodeId, node] : structure->Nodes())
-    {
-        if (node)
-            availableNodes.insert(nodeId);
-    }
-    NodeResultExportDialog dialog(resultFilePath, availableNodes, m_selectedNodeId, this);
-    dialog.show();
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
-    const bool saved = dialog.grab().save(filePath);
-    dialog.close();
-    return saved;
-}
-
 void YQY::initializeResultModule()
 {
-    m_resultPanel = new ResultControlPanel(ui.resultModulePage);
-    ui.resultCaseCombo->setMinimumWidth(0);
-    ui.resultCaseCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    connect(ui.resultCaseCombo, qOverload<int>(&QComboBox::currentIndexChanged), this,
+    m_resultPanel = new ResultControlPanel(m_resultModulePage);
+    m_resultCaseCombo->setMinimumWidth(0);
+    m_resultCaseCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_resultCaseCombo->setMinimumContentsLength(8);
+    m_resultCaseCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    connect(m_resultCaseCombo, &QComboBox::currentTextChanged, m_resultCaseCombo, &QWidget::setToolTip);
+    connect(m_resultCaseCombo, qOverload<int>(&QComboBox::currentIndexChanged), this,
             [this](int index)
             {
                 if (index < 0)
                     return;
-                loadSolveTaskResult(ui.resultCaseCombo->itemData(index).toInt());
+                loadSolveTaskResult(m_resultCaseCombo->itemData(index).toInt());
             });
     connect(m_resultPanel->stepCombo(), qOverload<int>(&QComboBox::currentIndexChanged), this,
             [this](int index)
@@ -2087,8 +2313,68 @@ void YQY::initializeResultModule()
     setActionGlyph(m_resultPanel->exportButton(), ActionGlyph::Export);
     setActionGlyph(m_resultPanel->exportElementButton(), ActionGlyph::Export);
     setActionGlyph(m_resultPanel->exportIterationButton(), ActionGlyph::Export);
-    setActionGlyph(m_resultPanel->exportPlotButton(), ActionGlyph::Export);
-    ui.resultModuleLayout->insertWidget(3, m_resultPanel);
+    setActionGlyph(m_resultPanel->exportPlotButton(), ActionGlyph::Plot);
+    setActionGlyph(m_resultPanel->exportEnergyButton(), ActionGlyph::Export);
+    m_resultModuleLayout->insertWidget(3, m_resultPanel);
+    m_resultFileLabel->hide();
+    m_resultTree->hide();
+    m_resultTree->setSizeAdjustPolicy(QAbstractScrollArea::AdjustToContents);
+    m_resultTree->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Minimum);
+    auto* sidebarScroll = new QScrollArea(m_resultModulePage);
+    sidebarScroll->setObjectName(QStringLiteral("resultSidebarScroll"));
+    sidebarScroll->setFrameShape(QFrame::NoFrame);
+    sidebarScroll->setWidgetResizable(true);
+    sidebarScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    sidebarScroll->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    auto* sidebarBody = new QWidget(sidebarScroll);
+    sidebarBody->setObjectName(QStringLiteral("resultSidebarBody"));
+    auto* sidebarLayout = new QVBoxLayout(sidebarBody);
+    sidebarLayout->setContentsMargins(0, 0, 0, 0);
+    sidebarLayout->setSpacing(10);
+    sidebarLayout->setSizeConstraint(QLayout::SetMinimumSize);
+    while (QLayoutItem* item = m_resultModuleLayout->takeAt(0))
+    {
+        if (QWidget* widget = item->widget())
+        {
+            delete item;
+            sidebarLayout->addWidget(widget);
+        }
+        else if (QLayout* childLayout = item->layout())
+        {
+            childLayout->setParent(nullptr);
+            sidebarLayout->addLayout(childLayout);
+        }
+        else
+        {
+            sidebarLayout->addItem(item);
+        }
+    }
+    sidebarLayout->addStretch();
+    sidebarScroll->setWidget(sidebarBody);
+    m_resultModuleLayout->addWidget(sidebarScroll, 1);
+    m_nodeTimeHistoryPanel = new NodeTimeHistoryPanel(m_workspaceDisplayStack);
+    m_workspaceDisplayStack->addWidget(m_nodeTimeHistoryPanel);
+    m_nodeTimeHistoryPanel->setReturnToModelHandler(
+        [this]()
+        {
+            m_workspaceDisplayStack->setCurrentWidget(m_modelViewport);
+            setWorkspaceMessage(QStringLiteral("已返回模型视图"));
+        });
+    m_nodeTimeHistoryPanel->setEnergyStepChangedHandler(
+        [this](int stepId)
+        {
+            auto* combo = m_resultPanel->stepCombo();
+            const int index = combo->findData(stepId);
+            if (index >= 0 && combo->currentIndex() != index)
+                combo->setCurrentIndex(index);
+        });
+    m_nodeTimeHistoryPanel->setEnergyExportStateHandler(
+        [this](bool enabled, bool busy)
+        {
+            auto* button = m_resultPanel->exportEnergyButton();
+            button->setEnabled(enabled);
+            button->setText(busy ? QStringLiteral("正在导出…") : QStringLiteral("导出能量"));
+        });
     m_resultPanel->setFrameChangedHandler(
         [this](double framePosition)
         {
@@ -2103,17 +2389,21 @@ void YQY::initializeResultModule()
         [this](bool playing)
         {
             // 大模型的标签生成和渲染开销较高，因此整个运行期间强制隐藏并禁用编号标签。
-            const QSignalBlocker nodeIdsBlocker(ui.showNodeIdsButton);
-            const QSignalBlocker elementIdsBlocker(ui.showElementIdsButton);
-            ui.modelViewport->setIdLabelsPlaybackLocked(playing);
+            const QSignalBlocker nodeIdsBlocker(m_showNodeIdsButton);
+            const QSignalBlocker elementIdsBlocker(m_showElementIdsButton);
+            m_modelViewport->setIdLabelsPlaybackLocked(playing);
             if (playing)
             {
-                ui.showNodeIdsButton->setChecked(false);
-                ui.showElementIdsButton->setChecked(false);
+                m_showNodeIdsButton->setChecked(false);
+                m_showElementIdsButton->setChecked(false);
             }
-            const bool idsAvailable = !playing && ui.modelViewport->hasModel();
-            ui.showNodeIdsButton->setEnabled(idsAvailable);
-            ui.showElementIdsButton->setEnabled(idsAvailable);
+            const bool idsAvailable = !playing && m_modelViewport->hasModel();
+            m_showNodeIdsButton->setEnabled(idsAvailable);
+            m_showElementIdsButton->setEnabled(idsAvailable);
+            // 播放期间跳过实体重建以保持帧率；暂停后仅重建当前帧一次，
+            // 保证实体显示与最终动画位置一致。
+            if (!playing && !m_resultPanel->frames().empty())
+                updateResultVisualization();
         });
     m_resultPanel->setExportHandler(
         [this]()
@@ -2133,19 +2423,26 @@ void YQY::initializeResultModule()
     m_resultPanel->setPlotExportHandler(
         [this]()
         {
-            exportResultPlot();
+            showTimeHistory();
+        });
+    m_resultPanel->setEnergyExportHandler(
+        [this]()
+        {
+            m_nodeTimeHistoryPanel->exportEnergyHistory();
         });
 }
 
 void YQY::initializeConductorModule()
 {
-    m_conductorModule = new ConductorModule(ui.moduleStack);
+    m_conductorModule = new ConductorModule(this);
+    m_conductorModule->hide();
     auto* viewLibraryButton = m_conductorModule->viewLibraryButton();
 
     setActionGlyph(viewLibraryButton, ActionGlyph::Library);
     setActionGlyph(m_conductorModule->createButton(), ActionGlyph::CreateConductor);
+    setActionGlyph(m_conductorModule->singleSpanButton(), ActionGlyph::CreateConductor);
+    setActionGlyph(m_conductorModule->multiSpanButton(), ActionGlyph::CreateMultiSpanConductor);
     m_conductorModule->setPropertyLibrary(m_propertyLibrary.get());
-    ui.moduleStack->insertWidget(1, m_conductorModule);
 
     connect(viewLibraryButton, &QPushButton::clicked, this,
             [this]()
@@ -2157,17 +2454,17 @@ void YQY::initializeConductorModule()
 
 void YQY::initializePropertyModule()
 {
-    m_propertyModule = new PropertyModule(ui.moduleStack);
+    m_propertyModule = new PropertyModule(m_moduleStack);
     setActionGlyph(m_propertyModule->refreshButton(), ActionGlyph::Refresh);
     setActionGlyph(m_propertyModule->applyButton(), ActionGlyph::Apply);
-    ui.moduleStack->insertWidget(1, m_propertyModule);
+    m_moduleStack->insertWidget(1, m_propertyModule);
 
     connect(m_propertyModule->refreshButton(), &QPushButton::clicked, this, &YQY::refreshPropertyModule);
     connect(m_propertyModule->applyButton(), &QPushButton::clicked, this, &YQY::applyModelPropertyEdits);
     connect(m_propertyModule->materialTree(), &QTreeWidget::itemDoubleClicked, this, &YQY::editPropertyItem);
     connect(m_propertyModule->sectionTree(), &QTreeWidget::itemDoubleClicked, this, &YQY::editPropertyItem);
     connect(m_propertyModule->springBehaviorTree(), &QTreeWidget::itemDoubleClicked, this, &YQY::editPropertyItem);
-    connect(ui.modelDataTree, &QTreeWidget::itemDoubleClicked, this, &YQY::editPropertyItem);
+    connect(m_modelDataTree, &QTreeWidget::itemDoubleClicked, this, &YQY::editPropertyItem);
 }
 
 void YQY::refreshPropertyModule()
@@ -2250,8 +2547,8 @@ void YQY::refreshPropertyModule()
         QTreeWidgetItem* materialGroup = nullptr;
         if (!structure->m_Material.empty())
         {
-            materialGroup = new QTreeWidgetItem(
-                m_materialPropertyTree, {QStringLiteral("模型 %1 · %2").arg(modelId).arg(modelName)});
+            materialGroup = new QTreeWidgetItem(m_materialPropertyTree,
+                                                {QStringLiteral("模型 %1 · %2").arg(modelId).arg(modelName)});
             setTreeGlyph(materialGroup, TreeGlyph::Model);
         }
         for (const auto& [materialId, material] : structure->m_Material)
@@ -2284,8 +2581,8 @@ void YQY::refreshPropertyModule()
         QTreeWidgetItem* sectionGroup = nullptr;
         if (!structure->m_Section.empty())
         {
-            sectionGroup = new QTreeWidgetItem(
-                m_sectionPropertyTree, {QStringLiteral("模型 %1 · %2").arg(modelId).arg(modelName)});
+            sectionGroup = new QTreeWidgetItem(m_sectionPropertyTree,
+                                               {QStringLiteral("模型 %1 · %2").arg(modelId).arg(modelName)});
             setTreeGlyph(sectionGroup, TreeGlyph::Model);
         }
         for (const auto& [sectionId, section] : structure->m_Section)
@@ -2323,15 +2620,16 @@ void YQY::refreshPropertyModule()
 
         if (!structure->m_SpringBehaviors.empty())
         {
-            auto* behaviorGroup = new QTreeWidgetItem(
-                m_springBehaviorTree, {QStringLiteral("模型 %1 · %2").arg(modelId).arg(modelName)});
+            auto* behaviorGroup =
+                new QTreeWidgetItem(m_springBehaviorTree, {QStringLiteral("模型 %1 · %2").arg(modelId).arg(modelName)});
             setTreeGlyph(behaviorGroup, TreeGlyph::Model);
             for (const auto& [behaviorId, behavior] : structure->m_SpringBehaviors)
             {
                 if (!behavior)
                     continue;
                 auto* item = new QTreeWidgetItem(
-                    behaviorGroup, {QStringLiteral("行为 %1 · 力-位移点 %2").arg(behaviorId).arg(behavior->m_Points.size())});
+                    behaviorGroup,
+                    {QStringLiteral("行为 %1 · 力-位移点 %2").arg(behaviorId).arg(behavior->m_Points.size())});
                 item->setToolTip(0, QStringLiteral("双击查看力-位移数据"));
                 item->setData(0, Qt::UserRole, 5);
                 item->setData(0, Qt::UserRole + 1, modelId);
@@ -2344,7 +2642,7 @@ void YQY::refreshPropertyModule()
     m_materialPropertyTree->expandAll();
     m_sectionPropertyTree->expandAll();
     m_springBehaviorTree->expandAll();
-    const ThemeColors propertyColors = themeColors(ui.themeComboBox->currentIndex());
+    const ThemeColors propertyColors = themeColors(m_themeComboBox->currentIndex());
     applyTreeIcons(m_materialPropertyTree, QColor(propertyColors.text), QColor(propertyColors.accentSecond));
     applyTreeIcons(m_sectionPropertyTree, QColor(propertyColors.text), QColor(propertyColors.accentSecond));
     applyTreeIcons(m_springBehaviorTree, QColor(propertyColors.text), QColor(propertyColors.accentSecond));
@@ -2372,18 +2670,15 @@ void YQY::editPropertyItem(QTreeWidgetItem* item, int)
         QStringList points;
         for (const SpringForceDisplacementPoint& point : found->second->m_Points)
         {
-            points.append(QStringLiteral("力 = %1，位移 = %2")
-                              .arg(point.force, 0, 'g', 12)
-                              .arg(point.displacement, 0, 'g', 12));
+            points.append(
+                QStringLiteral("力 = %1，位移 = %2").arg(point.force, 0, 'g', 12).arg(point.displacement, 0, 'g', 12));
         }
         QMessageBox dialog(QMessageBox::Information, QStringLiteral("弹簧行为 %1").arg(behaviorId),
                            QStringLiteral("模型：%1\n\n力-位移数据：\n%2")
                                .arg(QFileInfo(m_modelController->filePath(modelId)).fileName())
                                .arg(points.isEmpty() ? QStringLiteral("--") : points.join(QStringLiteral("\n"))),
                            QMessageBox::Ok, this);
-        const ThemeColors dialogColors = themeColors(ui.themeComboBox->currentIndex());
-        dialog.setWindowIcon(treeIcon(TreeGlyph::SpringBehavior, QColor(dialogColors.text),
-                                      QColor(dialogColors.accentSecond)));
+        dialog.setWindowIcon(UiIcons::applicationIcon());
         dialog.exec();
         return;
     }
@@ -2391,9 +2686,7 @@ void YQY::editPropertyItem(QTreeWidgetItem* item, int)
         return;
 
     PropertyItemEditorDialog dialog(this);
-    const ThemeColors dialogColors = themeColors(ui.themeComboBox->currentIndex());
-    const TreeGlyph dialogGlyph = (kind == 1 || kind == 2) ? TreeGlyph::Material : TreeGlyph::Section;
-    dialog.setWindowIcon(treeIcon(dialogGlyph, QColor(dialogColors.text), QColor(dialogColors.accentSecond)));
+    dialog.setWindowIcon(UiIcons::applicationIcon());
 
     if (kind == 1 || kind == 2)
     {
@@ -2555,7 +2848,7 @@ void YQY::editPropertyItem(QTreeWidgetItem* item, int)
 
     if (dialog.exec() == QDialog::Accepted)
     {
-        ui.logEdit->appendPlainText(QStringLiteral("[模型属性] 已保存属性修改；未改写模型源文件"));
+        appendLogMessage(QStringLiteral("[模型属性] 已保存属性修改；未改写模型源文件"));
         refreshPropertyModule();
         setWorkspaceMessage(QStringLiteral("属性修改已保存，后续提交计算将使用新值"));
     }
@@ -2652,9 +2945,9 @@ void YQY::applyModelPropertyEdits()
                 circular->Calculate_Radius();
         }
     }
-    ui.logEdit->appendPlainText(QStringLiteral("[模型属性] 已更新 %1 个材料、%2 个截面；源模型文本未修改")
-                                    .arg(materialEdits.size())
-                                    .arg(sectionEdits.size()));
+    appendLogMessage(QStringLiteral("[模型属性] 已更新 %1 个材料、%2 个截面；源模型文本未修改")
+                         .arg(materialEdits.size())
+                         .arg(sectionEdits.size()));
     setWorkspaceMessage(QStringLiteral("模型材料/截面修改已应用，后续提交计算将使用新值"));
     refreshPropertyModule();
 }
@@ -2806,9 +3099,9 @@ void YQY::showPropertyLibrary()
                     modelUpdated = true;
                 }
             }
-            ui.logEdit->appendPlainText(
-                modelUpdated ? QStringLiteral("[属性库] 会话预设已保存，并已同步到当前模型（未改写文本文件）")
-                             : QStringLiteral("[属性库] 会话预设已保存（未改写文本文件）"));
+            appendLogMessage(modelUpdated
+                                 ? QStringLiteral("[属性库] 会话预设已保存，并已同步到当前模型（未改写文本文件）")
+                                 : QStringLiteral("[属性库] 会话预设已保存（未改写文本文件）"));
             refreshModulePages();
             dialog.accept();
         });
@@ -2830,14 +3123,16 @@ void YQY::createConductorModel()
         return;
     }
 
-    ui.logEdit->appendPlainText(QStringLiteral("[导线建模] 已生成 %1 个节点、%2 个单元、%3 个相内间隔棒：%4")
-                                    .arg(result.nodeCount)
-                                    .arg(result.elementCount)
-                                    .arg(result.spacerCount)
-                                    .arg(result.filePath));
+    appendLogMessage(QStringLiteral("[导线建模] 已生成 %1 个节点、%2 个单元、%3 个相内间隔棒：%4")
+                         .arg(result.nodeCount)
+                         .arg(result.elementCount)
+                         .arg(result.spacerCount)
+                         .arg(QFileInfo(result.filePath).fileName()));
+    appendLogMessage(QStringLiteral("[路径] 生成模型：%1").arg(result.filePath), true);
     const int modelId = m_modelController->adoptModel(result.structure, result.filePath);
     if (modelId > 0)
     {
+        m_conductorModule->closeCreationDialog();
         switchModule(Module::Model);
         setWorkspaceMessage(QStringLiteral("导线模型已生成并加入当前工作区"));
     }
@@ -2851,25 +3146,25 @@ void YQY::createConductorModel()
 void YQY::initializeToolbarAppearance()
 {
     const QList<QPair<QAbstractButton*, QString>> buttons = {
-        {ui.importButton, QStringLiteral("导入模型")},
-        {ui.undoButton, QStringLiteral("撤销上一次节点修改")},
-        {ui.selectModeButton, QStringLiteral("选择模式")},
-        {ui.rotateModeButton, QStringLiteral("旋转视图")},
-        {ui.panModeButton, QStringLiteral("平移视图")},
-        {ui.zoomModeButton, QStringLiteral("缩放视图")},
-        {ui.showNodesButton, QStringLiteral("显示或隐藏节点")},
-        {ui.showElementsButton, QStringLiteral("显示或隐藏单元")},
-        {ui.showSolidButton, QStringLiteral("显示或隐藏单元实体")},
-        {ui.showNodeIdsButton, QStringLiteral("显示或隐藏节点编号")},
-        {ui.showElementIdsButton, QStringLiteral("显示或隐藏单元编号")},
-        {ui.frontViewButton, QStringLiteral("前视图")},
-        {ui.backViewButton, QStringLiteral("后视图")},
-        {ui.leftViewButton, QStringLiteral("左视图")},
-        {ui.rightViewButton, QStringLiteral("右视图")},
-        {ui.topViewButton, QStringLiteral("顶视图")},
-        {ui.bottomViewButton, QStringLiteral("底视图")},
-        {ui.fitViewButton, QStringLiteral("适应窗口")},
-        {ui.startSolveButton, QStringLiteral("开始求解")}};
+        {m_importButton, QStringLiteral("导入模型")},
+        {m_undoButton, QStringLiteral("撤销上一次节点修改")},
+        {m_selectModeButton, QStringLiteral("普通光标：默认单击或框选节点、单元；可拖动中心标记")},
+        {m_rotateModeButton, QStringLiteral("旋转视图：拖动一次后返回普通光标")},
+        {m_panModeButton, QStringLiteral("平移视图：拖动一次后返回普通光标")},
+        {m_zoomModeButton, QStringLiteral("缩放：拖动或框选放大一次后返回普通光标")},
+        {m_showNodesButton, QStringLiteral("显示或隐藏节点")},
+        {m_showElementsButton, QStringLiteral("显示或隐藏单元")},
+        {m_showSolidButton, QStringLiteral("显示或隐藏单元实体")},
+        {m_showNodeIdsButton, QStringLiteral("显示或隐藏节点编号")},
+        {m_showElementIdsButton, QStringLiteral("显示或隐藏单元编号")},
+        {m_frontViewButton, QStringLiteral("前视图")},
+        {m_backViewButton, QStringLiteral("后视图")},
+        {m_leftViewButton, QStringLiteral("左视图")},
+        {m_rightViewButton, QStringLiteral("右视图")},
+        {m_topViewButton, QStringLiteral("顶视图")},
+        {m_bottomViewButton, QStringLiteral("底视图")},
+        {m_fitViewButton, QStringLiteral("适应窗口")},
+        {m_startSolveButton, QStringLiteral("开始求解")}};
 
     for (const auto& [button, toolTip] : buttons)
     {
@@ -2884,13 +3179,44 @@ void YQY::initializeToolbarAppearance()
         button->setMouseTracking(true);
         button->installEventFilter(new InstantToolTipFilter(button));
     }
-    ui.toolBarLayout->setSpacing(4);
+    m_toolBarLayout->setSpacing(4);
+    const QList<QWidget*> groupStarts = {m_selectModeButton, m_showNodesButton, m_frontViewButton, m_fitViewButton};
+    for (QWidget* groupStart : groupStarts)
+    {
+        auto* separator = new QFrame(m_toolBarCard);
+        separator->setObjectName(QStringLiteral("toolbarSeparator"));
+        separator->setFixedSize(1, 22);
+        m_toolBarLayout->insertWidget(m_toolBarLayout->indexOf(groupStart), separator, 0, Qt::AlignVCenter);
+    }
+    m_modelImportButton->setProperty("primaryAction", true);
+    m_stopButton->setProperty("dangerAction", true);
+    m_logEdit->setMaximumBlockCount(3000);
+    m_monitorLayout->setAlignment(Qt::AlignTop);
+    m_incrementLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    m_convergenceLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    connect(m_solveProgress, &QProgressBar::valueChanged, this,
+            [this](int value)
+            {
+                m_solveProgress->setFormat(QStringLiteral("%1%").arg(value / 10.0, 0, 'f', 1));
+            });
+    connect(m_logDetailsCheck, &QCheckBox::toggled, this, &YQY::rebuildLogView);
+    connect(m_copyLogButton, &QPushButton::clicked, this,
+            [this]()
+            {
+                QApplication::clipboard()->setText(m_logEdit->toPlainText());
+            });
+    connect(m_clearLogButton, &QPushButton::clicked, this,
+            [this]()
+            {
+                m_logEntries.clear();
+                m_logEdit->clear();
+            });
 
     const QList<QPair<QPushButton*, QString>> navigationButtons = {
-        {ui.propertyButton, QStringLiteral("属性")}, {ui.conductorButton, QStringLiteral("导线")},
-        {ui.modelButton, QStringLiteral("模型")},    {ui.analysisButton, QStringLiteral("分析")},
-        {ui.solveButton, QStringLiteral("求解")},    {ui.resultButton, QStringLiteral("结果")},
-        {ui.settingsButton, QStringLiteral("设置")}};
+        {m_propertyButton, QStringLiteral("属性")},
+        {m_modelButton, QStringLiteral("模型")},    {m_analysisButton, QStringLiteral("分析")},
+        {m_solveButton, QStringLiteral("求解")},    {m_resultButton, QStringLiteral("结果")},
+        {m_settingsButton, QStringLiteral("设置")}};
     for (const auto& [button, label] : navigationButtons)
     {
         button->setText(label);
@@ -2901,11 +3227,11 @@ void YQY::initializeToolbarAppearance()
     }
 
     const QList<QPair<QPushButton*, QString>> actionButtons = {
-        {ui.modelImportButton, QStringLiteral("导入模型")},
-        {ui.modelFitButton, QStringLiteral("适应窗口")},
-        {ui.openH5Button, QStringLiteral("打开 H5 结果文件")},
-        {ui.solvePageStartButton, QStringLiteral("运行全部分析步")},
-        {ui.stopButton, QStringLiteral("停止")}};
+        {m_modelImportButton, QStringLiteral("导入模型")},
+        {m_createConductorButton, QStringLiteral("创建导线")},
+        {m_openH5Button, QStringLiteral("打开 H5 结果文件")},
+        {m_solvePageStartButton, QStringLiteral("运行全部分析步")},
+        {m_stopButton, QStringLiteral("停止")}};
     for (const auto& [button, label] : actionButtons)
     {
         button->setText(label);
@@ -2914,52 +3240,57 @@ void YQY::initializeToolbarAppearance()
         button->setAccessibleName(label);
         button->setMinimumHeight(qMax(38, fontMetrics().height() + 18));
     }
-    setActionGlyph(ui.importButton, ActionGlyph::Import);
-    setActionGlyph(ui.modelImportButton, ActionGlyph::Import);
-    setActionGlyph(ui.modelFitButton, ActionGlyph::Fit);
-    setActionGlyph(ui.openH5Button, ActionGlyph::OpenFile);
-    setActionGlyph(ui.solvePageStartButton, ActionGlyph::Run);
-    setActionGlyph(ui.stopButton, ActionGlyph::Stop);
+    setActionGlyph(m_importButton, ActionGlyph::Import);
+    setActionGlyph(m_modelImportButton, ActionGlyph::Import);
+    setActionGlyph(m_createConductorButton, ActionGlyph::CreateConductor);
+    setActionGlyph(m_openH5Button, ActionGlyph::OpenFile);
+    setActionGlyph(m_solvePageStartButton, ActionGlyph::Run);
+    setActionGlyph(m_stopButton, ActionGlyph::Stop);
 }
 
 void YQY::initializeResponsiveLayout()
 {
     // 这些尺寸保证模型可在较小的笔记本屏幕上使用，旧版固定最小宽度之和超过了可用宽度。
-    ui.navigationRail->setMinimumWidth(84);
-    ui.navigationRail->setMaximumWidth(84);
-    // 参考有限元界面的整个左侧工作区约为 380 逻辑像素。本程序侧栏位于分隔器外，属性和导线页面的
-    // 中文标签更长，因此 420 像素是既能保持对齐、又不浪费视口的最小宽度。
-    ui.projectPanel->setMinimumWidth(320);
-    ui.projectPanel->setMaximumWidth(520);
-    ui.workspacePanel->setMinimumWidth(300);
-    ui.mainSplitter->setHandleWidth(6);
-    ui.mainSplitter->setCollapsible(0, false);
-    ui.mainSplitter->setCollapsible(1, false);
-    ui.mainSplitter->setStretchFactor(0, 0);
-    ui.mainSplitter->setStretchFactor(1, 1);
-    ui.mainSplitter->setSizes(m_normalMainSplitterSizes);
-    ui.modelViewport->setMinimumSize(280, 160);
-    ui.monitorTabs->setMinimumHeight(100);
-    ui.workspaceVerticalSplitter->setChildrenCollapsible(false);
-    ui.workspaceVerticalSplitter->setStretchFactor(0, 4);
-    ui.workspaceVerticalSplitter->setStretchFactor(1, 1);
-    ui.workspaceVerticalSplitter->setSizes({520, 160});
-    connect(ui.mainSplitter, &QSplitter::splitterMoved, this,
+    m_navigationRail->setMinimumWidth(84);
+    m_navigationRail->setMaximumWidth(84);
+    // 侧栏可拖动，表单在较窄宽度下自行换行，保留模型视口的可用空间。
+    m_projectPanel->setMinimumWidth(320);
+    m_projectPanel->setMaximumWidth(520);
+    m_workspacePanel->setMinimumWidth(300);
+    m_mainSplitter->setHandleWidth(6);
+    m_mainSplitter->setCollapsible(0, false);
+    m_mainSplitter->setCollapsible(1, false);
+    m_mainSplitter->setStretchFactor(0, 0);
+    m_mainSplitter->setStretchFactor(1, 1);
+    m_mainSplitter->setSizes(m_normalMainSplitterSizes);
+    m_modelViewport->setMinimumSize(280, 160);
+    m_monitorTabs->setMinimumHeight(100);
+    m_workspaceDisplayStack->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    m_workspaceVerticalSplitter->setChildrenCollapsible(false);
+    m_workspaceVerticalSplitter->setStretchFactor(0, 1);
+    m_workspaceVerticalSplitter->setStretchFactor(1, 0);
+    connect(m_monitorTabs, &QTabWidget::currentChanged, this,
+            [this](int)
+            {
+                updateMonitorPanelHeight();
+            });
+    updateMonitorPanelHeight();
+    connect(m_mainSplitter, &QSplitter::splitterMoved, this,
             [this](int, int)
             {
                 updateResponsiveLayout();
             });
 
-    const QList<QPushButton*> navigationButtons = {ui.propertyButton, ui.conductorButton, ui.modelButton,
-                                                   ui.analysisButton, ui.solveButton,     ui.resultButton,
-                                                   ui.settingsButton};
+    const QList<QPushButton*> navigationButtons = {m_propertyButton, m_modelButton,
+                                                   m_analysisButton, m_solveButton,     m_resultButton,
+                                                   m_settingsButton};
     for (auto* button : navigationButtons)
     {
         button->setMinimumWidth(66);
         button->setMinimumHeight(qMax(58, fontMetrics().height() + 36));
     }
 
-    const QList<QTreeWidget*> trees = {ui.modelDataTree, ui.analysisTree, ui.solveStepTree, ui.resultTree};
+    const QList<QTreeWidget*> trees = {m_modelDataTree, m_analysisTree, m_solveStepTree, m_resultTree};
     for (auto* tree : trees)
     {
         tree->setIconSize(QSize(20, 20));
@@ -2967,16 +3298,15 @@ void YQY::initializeResponsiveLayout()
         tree->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
         tree->setUniformRowHeights(true);
     }
-    ui.modelPropertyValue->setWordWrap(true);
+    m_modelPropertyValue->setWordWrap(true);
 
     // 宽屏时拉伸工具栏背景但保持按钮逻辑尺寸稳定；窄屏使用水平滚动，不缩小按钮或增加工具栏高度。
-    m_toolbarScrollArea = ui.toolbarScrollArea;
-    ui.toolBarLayout->activate();
-    m_toolbarNaturalWidth = ui.toolBarCard->sizeHint().width();
-    m_toolbarCardHeight = ui.toolBarCard->sizeHint().height();
-    ui.toolBarCard->setMinimumWidth(m_toolbarNaturalWidth);
-    ui.toolBarCard->setFixedHeight(m_toolbarCardHeight);
-    ui.toolBarCard->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    m_toolBarLayout->activate();
+    m_toolbarNaturalWidth = m_toolBarCard->sizeHint().width();
+    m_toolbarCardHeight = m_toolBarCard->sizeHint().height();
+    m_toolBarCard->setMinimumWidth(m_toolbarNaturalWidth);
+    m_toolBarCard->setFixedHeight(m_toolbarCardHeight);
+    m_toolBarCard->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     m_toolbarScrollArea->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     m_toolbarScrollArea->setFixedHeight(m_toolbarCardHeight);
 
@@ -2987,23 +3317,23 @@ void YQY::initializeResponsiveLayout()
 void YQY::updateResponsiveLayout()
 {
     const int availableWidth = width();
-    const int projectWidth = ui.projectPanel->width();
+    const int projectWidth = m_projectPanel->width();
 
     // 任务监视器已经显示状态和耗时；项目面板变窄时优先保留算例名称，依次隐藏耗时和状态。
     const bool compactSolveTree = projectWidth < 360;
     const bool mediumSolveTree = projectWidth < 480;
-    ui.solveStepTree->setColumnHidden(2, compactSolveTree);
-    ui.solveStepTree->setColumnHidden(3, mediumSolveTree);
-    ui.solveStepTree->setColumnWidth(1, compactSolveTree ? 80 : 92);
-    ui.solveStepTree->setColumnWidth(2, 72);
-    ui.solveStepTree->setColumnWidth(3, 72);
+    m_solveStepTree->setColumnHidden(2, compactSolveTree);
+    m_solveStepTree->setColumnHidden(3, mediumSolveTree);
+    m_solveStepTree->setColumnWidth(1, compactSolveTree ? 80 : 92);
+    m_solveStepTree->setColumnWidth(2, 72);
+    m_solveStepTree->setColumnWidth(3, 72);
 
     if (m_toolbarScrollArea && m_toolbarNaturalWidth > 0 && m_toolbarCardHeight > 0)
     {
         int viewportWidth = m_toolbarScrollArea->viewport()->width();
         if (viewportWidth <= 0)
-            viewportWidth = qMax(0, ui.workspacePanel->width() - ui.workspaceLayout->contentsMargins().left() -
-                                        ui.workspaceLayout->contentsMargins().right());
+            viewportWidth = qMax(0, m_workspacePanel->width() - m_workspaceLayout->contentsMargins().left() -
+                                        m_workspaceLayout->contentsMargins().right());
 
         const bool needsHorizontalScroll = viewportWidth < m_toolbarNaturalWidth;
         m_toolbarScrollArea->setHorizontalScrollBarPolicy(needsHorizontalScroll ? Qt::ScrollBarAlwaysOn
@@ -3012,9 +3342,114 @@ void YQY::updateResponsiveLayout()
         m_toolbarScrollArea->setFixedHeight(m_toolbarCardHeight + scrollBarHeight);
     }
 
-    ui.themeLabel->setVisible(availableWidth >= 820);
-    ui.readyLabel->setVisible(availableWidth >= 900);
-    ui.appTitleLabel->setVisible(availableWidth >= 680);
+    m_themeLabel->setVisible(availableWidth >= 820);
+    m_readyLabel->setVisible(availableWidth >= 900);
+    m_appTitleLabel->setVisible(availableWidth >= 680);
+    updateSolveBatchActionsLayout();
+    updateMonitorPanelHeight();
+}
+
+void YQY::updateSolveBatchActionsLayout()
+{
+    const QList<QPushButton*> buttons = {m_solveCasesButton, m_solveAllCasesButton, m_solveRestartAllCasesButton};
+    if (!buttons.first())
+        return;
+    const int available = m_solveModulePage->width();
+    const int spacing = m_solveBatchActionsLayout->horizontalSpacing();
+    const int actionWidth = qMax(buttons.at(1)->sizeHint().width(), buttons.at(2)->sizeHint().width());
+    const int allWidth = 3 * qMax(buttons.at(0)->sizeHint().width(), actionWidth) + 2 * spacing;
+    const int actionsWidth = 2 * actionWidth + spacing;
+    const int columns = available >= allWidth ? 3 : available >= actionsWidth ? 2 : 1;
+    if (m_solveBatchActionColumns == columns)
+        return;
+    m_solveBatchActionColumns = columns;
+    for (auto* button : buttons)
+        m_solveBatchActionsLayout->removeWidget(button);
+    for (int index = 0; index < 3; ++index)
+        m_solveBatchActionsLayout->setColumnStretch(index, index < columns ? 1 : 0);
+    if (columns == 3)
+    {
+        for (int index = 0; index < buttons.size(); ++index)
+            m_solveBatchActionsLayout->addWidget(buttons.at(index), 0, index);
+    }
+    else if (columns == 2)
+    {
+        m_solveBatchActionsLayout->addWidget(buttons.at(0), 0, 0, 1, 2);
+        m_solveBatchActionsLayout->addWidget(buttons.at(1), 1, 0);
+        m_solveBatchActionsLayout->addWidget(buttons.at(2), 1, 1);
+    }
+    else
+    {
+        for (int index = 0; index < buttons.size(); ++index)
+            m_solveBatchActionsLayout->addWidget(buttons.at(index), index, 0);
+    }
+}
+
+void YQY::updateMonitorPanelHeight()
+{
+    if (m_monitorHeightUpdatePending)
+        return;
+    m_monitorHeightUpdatePending = true;
+    QTimer::singleShot(0, this,
+                       [this]()
+                       {
+                           m_monitorHeightUpdatePending = false;
+                           m_monitorLayout->activate();
+                           const int contentHeight = qMax(m_monitorLayout->sizeHint().height(),
+                                                          m_logPage->minimumSizeHint().height());
+                           const int height = contentHeight + m_monitorTabs->tabBar()->sizeHint().height() + 4;
+                           m_monitorTabs->setMinimumHeight(height);
+                           if (m_monitorPanelInitialized)
+                               return;
+
+                           // 两个页签共用紧凑初始高度，后续保留用户拖动的分割位置。
+                           const int viewportHeight = m_workspaceVerticalSplitter->height() -
+                                                      m_workspaceVerticalSplitter->handleWidth() - height;
+                           m_workspaceVerticalSplitter->setSizes({qMax(160, viewportHeight), height});
+                           m_monitorPanelInitialized = true;
+                       });
+}
+
+QString YQY::elapsedTimeText(qint64 milliseconds)
+{
+    if (milliseconds < 1000)
+        return QStringLiteral("%1 ms").arg(qMax<qint64>(0, milliseconds));
+    if (milliseconds < 60000)
+        return QStringLiteral("%1 秒").arg(milliseconds / 1000.0, 0, 'f', 1);
+    return QStringLiteral("%1 分 %2 秒").arg(milliseconds / 60000).arg((milliseconds % 60000) / 1000);
+}
+
+void YQY::appendLogMessage(const QString& message, bool diagnostic)
+{
+    const QString text = message.trimmed();
+    if (text.isEmpty())
+        return;
+    const QString entry =
+        QStringLiteral("%1  %2").arg(QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss")), text);
+    m_logEntries.push_back({entry, diagnostic});
+    if (m_logEntries.size() > 3000)
+        m_logEntries.removeFirst();
+    if (diagnostic && !m_logDetailsCheck->isChecked())
+        return;
+    const auto* scrollBar = m_logEdit->verticalScrollBar();
+    const int previousPosition = scrollBar->value();
+    const bool atBottom = previousPosition >= scrollBar->maximum() - 2;
+    m_logEdit->appendPlainText(entry);
+    if (!atBottom)
+        m_logEdit->verticalScrollBar()->setValue(previousPosition);
+}
+
+void YQY::rebuildLogView()
+{
+    QStringList lines;
+    const bool detailed = m_logDetailsCheck->isChecked();
+    for (const auto& entry : m_logEntries)
+    {
+        if (detailed || !entry.diagnostic)
+            lines.push_back(entry.text);
+    }
+    m_logEdit->setPlainText(lines.join(QLatin1Char('\n')));
+    m_logEdit->moveCursor(QTextCursor::End);
 }
 
 void YQY::updateToolbarIcons(int themeIndex)
@@ -3022,33 +3457,33 @@ void YQY::updateToolbarIcons(int themeIndex)
     const ThemeColors colors = themeColors(themeIndex);
     const QColor foreground(colors.text);
     const QColor accent(colors.accentSecond);
-    const QList<QPair<QAbstractButton*, QString>> toolbarButtons = {
-        {ui.undoButton, QStringLiteral(":/YQY/icon_replay.svg")},
-        {ui.selectModeButton, QStringLiteral(":/YQY/icon_cursor.svg")},
-        {ui.rotateModeButton, QStringLiteral(":/YQY/icon_rotate.svg")},
-        {ui.panModeButton, QStringLiteral(":/YQY/icon_pan.svg")},
-        {ui.zoomModeButton, QStringLiteral(":/YQY/icon_zoom.svg")},
-        {ui.showNodesButton, QStringLiteral(":/YQY/icon_node.svg")},
-        {ui.showElementsButton, QStringLiteral(":/YQY/icon_element.svg")},
-        {ui.showSolidButton, QStringLiteral(":/YQY/icon_solid.svg")},
-        {ui.showNodeIdsButton, QStringLiteral(":/YQY/icon_node_id.svg")},
-        {ui.showElementIdsButton, QStringLiteral(":/YQY/icon_element_id.svg")},
-        {ui.frontViewButton, QStringLiteral(":/YQY/icon_front.svg")},
-        {ui.backViewButton, QStringLiteral(":/YQY/icon_back.svg")},
-        {ui.leftViewButton, QStringLiteral(":/YQY/icon_left.svg")},
-        {ui.rightViewButton, QStringLiteral(":/YQY/icon_right.svg")},
-        {ui.topViewButton, QStringLiteral(":/YQY/icon_upper.svg")},
-        {ui.bottomViewButton, QStringLiteral(":/YQY/icon_under.svg")},
-        {ui.fitViewButton, QStringLiteral(":/YQY/icon_scale.svg")},
-        {ui.startSolveButton, QStringLiteral(":/YQY/icon_solve.svg")}};
-    for (const auto& [button, resourcePath] : toolbarButtons)
-        button->setIcon(svgToolbarIcon(resourcePath));
+    const QList<QPair<QAbstractButton*, ToolbarGlyph>> toolbarButtons = {
+        {m_undoButton, ToolbarGlyph::Undo},
+        {m_selectModeButton, ToolbarGlyph::Select},
+        {m_rotateModeButton, ToolbarGlyph::Rotate},
+        {m_panModeButton, ToolbarGlyph::Pan},
+        {m_zoomModeButton, ToolbarGlyph::Zoom},
+        {m_showNodesButton, ToolbarGlyph::Nodes},
+        {m_showElementsButton, ToolbarGlyph::Elements},
+        {m_showSolidButton, ToolbarGlyph::Solid},
+        {m_showNodeIdsButton, ToolbarGlyph::NodeIds},
+        {m_showElementIdsButton, ToolbarGlyph::ElementIds},
+        {m_frontViewButton, ToolbarGlyph::Front},
+        {m_backViewButton, ToolbarGlyph::Back},
+        {m_leftViewButton, ToolbarGlyph::Left},
+        {m_rightViewButton, ToolbarGlyph::Right},
+        {m_topViewButton, ToolbarGlyph::Top},
+        {m_bottomViewButton, ToolbarGlyph::Bottom},
+        {m_fitViewButton, ToolbarGlyph::Fit},
+        {m_startSolveButton, ToolbarGlyph::Solve}};
+    for (const auto& [button, glyph] : toolbarButtons)
+        button->setIcon(toolbarIcon(glyph, foreground, accent));
 
     const QList<QPair<NavigationButton*, NavigationGlyph>> navigationButtons = {
-        {ui.propertyButton, NavigationGlyph::Properties}, {ui.conductorButton, NavigationGlyph::Conductor},
-        {ui.modelButton, NavigationGlyph::Model},         {ui.analysisButton, NavigationGlyph::Analysis},
-        {ui.solveButton, NavigationGlyph::Solve},         {ui.resultButton, NavigationGlyph::Results},
-        {ui.settingsButton, NavigationGlyph::Settings}};
+        {m_propertyButton, NavigationGlyph::Properties},
+        {m_modelButton, NavigationGlyph::Model},         {m_analysisButton, NavigationGlyph::Analysis},
+        {m_solveButton, NavigationGlyph::Solve},         {m_resultButton, NavigationGlyph::Results},
+        {m_settingsButton, NavigationGlyph::Settings}};
     for (const auto& [button, glyph] : navigationButtons)
     {
         button->setIcon(navigationIcon(glyph, foreground, accent));
@@ -3063,116 +3498,120 @@ void YQY::updateToolbarIcons(int themeIndex)
 
 void YQY::initializeEmptyState()
 {
-    ui.undoButton->setEnabled(false);
-    ui.documentTabBar->hide();
-    ui.modelDataTree->clear();
-    auto* emptyModel = new QTreeWidgetItem(ui.modelDataTree, {QStringLiteral("尚未加载模型")});
+    m_undoButton->setEnabled(false);
+    m_documentTabBar->hide();
+    m_modelDataTree->clear();
+    auto* emptyModel = new QTreeWidgetItem(m_modelDataTree, {QStringLiteral("尚未加载模型")});
     setTreeGlyph(emptyModel, TreeGlyph::Model);
 
-    ui.showNodesButton->setEnabled(false);
-    ui.showElementsButton->setEnabled(false);
-    ui.showSolidButton->setEnabled(false);
-    ui.showNodeIdsButton->setEnabled(false);
-    ui.showElementIdsButton->setEnabled(false);
-    ui.frontViewButton->setEnabled(false);
-    ui.backViewButton->setEnabled(false);
-    ui.leftViewButton->setEnabled(false);
-    ui.rightViewButton->setEnabled(false);
-    ui.topViewButton->setEnabled(false);
-    ui.bottomViewButton->setEnabled(false);
-    ui.fitViewButton->setEnabled(false);
-    ui.selectModeButton->setEnabled(false);
-    ui.rotateModeButton->setEnabled(false);
-    ui.panModeButton->setEnabled(false);
-    ui.zoomModeButton->setEnabled(false);
-    ui.startSolveButton->setEnabled(false);
-    ui.stopButton->setEnabled(false);
-    ui.solveProgress->setValue(0);
-    ui.incrementLabel->setText(QStringLiteral("尚未开始求解"));
-    ui.convergenceLabel->setText(QStringLiteral("加载模型并配置分析步后可开始求解"));
-    ui.logEdit->clear();
+    m_showNodesButton->setEnabled(false);
+    m_showElementsButton->setEnabled(false);
+    m_showSolidButton->setEnabled(false);
+    m_showNodeIdsButton->setEnabled(false);
+    m_showElementIdsButton->setEnabled(false);
+    m_frontViewButton->setEnabled(false);
+    m_backViewButton->setEnabled(false);
+    m_leftViewButton->setEnabled(false);
+    m_rightViewButton->setEnabled(false);
+    m_topViewButton->setEnabled(false);
+    m_bottomViewButton->setEnabled(false);
+    m_fitViewButton->setEnabled(false);
+    m_selectModeButton->setEnabled(false);
+    m_rotateModeButton->setEnabled(false);
+    m_panModeButton->setEnabled(false);
+    m_zoomModeButton->setEnabled(false);
+    m_startSolveButton->setEnabled(false);
+    m_stopButton->setEnabled(false);
+    m_solveProgress->setValue(0);
+    m_incrementLabel->setText(QStringLiteral("尚未开始求解"));
+    m_convergenceLabel->setText(QStringLiteral("加载模型并配置分析步后可开始求解"));
+    m_logEntries.clear();
+    m_logEdit->clear();
     updateLoadStatistics();
-    ui.readyLabel->setText(QStringLiteral("等待导入模型"));
+    m_readyLabel->setText(QStringLiteral("等待导入模型"));
 }
 
 void YQY::initializeInteractions()
 {
-    connect(ui.themeComboBox, qOverload<int>(&QComboBox::currentIndexChanged), this, &YQY::applyTheme);
+    connect(m_themeComboBox, qOverload<int>(&QComboBox::currentIndexChanged), this, &YQY::applyTheme);
 
     auto* interactionGroup = new QButtonGroup(this);
     interactionGroup->setExclusive(true);
-    interactionGroup->addButton(ui.selectModeButton, static_cast<int>(ModelViewport::InteractionMode::Select));
-    interactionGroup->addButton(ui.rotateModeButton, static_cast<int>(ModelViewport::InteractionMode::Rotate));
-    interactionGroup->addButton(ui.panModeButton, static_cast<int>(ModelViewport::InteractionMode::Pan));
-    interactionGroup->addButton(ui.zoomModeButton, static_cast<int>(ModelViewport::InteractionMode::Zoom));
+    interactionGroup->addButton(m_selectModeButton, static_cast<int>(ModelViewport::InteractionMode::Select));
+    interactionGroup->addButton(m_rotateModeButton, static_cast<int>(ModelViewport::InteractionMode::Rotate));
+    interactionGroup->addButton(m_panModeButton, static_cast<int>(ModelViewport::InteractionMode::Pan));
+    interactionGroup->addButton(m_zoomModeButton, static_cast<int>(ModelViewport::InteractionMode::Zoom));
+
     connect(interactionGroup, &QButtonGroup::idClicked, this,
             [this](int id)
             {
                 const auto mode = static_cast<ModelViewport::InteractionMode>(id);
-                ui.modelViewport->setInteractionMode(mode);
+                m_modelViewport->setInteractionMode(mode);
                 const QStringList names = {QStringLiteral("选择"), QStringLiteral("旋转"), QStringLiteral("平移"),
                                            QStringLiteral("缩放")};
                 setWorkspaceMessage(QStringLiteral("交互模式：%1").arg(names.at(id)));
             });
 
-    connect(ui.showNodesButton, &QToolButton::toggled, ui.modelViewport, &ModelViewport::setNodesVisible);
-    connect(ui.showElementsButton, &QToolButton::toggled, ui.modelViewport, &ModelViewport::setElementsVisible);
-    connect(ui.showSolidButton, &QToolButton::toggled, this,
+    connect(m_showNodesButton, &QToolButton::toggled, m_modelViewport, &ModelViewport::setNodesVisible);
+    connect(m_showElementsButton, &QToolButton::toggled, m_modelViewport, &ModelViewport::setElementsVisible);
+    connect(m_showSolidButton, &QToolButton::toggled, this,
             [this](bool visible)
             {
                 // 与参考程序保持一致：实体显示时隐藏会穿插在实体表面的节点、
                 // 节点编号及单元轴线；退出实体显示时恢复节点和单元轴线。
-                const QSignalBlocker nodesBlocker(ui.showNodesButton);
-                const QSignalBlocker nodeIdsBlocker(ui.showNodeIdsButton);
-                const QSignalBlocker elementsBlocker(ui.showElementsButton);
+                const QSignalBlocker nodesBlocker(m_showNodesButton);
+                const QSignalBlocker nodeIdsBlocker(m_showNodeIdsButton);
+                const QSignalBlocker elementsBlocker(m_showElementsButton);
 
-                ui.modelViewport->setSolidVisible(visible);
-                ui.showNodesButton->setChecked(!visible);
-                ui.showNodeIdsButton->setChecked(false);
-                ui.showElementsButton->setChecked(!visible);
-                ui.modelViewport->setNodesVisible(!visible);
-                ui.modelViewport->setNodeLabelsVisible(false);
-                ui.modelViewport->setElementsVisible(!visible);
+                m_modelViewport->setSolidVisible(visible);
+                m_showNodesButton->setChecked(!visible);
+                m_showNodeIdsButton->setChecked(false);
+                m_showElementsButton->setChecked(!visible);
+                m_modelViewport->setNodesVisible(!visible);
+                m_modelViewport->setNodeLabelsVisible(false);
+                m_modelViewport->setElementsVisible(!visible);
 
                 setWorkspaceMessage(visible ? QStringLiteral("实体模式：已隐藏节点、节点编号和单元轴线")
                                             : QStringLiteral("已退出实体模式"));
             });
-    connect(ui.showNodeIdsButton, &QToolButton::toggled, ui.modelViewport, &ModelViewport::setNodeLabelsVisible);
-    connect(ui.showElementIdsButton, &QToolButton::toggled, ui.modelViewport, &ModelViewport::setElementLabelsVisible);
-    connect(ui.modelViewport, &ModelViewport::nodesVisibilityChanged, ui.showNodesButton, &QToolButton::setChecked);
-    connect(ui.modelViewport, &ModelViewport::elementsVisibilityChanged, ui.showElementsButton,
+    connect(m_showNodeIdsButton, &QToolButton::toggled, m_modelViewport, &ModelViewport::setNodeLabelsVisible);
+    connect(m_showElementIdsButton, &QToolButton::toggled, m_modelViewport, &ModelViewport::setElementLabelsVisible);
+    connect(m_modelViewport, &ModelViewport::nodesVisibilityChanged, m_showNodesButton, &QToolButton::setChecked);
+    connect(m_modelViewport, &ModelViewport::elementsVisibilityChanged, m_showElementsButton, &QToolButton::setChecked);
+    connect(m_modelViewport, &ModelViewport::solidVisibilityChanged, m_showSolidButton, &QToolButton::setChecked);
+    connect(m_modelViewport, &ModelViewport::nodeLabelsVisibilityChanged, m_showNodeIdsButton,
             &QToolButton::setChecked);
-    connect(ui.modelViewport, &ModelViewport::solidVisibilityChanged, ui.showSolidButton, &QToolButton::setChecked);
-    connect(ui.modelViewport, &ModelViewport::nodeLabelsVisibilityChanged, ui.showNodeIdsButton,
+    connect(m_modelViewport, &ModelViewport::elementLabelsVisibilityChanged, m_showElementIdsButton,
             &QToolButton::setChecked);
-    connect(ui.modelViewport, &ModelViewport::elementLabelsVisibilityChanged, ui.showElementIdsButton,
-            &QToolButton::setChecked);
-    connect(ui.modelViewport, &ModelViewport::interactionModeChanged, this,
+    connect(m_modelViewport, &ModelViewport::interactionModeChanged, this,
             [this](ModelViewport::InteractionMode mode)
             {
-                const QList<QAbstractButton*> buttons = {ui.selectModeButton, ui.rotateModeButton, ui.panModeButton,
-                                                         ui.zoomModeButton};
-                buttons.at(static_cast<int>(mode))->setChecked(true);
+                const QList<QAbstractButton*> buttons = {m_selectModeButton, m_rotateModeButton, m_panModeButton,
+                                                         m_zoomModeButton};
+                const int buttonIndex = mode == ModelViewport::InteractionMode::ZoomToRect
+                                            ? static_cast<int>(ModelViewport::InteractionMode::Zoom)
+                                            : static_cast<int>(mode);
+                buttons.at(buttonIndex)->setChecked(true);
             });
 
     const QList<QPair<QToolButton*, ModelViewport::StandardView>> viewButtons = {
-        {ui.frontViewButton, ModelViewport::StandardView::Front},
-        {ui.backViewButton, ModelViewport::StandardView::Back},
-        {ui.leftViewButton, ModelViewport::StandardView::Left},
-        {ui.rightViewButton, ModelViewport::StandardView::Right},
-        {ui.topViewButton, ModelViewport::StandardView::Top},
-        {ui.bottomViewButton, ModelViewport::StandardView::Bottom}};
+        {m_frontViewButton, ModelViewport::StandardView::Front},
+        {m_backViewButton, ModelViewport::StandardView::Back},
+        {m_leftViewButton, ModelViewport::StandardView::Left},
+        {m_rightViewButton, ModelViewport::StandardView::Right},
+        {m_topViewButton, ModelViewport::StandardView::Top},
+        {m_bottomViewButton, ModelViewport::StandardView::Bottom}};
     for (const auto& [button, view] : viewButtons)
     {
         connect(button, &QToolButton::clicked, this,
                 [this, view]()
                 {
-                    ui.modelViewport->setStandardView(view);
+                    m_modelViewport->setStandardView(view);
                 });
     }
-    connect(ui.fitViewButton, &QToolButton::clicked, ui.modelViewport, &ModelViewport::resetCamera);
+    connect(m_fitViewButton, &QToolButton::clicked, m_modelViewport, &ModelViewport::resetCamera);
 
-    connect(ui.undoButton, &QPushButton::clicked, this,
+    connect(m_undoButton, &QPushButton::clicked, this,
             [this]()
             {
                 if (m_modelController->undoLastChange())
@@ -3182,22 +3621,22 @@ void YQY::initializeInteractions()
                     setWorkspaceMessage(QStringLiteral("已撤销上一次节点坐标修改"));
                 }
             });
-    connect(ui.documentTabBar, &QTabBar::tabCloseRequested, this,
+    connect(m_documentTabBar, &QTabBar::tabCloseRequested, this,
             [this](int tabIndex)
             {
-                m_modelController->closeModel(ui.documentTabBar->tabData(tabIndex).toInt());
+                m_modelController->closeModel(m_documentTabBar->tabData(tabIndex).toInt());
             });
-    connect(ui.documentTabBar, &QTabBar::currentChanged, this,
+    connect(m_documentTabBar, &QTabBar::currentChanged, this,
             [this](int tabIndex)
             {
                 if (tabIndex >= 0)
-                    m_modelController->setActiveModel(ui.documentTabBar->tabData(tabIndex).toInt());
+                    m_modelController->setActiveModel(m_documentTabBar->tabData(tabIndex).toInt());
             });
     const QList<QPair<QPushButton*, Module>> navigationItems = {
-        {ui.propertyButton, Module::Properties}, {ui.conductorButton, Module::Conductor},
-        {ui.modelButton, Module::Model},         {ui.analysisButton, Module::Analysis},
-        {ui.solveButton, Module::Solve},         {ui.resultButton, Module::Result},
-        {ui.settingsButton, Module::Settings}};
+        {m_propertyButton, Module::Properties},
+        {m_modelButton, Module::Model},         {m_analysisButton, Module::Analysis},
+        {m_solveButton, Module::Solve},         {m_resultButton, Module::Result},
+        {m_settingsButton, Module::Settings}};
     for (const auto& item : navigationItems)
     {
         connect(item.first, &QPushButton::clicked, this,
@@ -3207,13 +3646,14 @@ void YQY::initializeInteractions()
                 });
     }
 
-    connect(ui.modelImportButton, &QPushButton::clicked, ui.importButton, &QPushButton::click);
-    connect(ui.modelFitButton, &QPushButton::clicked, ui.modelViewport, &ModelViewport::resetCamera);
-    connect(ui.openH5Button, &QPushButton::clicked, this, &YQY::openHdf5Result);
-    connect(ui.startSolveButton, &QPushButton::clicked, this, &YQY::submitSolveTask);
-    connect(ui.solvePageStartButton, &QPushButton::clicked, this, &YQY::submitSolveTask);
-    connect(ui.stopButton, &QPushButton::clicked, this, &YQY::cancelSelectedSolveTask);
-    connect(ui.solveStepTree, &QTreeWidget::itemSelectionChanged, this,
+    connect(m_modelImportButton, &QPushButton::clicked, m_importButton, &QPushButton::click);
+    connect(m_createConductorButton, &QPushButton::clicked, this,
+            [this]() { m_conductorModule->openCreationDialog(); });
+    connect(m_openH5Button, &QPushButton::clicked, this, &YQY::openHdf5Result);
+    connect(m_startSolveButton, &QPushButton::clicked, this, &YQY::submitSolveTask);
+    connect(m_solvePageStartButton, &QPushButton::clicked, this, &YQY::submitSolveTask);
+    connect(m_stopButton, &QPushButton::clicked, this, &YQY::cancelSelectedSolveTask);
+    connect(m_solveStepTree, &QTreeWidget::itemSelectionChanged, this,
             [this]()
             {
                 const int taskId = selectedSolveTaskId();
@@ -3224,9 +3664,10 @@ void YQY::initializeInteractions()
             [this](int taskId)
             {
                 refreshSolveTasks(taskId);
-                ui.logEdit->appendPlainText(QStringLiteral("[INFO] 已创建待运行算例 %1，后台并发上限 %2")
-                                                .arg(taskId)
-                                                .arg(m_solveTaskController->maximumThreadCount()));
+                appendLogMessage(QStringLiteral("[准备] 已创建待运行算例 %1，后台并发上限 %2")
+                                     .arg(taskId)
+                                     .arg(m_solveTaskController->maximumThreadCount()),
+                                 true);
             });
     connect(m_solveTaskController, &SolveTaskController::taskUpdated, this,
             [this](int taskId)
@@ -3235,6 +3676,20 @@ void YQY::initializeInteractions()
                 refreshSolveTaskManager();
                 refreshResultCases();
                 const auto info = m_solveTaskController->taskInfo(taskId);
+                const bool finished = info.status == SolveTaskController::Status::Completed ||
+                                      info.status == SolveTaskController::Status::Failed ||
+                                      info.status == SolveTaskController::Status::Cancelled;
+                if (!finished)
+                    m_loggedFinishedTasks.remove(taskId);
+                if (info.status == SolveTaskController::Status::Ready)
+                    m_loggedStartedTasks.remove(taskId);
+                if ((info.status == SolveTaskController::Status::Queued ||
+                     info.status == SolveTaskController::Status::Running) &&
+                    !m_loggedStartedTasks.contains(taskId))
+                {
+                    m_loggedStartedTasks.insert(taskId);
+                    appendLogMessage(QStringLiteral("[求解] %1：%2").arg(info.name, info.message));
+                }
                 if (info.status == SolveTaskController::Status::Queued && m_resultPanel &&
                     QFileInfo(m_resultPanel->resultFilePath()).absoluteFilePath() ==
                         QFileInfo(info.outputFile).absoluteFilePath())
@@ -3243,49 +3698,83 @@ void YQY::initializeInteractions()
                     m_workspaceController->removeModel(m_modelController->activeModelId());
                     clearActiveResultContext();
                 }
-                if (info.status == SolveTaskController::Status::Completed ||
-                    info.status == SolveTaskController::Status::Failed ||
-                    info.status == SolveTaskController::Status::Cancelled)
+                if (finished && !m_loggedFinishedTasks.contains(taskId))
                 {
-                    const QString level = info.status == SolveTaskController::Status::Completed
-                                              ? QStringLiteral("INFO")
-                                              : QStringLiteral("WARN");
-                    ui.logEdit->appendPlainText(QStringLiteral("[%1] %2：%3").arg(level, info.name, info.message));
-                    if (info.hasUsableResult && QFileInfo::exists(info.outputFile))
+                    // 先登记结束事件，结果载入触发的嵌套更新不再重复输出或加载。
+                    m_loggedFinishedTasks.insert(taskId);
+                    m_loggedStartedTasks.remove(taskId);
+                    QString loadFailure;
+                    bool loaded = info.resultLoadRecorded;
+                    if (!info.initialStatePreparation && info.hasUsableResult && !info.resultLoadRecorded &&
+                        QFileInfo::exists(info.outputFile))
                     {
                         // 成功、失败或主动停止都预加载本次已经落盘的有效帧；是否进入
                         // 结果模块仍由用户决定。
-                        loadHdf5Result(info.outputFile, false, false, info.partialResult);
+                        if (loadHdf5Result(info.outputFile, false, false, info.partialResult, &loadFailure, false))
+                        {
+                            m_solveTaskController->recordResultLoaded(taskId);
+                            loaded = true;
+                        }
                     }
+                    const auto finalInfo = m_solveTaskController->taskInfo(taskId);
+                    const QString level = info.status == SolveTaskController::Status::Completed ? QStringLiteral("完成")
+                                          : info.status == SolveTaskController::Status::Failed  ? QStringLiteral("错误")
+                                                                                               : QStringLiteral("停止");
+                    QString summary = QStringLiteral("[%1] %2：%3").arg(level, info.name, info.message.simplified());
+                    if (info.solverElapsedMs > 0)
+                        summary += QStringLiteral(" · 求解 %1").arg(elapsedTimeText(info.solverElapsedMs));
+                    if (loaded)
+                        summary += QStringLiteral(" · 结果 %1 帧 · 总耗时 %2")
+                                       .arg(finalInfo.resultFrameCount)
+                                       .arg(elapsedTimeText(finalInfo.elapsedMs));
+                    appendLogMessage(summary);
+                    if (!info.diagnostics.isEmpty())
+                        appendLogMessage(QStringLiteral("[诊断] %1\n%2").arg(info.name, info.diagnostics), true);
+                    if (!loadFailure.isEmpty())
+                        appendLogMessage(QStringLiteral("[警告] 结果加载失败：%1").arg(loadFailure));
                 }
             });
 
-    connect(ui.importButton, &QPushButton::clicked, this,
-            [this]()
-            {
-                const QStringList paths = FileDialogService::selectOpenFiles(
-                    this, QStringLiteral("导入模型"), ApplicationPaths::importFileDirectory(),
-                    QStringLiteral("模型文件 (*.bdf);;H5模型文件 (*.h5 *.hdf5);;杆塔模型文件 (*.txt);;ABAQUS文件 (*.inp)"),
-                    QStringLiteral("modelImport"));
-                if (paths.isEmpty())
-                    return;
-                const int accepted = m_modelController->loadModels(paths);
-                setWorkspaceMessage(QStringLiteral("已加入 %1 个模型的读取队列").arg(accepted));
-            });
+    connect(
+        m_importButton, &QPushButton::clicked, this,
+        [this]()
+        {
+            const QStringList paths = FileDialogService::selectOpenFiles(
+                this, QStringLiteral("导入模型"), ApplicationPaths::importFileDirectory(),
+                QStringLiteral("模型文件 (*.bdf);;H5模型文件 (*.h5 *.hdf5);;杆塔模型文件 (*.txt);;ABAQUS文件 (*.inp)"),
+                QStringLiteral("modelImport"));
+            if (paths.isEmpty())
+                return;
+            int accepted = 0;
+            for (const QString& path : paths)
+                if (loadModelFile(path))
+                    ++accepted;
+            setWorkspaceMessage(QStringLiteral("已加入 %1 个模型的读取队列").arg(accepted));
+        });
 
-    connect(ui.modelViewport, &ModelViewport::nodeSelected, this, &YQY::showNodeProperties);
-    connect(ui.modelViewport, &ModelViewport::elementSelected, this, &YQY::showElementProperties);
-    connect(ui.modelViewport, &ModelViewport::selectionCleared, this, &YQY::clearSelectionProperties);
-    connect(m_modelController, &ModelController::nodePositionChanged, ui.modelViewport,
+    connect(m_modelViewport, &ModelViewport::nodeSelected, this, &YQY::showNodeProperties);
+    connect(m_modelViewport, &ModelViewport::elementSelected, this, &YQY::showElementProperties);
+    connect(m_modelViewport, &ModelViewport::selectionCleared, this, &YQY::clearSelectionProperties);
+    connect(m_modelViewport, &ModelViewport::selectionChanged, this,
+            [this](int nodeCount, int elementCount)
+            {
+                if (nodeCount + elementCount <= 1)
+                    return;
+                setWorkspaceMessage(QStringLiteral("已选择 %1 个节点、%2 个单元（Ctrl 点选可切换，Ctrl 框选可追加）")
+                                        .arg(nodeCount)
+                                        .arg(elementCount));
+            });
+    connect(m_modelController, &ModelController::nodePositionChanged, m_modelViewport,
             &ModelViewport::updateNodePosition);
     connect(m_modelController, &ModelController::loadStarted, this,
             [this](const QString& filePath)
             {
                 ++m_modelLoadTotal;
                 updateLoadStatistics();
-                ui.importButton->setEnabled(false);
+                m_importButton->setEnabled(false);
                 setWorkspaceMessage(QStringLiteral("正在后台读取模型：%1").arg(QFileInfo(filePath).fileName()));
-                ui.logEdit->appendPlainText(QStringLiteral("[模型读取] 开始：%1").arg(filePath));
+                appendLogMessage(QStringLiteral("[模型] 开始读取：%1").arg(QFileInfo(filePath).fileName()));
+                appendLogMessage(QStringLiteral("[路径] 源模型：%1").arg(filePath), true);
             });
     connect(m_modelController, &ModelController::loadSucceeded, this, &YQY::handleModelLoaded);
     connect(m_modelController, &ModelController::loadFailed, this, &YQY::handleModelLoadFailed);
@@ -3293,12 +3782,12 @@ void YQY::initializeInteractions()
     connect(m_modelController, &ModelController::modelClosed, this,
             [this](int modelId)
             {
-                const QSignalBlocker blocker(ui.documentTabBar);
-                for (int index = 0; index < ui.documentTabBar->count(); ++index)
+                const QSignalBlocker blocker(m_documentTabBar);
+                for (int index = 0; index < m_documentTabBar->count(); ++index)
                 {
-                    if (ui.documentTabBar->tabData(index).toInt() == modelId)
+                    if (m_documentTabBar->tabData(index).toInt() == modelId)
                     {
-                        ui.documentTabBar->removeTab(index);
+                        m_documentTabBar->removeTab(index);
                         break;
                     }
                 }
@@ -3308,28 +3797,28 @@ void YQY::initializeInteractions()
     connect(m_modelController, &ModelController::busyChanged, this,
             [this](bool busy)
             {
-                ui.importButton->setEnabled(!busy);
+                m_importButton->setEnabled(!busy);
             });
-    connect(m_modelController, &ModelController::undoAvailabilityChanged, ui.undoButton, &QPushButton::setEnabled);
+    connect(m_modelController, &ModelController::undoAvailabilityChanged, m_undoButton, &QPushButton::setEnabled);
     connect(m_modelController, &ModelController::modelCleared, this,
             [this]()
             {
                 closeAnalysisManagers();
-                const QSignalBlocker blocker(ui.documentTabBar);
-                while (ui.documentTabBar->count() > 0)
-                    ui.documentTabBar->removeTab(0);
+                const QSignalBlocker blocker(m_documentTabBar);
+                while (m_documentTabBar->count() > 0)
+                    m_documentTabBar->removeTab(0);
                 m_workspaceController->clear();
-                ui.modelViewport->clearModel();
-                ui.modelDataTree->clear();
-                new QTreeWidgetItem(ui.modelDataTree, {QStringLiteral("尚未加载模型")});
-                ui.showNodesButton->setChecked(true);
-                ui.showElementsButton->setChecked(true);
-                ui.showSolidButton->setChecked(false);
-                ui.showNodeIdsButton->setChecked(false);
-                ui.showElementIdsButton->setChecked(false);
+                m_modelViewport->clearModel();
+                m_modelDataTree->clear();
+                new QTreeWidgetItem(m_modelDataTree, {QStringLiteral("尚未加载模型")});
+                m_showNodesButton->setChecked(true);
+                m_showElementsButton->setChecked(true);
+                m_showSolidButton->setChecked(false);
+                m_showNodeIdsButton->setChecked(false);
+                m_showElementIdsButton->setChecked(false);
                 setModelControlsEnabled(false);
                 clearSelectionProperties();
-                ui.logEdit->appendPlainText(QStringLiteral("[INFO] 已关闭全部模型"));
+                appendLogMessage(QStringLiteral("[INFO] 已关闭全部模型"));
                 refreshModulePages();
                 setWorkspaceMessage(QStringLiteral("未加载模型"));
             });
@@ -3385,13 +3874,13 @@ void YQY::applyTheme(int themeIndex)
     for (QWidget* topLevelWidget : QApplication::topLevelWidgets())
         applyWindowsTitleBarTheme(topLevelWidget);
     updateToolbarIcons(themeIndex);
-    ui.modelViewport->setThemeIndex(themeIndex);
+    m_modelViewport->setThemeIndex(themeIndex);
     const QColor treeColor(colors.text);
     const QColor treeAccent(colors.accentSecond);
-    applyTreeIcons(ui.modelDataTree, treeColor, treeAccent);
-    applyTreeIcons(ui.analysisTree, treeColor, treeAccent);
-    applyTreeIcons(ui.solveStepTree, treeColor, treeAccent);
-    applyTreeIcons(ui.resultTree, treeColor, treeAccent);
+    applyTreeIcons(m_modelDataTree, treeColor, treeAccent);
+    applyTreeIcons(m_analysisTree, treeColor, treeAccent);
+    applyTreeIcons(m_solveStepTree, treeColor, treeAccent);
+    applyTreeIcons(m_resultTree, treeColor, treeAccent);
     if (m_solveCasesButton)
         m_solveCasesButton->setIcon(treeIcon(TreeGlyph::AnalysisSteps, treeColor, treeAccent));
     if (m_solveAllCasesButton)
@@ -3410,49 +3899,48 @@ void YQY::applyTheme(int themeIndex)
 void YQY::switchModule(Module module)
 {
     const int pageIndex = static_cast<int>(module);
-    if (pageIndex < 0 || pageIndex >= ui.moduleStack->count())
+    if (pageIndex < 0 || pageIndex >= m_moduleStack->count())
         return;
 
-    ui.moduleStack->setCurrentIndex(pageIndex);
+    m_moduleStack->setCurrentIndex(pageIndex);
     QStringList titles = {QStringLiteral("模型数据"), QStringLiteral("分析"), QStringLiteral("求解"),
                           QStringLiteral("结果"), QStringLiteral("设置")};
     titles.insert(1, QStringLiteral("材料与截面属性"));
-    titles.insert(2, QStringLiteral("导线建模"));
-    ui.projectTitleLabel->setText(titles.at(pageIndex));
+    m_projectTitleLabel->setText(titles.at(pageIndex));
 
     const bool modelEditing = module == Module::Model;
-    ui.importButton->setVisible(modelEditing);
-    ui.undoButton->setVisible(modelEditing);
-    ui.startSolveButton->setVisible(false);
-    ui.monitorTabs->setCurrentIndex(module == Module::Solve ? 0 : module == Module::Result ? 2 : 1);
+    m_importButton->setVisible(modelEditing);
+    m_undoButton->setVisible(modelEditing);
+    m_startSolveButton->setVisible(false);
+    m_monitorTabs->setCurrentIndex(module == Module::Solve ? 0 : 1);
+    if (module != Module::Result)
+        m_workspaceDisplayStack->setCurrentWidget(m_modelViewport);
 
     switch (module)
     {
         case Module::Properties:
-            ui.propertyButton->setChecked(true);
-            break;
-        case Module::Conductor:
-            ui.conductorButton->setChecked(true);
+            m_propertyButton->setChecked(true);
             break;
         case Module::Model:
-            ui.modelButton->setChecked(true);
+            m_modelButton->setChecked(true);
             break;
         case Module::Analysis:
-            ui.analysisButton->setChecked(true);
+            m_analysisButton->setChecked(true);
             break;
         case Module::Solve:
-            ui.solveButton->setChecked(true);
+            m_solveButton->setChecked(true);
             break;
         case Module::Result:
-            ui.resultButton->setChecked(true);
+            m_resultButton->setChecked(true);
             break;
         case Module::Settings:
-            ui.settingsButton->setChecked(true);
+            m_settingsButton->setChecked(true);
             break;
     }
 
     refreshModulePages();
     setWorkspaceMessage(QStringLiteral("已进入%1模块").arg(titles.at(pageIndex)));
+    QTimer::singleShot(0, this, &YQY::updateSolveBatchActionsLayout);
 }
 
 void YQY::refreshModulePages()
@@ -3460,12 +3948,12 @@ void YQY::refreshModulePages()
     const auto structure = m_modelController->model();
     const bool hasModel = static_cast<bool>(structure);
 
-    ui.modelFileValue->setText(hasModel ? QFileInfo(m_modelController->filePath()).fileName()
-                                        : QStringLiteral("尚未加载模型"));
-    ui.modelNodeValue->setText(hasModel ? QStringLiteral("节点 %1").arg(structure->Nodes().size())
-                                        : QStringLiteral("节点 --"));
-    ui.modelElementValue->setText(hasModel ? QStringLiteral("单元 %1").arg(structure->Elements().size())
-                                           : QStringLiteral("单元 --"));
+    m_modelFileValue->setText(hasModel ? QFileInfo(m_modelController->filePath()).fileName()
+                                       : QStringLiteral("尚未加载模型"));
+    m_modelNodeValue->setText(hasModel ? QStringLiteral("节点 %1").arg(structure->Nodes().size())
+                                       : QStringLiteral("节点 --"));
+    m_modelElementValue->setText(hasModel ? QStringLiteral("单元 %1").arg(structure->Elements().size())
+                                          : QStringLiteral("单元 --"));
     QStringList modelDataSummary;
     if (hasModel)
     {
@@ -3476,15 +3964,15 @@ void YQY::refreshModulePages()
         if (!structure->m_SpringBehaviors.empty())
             modelDataSummary.append(QStringLiteral("弹簧行为 %1").arg(structure->m_SpringBehaviors.size()));
     }
-    ui.modelPropertyValue->setText(hasModel ? modelDataSummary.join(QStringLiteral(" · "))
-                                            : QStringLiteral("材料 -- · 截面 --"));
-    ui.modelFitButton->setEnabled(hasModel);
+    m_modelPropertyValue->setText(hasModel ? modelDataSummary.join(QStringLiteral(" · "))
+                                           : QStringLiteral("材料 -- · 截面 --"));
+    m_createConductorButton->setEnabled(m_propertyLibrary && m_propertyLibrary->isReady());
 
-    ui.analysisTree->clear();
+    m_analysisTree->clear();
     if (hasModel)
     {
         auto* steps =
-            new QTreeWidgetItem(ui.analysisTree, {QStringLiteral("分析步  %1").arg(structure->AnalysisSteps().size())});
+            new QTreeWidgetItem(m_analysisTree, {QStringLiteral("分析步  %1").arg(structure->AnalysisSteps().size())});
         setTreeGlyph(steps, TreeGlyph::AnalysisSteps);
         for (const auto& [stepId, step] : structure->AnalysisSteps())
         {
@@ -3495,13 +3983,13 @@ void YQY::refreshModulePages()
             auto* stepItem = new QTreeWidgetItem(steps, {text});
             setTreeGlyph(stepItem, TreeGlyph::AnalysisStep);
         }
-        auto* loads = new QTreeWidgetItem(ui.analysisTree, {QStringLiteral("载荷  %1").arg(structure->m_Load.size())});
+        auto* loads = new QTreeWidgetItem(m_analysisTree, {QStringLiteral("载荷  %1").arg(structure->m_Load.size())});
         setTreeGlyph(loads, TreeGlyph::Load);
         auto* constraints =
-            new QTreeWidgetItem(ui.analysisTree, {QStringLiteral("约束  %1").arg(structure->m_Constraint.size())});
+            new QTreeWidgetItem(m_analysisTree, {QStringLiteral("约束  %1").arg(structure->m_Constraint.size())});
         setTreeGlyph(constraints, TreeGlyph::Constraint);
         auto* mpcs =
-            new QTreeWidgetItem(ui.analysisTree, {QStringLiteral("MPC  %1").arg(structure->m_MPCConstraints.size())});
+            new QTreeWidgetItem(m_analysisTree, {QStringLiteral("MPC  %1").arg(structure->m_MPCConstraints.size())});
         setTreeGlyph(mpcs, TreeGlyph::MPC);
         for (const auto& [mpcId, mpc] : structure->m_MPCConstraints)
         {
@@ -3523,7 +4011,7 @@ void YQY::refreshModulePages()
                            .arg(directions)});
             setTreeGlyph(mpcItem, TreeGlyph::MPC);
         }
-        auto* regions = new QTreeWidgetItem(ui.analysisTree,
+        auto* regions = new QTreeWidgetItem(m_analysisTree,
                                             {QStringLiteral("计算区域  %1").arg(structure->m_ComputeRegions.size())});
         setTreeGlyph(regions, TreeGlyph::Model);
         for (const auto& [regionId, region] : structure->m_ComputeRegions)
@@ -3537,24 +4025,24 @@ void YQY::refreshModulePages()
                                                                  .arg(region->m_ElementIds.size())});
             setTreeGlyph(regionItem, TreeGlyph::Model);
         }
-        ui.analysisTree->expandAll();
+        m_analysisTree->expandAll();
     }
     else
     {
-        auto* emptyAnalysis = new QTreeWidgetItem(ui.analysisTree, {QStringLiteral("尚未加载模型")});
+        auto* emptyAnalysis = new QTreeWidgetItem(m_analysisTree, {QStringLiteral("尚未加载模型")});
         setTreeGlyph(emptyAnalysis, TreeGlyph::Model);
     }
 
-    const ThemeColors treeColors = themeColors(ui.themeComboBox->currentIndex());
-    applyTreeIcons(ui.analysisTree, QColor(treeColors.text), QColor(treeColors.accentSecond));
+    const ThemeColors treeColors = themeColors(m_themeComboBox->currentIndex());
+    applyTreeIcons(m_analysisTree, QColor(treeColors.text), QColor(treeColors.accentSecond));
 
     const bool canSolve = hasModel && !structure->AnalysisSteps().empty();
-    ui.solveReadinessLabel->setText(
+    m_solveReadinessLabel->setText(
         canSolve   ? QStringLiteral("模型已就绪，共 %1 个分析步").arg(structure->AnalysisSteps().size())
         : hasModel ? QStringLiteral("当前模型没有可运行的分析步")
                    : QStringLiteral("请先加载包含分析步的模型"));
-    ui.solvePageStartButton->setEnabled(canSolve);
-    ui.startSolveButton->setEnabled(canSolve);
+    m_solvePageStartButton->setEnabled(canSolve);
+    m_startSolveButton->setEnabled(canSolve);
     refreshSolveTasks();
     refreshAnalysisEditor();
     refreshPropertyModule();
@@ -3562,13 +4050,13 @@ void YQY::refreshModulePages()
 
 void YQY::initializeAnalysisEditor()
 {
-    m_analysisPanel = new AnalysisSummaryPanel(ui.analysisModulePage);
+    m_analysisPanel = new AnalysisSummaryPanel(m_analysisModulePage);
     m_analysisPanel->stepsButton()->setObjectName(QStringLiteral("analysisStepsButton"));
     m_analysisPanel->loadsButton()->setObjectName(QStringLiteral("analysisLoadsButton"));
     m_analysisPanel->constraintsButton()->setObjectName(QStringLiteral("analysisConstraintsButton"));
     m_analysisPanel->mpcsButton()->setObjectName(QStringLiteral("analysisMPCsButton"));
     m_analysisPanel->regionsButton()->setObjectName(QStringLiteral("analysisRegionsButton"));
-    ui.analysisModuleLayout->insertWidget(1, m_analysisPanel);
+    m_analysisModuleLayout->insertWidget(1, m_analysisPanel);
     connect(m_analysisPanel->stepsButton(), &QPushButton::clicked, this,
             [this]()
             {
@@ -3590,14 +4078,14 @@ void YQY::initializeAnalysisEditor()
                 openAnalysisManager(static_cast<int>(AnalysisManagerDialog::Page::MPCs));
             });
     connect(m_analysisPanel->regionsButton(), &QPushButton::clicked, this, &YQY::openComputeRegionManager);
-    connect(ui.analysisTree, &QTreeWidget::itemDoubleClicked, this,
+    connect(m_analysisTree, &QTreeWidget::itemDoubleClicked, this,
             [this](QTreeWidgetItem* item, int)
             {
                 if (!item)
                     return;
                 while (item->parent())
                     item = item->parent();
-                const int page = ui.analysisTree->indexOfTopLevelItem(item);
+                const int page = m_analysisTree->indexOfTopLevelItem(item);
                 if (page >= 0 && page <= 3 && m_modelController->model())
                     openAnalysisManager(page);
                 else if (page == 4 && m_modelController->model())
@@ -3643,7 +4131,7 @@ void YQY::refreshAnalysisEditor()
     constraintsButton->setText(QStringLiteral("约束 · %1").arg(structure ? structure->m_Constraint.size() : 0));
     mpcsButton->setText(QStringLiteral("MPC · %1").arg(structure ? structure->m_MPCConstraints.size() : 0));
     regionsButton->setText(QStringLiteral("计算区域 · %1").arg(structure ? structure->m_ComputeRegions.size() : 0));
-    const ThemeColors colors = themeColors(ui.themeComboBox->currentIndex());
+    const ThemeColors colors = themeColors(m_themeComboBox->currentIndex());
     stepsButton->setIcon(treeIcon(TreeGlyph::AnalysisSteps, QColor(colors.text), QColor(colors.accentSecond)));
     loadsButton->setIcon(treeIcon(TreeGlyph::Load, QColor(colors.text), QColor(colors.accentSecond)));
     constraintsButton->setIcon(treeIcon(TreeGlyph::Constraint, QColor(colors.text), QColor(colors.accentSecond)));
@@ -3722,14 +4210,14 @@ void YQY::handleAnalysisResourcesChanged(const QSet<int>& affectedStepIds)
         if (m_solveTaskController->prepare(structure, sourceFile, stepId) >= 0)
             ++preparedCount;
     }
-    ui.logEdit->appendPlainText(QStringLiteral("[INFO] 分析资源已增量更新：影响 %1 个分析步，准备 %2 个算例；"
-                                               "当前共 %3 个分析步、%4 个荷载、%5 个约束、%6 个 MPC")
-                                    .arg(affectedStepIds.size())
-                                    .arg(preparedCount)
-                                    .arg(structure->AnalysisSteps().size())
-                                    .arg(structure->m_Load.size())
-                                    .arg(structure->m_Constraint.size())
-                                    .arg(structure->m_MPCConstraints.size()));
+    appendLogMessage(QStringLiteral("[INFO] 分析资源已增量更新：影响 %1 个分析步，准备 %2 个算例；"
+                                    "当前共 %3 个分析步、%4 个荷载、%5 个约束、%6 个 MPC")
+                         .arg(affectedStepIds.size())
+                         .arg(preparedCount)
+                         .arg(structure->AnalysisSteps().size())
+                         .arg(structure->m_Load.size())
+                         .arg(structure->m_Constraint.size())
+                         .arg(structure->m_MPCConstraints.size()));
     setWorkspaceMessage(QStringLiteral("分析资源已增量同步，未受影响的计算状态保持不变"));
     refreshModulePages();
 
@@ -3810,7 +4298,8 @@ void YQY::submitSolveTask()
 
 void YQY::cancelSelectedSolveTask()
 {
-    const int taskId = selectedSolveTaskId();
+    const QVariant monitoredTask = m_solveProgress->property("monitoredTaskId");
+    const int taskId = monitoredTask.isValid() ? monitoredTask.toInt() : selectedSolveTaskId();
     if (taskId < 0 || !m_solveTaskController->cancel(taskId))
         return;
     setWorkspaceMessage(QStringLiteral("已请求停止算例 %1").arg(taskId));
@@ -3818,7 +4307,7 @@ void YQY::cancelSelectedSolveTask()
 
 int YQY::selectedSolveTaskId() const
 {
-    const auto selected = ui.solveStepTree->selectedItems();
+    const auto selected = m_solveStepTree->selectedItems();
     return selected.isEmpty() ? -1 : selected.first()->data(0, Qt::UserRole).toInt();
 }
 
@@ -3834,7 +4323,7 @@ void YQY::openSolveTaskManager()
     }
 
     auto* dialog = new SolveTaskManagerDialog(this);
-    const ThemeColors colors = themeColors(ui.themeComboBox->currentIndex());
+    const ThemeColors colors = themeColors(m_themeComboBox->currentIndex());
     auto* solveAllButton = dialog->solveAllButton();
     auto* restartAllButton = dialog->restartAllButton();
     solveAllButton->setIcon(treeIcon(TreeGlyph::SolveTask, QColor(colors.text), QColor(colors.accentSecond)));
@@ -3881,7 +4370,7 @@ void YQY::refreshSolveTaskManager()
     auto* m_solveAllButton = m_solveTaskManager ? m_solveTaskManager->solveAllButton() : nullptr;
     auto* restartAllButton = m_solveTaskManager ? m_solveTaskManager->restartAllButton() : nullptr;
     auto* m_solveTaskTable = m_solveTaskManager ? m_solveTaskManager->taskTable() : nullptr;
-    const QList<int> ids = m_solveTaskController->taskIds();
+    const QList<int> ids = m_solveTaskController->analysisTaskIds();
     if (m_solveCasesButton)
         m_solveCasesButton->setText(QStringLiteral("全部分析步 · %1").arg(ids.size()));
     int readyCount = 0;
@@ -3910,6 +4399,7 @@ void YQY::refreshSolveTaskManager()
         m_solveRestartAllCasesButton->setText(QStringLiteral("重新计算 · %1").arg(ids.size()));
         m_solveRestartAllCasesButton->setEnabled(!ids.isEmpty());
     }
+    updateSolveBatchActionsLayout();
     if (!m_solveTaskManager || !m_solveTaskTable)
         return;
 
@@ -3931,11 +4421,11 @@ void YQY::refreshSolveTaskManager()
     }
 
     m_solveTaskTable->setRowCount(ids.size());
-    const ThemeColors colors = themeColors(ui.themeComboBox->currentIndex());
+    const ThemeColors colors = themeColors(m_themeComboBox->currentIndex());
     for (int row = 0; row < ids.size(); ++row)
     {
         const int id = ids.at(row);
-        const auto info = m_solveTaskController->taskInfo(id);
+        const auto info = m_solveTaskController->displayTaskInfo(id);
         const bool stoppable =
             info.status == SolveTaskController::Status::Queued || info.status == SolveTaskController::Status::Running;
         const bool stopping = info.status == SolveTaskController::Status::Cancelling;
@@ -3952,20 +4442,28 @@ void YQY::refreshSolveTaskManager()
         action->setEnabled(!stopping);
         action->setIcon(treeIcon(stoppable || stopping ? TreeGlyph::StopTask : TreeGlyph::SolveTask,
                                  QColor(colors.text), QColor(colors.accentSecond)));
-        action->setToolTip(stoppable ? QStringLiteral("停止当前算例") : QStringLiteral("运行当前算例"));
+        if (info.initialStatePreparation)
+        {
+            action->setToolTip(stoppable  ? QStringLiteral("停止无风初态（等待该初态的动力步将不启动）")
+                               : stopping ? QStringLiteral("无风初态正在停止")
+                                          : QStringLiteral("单独运行原静力步"));
+        }
+        else
+            action->setToolTip(stoppable ? QStringLiteral("停止当前算例") : QStringLiteral("运行当前算例"));
         connect(action, &QPushButton::clicked, this,
                 [this, id]()
                 {
-                    const auto current = m_solveTaskController->taskInfo(id);
+                    const auto current = m_solveTaskController->displayTaskInfo(id);
                     if (current.status == SolveTaskController::Status::Queued ||
                         current.status == SolveTaskController::Status::Running)
-                        m_solveTaskController->cancel(id);
+                        m_solveTaskController->cancel(current.id);
                     else if (current.status != SolveTaskController::Status::Cancelling)
                         m_solveTaskController->start(id);
                 });
         m_solveTaskTable->setCellWidget(row, 0, action);
 
         auto* nameItem = new QTableWidgetItem(info.name);
+        nameItem->setData(Qt::UserRole, id);
         nameItem->setToolTip(info.name + QStringLiteral("\n") + info.message);
         m_solveTaskTable->setItem(row, 1, nameItem);
 
@@ -3982,6 +4480,7 @@ void YQY::refreshSolveTaskManager()
         m_solveTaskTable->setCellWidget(row, 3, progress);
 
         auto* statusItem = new QTableWidgetItem(solveTaskDisplayStatus(info));
+        statusItem->setToolTip(info.message);
         statusItem->setTextAlignment(Qt::AlignCenter);
         if (info.status == SolveTaskController::Status::Completed)
             statusItem->setForeground(QColor(QStringLiteral("#2F9E68")));
@@ -4005,37 +4504,39 @@ void YQY::refreshSolveTaskManager()
 void YQY::refreshSolveTasks(int preferredTaskId)
 {
     int selectedId = preferredTaskId >= 0 ? preferredTaskId : selectedSolveTaskId();
-    ui.solveStepTree->clear();
+    // 重建列表时不触发结果加载，避免切换结果模型后嵌套刷新并删除当前正在使用的条目。
+    const QSignalBlocker selectionBlocker(m_solveStepTree);
+    m_solveStepTree->clear();
 
-    const QList<int> ids = m_solveTaskController->taskIds();
+    const QList<int> ids = m_solveTaskController->analysisTaskIds();
     refreshSolveTaskManager();
     if (ids.isEmpty())
     {
         auto* placeholder =
-            new QTreeWidgetItem(ui.solveStepTree, {QStringLiteral("尚未提交算例"), QStringLiteral("0.0%"),
-                                                   QStringLiteral("就绪"), QStringLiteral("-- ms")});
+            new QTreeWidgetItem(m_solveStepTree, {QStringLiteral("尚未提交算例"), QStringLiteral("0.0%"),
+                                                  QStringLiteral("就绪"), QStringLiteral("-- ms")});
         placeholder->setFlags(placeholder->flags() & ~Qt::ItemIsSelectable);
-        for (int column = 0; column < ui.solveStepTree->columnCount(); ++column)
+        for (int column = 0; column < m_solveStepTree->columnCount(); ++column)
             placeholder->setTextAlignment(column, Qt::AlignCenter);
         setTreeGlyph(placeholder, TreeGlyph::SolveTask);
-        const ThemeColors colors = themeColors(ui.themeComboBox->currentIndex());
-        applyTreeIcons(ui.solveStepTree, QColor(colors.text), QColor(colors.accentSecond));
-        ui.stopButton->setEnabled(false);
+        const ThemeColors colors = themeColors(m_themeComboBox->currentIndex());
+        applyTreeIcons(m_solveStepTree, QColor(colors.text), QColor(colors.accentSecond));
+        m_stopButton->setEnabled(false);
         return;
     }
 
     QTreeWidgetItem* selectedItem = nullptr;
     for (int id : ids)
     {
-        const auto info = m_solveTaskController->taskInfo(id);
+        const auto info = m_solveTaskController->displayTaskInfo(id);
         auto* item =
-            new QTreeWidgetItem(ui.solveStepTree, {QString(), QString(), solveTaskDisplayStatus(info), QString()});
+            new QTreeWidgetItem(m_solveStepTree, {QString(), QString(), solveTaskDisplayStatus(info), QString()});
         item->setData(0, Qt::UserRole, id);
         item->setToolTip(0, info.message);
         item->setTextAlignment(2, Qt::AlignCenter);
         item->setTextAlignment(3, Qt::AlignCenter);
 
-        auto* progress = new QProgressBar(ui.solveStepTree);
+        auto* progress = new QProgressBar(m_solveStepTree);
         progress->setObjectName(QStringLiteral("solveTaskProgress"));
         progress->setRange(0, 1000);
         progress->setValue(qRound(info.progress * 1000.0));
@@ -4046,8 +4547,8 @@ void YQY::refreshSolveTasks(int preferredTaskId)
                 {
                     progress->setFormat(QStringLiteral("%1%").arg(value / 10.0, 0, 'f', 1));
                 });
-        ui.solveStepTree->setItemWidget(item, 1, progress);
-        auto* caseWidget = new QWidget(ui.solveStepTree);
+        m_solveStepTree->setItemWidget(item, 1, progress);
+        auto* caseWidget = new QWidget(m_solveStepTree);
         caseWidget->setObjectName(QStringLiteral("solveCaseWidget"));
         auto* caseLayout = new QHBoxLayout(caseWidget);
         caseLayout->setContentsMargins(4, 0, 4, 0);
@@ -4058,7 +4559,8 @@ void YQY::refreshSolveTasks(int preferredTaskId)
         controlButton->setIconSize(QSize(18, 18));
         controlButton->setCursor(Qt::PointingHandCursor);
         controlButton->setProperty("taskId", id);
-        auto* caseLabel = new QLabel(info.name, caseWidget);
+        auto* caseLabel = new SingleLineLabel(caseWidget);
+        caseLabel->setText(info.name);
         caseLabel->setObjectName(QStringLiteral("solveCaseLabel"));
         caseLabel->setToolTip(info.name);
         caseLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
@@ -4069,13 +4571,13 @@ void YQY::refreshSolveTasks(int preferredTaskId)
         connect(controlButton, &QToolButton::clicked, this,
                 [this, id, item]()
                 {
-                    ui.solveStepTree->setCurrentItem(item);
-                    const auto current = m_solveTaskController->taskInfo(id);
+                    m_solveStepTree->setCurrentItem(item);
+                    const auto current = m_solveTaskController->displayTaskInfo(id);
                     if (current.status == SolveTaskController::Status::Queued ||
                         current.status == SolveTaskController::Status::Running)
                     {
-                        if (m_solveTaskController->cancel(id))
-                            setWorkspaceMessage(QStringLiteral("已请求停止算例 %1").arg(id));
+                        if (m_solveTaskController->cancel(current.id))
+                            setWorkspaceMessage(QStringLiteral("已请求停止算例 %1").arg(current.id));
                     }
                     else if (current.status == SolveTaskController::Status::Completed ||
                              current.status == SolveTaskController::Status::Failed ||
@@ -4086,7 +4588,7 @@ void YQY::refreshSolveTasks(int preferredTaskId)
                             setWorkspaceMessage(QStringLiteral("算例 %1 已加入计算队列").arg(id));
                     }
                 });
-        ui.solveStepTree->setItemWidget(item, 0, caseWidget);
+        m_solveStepTree->setItemWidget(item, 0, caseWidget);
         item->setSizeHint(0, QSize(0, 40));
         if (id == selectedId)
             selectedItem = item;
@@ -4094,68 +4596,79 @@ void YQY::refreshSolveTasks(int preferredTaskId)
     }
 
     if (!selectedItem)
-        selectedItem = ui.solveStepTree->topLevelItem(ui.solveStepTree->topLevelItemCount() - 1);
-    ui.solveStepTree->setCurrentItem(selectedItem);
-    const ThemeColors colors = themeColors(ui.themeComboBox->currentIndex());
-    applyTreeIcons(ui.solveStepTree, QColor(colors.text), QColor(colors.accentSecond));
+        selectedItem = m_solveStepTree->topLevelItem(m_solveStepTree->topLevelItemCount() - 1);
+    m_solveStepTree->setCurrentItem(selectedItem);
+    const ThemeColors colors = themeColors(m_themeComboBox->currentIndex());
+    applyTreeIcons(m_solveStepTree, QColor(colors.text), QColor(colors.accentSecond));
     updateTaskMonitor(selectedItem ? selectedItem->data(0, Qt::UserRole).toInt() : -1);
 
     const int running = m_solveTaskController->runningTaskCount();
     if (running > 0)
-        ui.solveReadinessLabel->setText(QStringLiteral("%1 个算例正在运行 · 最多 %2 个并发线程")
-                                            .arg(running)
-                                            .arg(m_solveTaskController->maximumThreadCount()));
+        m_solveReadinessLabel->setText(QStringLiteral("%1 个后台任务正在运行 · 最多 %2 个并发线程")
+                                           .arg(running)
+                                           .arg(m_solveTaskController->maximumThreadCount()));
 }
 
 void YQY::updateSolveTaskRow(int taskId)
 {
-    QTreeWidgetItem* item = nullptr;
-    for (int row = 0; row < ui.solveStepTree->topLevelItemCount(); ++row)
+    const int selectedTaskId = selectedSolveTaskId();
+    const auto selectedInfo = m_solveTaskController->taskInfo(selectedTaskId);
+    const auto selectedDisplayInfo = m_solveTaskController->displayTaskInfo(selectedTaskId);
+    if (selectedTaskId == taskId || selectedDisplayInfo.id == taskId || selectedInfo.initialStaticTaskId == taskId)
+        updateTaskMonitor(selectedTaskId);
+
+    const int running = m_solveTaskController->runningTaskCount();
+    if (running > 0)
+        m_solveReadinessLabel->setText(QStringLiteral("%1 个后台任务正在运行 · 最多 %2 个并发线程")
+                                           .arg(running)
+                                           .arg(m_solveTaskController->maximumThreadCount()));
+    else
+        m_solveReadinessLabel->setText(QStringLiteral("所有已提交算例均已结束"));
+
+    for (int row = 0; row < m_solveStepTree->topLevelItemCount(); ++row)
     {
-        auto* candidate = ui.solveStepTree->topLevelItem(row);
-        if (candidate && candidate->data(0, Qt::UserRole).toInt() == taskId)
-        {
-            item = candidate;
-            break;
-        }
-    }
-    if (!item)
-        return;
+        auto* item = m_solveStepTree->topLevelItem(row);
+        if (!item || !item->data(0, Qt::UserRole).isValid())
+            continue;
+        const int logicalTaskId = item->data(0, Qt::UserRole).toInt();
+        const auto rawInfo = m_solveTaskController->taskInfo(logicalTaskId);
+        const auto info = m_solveTaskController->displayTaskInfo(logicalTaskId);
+        if (logicalTaskId != taskId && info.id != taskId && rawInfo.initialStaticTaskId != taskId)
+            continue;
 
-    const auto info = m_solveTaskController->taskInfo(taskId);
-    auto* progress = qobject_cast<QProgressBar*>(ui.solveStepTree->itemWidget(item, 1));
-    if (progress)
-        ProgressBarAnimation::animateTo(progress, qRound(info.progress * 1000.0));
+        auto* progress = qobject_cast<QProgressBar*>(m_solveStepTree->itemWidget(item, 1));
+        if (progress)
+            ProgressBarAnimation::animateTo(progress, qRound(info.progress * 1000.0));
 
-    item->setText(2, solveTaskDisplayStatus(info));
-    item->setToolTip(0, info.message);
-    const bool finished = info.status == SolveTaskController::Status::Completed ||
-                          info.status == SolveTaskController::Status::Failed ||
-                          info.status == SolveTaskController::Status::Cancelled;
-    item->setText(3, finished ? QStringLiteral("%1 ms").arg(info.elapsedMs) : QStringLiteral("-- ms"));
+        item->setText(2, solveTaskDisplayStatus(info));
+        item->setToolTip(0, info.name + QStringLiteral("\n") + info.message);
+        item->setToolTip(2, info.message);
+        const bool finished = info.status == SolveTaskController::Status::Completed ||
+                              info.status == SolveTaskController::Status::Failed ||
+                              info.status == SolveTaskController::Status::Cancelled;
+        item->setText(3, finished ? QStringLiteral("%1 ms").arg(info.elapsedMs) : QStringLiteral("-- ms"));
 
-    QColor statusColor;
-    if (info.status == SolveTaskController::Status::Completed)
-        statusColor = QColor(QStringLiteral("#2F9E68"));
-    else if (info.status == SolveTaskController::Status::Failed)
-        statusColor = QColor(QStringLiteral("#E05252"));
-    else if (info.status == SolveTaskController::Status::Cancelled)
-        statusColor = QColor(QStringLiteral("#D18B32"));
-    if (statusColor.isValid())
-        item->setForeground(2, statusColor);
+        QColor statusColor;
+        if (info.status == SolveTaskController::Status::Completed)
+            statusColor = QColor(QStringLiteral("#2F9E68"));
+        else if (info.status == SolveTaskController::Status::Failed)
+            statusColor = QColor(QStringLiteral("#E05252"));
+        else if (info.status == SolveTaskController::Status::Cancelled)
+            statusColor = QColor(QStringLiteral("#D18B32"));
+        item->setForeground(2, statusColor.isValid() ? QBrush(statusColor) : QBrush());
 
-    QWidget* caseWidget = ui.solveStepTree->itemWidget(item, 0);
-    if (caseWidget)
-    {
+        QWidget* caseWidget = m_solveStepTree->itemWidget(item, 0);
+        if (!caseWidget)
+            continue;
         auto* controlButton = caseWidget->findChild<QToolButton*>(QStringLiteral("taskControlButton"));
         auto* caseLabel = caseWidget->findChild<QLabel*>(QStringLiteral("solveCaseLabel"));
         if (caseLabel)
         {
             caseLabel->setText(info.name);
-            caseLabel->setToolTip(info.name);
+            caseLabel->setToolTip(info.name + QStringLiteral("\n") + info.message);
         }
         if (!controlButton)
-            return;
+            continue;
         const bool stoppable =
             info.status == SolveTaskController::Status::Queued || info.status == SolveTaskController::Status::Running;
         const bool restartable = info.status == SolveTaskController::Status::Ready ||
@@ -4163,47 +4676,57 @@ void YQY::updateSolveTaskRow(int taskId)
                                  info.status == SolveTaskController::Status::Failed ||
                                  info.status == SolveTaskController::Status::Cancelled;
         const bool stopping = info.status == SolveTaskController::Status::Cancelling;
-        const ThemeColors colors = themeColors(ui.themeComboBox->currentIndex());
+        const ThemeColors colors = themeColors(m_themeComboBox->currentIndex());
         controlButton->setIcon(treeIcon((stoppable || stopping) ? TreeGlyph::StopTask : TreeGlyph::SolveTask,
                                         QColor(colors.text), QColor(colors.accentSecond)));
         controlButton->setEnabled(stoppable || restartable);
-        controlButton->setToolTip(stoppable     ? QStringLiteral("仅停止算例 %1").arg(taskId)
-                                  : restartable ? QStringLiteral("开始运行算例 %1").arg(taskId)
-                                                : QStringLiteral("算例正在停止"));
+        if (info.initialStatePreparation)
+        {
+            controlButton->setToolTip(stoppable  ? QStringLiteral("停止无风初态（等待该初态的动力步将不启动）")
+                                      : stopping ? QStringLiteral("无风初态正在停止")
+                                                 : QStringLiteral("单独运行原静力步"));
+        }
+        else
+        {
+            controlButton->setToolTip(stoppable     ? QStringLiteral("仅停止算例 %1").arg(logicalTaskId)
+                                      : restartable ? QStringLiteral("开始运行算例 %1").arg(logicalTaskId)
+                                                    : QStringLiteral("算例正在停止"));
+        }
         controlButton->setAccessibleName(controlButton->toolTip());
     }
-
-    if (selectedSolveTaskId() == taskId)
-        updateTaskMonitor(taskId);
-
-    const int running = m_solveTaskController->runningTaskCount();
-    if (running > 0)
-        ui.solveReadinessLabel->setText(QStringLiteral("%1 个算例正在运行 · 最多 %2 个并发线程")
-                                            .arg(running)
-                                            .arg(m_solveTaskController->maximumThreadCount()));
-    else
-        ui.solveReadinessLabel->setText(QStringLiteral("所有已提交算例均已结束"));
 }
 
 void YQY::updateTaskMonitor(int taskId)
 {
     if (taskId < 0)
     {
-        ui.stopButton->setEnabled(false);
+        m_solveProgress->setProperty("monitoredTaskId", QVariant());
+        m_stopButton->setEnabled(false);
         return;
     }
 
-    const auto info = m_solveTaskController->taskInfo(taskId);
-    ui.solveProgress->setRange(0, 1000);
-    ProgressBarAnimation::animateTo(ui.solveProgress, qRound(info.progress * 1000.0));
-    ui.solveProgress->setFormat(QStringLiteral("%1%").arg(ui.solveProgress->value() / 10.0, 0, 'f', 1));
-    ui.incrementLabel->setText(QStringLiteral("%1 · %2 · %3 ms")
-                                   .arg(info.name, SolveTaskController::statusText(info.status))
-                                   .arg(info.elapsedMs));
-    ui.convergenceLabel->setText(info.message);
+    auto info = m_solveTaskController->displayTaskInfo(taskId);
+    if (info.status != SolveTaskController::Status::Running && info.initialStaticTaskId >= 0)
+    {
+        const auto staticInfo = m_solveTaskController->taskInfo(info.initialStaticTaskId);
+        if (staticInfo.status == SolveTaskController::Status::Queued ||
+            staticInfo.status == SolveTaskController::Status::Running ||
+            staticInfo.status == SolveTaskController::Status::Cancelling)
+            info = staticInfo;
+    }
+    m_solveProgress->setProperty("monitoredTaskId", info.id);
+    m_solveProgress->setRange(0, 1000);
+    ProgressBarAnimation::animateTo(m_solveProgress, qRound(info.progress * 1000.0));
+    m_solveProgress->setFormat(QStringLiteral("%1%").arg(m_solveProgress->value() / 10.0, 0, 'f', 1));
+    m_incrementLabel->setText(QStringLiteral("%1 · %2 · 已用时 %3")
+                                  .arg(info.name, solveTaskDisplayStatus(info))
+                                  .arg(elapsedTimeText(info.elapsedMs)));
+    m_convergenceLabel->setText(info.message);
     const bool active =
         info.status == SolveTaskController::Status::Queued || info.status == SolveTaskController::Status::Running;
-    ui.stopButton->setEnabled(active);
+    m_stopButton->setEnabled(active);
+    m_stopButton->setToolTip(info.initialStatePreparation ? QStringLiteral("停止无风初态（等待该初态的动力步将不启动）")
+                                                          : QStringLiteral("停止当前算例"));
 }
 
 void YQY::openHdf5Result()
@@ -4227,7 +4750,7 @@ void YQY::openHdf5Result()
         {
             const QString description = failureReason.isEmpty() ? QStringLiteral("未知读取错误") : failureReason;
             failedFiles.append(QStringLiteral("%1：%2").arg(QFileInfo(filePath).fileName(), description));
-            ui.logEdit->appendPlainText(QStringLiteral("[WARN] H5结果读取失败：%1；%2").arg(filePath, description));
+            appendLogMessage(QStringLiteral("[WARN] H5结果读取失败：%1；%2").arg(filePath, description));
         }
     }
 
@@ -4255,23 +4778,24 @@ bool YQY::resultTaskBelongsToActiveModel(const QString& sourceFile) const
 
     if (m_resultSourceModelName.isEmpty())
         return false;
-    return QFileInfo(sourceFile).completeBaseName().compare(QFileInfo(m_resultSourceModelName).completeBaseName(),
-                                                            Qt::CaseInsensitive) == 0;
+    return QFileInfo(sourceFile)
+               .completeBaseName()
+               .compare(QFileInfo(m_resultSourceModelName).completeBaseName(), Qt::CaseInsensitive) == 0;
 }
 
 void YQY::refreshResultCases(int preferredTaskId)
 {
-    if (!m_solveTaskController || !ui.resultCaseCombo)
+    if (!m_solveTaskController || !m_resultCaseCombo)
         return;
 
-    auto* combo = ui.resultCaseCombo;
+    auto* combo = m_resultCaseCombo;
     int selectedTaskId = preferredTaskId > 0 ? preferredTaskId : m_resultTaskId;
     if (selectedTaskId <= 0 && combo->currentIndex() >= 0)
         selectedTaskId = combo->currentData().toInt();
 
     const QSignalBlocker blocker(combo);
     combo->clear();
-    for (const int taskId : m_solveTaskController->taskIds())
+    for (const int taskId : m_solveTaskController->analysisTaskIds())
     {
         const auto info = m_solveTaskController->taskInfo(taskId);
         if (!info.hasUsableResult || !QFileInfo::exists(info.outputFile) ||
@@ -4283,11 +4807,13 @@ void YQY::refreshResultCases(int preferredTaskId)
         const QString stepText = info.analysisStepId > 0 ? QStringLiteral("分析步 %1").arg(info.analysisStepId)
                                                          : QStringLiteral("全部分析步");
         combo->addItem(QStringLiteral("%1 · %2").arg(stepText, QFileInfo(info.outputFile).completeBaseName()), taskId);
+        combo->setItemData(combo->count() - 1, combo->itemText(combo->count() - 1), Qt::ToolTipRole);
     }
 
     if (combo->count() == 0)
     {
         combo->setEnabled(false);
+        combo->setToolTip(QStringLiteral("切换当前模型下不同分析步的计算结果"));
         return;
     }
 
@@ -4297,8 +4823,9 @@ void YQY::refreshResultCases(int preferredTaskId)
         for (int index = 0; index < combo->count(); ++index)
         {
             const auto info = m_solveTaskController->taskInfo(combo->itemData(index).toInt());
-            if (QFileInfo(info.outputFile).absoluteFilePath().compare(m_resultPanel->resultFilePath(),
-                                                                       Qt::CaseInsensitive) == 0)
+            if (QFileInfo(info.outputFile)
+                    .absoluteFilePath()
+                    .compare(m_resultPanel->resultFilePath(), Qt::CaseInsensitive) == 0)
             {
                 selectedIndex = index;
                 break;
@@ -4306,6 +4833,7 @@ void YQY::refreshResultCases(int preferredTaskId)
         }
     }
     combo->setCurrentIndex(selectedIndex >= 0 ? selectedIndex : combo->count() - 1);
+    combo->setToolTip(combo->currentText());
     combo->setEnabled(true);
 }
 
@@ -4377,6 +4905,7 @@ void YQY::applyResultStepFilter(int stepId)
     auto& frames = m_resultPanel->frames();
     frames.clear();
     m_resultFrameSourceIndices.clear();
+    clearResultFrameCache();
     for (int index = 0; index < static_cast<int>(m_allResultFrames.size()); ++index)
     {
         const auto& frame = m_allResultFrames[static_cast<std::size_t>(index)];
@@ -4395,13 +4924,47 @@ void YQY::applyResultStepFilter(int stepId)
     m_resultPanel->playButton()->setEnabled(frames.size() > 1);
     if (!frames.empty())
         displayResultFrame(0);
+    if (m_nodeTimeHistoryPanel)
+        m_nodeTimeHistoryPanel->setAnalysisStep(stepId);
 }
 
 bool YQY::readResultFrame(int frameIndex, _OUT Hdf5ResultFrame& frame)
 {
-    if (frameIndex < 0 || frameIndex >= static_cast<int>(m_resultFrameSourceIndices.size()))
+    const Hdf5ResultFrame* cached = cachedResultFrame(frameIndex);
+    if (!cached)
         return false;
-    return m_resultDataController->readFrame(m_resultFrameSourceIndices[static_cast<std::size_t>(frameIndex)], frame);
+    frame = *cached;
+    return true;
+}
+
+const Hdf5ResultFrame* YQY::cachedResultFrame(int frameIndex)
+{
+    if (frameIndex < 0 || frameIndex >= static_cast<int>(m_resultFrameSourceIndices.size()))
+        return nullptr;
+    const int sourceIndex = m_resultFrameSourceIndices[static_cast<std::size_t>(frameIndex)];
+    for (const ResultFrameCacheEntry& entry : m_resultFrameCache)
+    {
+        if (entry.sourceIndex == sourceIndex)
+            return &entry.frame;
+    }
+    ResultFrameCacheEntry& entry = m_resultFrameCache[static_cast<std::size_t>(m_nextResultFrameCacheSlot)];
+    entry.sourceIndex = -1;
+    entry.frame = {};
+    if (!m_resultDataController->readFrame(sourceIndex, entry.frame))
+        return nullptr;
+    entry.sourceIndex = sourceIndex;
+    m_nextResultFrameCacheSlot = (m_nextResultFrameCacheSlot + 1) % static_cast<int>(m_resultFrameCache.size());
+    return &entry.frame;
+}
+
+void YQY::clearResultFrameCache()
+{
+    for (ResultFrameCacheEntry& entry : m_resultFrameCache)
+    {
+        entry.sourceIndex = -1;
+        entry.frame = {};
+    }
+    m_nextResultFrameCacheSlot = 0;
 }
 
 void YQY::exportNodeResults()
@@ -4470,10 +5033,10 @@ void YQY::exportNodeResults()
 
                 if (succeeded)
                 {
-                    ui.logEdit->appendPlainText(QStringLiteral("[INFO] 节点结果已导出：%1 个节点，%2 个分量 → %3")
-                                                    .arg(nodeCount)
-                                                    .arg(fieldCount)
-                                                    .arg(outputFile));
+                    appendLogMessage(QStringLiteral("[INFO] 节点结果已导出：%1 个节点，%2 个分量 → %3")
+                                         .arg(nodeCount)
+                                         .arg(fieldCount)
+                                         .arg(outputFile));
                     setWorkspaceMessage(QStringLiteral("节点结果导出完成 · %1").arg(QFileInfo(outputFile).fileName()));
                 }
                 else
@@ -4548,10 +5111,10 @@ void YQY::exportElementResults()
                 playButton->setEnabled(currentFrames.size() > 1);
                 if (succeeded)
                 {
-                    ui.logEdit->appendPlainText(QStringLiteral("[INFO] 单元结果已导出：%1 个单元，%2 个分量 → %3")
-                                                    .arg(elementCount)
-                                                    .arg(fieldCount)
-                                                    .arg(outputFile));
+                    appendLogMessage(QStringLiteral("[INFO] 单元结果已导出：%1 个单元，%2 个分量 → %3")
+                                         .arg(elementCount)
+                                         .arg(fieldCount)
+                                         .arg(outputFile));
                     setWorkspaceMessage(QStringLiteral("单元结果导出完成 · %1").arg(QFileInfo(outputFile).fileName()));
                 }
                 else
@@ -4591,10 +5154,15 @@ void YQY::exportIterationHistory()
     }
 
     const QString defaultOutputFile =
-        QDir(ApplicationPaths::iterationResultDirectory(sourceFile)).absoluteFilePath(QStringLiteral("IterationStep.bdf"));
+        ResultExportPaths::filePath(sourceFile, QStringLiteral("迭代步"), QStringLiteral("bdf"));
+    if (defaultOutputFile.isEmpty())
+    {
+        QMessageBox::warning(this, QStringLiteral("导出失败"), QStringLiteral("无法创建结果导出目录。"));
+        return;
+    }
     QString outputFile = FileDialogService::selectSaveFile(this, QStringLiteral("保存迭代步"), defaultOutputFile,
-                                                            QStringLiteral("BDF 文件 (*.bdf);;所有文件 (*.*)"),
-                                                            QStringLiteral("iterationResultExport"));
+                                                           QStringLiteral("BDF 文件 (*.bdf);;所有文件 (*.*)"),
+                                                           QStringLiteral("iterationResultExport"), false);
     if (outputFile.isEmpty())
         return;
     if (QFileInfo(outputFile).suffix().isEmpty())
@@ -4611,7 +5179,7 @@ void YQY::exportIterationHistory()
     exporter.SetSolverIterationRecords(std::move(records));
     if (exporter.ExportSolverIterationHistory(outputFile))
     {
-        ui.logEdit->appendPlainText(QStringLiteral("[INFO] 迭代步已导出：%1").arg(outputFile));
+        appendLogMessage(QStringLiteral("[INFO] 迭代步已导出：%1").arg(outputFile));
         setWorkspaceMessage(QStringLiteral("迭代步导出完成 · %1").arg(QFileInfo(outputFile).fileName()));
     }
     else
@@ -4643,168 +5211,149 @@ void YQY::exportResultPlot()
     if (dialog.exec() != QDialog::Accepted)
         return;
     const ResultPlotSelection selection = dialog.selection();
-    QString csvFile = selection.outputFile;
-    if (QFileInfo(csvFile).suffix().isEmpty())
-        csvFile += QStringLiteral(".csv");
-    if (QFileInfo::exists(csvFile) &&
+    QString outputFile = selection.outputFile;
+    if (QFileInfo(outputFile).suffix().isEmpty())
+        outputFile += QStringLiteral(".bdf");
+    if (QFileInfo::exists(outputFile) &&
         QMessageBox::question(this, QStringLiteral("替换已有文件"),
-                              QStringLiteral("文件已经存在，是否替换？\n%1").arg(csvFile),
+                              QStringLiteral("文件已经存在，是否替换？\n%1").arg(outputFile),
                               QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
         return;
 
     auto* plotButton = m_resultPanel->exportPlotButton();
     plotButton->setEnabled(false);
-    plotButton->setText(QStringLiteral("正在导出 CSV…"));
+    plotButton->setText(QStringLiteral("正在导出 BDF…"));
     setWorkspaceMessage(QStringLiteral("正在导出节点 %1 的时程数据…").arg(selection.nodeId));
 
     const int nodeId = selection.nodeId;
     auto* watcher = new QFutureWatcher<bool>(this);
-    connect(watcher, &QFutureWatcher<bool>::finished, this,
-            [this, watcher, plotButton, csvFile, nodeId]()
+    connect(
+        watcher, &QFutureWatcher<bool>::finished, this,
+        [this, watcher, plotButton, outputFile, nodeId]()
+        {
+            const bool succeeded = watcher->result();
+            watcher->deleteLater();
+            if (!succeeded)
             {
-                const bool succeeded = watcher->result();
-                watcher->deleteLater();
-                if (!succeeded)
-                {
-                    plotButton->setEnabled(true);
-                    plotButton->setText(QStringLiteral("导出数据并生成曲线"));
-                    setWorkspaceMessage(QStringLiteral("时程数据导出失败"));
-                    QMessageBox::critical(this, QStringLiteral("导出失败"),
-                                          QStringLiteral("无法读取 H5 结果或写入 CSV 文件，请检查结果文件和保存路径。"));
-                    return;
-                }
+                plotButton->setEnabled(true);
+                plotButton->setText(QStringLiteral("导出数据并生成曲线"));
+                setWorkspaceMessage(QStringLiteral("时程数据导出失败"));
+                QMessageBox::critical(this, QStringLiteral("导出失败"),
+                                      QStringLiteral("无法直接读取该节点的 H5 位移时程，或无法写入 BDF 文件。\n"
+                                                     "请检查结果文件的节点记录布局和保存路径。"));
+                return;
+            }
 
-                QString scriptFile;
-                const QStringList candidates = {
-                    QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(QStringLiteral("Tools/result_plot.py")),
-                    QDir::current().absoluteFilePath(QStringLiteral("YQY/Tools/result_plot.py")),
-                    QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(QStringLiteral("../../YQY/Tools/result_plot.py"))};
-                for (const QString& candidate : candidates)
+            QString scriptFile;
+            const QStringList candidates = {
+                QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(QStringLiteral("Tools/result_plot.py")),
+                QDir::current().absoluteFilePath(QStringLiteral("YQY/Tools/result_plot.py")),
+                QDir(QCoreApplication::applicationDirPath())
+                    .absoluteFilePath(QStringLiteral("../../YQY/Tools/result_plot.py"))};
+            for (const QString& candidate : candidates)
+            {
+                if (QFileInfo(candidate).isFile())
                 {
-                    if (QFileInfo(candidate).isFile())
+                    scriptFile = QFileInfo(candidate).absoluteFilePath();
+                    break;
+                }
+            }
+            if (scriptFile.isEmpty())
+            {
+                plotButton->setEnabled(true);
+                plotButton->setText(QStringLiteral("导出数据并生成曲线"));
+                setWorkspaceMessage(QStringLiteral("BDF 已导出，但未找到 Python 绘图脚本"));
+                QMessageBox::warning(this, QStringLiteral("BDF 已导出"),
+                                     QStringLiteral("BDF 已保存，但未找到 YQY/Tools/result_plot.py。"));
+                return;
+            }
+
+            const QString imageFile = QFileInfo(outputFile).absolutePath() + QDir::separator() +
+                                      QFileInfo(outputFile).completeBaseName() + QStringLiteral(".png");
+            auto* process = new QProcess(this);
+            process->setProcessChannelMode(QProcess::MergedChannels);
+            const QStringList arguments = {scriptFile, QStringLiteral("--input"), outputFile,
+                                           QStringLiteral("--output"), imageFile};
+            plotButton->setText(QStringLiteral("正在生成曲线…"));
+            setWorkspaceMessage(QStringLiteral("正在调用 Python 生成结果图…"));
+            connect(process, &QProcess::errorOccurred, this,
+                    [this, process, plotButton](QProcess::ProcessError error)
                     {
-                        scriptFile = QFileInfo(candidate).absoluteFilePath();
-                        break;
-                    }
-                }
-                if (scriptFile.isEmpty())
+                        if (error != QProcess::FailedToStart)
+                            return;
+                        plotButton->setEnabled(true);
+                        plotButton->setText(QStringLiteral("导出数据并生成曲线"));
+                        setWorkspaceMessage(QStringLiteral("BDF 已导出，但 Python 未能启动"));
+                        QMessageBox::warning(
+                            this, QStringLiteral("绘图未完成"),
+                            QStringLiteral("BDF 已导出，但无法启动 Python。请确认 Python 已安装并已加入 PATH。"));
+                        process->deleteLater();
+                    });
+            connect(
+                process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
+                [this, process, plotButton, outputFile, imageFile, nodeId](int exitCode,
+                                                                           QProcess::ExitStatus exitStatus)
                 {
+                    const bool plotted =
+                        exitStatus == QProcess::NormalExit && exitCode == 0 && QFileInfo(imageFile).isFile();
                     plotButton->setEnabled(true);
                     plotButton->setText(QStringLiteral("导出数据并生成曲线"));
-                    setWorkspaceMessage(QStringLiteral("CSV 已导出，但未找到 Python 绘图脚本"));
-                    QMessageBox::warning(this, QStringLiteral("CSV 已导出"),
-                                         QStringLiteral("CSV 已保存，但未找到 YQY/Tools/result_plot.py。"));
-                    return;
-                }
-
-                const QString imageFile = QFileInfo(csvFile).absolutePath() + QDir::separator() +
-                                          QFileInfo(csvFile).completeBaseName() + QStringLiteral(".png");
-                auto* process = new QProcess(this);
-                process->setProcessChannelMode(QProcess::MergedChannels);
-                const QStringList arguments = {scriptFile, QStringLiteral("--input"), csvFile,
-                                               QStringLiteral("--output"), imageFile};
-                plotButton->setText(QStringLiteral("正在生成曲线…"));
-                setWorkspaceMessage(QStringLiteral("正在调用 Python 生成结果图…"));
-                connect(process, &QProcess::errorOccurred, this,
-                        [this, process, plotButton](QProcess::ProcessError error)
-                        {
-                            if (error != QProcess::FailedToStart)
-                                return;
-                            plotButton->setEnabled(true);
-                            plotButton->setText(QStringLiteral("导出数据并生成曲线"));
-                            setWorkspaceMessage(QStringLiteral("CSV 已导出，但 Python 未能启动"));
-                            QMessageBox::warning(this, QStringLiteral("绘图未完成"),
-                                                 QStringLiteral("CSV 已导出，但无法启动 Python。请确认 Python 已安装并已加入 PATH。"));
-                            process->deleteLater();
-                        });
-                connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
-                        [this, process, plotButton, csvFile, imageFile, nodeId](int exitCode,
-                                                                                 QProcess::ExitStatus exitStatus)
-                        {
-                            const bool plotted = exitStatus == QProcess::NormalExit && exitCode == 0 &&
-                                          QFileInfo(imageFile).isFile();
-                            plotButton->setEnabled(true);
-                            plotButton->setText(QStringLiteral("导出数据并生成曲线"));
-                            if (plotted)
-                            {
-                                ui.logEdit->appendPlainText(QStringLiteral("[INFO] 节点 %1 曲线已生成：%2")
-                                                                .arg(nodeId)
-                                                                .arg(imageFile));
-                                setWorkspaceMessage(QStringLiteral("结果图生成完成 · %1")
-                                                        .arg(QFileInfo(imageFile).fileName()));
-                                QDesktopServices::openUrl(QUrl::fromLocalFile(imageFile));
-                            }
-                            else
-                            {
-                                setWorkspaceMessage(QStringLiteral("CSV 已导出，但 Python 绘图失败"));
-                                const QString details = QString::fromLocal8Bit(process->readAllStandardOutput());
-                                QMessageBox::warning(this, QStringLiteral("绘图未完成"),
-                                                     QStringLiteral("CSV 已导出，但 Python 绘图失败。\n%1")
-                                                         .arg(details.trimmed()));
-                            }
-                            process->deleteLater();
-                        });
-                process->start(QStringLiteral("python"), arguments);
-            });
+                    if (plotted)
+                    {
+                        appendLogMessage(QStringLiteral("[INFO] 节点 %1 曲线已生成：%2").arg(nodeId).arg(imageFile));
+                        setWorkspaceMessage(QStringLiteral("结果图生成完成 · %1").arg(QFileInfo(imageFile).fileName()));
+                        QDesktopServices::openUrl(QUrl::fromLocalFile(imageFile));
+                    }
+                    else
+                    {
+                        setWorkspaceMessage(QStringLiteral("BDF 已导出，但 Python 绘图失败"));
+                        const QString details = QString::fromLocal8Bit(process->readAllStandardOutput());
+                        QMessageBox::warning(
+                            this, QStringLiteral("绘图未完成"),
+                            QStringLiteral("BDF 已导出，但 Python 绘图失败。\n%1").arg(details.trimmed()));
+                    }
+                    process->deleteLater();
+                });
+            process->start(QStringLiteral("python"), arguments);
+        });
     watcher->setFuture(QtConcurrent::run(
-        [sourceFile, csvFile, selection, nodeId]()
+        [sourceFile, outputFile, selection, nodeId]()
         {
             Hdf5ResultReader reader;
             std::vector<Hdf5ResultFrameInfo> loadedFrames;
             if (!reader.open(sourceFile, loadedFrames))
                 return false;
 
-            QFile output(csvFile);
-            if (!output.open(QIODevice::WriteOnly | QIODevice::Text))
+            std::vector<Hdf5NodalDisplacementHistorySample> samples;
+            const bool historyRead = reader.readNodalDisplacementHistory(nodeId, samples);
+            reader.close();
+            if (!historyRead || samples.empty())
                 return false;
 
-            QTextStream stream(&output);
-            stream.setLocale(QLocale::c());
-            stream << "time,node_id";
-            if (selection.displacementX)
-                stream << ",ux";
-            if (selection.displacementY)
-                stream << ",uy";
-            if (selection.displacementZ)
-                stream << ",uz";
-            if (selection.twist)
-                stream << ",twist";
-            if (selection.twistRate)
-                stream << ",twist_rate";
-            stream << '\n';
-            for (int frameIndexValue = 0; frameIndexValue < static_cast<int>(loadedFrames.size()); ++frameIndexValue)
-            {
-                Hdf5ResultFrame frame;
-                if (!reader.readFrame(frameIndexValue, frame))
-                    return false;
-                const auto node = std::find_if(frame.nodes.cbegin(), frame.nodes.cend(),
-                                               [nodeId](const Hdf5NodalResult& item)
-                                               {
-                                                   return item.id == nodeId;
-                                               });
-                if (node == frame.nodes.cend())
-                    continue;
-                stream << frame.info.time << ',' << node->id;
-                if (selection.displacementX)
-                    stream << ',' << node->displacement[0];
-                if (selection.displacementY)
-                    stream << ',' << node->displacement[1];
-                if (selection.displacementZ)
-                    stream << ',' << node->displacement[2];
-                if (selection.twist)
-                    stream << ',' << node->displacement[3];
-                if (selection.twistRate)
-                    stream << ',' << node->velocity[3];
-                stream << '\n';
-            }
-            stream.flush();
-            reader.close();
-            return output.error() == QFile::NoError;
+            return ResultExporter().exportNodalHistoryBdf(outputFile, nodeId, samples,
+                                                          {selection.displacementX, selection.displacementY,
+                                                           selection.displacementZ, selection.rotationX,
+                                                           selection.rotationY, selection.rotationZ});
         }));
 }
 
+void YQY::showTimeHistory()
+{
+    if (!m_nodeTimeHistoryPanel || !m_resultPanel || m_resultPanel->resultFilePath().isEmpty() ||
+        m_resultPanel->frames().empty())
+    {
+        QMessageBox::information(this, QStringLiteral("尚无可绘制结果"),
+                                 QStringLiteral("请先加载包含结果帧的 H5 结果文件。"));
+        return;
+    }
+    m_resultPanel->stopPlayback();
+    m_nodeTimeHistoryPanel->showTimeHistory(m_selectedNodeId);
+    m_workspaceDisplayStack->setCurrentWidget(m_nodeTimeHistoryPanel);
+    setWorkspaceMessage(QStringLiteral("时程曲线：可切换节点位移与能量，选择分量后绘制"));
+}
+
 bool YQY::loadHdf5Result(const QString& filePath, bool showErrors, bool activateResultModule, bool partialResult,
-                         QString* failureReason)
+                         QString* failureReason, bool reportToLog)
 {
     if (failureReason)
         failureReason->clear();
@@ -4856,12 +5405,21 @@ bool YQY::loadHdf5Result(const QString& filePath, bool showErrors, bool activate
     const auto currentModel = m_modelController->model();
     const bool sameModelAsCurrent = ResultFrameUtilities::modelsMatch(currentModel, embeddedModel);
     const bool shouldActivateEmbeddedModel = activateResultModule || !sameModelAsCurrent;
-    if (shouldActivateEmbeddedModel && m_modelController->adoptModel(embeddedModel, filePath, modelTimer.elapsed()) < 0)
+    if (shouldActivateEmbeddedModel)
     {
-        if (showErrors)
-            QMessageBox::critical(this, QStringLiteral("H5 模型激活失败"),
-                                  QStringLiteral("H5 模型已经读取，但无法切换为当前显示模型。"));
-        return fail(QStringLiteral("嵌入模型无法切换为当前显示模型"));
+        // 采用结果内嵌模型只更新显示文档，同步加载回调不能再为原分析步创建待运行任务。
+        int adoptedModelId = -1;
+        {
+            const QScopedValueRollback<bool> resultModelGuard(m_loadingResultModel, true);
+            adoptedModelId = m_modelController->adoptModel(embeddedModel, filePath, modelTimer.elapsed());
+        }
+        if (adoptedModelId < 0)
+        {
+            if (showErrors)
+                QMessageBox::critical(this, QStringLiteral("H5 模型激活失败"),
+                                      QStringLiteral("H5 模型已经读取，但无法切换为当前显示模型。"));
+            return fail(QStringLiteral("嵌入模型无法切换为当前显示模型"));
+        }
     }
 
     // adoptModel() 同步发出 activeModelChanged；该回调会清理旧的结果上下文。
@@ -4880,8 +5438,9 @@ bool YQY::loadHdf5Result(const QString& filePath, bool showErrors, bool activate
     m_resultSourceModelName = embeddedModel->m_OutputControl.m_SourceModelName.trimmed();
     if (m_resultSourceModelName.isEmpty())
         m_resultSourceModelName = m_modelController->filePath();
+    ResultExportPaths::setSourceModel(m_resultFilePath, m_resultSourceModelName);
     m_resultTaskId = -1;
-    for (const int taskId : m_solveTaskController->taskIds())
+    for (const int taskId : m_solveTaskController->analysisTaskIds())
     {
         const auto taskInfo = m_solveTaskController->taskInfo(taskId);
         if (QFileInfo(taskInfo.outputFile).absoluteFilePath().compare(m_resultFilePath, Qt::CaseInsensitive) == 0)
@@ -4893,22 +5452,25 @@ bool YQY::loadHdf5Result(const QString& filePath, bool showErrors, bool activate
     m_resultIsPartial = partialResult;
     m_allResultFrames = std::move(indexedFrames);
     const int preferredStepId = m_allResultFrames.empty() ? 0 : m_allResultFrames.back().stepId;
+    if (m_nodeTimeHistoryPanel)
+        m_nodeTimeHistoryPanel->setResultContext(m_resultFilePath, m_allResultFrames, preferredStepId,
+                                                 summary.energyRecordCount > 0);
     refreshResultSteps(preferredStepId);
     applyResultStepFilter(preferredStepId);
     refreshResultCases(m_resultTaskId);
     if (m_resultRanges.displacementMagnitude.valid)
     {
         m_resultAutomaticScale =
-            ui.modelViewport->automaticDeformationScale(std::max(0.0, m_resultRanges.displacementMagnitude.maximum));
+            m_modelViewport->automaticDeformationScale(std::max(0.0, m_resultRanges.displacementMagnitude.maximum));
     }
     else
     {
         Hdf5ResultFrame scaleReferenceFrame;
         if (readResultFrame(static_cast<int>(m_resultFrames.size()) - 1, scaleReferenceFrame) &&
-            ui.modelViewport->displayResultFrame(scaleReferenceFrame, ModelViewport::ResultField::DisplacementMagnitude,
-                                                 0.0, false))
+            m_modelViewport->displayResultFrame(scaleReferenceFrame, ModelViewport::ResultField::DisplacementMagnitude,
+                                                0.0, false))
         {
-            m_resultAutomaticScale = ui.modelViewport->activeDeformationScale();
+            m_resultAutomaticScale = m_modelViewport->activeDeformationScale();
         }
         else
         {
@@ -4923,12 +5485,15 @@ bool YQY::loadHdf5Result(const QString& filePath, bool showErrors, bool activate
     m_exportElementResultsButton->setEnabled(true);
     m_exportIterationButton->setEnabled(true);
     m_exportPlotButton->setEnabled(true);
+    m_resultPanel->exportEnergyButton()->setToolTip(
+        summary.energyRecordCount > 0 ? QStringLiteral("将当前分析步的能量时程导出为 BDF 数据文件；能量视图中按勾选分量导出")
+                                      : QStringLiteral("当前结果未包含能量输出，请重新计算后查看。"));
 
-    ui.resultFileLabel->setText(partialResult ? QStringLiteral("%1 · 部分结果").arg(QFileInfo(filePath).fileName())
-                                              : QFileInfo(filePath).fileName());
-    ui.resultTree->clear();
+    m_resultFileLabel->setText(partialResult ? QStringLiteral("%1 · 部分结果").arg(QFileInfo(filePath).fileName())
+                                             : QFileInfo(filePath).fileName());
+    m_resultTree->clear();
     auto* root = new QTreeWidgetItem(
-        ui.resultTree, {partialResult ? QStringLiteral("部分结果（计算未完成）") : QStringLiteral("结果文件")});
+        m_resultTree, {partialResult ? QStringLiteral("部分结果（计算未完成）") : QStringLiteral("结果文件")});
     setTreeGlyph(root, TreeGlyph::ResultFile);
     auto* modelData = new QTreeWidgetItem(
         root, {summary.hasModel ? QStringLiteral("模型数据  可用") : QStringLiteral("模型数据  无")});
@@ -4951,19 +5516,50 @@ bool YQY::loadHdf5Result(const QString& filePath, bool showErrors, bool activate
     setTreeGlyph(stress, TreeGlyph::Stress);
     auto* strain = new QTreeWidgetItem(elemental, {QStringLiteral("应变记录  %1").arg(summary.strainRecordCount)});
     setTreeGlyph(strain, TreeGlyph::Strain);
-    const ThemeColors colors = themeColors(ui.themeComboBox->currentIndex());
-    applyTreeIcons(ui.resultTree, QColor(colors.text), QColor(colors.accentSecond));
-    ui.resultTree->expandAll();
-    ui.logEdit->appendPlainText(QStringLiteral("[%1] 已加载%2 H5 后处理结果：%3，%4 帧，截止 t=%5 s")
-                                    .arg(partialResult ? QStringLiteral("WARN") : QStringLiteral("INFO"),
-                                         partialResult ? QStringLiteral("部分") : QString(), filePath)
-                                    .arg(summary.frameCount)
-                                    .arg(resultEndTime, 0, 'g', 10));
-    if (shouldActivateEmbeddedModel)
+    auto* energy = new QTreeWidgetItem(
+        root, {summary.energyRecordCount > 0 ? QStringLiteral("能量记录  %1").arg(summary.energyRecordCount)
+                                            : QStringLiteral("能量记录  无")});
+    setTreeGlyph(energy, TreeGlyph::ResultFile);
+    if (summary.energyRecordCount > 0)
     {
-        ui.logEdit->appendPlainText(QStringLiteral("[INFO] 已切换到 H5 内嵌模型：节点 %1，单元 %2")
-                                        .arg(embeddedModel->Nodes().size())
-                                        .arg(embeddedModel->Elements().size()));
+        QStringList components;
+        if (summary.availableEnergyMask & EnergyResult::Kinetic)
+            components.append(QStringLiteral("动能"));
+        if (summary.availableEnergyMask & EnergyResult::Strain)
+            components.append(QStringLiteral("应变能"));
+        if (summary.availableEnergyMask & EnergyResult::Gravity)
+            components.append(QStringLiteral("重力势能"));
+        if (summary.availableEnergyMask & EnergyResult::Mechanical)
+            components.append(QStringLiteral("总机械能"));
+        energy->setToolTip(0, components.isEmpty()
+                                 ? QStringLiteral("已有能量记录，当前模型未提供有效能量分量。")
+                                 : QStringLiteral("文件内可用分量：%1（J）；各分析步以实际记录为准。")
+                                       .arg(components.join(QStringLiteral("、"))));
+    }
+    else
+    {
+        energy->setToolTip(0, QStringLiteral("当前结果未包含能量输出，请重新计算后查看。"));
+    }
+    const ThemeColors colors = themeColors(m_themeComboBox->currentIndex());
+    applyTreeIcons(m_resultTree, QColor(colors.text), QColor(colors.accentSecond));
+    m_resultTree->expandAll();
+    m_resultFileLabel->show();
+    m_resultTree->show();
+    m_resultTree->updateGeometry();
+    if (reportToLog)
+    {
+        appendLogMessage(QStringLiteral("[%1] 已加载%2 H5 后处理结果：%3，%4 帧，截止 t=%5 s")
+                             .arg(partialResult ? QStringLiteral("WARN") : QStringLiteral("INFO"),
+                                  partialResult ? QStringLiteral("部分") : QString(), QFileInfo(filePath).fileName())
+                             .arg(summary.frameCount)
+                             .arg(resultEndTime, 0, 'g', 10));
+        appendLogMessage(QStringLiteral("[路径] 结果文件：%1").arg(filePath), true);
+    }
+    if (shouldActivateEmbeddedModel && reportToLog)
+    {
+        appendLogMessage(QStringLiteral("[INFO] 已切换到 H5 内嵌模型：节点 %1，单元 %2")
+                             .arg(embeddedModel->Nodes().size())
+                             .arg(embeddedModel->Elements().size()));
     }
     if (activateResultModule)
         switchModule(Module::Result);
@@ -5003,22 +5599,24 @@ void YQY::displayResultPosition(double framePosition)
     const int frameIndex = static_cast<int>(std::floor(framePosition));
     const int nextFrameIndex = (frameIndex + 1) % static_cast<int>(m_resultFrames.size());
     const double interpolation = framePosition - static_cast<double>(frameIndex);
-    Hdf5ResultFrame currentFrame;
-    Hdf5ResultFrame nextFrame;
-    if (!readResultFrame(frameIndex, currentFrame) || !readResultFrame(nextFrameIndex, nextFrame))
+    const Hdf5ResultFrame* currentFrame = cachedResultFrame(frameIndex);
+    const Hdf5ResultFrame* nextFrame = cachedResultFrame(nextFrameIndex);
+    if (!currentFrame || !nextFrame)
     {
         m_resultFrameLabel->setText(QStringLiteral("第 %1 帧读取失败").arg(frameIndex + 1));
         m_resultTimeLabel->setText(QStringLiteral("--"));
         m_resultDeformationLabel->setText(QStringLiteral("--"));
         return;
     }
-    Hdf5ResultFrame frame =
-        interpolation <= 1.0e-9
-            ? currentFrame
-            : ResultFrameUtilities::interpolate(currentFrame, nextFrame, interpolation);
+    Hdf5ResultFrame interpolatedFrame;
+    const Hdf5ResultFrame* frame = currentFrame;
+    if (interpolation > 1.0e-9)
+    {
+        interpolatedFrame = ResultFrameUtilities::interpolate(*currentFrame, *nextFrame, interpolation);
+        frame = &interpolatedFrame;
+    }
     constexpr std::array resultFields = {ModelViewport::ResultField::DisplacementMagnitude,
-                                         ModelViewport::ResultField::AxialForce,
-                                         ModelViewport::ResultField::Stress,
+                                         ModelViewport::ResultField::AxialForce, ModelViewport::ResultField::Stress,
                                          ModelViewport::ResultField::Strain};
     const int fieldIndex = m_resultFieldCombo->currentIndex();
     if (fieldIndex < 0 || fieldIndex >= static_cast<int>(resultFields.size()))
@@ -5026,12 +5624,14 @@ void YQY::displayResultPosition(double framePosition)
     const ModelViewport::ResultField field = resultFields[static_cast<std::size_t>(fieldIndex)];
     const Hdf5ResultRange& scalarRange = resultRangeForField(m_resultRanges, field);
     if (scalarRange.valid)
-        ui.modelViewport->setResultScalarRange(scalarRange.minimum, scalarRange.maximum);
+        m_modelViewport->setResultScalarRange(scalarRange.minimum, scalarRange.maximum);
     else
-        ui.modelViewport->clearResultScalarRange();
+        m_modelViewport->clearResultScalarRange();
     const double requestedScale =
         m_resultScaleSpin->value() <= 0.0 ? m_resultAutomaticScale : m_resultScaleSpin->value();
-    if (!ui.modelViewport->displayResultFrame(frame, field, requestedScale, m_resultOriginalCheck->isChecked()))
+    const bool refreshSolidGeometry = !m_resultPanel->playbackTimer()->isActive();
+    if (!m_modelViewport->displayResultFrame(*frame, field, requestedScale, m_resultOriginalCheck->isChecked(),
+                                             refreshSolidGeometry))
         return;
     const QString scale = m_resultScaleSpin->value() <= 0.0
                               ? QStringLiteral("自动 %1×").arg(m_resultAutomaticScale, 0, 'g', 4)
@@ -5040,7 +5640,7 @@ void YQY::displayResultPosition(double framePosition)
                                     .arg(frameIndex + 1)
                                     .arg(m_resultFrames.size())
                                     .arg(m_resultIsPartial ? QStringLiteral("  ·  部分结果") : QString()));
-    m_resultTimeLabel->setText(QStringLiteral("%1 s").arg(frame.info.time, 0, 'g', 8));
+    m_resultTimeLabel->setText(QStringLiteral("%1 s").arg(frame->info.time, 0, 'g', 8));
     m_resultDeformationLabel->setText(scale);
 }
 
@@ -5058,11 +5658,14 @@ void YQY::clearActiveResultContext()
     // 结果读取器及播放定时器只属于一个模型；切换文档后继续保留会把旧节点编号和标量应用到新几何体。
     m_resultPanel->stopPlayback();
     m_resultDataController->close();
+    clearResultFrameCache();
     m_resultPanel->frames().clear();
     m_allResultFrames.clear();
     m_resultFrameSourceIndices.clear();
     m_resultStepId = 0;
     m_resultPanel->resultFilePath().clear();
+    if (m_nodeTimeHistoryPanel)
+        m_nodeTimeHistoryPanel->clearHistory();
     m_resultTaskId = -1;
     m_resultSourceModelName.clear();
     m_resultPanel->partialResult() = false;
@@ -5080,11 +5683,13 @@ void YQY::clearActiveResultContext()
     m_resultPanel->exportElementButton()->setEnabled(false);
     m_resultPanel->exportIterationButton()->setEnabled(false);
     m_resultPanel->exportPlotButton()->setEnabled(false);
+    m_resultPanel->exportEnergyButton()->setEnabled(false);
+    m_resultPanel->exportEnergyButton()->setToolTip(QStringLiteral("请先加载包含能量输出的 H5 结果文件。"));
     {
-        const QSignalBlocker blocker(ui.resultCaseCombo);
-        ui.resultCaseCombo->clear();
+        const QSignalBlocker blocker(m_resultCaseCombo);
+        m_resultCaseCombo->clear();
     }
-    ui.resultCaseCombo->setEnabled(false);
+    m_resultCaseCombo->setEnabled(false);
     {
         const QSignalBlocker blocker(m_resultPanel->stepCombo());
         m_resultPanel->stepCombo()->clear();
@@ -5093,8 +5698,10 @@ void YQY::clearActiveResultContext()
     m_resultPanel->frameLabel()->setText(QStringLiteral("--"));
     m_resultPanel->timeValueLabel()->setText(QStringLiteral("--"));
     m_resultPanel->deformationValueLabel()->setText(QStringLiteral("--"));
-    ui.resultFileLabel->setText(QStringLiteral("--"));
-    ui.resultTree->clear();
+    m_resultFileLabel->setText(QStringLiteral("--"));
+    m_resultTree->clear();
+    m_resultFileLabel->hide();
+    m_resultTree->hide();
 }
 
 bool YQY::loadModelFile(const QString& filePath)
@@ -5104,6 +5711,18 @@ bool YQY::loadModelFile(const QString& filePath)
         if (m_modelController->isLoading())
             setWorkspaceMessage(QStringLiteral("已有模型正在读取，请稍候"));
         return false;
+    }
+    // 已作为结果打开的同路径文档不会再次发出加载信号；显式导入为计算模型时补齐任务。
+    const QFileInfo requestedFile(filePath);
+    for (const int modelId : m_modelController->modelIds())
+    {
+        if (QFileInfo(m_modelController->filePath(modelId)) != requestedFile)
+            continue;
+        for (const int taskId : m_solveTaskController->analysisTaskIds())
+            if (QFileInfo(m_solveTaskController->taskInfo(taskId).sourceFile) == requestedFile)
+                return true;
+        prepareAnalysisCases(m_modelController->model(modelId), m_modelController->filePath(modelId));
+        break;
     }
     return true;
 }
@@ -5115,28 +5734,25 @@ void YQY::handleModelLoaded(int modelId, const QString& filePath, qint64 elapsed
         return;
 
     {
-        const QSignalBlocker blocker(ui.documentTabBar);
-        const int tabIndex = ui.documentTabBar->addTab(QFileInfo(filePath).fileName());
-        ui.documentTabBar->setTabData(tabIndex, modelId);
-        ui.documentTabBar->setTabToolTip(tabIndex, filePath);
+        const QSignalBlocker blocker(m_documentTabBar);
+        const int tabIndex = m_documentTabBar->addTab(QFileInfo(filePath).fileName());
+        m_documentTabBar->setTabData(tabIndex, modelId);
+        m_documentTabBar->setTabToolTip(tabIndex, filePath);
     }
 
     ++m_modelLoadSucceeded;
     updateLoadStatistics();
-    ui.logEdit->appendPlainText(QStringLiteral("[模型读取] 成功：%1").arg(filePath));
-    ui.logEdit->appendPlainText(QStringLiteral("           数据：节点 %1，单元 %2，材料 %3，截面 %4；耗时 %5 ms")
-                                    .arg(structure->Nodes().size())
-                                    .arg(structure->Elements().size())
-                                    .arg(structure->m_Material.size())
-                                    .arg(structure->m_Section.size())
-                                    .arg(elapsedMs));
+    appendLogMessage(QStringLiteral("[模型] 已读取 %1：节点 %2，单元 %3，材料 %4，截面 %5 · 用时 %6")
+                         .arg(QFileInfo(filePath).fileName())
+                         .arg(structure->Nodes().size())
+                         .arg(structure->Elements().size())
+                         .arg(structure->m_Material.size())
+                         .arg(structure->m_Section.size())
+                         .arg(elapsedTimeText(elapsedMs)));
 
-    const QString suffix = QFileInfo(filePath).suffix();
-    if (suffix.compare(QStringLiteral("h5"), Qt::CaseInsensitive) != 0 &&
-        suffix.compare(QStringLiteral("hdf5"), Qt::CaseInsensitive) != 0)
-    {
+    // 正常导入 BDF/H5 模型均准备任务；为查看结果而采用内嵌模型时保留原计算任务。
+    if (!m_loadingResultModel)
         prepareAnalysisCases(structure, filePath);
-    }
 
     setWorkspaceMessage(QStringLiteral("模型加载完成 · %1 个节点 · %2 个单元 · %3 ms")
                             .arg(structure->Nodes().size())
@@ -5153,22 +5769,22 @@ void YQY::handleActiveModelChanged(int modelId)
 
     // 重建共享 VTK 视口前停止并分离旧模型后处理，随后恢复当前选中模型的结果文件。
     clearActiveResultContext();
-    ui.modelViewport->clearResultDisplay();
+    m_modelViewport->clearResultDisplay();
 
     {
-        const QSignalBlocker blocker(ui.documentTabBar);
-        for (int index = 0; index < ui.documentTabBar->count(); ++index)
+        const QSignalBlocker blocker(m_documentTabBar);
+        for (int index = 0; index < m_documentTabBar->count(); ++index)
         {
-            if (ui.documentTabBar->tabData(index).toInt() == modelId)
+            if (m_documentTabBar->tabData(index).toInt() == modelId)
             {
-                ui.documentTabBar->setCurrentIndex(index);
+                m_documentTabBar->setCurrentIndex(index);
                 break;
             }
         }
     }
 
     m_selectedNodeId = -1;
-    ui.modelViewport->displayModel(structure);
+    m_modelViewport->displayModel(structure);
     populateModelDataTree(QFileInfo(m_modelController->filePath(modelId)).fileName());
     setModelControlsEnabled(true);
     clearSelectionProperties();
@@ -5198,25 +5814,24 @@ void YQY::handleModelLoadFailed(const QString& filePath, const QString& errorMes
     updateLoadStatistics();
     QMessageBox::critical(this, QStringLiteral("模型读取失败"),
                           QStringLiteral("无法读取文件：\n%1\n\n%2").arg(filePath, errorMessage));
-    ui.logEdit->appendPlainText(QStringLiteral("[模型读取] 失败：%1").arg(filePath));
-    ui.logEdit->appendPlainText(QStringLiteral("           原因：%1").arg(errorMessage));
+    appendLogMessage(QStringLiteral("[错误] 模型 %1 读取失败：%2").arg(QFileInfo(filePath).fileName(), errorMessage));
     setWorkspaceMessage(QStringLiteral("模型读取失败：%1").arg(QFileInfo(filePath).fileName()));
 }
 
 void YQY::populateModelDataTree(const QString& fileName)
 {
     const auto structure = m_modelController->model();
-    ui.modelDataTree->clear();
+    m_modelDataTree->clear();
     if (!structure)
     {
-        auto* emptyModel = new QTreeWidgetItem(ui.modelDataTree, {QStringLiteral("尚未加载模型")});
+        auto* emptyModel = new QTreeWidgetItem(m_modelDataTree, {QStringLiteral("尚未加载模型")});
         setTreeGlyph(emptyModel, TreeGlyph::Model);
-        const ThemeColors colors = themeColors(ui.themeComboBox->currentIndex());
-        applyTreeIcons(ui.modelDataTree, QColor(colors.text), QColor(colors.accentSecond));
+        const ThemeColors colors = themeColors(m_themeComboBox->currentIndex());
+        applyTreeIcons(m_modelDataTree, QColor(colors.text), QColor(colors.accentSecond));
         return;
     }
 
-    auto* model = new QTreeWidgetItem(ui.modelDataTree, {fileName});
+    auto* model = new QTreeWidgetItem(m_modelDataTree, {fileName});
     setTreeGlyph(model, TreeGlyph::Model);
     auto* nodes = new QTreeWidgetItem(model, {QStringLiteral("节点  %1").arg(structure->Nodes().size())});
     setTreeGlyph(nodes, TreeGlyph::Nodes);
@@ -5233,9 +5848,9 @@ void YQY::populateModelDataTree(const QString& fileName)
             if (!material)
                 continue;
             auto* item = new QTreeWidgetItem(materials, {QStringLiteral("材料 ID %1 · E=%2 · ρ=%3")
-                                                                 .arg(materialId)
-                                                                 .arg(material->m_Young, 0, 'g', 5)
-                                                                 .arg(material->m_Density, 0, 'g', 5)});
+                                                             .arg(materialId)
+                                                             .arg(material->m_Young, 0, 'g', 5)
+                                                             .arg(material->m_Density, 0, 'g', 5)});
             item->setToolTip(0, QStringLiteral("双击查看或修改材料参数"));
             item->setData(0, Qt::UserRole, 2);
             item->setData(0, Qt::UserRole + 1, modelId);
@@ -5258,7 +5873,8 @@ void YQY::populateModelDataTree(const QString& fileName)
                                  : circular ? QStringLiteral("圆形")
                                             : QStringLiteral("通用");
             auto* item = new QTreeWidgetItem(
-                sections, {QStringLiteral("截面 ID %1 · %2 · A=%3").arg(sectionId).arg(type).arg(section->m_Area, 0, 'g', 6)});
+                sections,
+                {QStringLiteral("截面 ID %1 · %2 · A=%3").arg(sectionId).arg(type).arg(section->m_Area, 0, 'g', 6)});
             item->setToolTip(0, QStringLiteral("双击查看或修改截面参数"));
             item->setData(0, Qt::UserRole, 4);
             item->setData(0, Qt::UserRole + 1, modelId);
@@ -5330,17 +5946,17 @@ void YQY::populateModelDataTree(const QString& fileName)
     if (spring1Count > 0)
     {
         auto* item = new QTreeWidgetItem(elementTypes, {QStringLiteral("SPRING1  %1").arg(spring1Count)});
-        setTreeGlyph(item, TreeGlyph::Other);
+        setTreeGlyph(item, TreeGlyph::SpringGround);
     }
     if (spring2Count > 0)
     {
         auto* item = new QTreeWidgetItem(elementTypes, {QStringLiteral("SPRING2  %1").arg(spring2Count)});
-        setTreeGlyph(item, TreeGlyph::Other);
+        setTreeGlyph(item, TreeGlyph::Spring);
     }
     if (springACount > 0)
     {
         auto* item = new QTreeWidgetItem(elementTypes, {QStringLiteral("SPRINGA  %1").arg(springACount)});
-        setTreeGlyph(item, TreeGlyph::Other);
+        setTreeGlyph(item, TreeGlyph::SpringAxial);
     }
     if (otherCount > 0)
     {
@@ -5348,44 +5964,44 @@ void YQY::populateModelDataTree(const QString& fileName)
         setTreeGlyph(item, TreeGlyph::Other);
     }
 
-    const ThemeColors colors = themeColors(ui.themeComboBox->currentIndex());
-    applyTreeIcons(ui.modelDataTree, QColor(colors.text), QColor(colors.accentSecond));
+    const ThemeColors colors = themeColors(m_themeComboBox->currentIndex());
+    applyTreeIcons(m_modelDataTree, QColor(colors.text), QColor(colors.accentSecond));
 
-    ui.modelDataTree->expandItem(model);
+    m_modelDataTree->expandItem(model);
     if (materials)
-        ui.modelDataTree->expandItem(materials);
+        m_modelDataTree->expandItem(materials);
     if (sections)
-        ui.modelDataTree->expandItem(sections);
-    ui.modelDataTree->expandItem(elementTypes);
-    ui.modelDataTree->setCurrentItem(model);
+        m_modelDataTree->expandItem(sections);
+    m_modelDataTree->expandItem(elementTypes);
+    m_modelDataTree->setCurrentItem(model);
 }
 
 void YQY::setModelControlsEnabled(bool enabled)
 {
     const auto structure = m_modelController->model();
     enabled = enabled && static_cast<bool>(structure);
-    ui.modelDataTree->setEnabled(enabled);
+    m_modelDataTree->setEnabled(enabled);
 
-    ui.documentTabBar->setVisible(enabled);
+    m_documentTabBar->setVisible(enabled);
 
-    ui.showNodesButton->setEnabled(enabled);
-    ui.showElementsButton->setEnabled(enabled);
-    ui.showSolidButton->setEnabled(enabled && ui.modelViewport->hasSolidGeometry());
-    ui.showNodeIdsButton->setEnabled(enabled);
-    ui.showElementIdsButton->setEnabled(enabled);
-    ui.frontViewButton->setEnabled(enabled);
-    ui.backViewButton->setEnabled(enabled);
-    ui.leftViewButton->setEnabled(enabled);
-    ui.rightViewButton->setEnabled(enabled);
-    ui.topViewButton->setEnabled(enabled);
-    ui.bottomViewButton->setEnabled(enabled);
-    ui.fitViewButton->setEnabled(enabled);
-    ui.selectModeButton->setEnabled(enabled);
-    ui.rotateModeButton->setEnabled(enabled);
-    ui.panModeButton->setEnabled(enabled);
-    ui.zoomModeButton->setEnabled(enabled);
-    ui.startSolveButton->setEnabled(false);
-    ui.stopButton->setEnabled(false);
+    m_showNodesButton->setEnabled(enabled);
+    m_showElementsButton->setEnabled(enabled);
+    m_showSolidButton->setEnabled(enabled && m_modelViewport->hasSolidGeometry());
+    m_showNodeIdsButton->setEnabled(enabled);
+    m_showElementIdsButton->setEnabled(enabled);
+    m_frontViewButton->setEnabled(enabled);
+    m_backViewButton->setEnabled(enabled);
+    m_leftViewButton->setEnabled(enabled);
+    m_rightViewButton->setEnabled(enabled);
+    m_topViewButton->setEnabled(enabled);
+    m_bottomViewButton->setEnabled(enabled);
+    m_fitViewButton->setEnabled(enabled);
+    m_selectModeButton->setEnabled(enabled);
+    m_rotateModeButton->setEnabled(enabled);
+    m_panModeButton->setEnabled(enabled);
+    m_zoomModeButton->setEnabled(enabled);
+    m_startSolveButton->setEnabled(false);
+    m_stopButton->setEnabled(false);
 }
 
 void YQY::showNodeProperties(int nodeId)
@@ -5402,15 +6018,15 @@ void YQY::showNodeProperties(int nodeId)
     for (const int dof : node->m_DOF)
         dofIds.append(QString::number(dof));
 
-    ui.monitorTabs->setCurrentWidget(ui.logPage);
-    ui.logEdit->appendPlainText(QStringLiteral("\n[选择] 节点 %1\n"
-                                               "  坐标：X = %2，Y = %3，Z = %4\n"
-                                               "  自由度：%5")
-                                    .arg(nodeId)
-                                    .arg(node->m_X, 0, 'g', 12)
-                                    .arg(node->m_Y, 0, 'g', 12)
-                                    .arg(node->m_Z, 0, 'g', 12)
-                                    .arg(dofIds.isEmpty() ? QStringLiteral("--") : dofIds.join(QStringLiteral(", "))));
+    m_monitorTabs->setCurrentWidget(m_logPage);
+    appendLogMessage(QStringLiteral("\n[选择] 节点 %1\n"
+                                    "  坐标：X = %2，Y = %3，Z = %4\n"
+                                    "  自由度：%5")
+                         .arg(nodeId)
+                         .arg(node->m_X, 0, 'g', 12)
+                         .arg(node->m_Y, 0, 'g', 12)
+                         .arg(node->m_Z, 0, 'g', 12)
+                         .arg(dofIds.isEmpty() ? QStringLiteral("--") : dofIds.join(QStringLiteral(", "))));
     setWorkspaceMessage(QStringLiteral("已选择节点 %1").arg(nodeId));
 }
 
@@ -5455,9 +6071,8 @@ void YQY::showElementProperties(int elementId)
             behaviorId = QString::number(behavior->m_Id);
             for (const SpringForceDisplacementPoint& point : behavior->m_Points)
             {
-                behaviorPoints.append(QStringLiteral("(%1, %2)")
-                                          .arg(point.force, 0, 'g', 8)
-                                          .arg(point.displacement, 0, 'g', 8));
+                behaviorPoints.append(
+                    QStringLiteral("(%1, %2)").arg(point.force, 0, 'g', 8).arg(point.displacement, 0, 'g', 8));
             }
             tangent = spring->GetCurrentTangent();
         }
@@ -5479,24 +6094,24 @@ void YQY::showElementProperties(int elementId)
             directionText = QStringLiteral("当前长度：%1").arg(element->L, 0, 'g', 12);
 
         m_selectedNodeId = -1;
-        ui.monitorTabs->setCurrentWidget(ui.logPage);
-        ui.logEdit->appendPlainText(QStringLiteral("\n[选择] 单元 %1\n"
-                                                   "  类型：%2\n"
-                                                   "  关联节点：%3\n"
-                                                   "  %4\n"
-                                                   "  弹簧行为：%5\n"
-                                                   "  当前相对位移：%6，当前弹簧力：%7，当前切线刚度：%8\n"
-                                                   "  力-相对位移点（力, 位移）：%9")
-                                        .arg(elementId)
-                                        .arg(typeName)
-                                        .arg(nodeIds.isEmpty() ? QStringLiteral("--") : nodeIds.join(QStringLiteral(", ")))
-                                        .arg(directionText)
-                                        .arg(behaviorId)
-                                        .arg(spring->m_CurrentRelativeDisplacement, 0, 'g', 12)
-                                        .arg(spring->m_CurrentForce, 0, 'g', 12)
-                                        .arg(tangent, 0, 'g', 12)
-                                        .arg(behaviorPoints.isEmpty() ? QStringLiteral("--")
-                                                                      : behaviorPoints.join(QStringLiteral("，"))));
+        m_monitorTabs->setCurrentWidget(m_logPage);
+        appendLogMessage(
+            QStringLiteral("\n[选择] 单元 %1\n"
+                           "  类型：%2\n"
+                           "  关联节点：%3\n"
+                           "  %4\n"
+                           "  弹簧行为：%5\n"
+                           "  当前相对位移：%6，当前弹簧力：%7，当前切线刚度：%8\n"
+                           "  力-相对位移点（力, 位移）：%9")
+                .arg(elementId)
+                .arg(typeName)
+                .arg(nodeIds.isEmpty() ? QStringLiteral("--") : nodeIds.join(QStringLiteral(", ")))
+                .arg(directionText)
+                .arg(behaviorId)
+                .arg(spring->m_CurrentRelativeDisplacement, 0, 'g', 12)
+                .arg(spring->m_CurrentForce, 0, 'g', 12)
+                .arg(tangent, 0, 'g', 12)
+                .arg(behaviorPoints.isEmpty() ? QStringLiteral("--") : behaviorPoints.join(QStringLiteral("，"))));
         setWorkspaceMessage(QStringLiteral("已选择弹簧单元 %1").arg(elementId));
         return;
     }
@@ -5514,23 +6129,23 @@ void YQY::showElementProperties(int elementId)
     }
 
     m_selectedNodeId = -1;
-    ui.monitorTabs->setCurrentWidget(ui.logPage);
-    ui.logEdit->appendPlainText(QStringLiteral("\n[选择] 单元 %1\n"
-                                               "  类型：%2\n"
-                                               "  关联节点：%3\n"
-                                               "  属性：%4，材料：%5，截面：%6\n"
-                                               "  初始长度：%7，当前长度：%8\n"
-                                               "  初始应力：%9，当前应力：%10")
-                                    .arg(elementId)
-                                    .arg(typeName)
-                                    .arg(nodeIds.isEmpty() ? QStringLiteral("--") : nodeIds.join(QStringLiteral(", ")))
-                                    .arg(propertyId)
-                                    .arg(materialId)
-                                    .arg(sectionId)
-                                    .arg(element->L0, 0, 'g', 12)
-                                    .arg(element->L, 0, 'g', 12)
-                                    .arg(element->m_InitStress, 0, 'g', 12)
-                                    .arg(element->m_Stress, 0, 'g', 12));
+    m_monitorTabs->setCurrentWidget(m_logPage);
+    appendLogMessage(QStringLiteral("\n[选择] 单元 %1\n"
+                                    "  类型：%2\n"
+                                    "  关联节点：%3\n"
+                                    "  属性：%4，材料：%5，截面：%6\n"
+                                    "  初始长度：%7，当前长度：%8\n"
+                                    "  初始应力：%9，当前应力：%10")
+                         .arg(elementId)
+                         .arg(typeName)
+                         .arg(nodeIds.isEmpty() ? QStringLiteral("--") : nodeIds.join(QStringLiteral(", ")))
+                         .arg(propertyId)
+                         .arg(materialId)
+                         .arg(sectionId)
+                         .arg(element->L0, 0, 'g', 12)
+                         .arg(element->L, 0, 'g', 12)
+                         .arg(element->m_InitStress, 0, 'g', 12)
+                         .arg(element->m_Stress, 0, 'g', 12));
     setWorkspaceMessage(QStringLiteral("已选择单元 %1").arg(elementId));
 }
 
@@ -5541,13 +6156,13 @@ void YQY::clearSelectionProperties()
 
 void YQY::setWorkspaceMessage(const QString& message)
 {
-    ui.readyLabel->setText(message);
+    m_readyLabel->setText(message);
 }
 
 void YQY::updateLoadStatistics()
 {
-    ui.loadStatisticsLabel->setText(QStringLiteral("模型读取  总计 %1  ·  成功 %2  ·  失败 %3")
-                                        .arg(m_modelLoadTotal)
-                                        .arg(m_modelLoadSucceeded)
-                                        .arg(m_modelLoadFailed));
+    m_loadStatisticsLabel->setText(QStringLiteral("模型读取  总计 %1  ·  成功 %2  ·  失败 %3")
+                                       .arg(m_modelLoadTotal)
+                                       .arg(m_modelLoadSucceeded)
+                                       .arg(m_modelLoadFailed));
 }

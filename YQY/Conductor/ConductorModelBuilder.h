@@ -37,6 +37,7 @@ struct LineBuildConfig
     EnumKeyword::ElementType elementType = EnumKeyword::ElementType::T3D2; ///< 导线单元类型，默认桁架单元
     ConductorConfig conductor;                                             ///< 裸导线几何和初始应力参数
     std::shared_ptr<Property> property;                                    ///< 导线材料和截面属性
+    Vector3d localMassFirstMomentPerLength = Vector3d::Zero();             ///< 初始截面局部质量一次矩 (kg)
     bool convergeBundleEnds = true;                                        ///< 多分裂导线两端是否汇集到公共支点
     BundleEndTopology endTopology = BundleEndTopology::SingleSupport;      ///< 耐张端部挂点形式
     double dualSupportSpacing = 0.0;                                       ///< 双挂点间距；非正值时取子导线间距
@@ -68,7 +69,8 @@ enum class InnerSpacerStyle
     OuterPolygon = 0, //外圈多边形
     CenterBraced,     //中心点连外部多边形
     InnerPolygon,     //内部多边形连外部多边形
-    RigidCenterMPC    //中心主节点通过刚性偏置 MPC 约束各子导线
+    RigidCenterMPC,   //中心主节点通过刚性偏置 MPC 约束各子导线
+    CrossBraced       //四分裂外框加两条对角线，不增加中心节点
 };
 
 struct InnerSpacerConfig
@@ -78,6 +80,7 @@ struct InnerSpacerConfig
     double innerPolygonScale = 0.5;                                        ///< 内圈相对外框的比例
     EnumKeyword::ElementType elementType = EnumKeyword::ElementType::CR3D; ///< 间隔棒单元类型，默认 CR3D
     std::shared_ptr<Property> property;                                    ///< 间隔棒材料和截面属性
+    double totalMass = 0.0;                                                ///< 每套总质量 (kg)；0 保留材料密度计算
 };
 
 /**
@@ -277,6 +280,11 @@ private:
     std::shared_ptr<StructureData> m_ownedStructure;
     StructureData* m_structure = nullptr;
 
+    bool BuildLineWithSpacerPositions(const LineBuildConfig& config, const std::vector<double>& positions,
+                                      _OUT LineBuildResult& result, _OUT std::string& error);
+    bool PrepareSpanSpacerConfigs(const SpanConductorBuildConfig& config, double spanLength,
+                                  _OUT std::vector<InnerSpacerConfig>& configs, _OUT std::string& error) const;
+
     int NextNodeId() const;
     int NextElementId() const;
     int NextMPCId() const;
@@ -286,12 +294,16 @@ private:
                           _OUT std::string& error) const;
     std::shared_ptr<ElementBase> CreateLineElement(EnumKeyword::ElementType elementType, _OUT std::string& error) const;
     void PrepareElementLocalFrame(std::shared_ptr<ElementBase> element) const;
+    std::shared_ptr<Property> CreateLocalMassProperty(const std::shared_ptr<Property>& property, const Vector3d& axis,
+                                                      const Vector3d& localMassFirstMoment, _OUT std::string& error);
+    bool ApplySpacerTotalMass(const std::vector<int>& elementIds, double totalMass, _OUT std::string& error);
+    void RollbackLocalMassProperties(int originalPropertyId, int originalSectionId, int originalMaterialId);
     int FindNearestNodeOnSubConductor(const SubConductorModel& sub, const Vector3d& leftBase, const Vector2d& direction,
                                       double targetDistance, bool excludeEndpoints) const;
     bool AddElement(int iNodeId, int jNodeId, EnumKeyword::ElementType elementType, std::shared_ptr<Property> property,
                     double initStress, _OUT int& elementId, _OUT std::string& error,
                     ElementRole role = ElementRole::Generic, int wireId = -1, int aeroProfileId = -1,
-                    int aeroBundleCount = 0);
+                    int aeroBundleCount = 0, const Vector3d& localMassFirstMoment = Vector3d::Zero());
     bool AddNodes(BundleResult& raw, const LineBuildConfig& config, _OUT LineBuildResult& result,
                   _OUT std::string& error);
     bool AddElements(const BundleResult& raw, const LineBuildConfig& config, std::shared_ptr<Property> property,
@@ -300,7 +312,8 @@ private:
     bool BuildSuspensionSpacer(_OUT SuspensionPointModel& suspension, const InnerSpacerConfig& config,
                                _OUT std::string& error);
     bool AddRigidSpacerInertia(int centerNodeId, const std::vector<Vector3d>& wirePositions,
-                               const std::shared_ptr<Property>& property, _OUT int& inertiaId,
+                               const std::shared_ptr<Property>& property,
+                               EnumKeyword::ElementType equivalentElementType, double totalMass, _OUT int& inertiaId,
                                _OUT std::string& error);
     bool CreateSubConductorSets(const LineBuildConfig& config, _OUT LineBuildResult& result, _OUT std::string& error);
     bool RenumberLineModel(LineBuildResult& result, _OUT std::string& error);

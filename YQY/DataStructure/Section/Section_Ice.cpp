@@ -23,6 +23,11 @@ void Section_Ice::Calculate()
 
     m_IceArea = ice_A;
     m_TotalArea = wireArea + ice_A;
+    m_IceCentroidY = ice_A > 0.0 ? ice_Mz / ice_A : 0.0;
+    m_IceCentroidZ = ice_A > 0.0 ? ice_My / ice_A : 0.0;
+    m_IceIyyAboutWire = ice_Iyy0;
+    m_IceIzzAboutWire = ice_Izz0;
+    m_IcePolarMomentAboutWire = ice_Iyy0 + ice_Izz0;
 
     // 2. 计算组合形心坐标 (Centroid)
     // 公式：yc = Sigma(y_i * A_i) / A_total = (0*Aw + ice_Mz) / A_total
@@ -43,8 +48,16 @@ void Section_Ice::Calculate()
     J = Iyy + Izz;
 }
 
-void Section_Ice::CalculateCrescentProperties(double& area, double& my, double& mz, double& iyy, double& izz,
-                                              double& iyz)
+void Section_Ice::Calculate_I(_OUT double& Iy, _OUT double& Iz, _OUT double& polarMoment)
+{
+    Calculate();
+    Iy = Iyy;
+    Iz = Izz;
+    polarMoment = J;
+}
+
+void Section_Ice::CalculateCrescentProperties(_OUT double& area, _OUT double& my, _OUT double& mz, _OUT double& iyy,
+                                              _OUT double& izz, _OUT double& iyz)
 {
     area = my = mz = iyy = izz = iyz = 0.0;
     const int n = 180;

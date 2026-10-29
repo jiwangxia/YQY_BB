@@ -1,5 +1,7 @@
 ﻿#include "AeroManager.h"
 
+#include "Utility/Logger/Logger.h"
+
 #include <windows.h>
 
 #include <algorithm>
@@ -43,42 +45,77 @@ void WriteConsoleText(DWORD handleId, FILE* fallbackStream, const std::wstring& 
     std::fflush(fallbackStream);
 }
 
-void EnforcePeriodicEndpoint(std::vector<BladeModel>& models)
+double MaximumPeriodicEndpointGap(const std::vector<BladeModel>& models)
 {
+    double maximumGap = 0.0;
     for (const BladeModel& model : models)
-        if (model.lift.size() != 73 || model.drag.size() != 73 || model.moment.size() != 73)
-            return;
-
-    // 0 度与 360 度是同一周期点。保留原始文件，仅在读取后合并重复端点。
-    for (BladeModel& model : models)
     {
-        model.lift[72] = model.lift[0];
-        model.drag[72] = model.drag[0];
-        model.moment[72] = model.moment[0];
+        for (const std::vector<double>* values : {&model.lift, &model.drag, &model.moment})
+            if (values->size() == 73)
+                maximumGap = std::max(maximumGap, std::abs(values->front() - values->back()));
     }
-}
+    return maximumGap;
 }
 
-// ============ 控制台颜色函数实现 ============
-void enableConsoleColor()
+double PeriodicSample(const std::vector<double>& values, std::size_t index)
 {
-    SetConsoleOutputCP(CP_UTF8);
-    SetConsoleCP(CP_UTF8);
-
-    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
-    DWORD dwMode = 0;
-    GetConsoleMode(hOut, &dwMode);
-    SetConsoleMode(hOut, dwMode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+    // 模型和导出的 H5 保留实测 360 度样本；
+    // 仅在插值时使用 0 度样本闭合最后一个区间。
+    return values.size() == 73 && index == 72 ? values.front() : values[index];
+}
 }
 
-void setColor(int color)
+static double ShapePreservingSlope(double leftChord, double rightChord)
 {
-    SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), color);
+    if (leftChord * rightChord <= 0.0)
+        return 0.0;
+    return 2.0 * leftChord * rightChord / (leftChord + rightChord);
 }
 
-void resetColor()
+static double InterpolatePeriodicShapePreserving(const std::vector<double>& values, double angleDegrees)
 {
-    SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), COLOR_WHITE);
+    constexpr double step = 5.0;
+    const std::size_t period = values.size() - 1;
+    const double exactPosition = angleDegrees / step;
+    const std::size_t first = static_cast<std::size_t>(std::floor(exactPosition)) % period;
+    const std::size_t second = (first + 1) % period;
+    const std::size_t previous = (first + period - 1) % period;
+    const std::size_t following = (second + 1) % period;
+    const double ratio = exactPosition - std::floor(exactPosition);
+    const double leftChord = (values[first] - values[previous]) / step;
+    const double middleChord = (values[second] - values[first]) / step;
+    const double rightChord = (values[following] - values[second]) / step;
+    const double firstSlope = ShapePreservingSlope(leftChord, middleChord);
+    const double secondSlope = ShapePreservingSlope(middleChord, rightChord);
+    const double ratioSquared = ratio * ratio;
+    const double ratioCubed = ratioSquared * ratio;
+    return (2.0 * ratioCubed - 3.0 * ratioSquared + 1.0) * values[first] +
+           (ratioCubed - 2.0 * ratioSquared + ratio) * step * firstSlope +
+           (-2.0 * ratioCubed + 3.0 * ratioSquared) * values[second] +
+           (ratioCubed - ratioSquared) * step * secondSlope;
+}
+
+static double InterpolatePeriodicShapePreservingSlope(const std::vector<double>& values, double angleDegrees)
+{
+    constexpr double step = 5.0;
+    const std::size_t period = values.size() - 1;
+    const double exactPosition = angleDegrees / step;
+    const std::size_t first = static_cast<std::size_t>(std::floor(exactPosition)) % period;
+    const std::size_t second = (first + 1) % period;
+    const std::size_t previous = (first + period - 1) % period;
+    const std::size_t following = (second + 1) % period;
+    const double ratio = exactPosition - std::floor(exactPosition);
+    const double leftChord = (values[first] - values[previous]) / step;
+    const double middleChord = (values[second] - values[first]) / step;
+    const double rightChord = (values[following] - values[second]) / step;
+    const double firstSlope = ShapePreservingSlope(leftChord, middleChord);
+    const double secondSlope = ShapePreservingSlope(middleChord, rightChord);
+    const double ratioSquared = ratio * ratio;
+    return ((6.0 * ratioSquared - 6.0 * ratio) * values[first] +
+            (3.0 * ratioSquared - 4.0 * ratio + 1.0) * step * firstSlope +
+            (-6.0 * ratioSquared + 6.0 * ratio) * values[second] +
+            (3.0 * ratioSquared - 2.0 * ratio) * step * secondSlope) /
+           step;
 }
 
 void ConsoleOut(const std::wstring& text)
@@ -267,7 +304,7 @@ bool AeroManager::loadModelsFromCSV(const std::filesystem::path& filepath, std::
         rowCount++;
     }
 
-    constexpr int expectedRows = 73; // 0..360 degrees, inclusive, at 5-degree spacing
+    constexpr int expectedRows = 73; // 0..360 度，包含两端，间隔 5 度
     if (rowCount != expectedRows)
     {
         ConsoleError(L"Error: Expected " + std::to_wstring(expectedRows) + L" aerodynamic rows, got " +
@@ -275,7 +312,17 @@ bool AeroManager::loadModelsFromCSV(const std::filesystem::path& filepath, std::
         return false;
     }
 
-    EnforcePeriodicEndpoint(parsedModels);
+    const double endpointGap = MaximumPeriodicEndpointGap(parsedModels);
+    if (endpointGap > 1.0e-3)
+    {
+        std::wostringstream warning;
+        warning << L"Warning: Aerodynamic 0/360-degree samples differ by up to " << std::setprecision(8) << endpointGap
+                << L" in " << (Logger::DetailedOutputEnabled() ? filepath.wstring() : filepath.filename().wstring())
+                << (Logger::DetailedOutputEnabled()
+                        ? L"; raw samples are preserved, while interpolation closes 355 to 0 degrees.\n"
+                        : L"; using periodic interpolation.\n");
+        ConsoleError(warning.str());
+    }
     outModels = std::move(parsedModels);
     return true;
 }
@@ -300,7 +347,7 @@ double AeroManager::interpolate(const std::vector<double>& yValues, double input
         return yValues.back();
     }
 
-    return yValues[idx] + (yValues[idx + 1] - yValues[idx]) * ratio;
+    return yValues[idx] + (PeriodicSample(yValues, static_cast<std::size_t>(idx + 1)) - yValues[idx]) * ratio;
 }
 
 double AeroManager::parseDouble(const std::string& str) const
@@ -443,7 +490,13 @@ double AeroManager::normalizeAngleDegrees(double angleDegrees)
     double normalized = std::fmod(angleDegrees, 360.0);
     if (normalized < 0.0)
         normalized += 360.0;
-    return normalized;
+    // 极小负角加 360 后可能舍入为 360，仍须闭合到零度样本。
+    return normalized >= 360.0 ? 0.0 : normalized;
+}
+
+void AeroManager::setShapePreservingInterpolation(bool enabled)
+{
+    shapePreservingInterpolation = enabled;
 }
 
 bool AeroManager::loadCSV(const std::filesystem::path& filepath)
@@ -576,6 +629,13 @@ AeroCoefficients AeroManager::getCoefficients(const std::vector<BladeModel>& cas
 
     const std::size_t dataSize = std::min({model.lift.size(), model.drag.size(), model.moment.size()});
     const double maxAngle = (dataSize - 1) * STEP;
+    if (shapePreservingInterpolation && dataSize == 73)
+    {
+        result.lift = InterpolatePeriodicShapePreserving(model.lift, angle);
+        result.drag = InterpolatePeriodicShapePreserving(model.drag, angle);
+        result.moment = InterpolatePeriodicShapePreserving(model.moment, angle);
+        return result;
+    }
     if (angle <= maxAngle)
     {
         const double exactPosition = (angle - START_VAL) / STEP;
@@ -584,7 +644,7 @@ AeroCoefficients AeroManager::getCoefficients(const std::vector<BladeModel>& cas
         const double ratio = secondIndex == firstIndex ? 0.0 : exactPosition - firstIndex;
         const auto evaluate = [firstIndex, secondIndex, ratio](const std::vector<double>& values)
         {
-            return values[firstIndex] + (values[secondIndex] - values[firstIndex]) * ratio;
+            return values[firstIndex] + (PeriodicSample(values, secondIndex) - values[firstIndex]) * ratio;
         };
         result.lift = evaluate(model.lift);
         result.drag = evaluate(model.drag);
@@ -604,6 +664,62 @@ AeroCoefficients AeroManager::getCoefficients(const std::vector<BladeModel>& cas
     return result;
 }
 
+AeroCoefficients AeroManager::getCoefficientSlopes(const std::vector<BladeModel>& caseData, int modelIdx,
+                                                   double inputAngle) const
+{
+    AeroCoefficients result;
+    if (modelIdx < 0 || modelIdx >= static_cast<int>(caseData.size()))
+        return result;
+
+    const BladeModel& model = caseData[modelIdx];
+    if (model.lift.empty() || model.drag.empty() || model.moment.empty())
+        return result;
+
+    const double angle = normalizeAngleDegrees(inputAngle);
+    const std::size_t dataSize = std::min({model.lift.size(), model.drag.size(), model.moment.size()});
+    const double maxAngle = (dataSize - 1) * STEP;
+    const double degreesPerRadian = 180.0 / std::acos(-1.0);
+    if (shapePreservingInterpolation && dataSize == 73)
+    {
+        result.lift = degreesPerRadian * InterpolatePeriodicShapePreservingSlope(model.lift, angle);
+        result.drag = degreesPerRadian * InterpolatePeriodicShapePreservingSlope(model.drag, angle);
+        result.moment = degreesPerRadian * InterpolatePeriodicShapePreservingSlope(model.moment, angle);
+        return result;
+    }
+
+    std::size_t first = 0;
+    std::size_t second = 0;
+    double width = STEP;
+    if (angle <= maxAngle)
+    {
+        first = std::min(static_cast<std::size_t>(std::floor((angle - START_VAL) / STEP)), dataSize - 1);
+        second = std::min(first + 1, dataSize - 1);
+    }
+    else
+    {
+        first = dataSize - 1;
+        width = 360.0 - maxAngle;
+    }
+
+    const auto slope = [first, second, width](const std::vector<double>& values)
+    {
+        return (PeriodicSample(values, second) - values[first]) / width;
+    };
+    if (angle > maxAngle)
+    {
+        result.lift = degreesPerRadian * (model.lift.front() - model.lift.back()) / width;
+        result.drag = degreesPerRadian * (model.drag.front() - model.drag.back()) / width;
+        result.moment = degreesPerRadian * (model.moment.front() - model.moment.back()) / width;
+    }
+    else
+    {
+        result.lift = degreesPerRadian * slope(model.lift);
+        result.drag = degreesPerRadian * slope(model.drag);
+        result.moment = degreesPerRadian * slope(model.moment);
+    }
+    return result;
+}
+
 AeroCoefficients AeroManager::getCoefficients(const AeroCaseKey& key, int modelIdx, double inputAngle) const
 {
     const auto* caseData = findCaseModels(key);
@@ -613,7 +729,17 @@ AeroCoefficients AeroManager::getCoefficients(const AeroCaseKey& key, int modelI
 void AeroManager::setCaseData(const AeroCaseKey& key, std::vector<BladeModel> caseData,
                               const std::filesystem::path& sourceFile)
 {
-    EnforcePeriodicEndpoint(caseData);
+    const double endpointGap = MaximumPeriodicEndpointGap(caseData);
+    if (endpointGap > 1.0e-3)
+    {
+        std::wostringstream warning;
+        warning << L"Warning: Aerodynamic 0/360-degree samples differ by up to " << std::setprecision(8) << endpointGap
+                << L" in case " << key.bundleCount << L"/" << key.windSpeed << L"/" << key.iceThickness
+                << (Logger::DetailedOutputEnabled()
+                        ? L"; raw samples are preserved, while interpolation closes 355 to 0 degrees.\n"
+                        : L"; using periodic interpolation.\n");
+        ConsoleError(warning.str());
+    }
     models = caseData;
     currentSourceFile = sourceFile;
     caseModels[key] = std::move(caseData);
@@ -713,169 +839,4 @@ bool AeroManager::exportToCSV(const std::filesystem::path& filepath, int precisi
     outFile.close();
     ConsoleOut(L"CSV exported to: " + filepath.wstring() + L"\n");
     return true;
-}
-
-bool AeroManager::ValiDateAllCSV(const std::filesystem::path& outputDir, const std::filesystem::path& standardDir,
-                                 double tolerance) const
-{
-    namespace fs = std::filesystem;
-
-    std::cout << "\n========================================\n";
-    std::cout << "             CSV Validation\n";
-    std::cout << "========================================\n";
-    ConsoleOut(L"Output folder:   " + outputDir.wstring() + L"\n");
-    ConsoleOut(L"Standard folder: " + standardDir.wstring() + L"\n");
-    std::cout << "========================================\n\n";
-
-    if (!fs::exists(outputDir))
-    {
-        ConsoleError(L"Error: Output folder not found " + outputDir.wstring() + L"\n");
-        return false;
-    }
-
-    if (!fs::exists(standardDir))
-    {
-        ConsoleError(L"Error: Standard folder not found " + standardDir.wstring() + L"\n");
-        return false;
-    }
-
-    std::vector<std::filesystem::path> csvFiles;
-    for (const auto& entry : fs::directory_iterator(outputDir))
-    {
-        if (entry.is_regular_file() && entry.path().extension() == ".csv")
-        {
-            csvFiles.push_back(entry.path().filename());
-        }
-    }
-
-    if (csvFiles.empty())
-    {
-        std::cout << "Warning: No CSV files found in output folder\n";
-        return true;
-    }
-
-    std::cout << "Found " << csvFiles.size() << " CSV files to validate\n\n";
-
-    int passCount = 0;
-    int failCount = 0;
-    std::vector<std::wstring> failedFiles;
-
-    for (size_t i = 0; i < csvFiles.size(); i++)
-    {
-        const std::filesystem::path& filename = csvFiles[i];
-        std::filesystem::path outputFile = outputDir / filename;
-        std::filesystem::path standardFile = standardDir / filename;
-
-        ConsoleOut(L"[" + std::to_wstring(i + 1) + L"/" + std::to_wstring(csvFiles.size()) + L"] Validating: " +
-                   filename.wstring() + L"\n");
-
-        if (!fs::exists(standardFile))
-        {
-            setColor(COLOR_RED);
-            std::cerr << "  Warning";
-            resetColor();
-            std::cerr << ": Standard file not found, skipping\n\n";
-            failCount++;
-            failedFiles.push_back(filename.wstring() + L" (missing standard)");
-            continue;
-        }
-
-        std::ifstream outF(outputFile);
-        std::ifstream stdF(standardFile);
-        bool hasError = false;
-
-        if (outF.is_open() && stdF.is_open())
-        {
-            std::string outLine, stdLine;
-            int lineNum = 0;
-
-            while (std::getline(outF, outLine) && std::getline(stdF, stdLine))
-            {
-                lineNum++;
-                if (lineNum == 1)
-                {
-                    removeUTF8BOM(outLine);
-                    removeUTF8BOM(stdLine);
-                    continue;
-                }
-
-                std::vector<std::string> outVals = split(outLine, ',');
-                std::vector<std::string> stdVals = split(stdLine, ',');
-
-                if (outVals.size() != stdVals.size())
-                {
-                    hasError = true;
-                    break;
-                }
-
-                for (size_t col = 0; col < outVals.size(); col++)
-                {
-                    double outVal = parseDouble(outVals[col]);
-                    double stdVal = parseDouble(stdVals[col]);
-                    if (std::abs(outVal - stdVal) > tolerance)
-                    {
-                        hasError = true;
-                        break;
-                    }
-                }
-                if (hasError)
-                    break;
-            }
-
-            outF.close();
-            stdF.close();
-        }
-        else
-        {
-            hasError = true;
-        }
-
-        if (!hasError)
-        {
-            setColor(COLOR_GREEN);
-            std::cout << "  PASSED";
-            resetColor();
-            std::cout << " - Files are identical\n\n";
-            passCount++;
-        }
-        else
-        {
-            setColor(COLOR_RED);
-            std::cout << "  FAILED";
-            resetColor();
-            std::cout << " - Differences found\n\n";
-            failCount++;
-            failedFiles.push_back(filename.wstring());
-        }
-    }
-
-    std::cout << "Total files: " << csvFiles.size() << "\n";
-    std::cout << "Passed: " << passCount << "\n";
-    std::cout << "Failed: " << failCount << "\n";
-
-    if (!failedFiles.empty())
-    {
-        std::cout << "\nFailed files:\n";
-        for (const auto& f : failedFiles)
-        {
-            ConsoleOut(L"  - " + f + L"\n");
-        }
-    }
-
-    std::cout << "\nFinal result: ";
-    if (failCount == 0)
-    {
-        setColor(COLOR_GREEN);
-        std::cout << "ALL PASSED!\n";
-        resetColor();
-    }
-    else
-    {
-        setColor(COLOR_RED);
-        std::cout << "SOME FAILED\n";
-        resetColor();
-    }
-    std::cout << "========================================\n\n";
-
-    return failCount == 0;
 }

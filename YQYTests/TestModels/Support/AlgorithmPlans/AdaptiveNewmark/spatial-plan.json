@@ -1,0 +1,27 @@
+{
+  "schema": "adaptive-newmark-spatial-validation-v1",
+  "frozen_before_candidate_execution": true,
+  "algorithm": "Production SolverNewmark Adaptive: beta=.25 gamma=.5, step doubling, accept two half steps, proportional controller",
+  "model": "Same two-element CR spatial right-angle frame as CorotationalDynamics/right-angle; T=2.5 s",
+  "relative_tolerances": [0.001, 0.00001, 0.0000001],
+  "initial_step": 0.01,
+  "maximum_step": 0.01,
+  "minimum_step": 0.000001,
+  "absolute_displacement_tolerance": 0.000001,
+  "absolute_velocity_tolerance": 0.000001,
+  "normal_newton_tolerance": 0.000001,
+  "reference": "Existing frozen selfchecked independent DOP853 continuous polynomials; actual accepted times, all nodes and all six state types",
+  "reference_dense_sha256": "04453fbc779f803dda59d26ae29aa139f6a606c8cc7d1f41afdccc5518b3d2d6",
+  "reference_scales": "Existing frozen reference.csv scales, max(1e-4, component amplitude); rotation uses relative SO(3) angle",
+  "criteria": {
+    "all_runs_reach_duration": true,
+    "all_states_finite_and_times_strictly_increasing": true,
+    "accepted_steps_within_requested_range_except_terminal_remainder": true,
+    "normal_precision_limited_count": 0,
+    "finest_normalized_error_each_field": 0.001,
+    "successive_tolerance_error_ratio_upper": 0.9,
+    "rejection_is_allowed": true,
+    "fixed_step_second_order_gate_applies": false
+  },
+  "qualification": "Default shared absolute tolerance is held fixed while relative tolerance changes; a plateau is reported as an unresolved tolerance-floor test, not fixed-step order or proof of an incorrect method. Noncommuting Gauss rotation history contains two accepted substeps, so it cannot be reconstructed from macro-endpoint nodal increments for equilibrium verification."
+}

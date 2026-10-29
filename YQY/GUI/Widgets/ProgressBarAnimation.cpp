@@ -13,9 +13,8 @@ void animateTo(QProgressBar* progressBar, int targetValue)
     targetValue = qBound(progressBar->minimum(), targetValue, progressBar->maximum());
     progressBar->setProperty("smoothTargetValue", targetValue);
 
-    // A solve may only produce a handful of visible progress events.  Keep one
-    // lightweight 60 FPS timer alive per bar and let the displayed value catch
-    // up with the latest value instead of restarting an animation on every event.
+    // 求解进度事件可能较少；每个进度条维护一个 60 FPS 定时器，
+    // 持续追赶最新进度，避免每次事件都重启动画。
     auto* timer = progressBar->findChild<QTimer*>(QStringLiteral("smoothProgressTimer"), Qt::FindDirectChildrenOnly);
     if (!timer)
     {
@@ -41,8 +40,7 @@ void animateTo(QProgressBar* progressBar, int targetValue)
                          });
     }
 
-    // A restarted calculation must return to zero immediately. Forward progress
-    // is interpolated so even a very small model remains visually continuous.
+    // 重新计算时立即归零；后续进度采用插值，使小模型的进度显示也保持连续。
     if (targetValue < progressBar->value())
         progressBar->setValue(targetValue);
     else if (targetValue != progressBar->value() && !timer->isActive())

@@ -364,3 +364,15 @@ FodyWeavers.xsd
 
 # HDF5 计算结果文件
 *.h5
+!/YQYTests/TestModels/**/*.h5
+
+# 临时编译、探针和界面验证输出；重要记录另行归档。
+/tmp/
+
+# 本机磁盘清理归档包含大型时程和历史程序，避免重新进入版本库。
+/YQY/Export/ExportFile/验证归档/storage_cleanup_20261016/
+
+# 第三方依赖通过 GitHub Releases 分发，保留工程配置和说明。
+/ThirdPartyLibrary/*
+!/ThirdPartyLibrary/*.props
+!/ThirdPartyLibrary/*.md

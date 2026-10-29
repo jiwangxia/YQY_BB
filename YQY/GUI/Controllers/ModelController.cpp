@@ -21,6 +21,7 @@ ModelController::~ModelController()
 {
     m_loadWatcher.disconnect(this);
     m_loadWatcher.cancel();
+    m_loadWatcher.waitForFinished();
 }
 
 bool ModelController::loadModel(const QString& filePath)
@@ -37,7 +38,7 @@ bool ModelController::loadModel(const QString& filePath)
             return true;
         }
     }
-    if (m_pendingFiles.contains(absolutePath))
+    if (m_loadingFilePath == absolutePath || m_pendingFiles.contains(absolutePath))
         return true;
 
     const bool wasIdle = !isLoading();
@@ -76,7 +77,10 @@ int ModelController::adoptModel(const std::shared_ptr<StructureData>& structure,
         it->structure = structure;
         it->editHistory.clear();
         if (m_activeModelId == it.key())
+        {
+            emit undoAvailabilityChanged(false);
             emit activeModelChanged(it.key());
+        }
         else
             setActiveModel(it.key());
         return it.key();
@@ -88,20 +92,24 @@ int ModelController::adoptModel(const std::shared_ptr<StructureData>& structure,
     document.structure = structure;
     const int modelId = document.id;
     m_documents.insert(modelId, std::move(document));
-    emit busyChanged(true);
+    const bool wasIdle = !isLoading();
+    if (wasIdle)
+        emit busyChanged(true);
     emit loadStarted(absolutePath);
     emit loadSucceeded(modelId, absolutePath, elapsedMs);
     setActiveModel(modelId);
-    emit busyChanged(false);
+    if (!isLoading())
+        emit busyChanged(false);
     return modelId;
 }
 
 void ModelController::startNextLoading()
 {
-    if (m_loadWatcher.isRunning() || m_pendingFiles.isEmpty())
+    if (!m_loadingFilePath.isEmpty() || m_pendingFiles.isEmpty())
         return;
 
     const QString absolutePath = m_pendingFiles.dequeue();
+    m_loadingFilePath = absolutePath;
     emit loadStarted(absolutePath);
 
     m_loadWatcher.setFuture(QtConcurrent::run(
@@ -293,7 +301,7 @@ int ModelController::modelCount() const
 
 bool ModelController::isLoading() const
 {
-    return m_loadWatcher.isRunning() || !m_pendingFiles.isEmpty();
+    return !m_loadingFilePath.isEmpty() || !m_pendingFiles.isEmpty();
 }
 
 void ModelController::finishLoading()
@@ -312,8 +320,12 @@ void ModelController::finishLoading()
     }
     else
     {
+        m_loadingFilePath.clear();
         emit loadFailed(result.filePath, result.errorMessage);
+        if (!m_loadingFilePath.isEmpty())
+            return;
     }
+    m_loadingFilePath.clear();
     if (!m_pendingFiles.isEmpty())
     {
         startNextLoading();

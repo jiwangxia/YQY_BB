@@ -1,0 +1,63 @@
+{
+  "schema": "adaptive-newmark-production-cr-beam-frozen-v1",
+  "frozen_before_candidate_runs": true,
+  "algorithm": "Production SolverFactory AdaptiveNewmark, beta=.25 gamma=.5; step doubling commits two half steps, no full-step update identity gate",
+  "relative_tolerances": [0.001, 0.00001, 0.0000001],
+  "absolute_tolerance_scale_fraction": 0.01,
+  "absolute_tolerance_policy": "atol_q=rtol*.01*min(q_Y_scale,q_RZ_scale); atol_v=rtol*.01*min(v_Y_scale,v_RZ_scale). The production solver has one q atol shared by metres/radians and one v atol shared by metres/s/radians/s. These are numerical SI-component scales, not a dimensionally homogeneous vector norm or per-DOF tolerance facility.",
+  "include_velocity_in_error": true,
+  "safety_factor": 0.9,
+  "minimum_scale_factor": 0.2,
+  "maximum_growth_factor": 2.0,
+  "solve_failure_factor": 0.5,
+  "maximum_rejected_attempts_per_time": 12,
+  "bending": {
+    "input": "../NewmarkBeamBending/input.json",
+    "input_sha256": "c06c2e667ae7febfa28703ce7b85a290638b956a47a7de5b7513b64be76e3ffd",
+    "cases": ["undamped", "modal-damped"],
+    "initial_step_over_low_period": 0.05,
+    "maximum_step_over_low_period": 0.1,
+    "minimum_step_over_low_period": 1e-8,
+    "newton_residual_tolerance": 1e-12,
+    "physical_mass_relative_limit": 1e-11,
+    "force_formula_scaled_limit": 1e-10,
+    "potential_formula_scaled_limit": 1e-10,
+    "normalization": "Original frozen q=(A,abs(r)A), v=omega*q, a=omega^2*q; all six full histories. A=1e-7m, abs(r)A approximately7.5011715e-8rad; v scales approximately1.0960656e-5m/s and8.2217762e-6rad/s.",
+    "execution": "Actual AnalysisStep::Solve(false), actual Node/CR and automatic modal damping preparation. The factory identity probe is checked before Solve; accepted frames and successful production PushStateCheckpoint calls are observed, not a held private solver.",
+    "rejection_statistics": "Retain successful_checkpoint_pushes and accepted_steps; on complete runs rejected_attempt_estimate=pushes-accepted. Incomplete final attempt may not be a rejected retry; do not claim exact internal TimeStepStatistics.",
+    "precision_statistics": "Private solver count unavailable through Solve wrapper. JSON count=null and complete stdout/stderr zero newmark_precision_limited events is a required external gate. Absence of output capture cannot be PASS."
+  },
+  "nonlinear": {
+    "input": "../NewmarkBeamNonlinear/input.json",
+    "input_sha256": "dda1c8559c2d5eca507cc71aa714b4ae3cd15c835aa9de25b6ae4d8e096e35e6",
+    "reference_sha256": "98a5e7c54590ce6a9393cd4b5fcaa3481aeb408d9c5a8aa3af39be530c81b97b",
+    "initial_step_over_duration": 0.0625,
+    "maximum_step_over_duration": 0.125,
+    "minimum_step_over_duration": 1e-8,
+    "newton_residual_tolerance": 1e-7,
+    "reference_q_scales": [0.2, 0.29826232259155083],
+    "reference_v_scales": [27.846952094173115, 1331.3312500012898],
+    "execution": "Factory-held AdaptiveNewmark on real initialized AnalysisStep/Node/CR, exact accepted/rejected/precision counters. Original physical initial acceleration=M^-1(-grad U).",
+    "reference_time_evaluation": "Evaluate original frozen finest-grid quintic Hermite q/v at actual accepted time and recompute acceleration=-grad U/M; original independent midpoint consistency gate1e-8 retained. Root additionally evaluates independently rebuilt double DOP853 references at actual times. No row-index or linear-interpolation comparison."
+  },
+  "acceptance": {
+    "require_complete_finite_strictly_increasing_accepted_times_and_t0": true,
+    "require_actual_steps_within_declared_min_max_except_terminal_remainder": true,
+    "allow_local_error_rejections": true,
+    "require_normal_production_residual_every_accepted_frame": true,
+    "require_zero_precision_limited_solves_or_complete_process_zero_events": true,
+    "require_original_initial_state_mass_stiffness_damping_and_modal_gates": true,
+    "require_all_frame_physical_mass_force_and_potential_checks": true,
+    "finest_each_of_six_state_channels_normalized_error_limit": 0.0015,
+    "tightening_error_ratio_upper": 0.9,
+    "trend_scope": "For each physical case and each q/v/a group, take the larger of the Y/RZ full-window normalized maxima; each adjacent tolerance tightening must reduce this envelope to at most .9 of previous. Fine six-channel limit remains original .0015. No fixed-step second-order claim for varying accepted times.",
+    "fixed_step_grid_zero_rejection_or_full_step_newmark_identity_required": false,
+    "micro_wrapper_final_pass_deferred_until_process_precision_review": true
+  },
+  "limits": [
+    "Only the declared planar two-DOF CR semidiscrete micro-amplitude and finite-amplitude models are covered; no general spatial or continuum certification.",
+    "Adaptive LTE controls q and v; acceleration is independently checked, not silently treated as controlled.",
+    "Original fixed Newmark inputs, numerical gates, references, CLI behavior and default GoogleTests remain unchanged.",
+    "No candidate state or generated reference has been used to select tolerances or gates."
+  ]
+}

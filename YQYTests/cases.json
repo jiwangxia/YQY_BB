@@ -1,0 +1,3977 @@
+{
+  "schema": "physical-case-catalogue-v1",
+  "updated": "2026-10-29",
+  "path_base": "repository directory containing YQYTests and YQY; evidence paths retain original absolute provenance",
+  "counting_policy": "case is a physical problem family; conditions, algorithms, step/tolerance levels, implementation paths and output frames are separate child counts",
+  "record_policy": "current/historical/pending statuses are separate. Available algorithm exports are not numerical acceptance. Existing evidence predates this path-only reorganization; post-move reruns must add a new record.",
+  "frozen_data_policy": "Retained model inputs, reference values and C++ test acceptance conditions remain unchanged. Auxiliary generators, comparison scripts, Python caches and their legacy path adapter were removed on 2026-10-29. Evidence paths describe historical runs, not currently executable tools.",
+  "cases": [
+    {
+      "id": "truss-tension-compression",
+      "title": "桁架拉伸与压缩",
+      "analysis": "static",
+      "registration": "formal",
+      "execution": "default",
+      "status": "current_pass",
+      "source_files": [
+        "YQYTests/Statics/TrussAxial/TrussAxialTest.cpp"
+      ],
+      "data": [
+        "YQYTests/TestModels/Statics/TrussAxial/Trusses.bdf"
+      ],
+      "conditions": [
+        {
+          "id": "tension"
+        },
+        {
+          "id": "compression"
+        }
+      ],
+      "algorithms": [
+        "NewtonRaphson"
+      ],
+      "algorithm_records": [
+        {
+          "name": "NewtonRaphson",
+          "mode": "load_increment",
+          "status": "current_pass",
+          "pseudo_time_increment": 0.25,
+          "pseudo_time_end": 1.0,
+          "newton_residual_tolerance": 1e-10,
+          "maximum_newton_iterations": 32,
+          "record_phase": "post_directory_restructure",
+          "test_bindings": [
+            "TrussAxial.NewtonTensionCompressionAtEveryIncrement"
+          ],
+          "evidence": [
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default.xml",
+              "sha256": "2e98de4017fd01362b52a547c3b4cc3c49bf48fd6da7564fb58dffc29b99adba",
+              "kind": "post_move_default_run",
+              "record_phase": "post_directory_restructure",
+              "test_bindings": [
+                "TrussAxial.NewtonTensionCompressionAtEveryIncrement"
+              ]
+            },
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+              "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+              "kind": "final_post_move_default_run",
+              "record_phase": "post_directory_restructure",
+              "record_stage": "final_runner_guard",
+              "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+              "test_bindings": [
+                "TrussAxial.NewtonTensionCompressionAtEveryIncrement"
+              ]
+            }
+          ],
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+          "current_evidence": {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+            "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+            "kind": "final_post_move_default_run",
+            "record_phase": "post_directory_restructure",
+            "record_stage": "final_runner_guard",
+            "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+            "test_bindings": [
+              "TrussAxial.NewtonTensionCompressionAtEveryIncrement"
+            ]
+          }
+        }
+      ],
+      "available_algorithms_unassessed": [],
+      "reference": {
+        "kind": "independent_scalar_equilibrium",
+        "scope": "N=1500*log(lambda)/lambda 稳定区间独立求根，逐增量核位移/内力/反力。"
+      },
+      "validation_scope": "N=1500*log(lambda)/lambda 稳定区间独立求根，逐增量核位移/内力/反力。",
+      "evidence": [
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\default.xml",
+          "sha256": "063133bfc8c52a7ef172fd584d2db63c6d27885cc4291181c82132524c1fcf3d",
+          "kind": "current_run"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default.xml",
+          "sha256": "2e98de4017fd01362b52a547c3b4cc3c49bf48fd6da7564fb58dffc29b99adba",
+          "kind": "post_move_default_run",
+          "record_phase": "post_directory_restructure",
+          "test_bindings": [
+            "TrussAxial.NewtonTensionCompressionAtEveryIncrement"
+          ]
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+          "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+          "kind": "final_post_move_default_run",
+          "record_phase": "post_directory_restructure",
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+          "test_bindings": [
+            "TrussAxial.NewtonTensionCompressionAtEveryIncrement"
+          ]
+        }
+      ],
+      "last_verified": "2026-10-26",
+      "record_phase": "post_directory_restructure",
+      "legacy_test_bindings": [
+        "TrussStaticTest.FileToSolutionMatchesIndependentTensionCompressionEquilibriumAtEveryIncrement"
+      ],
+      "notes": "区域/克隆隔离检查不另计物理算例。",
+      "pre_move_record": {
+        "record_phase": "before_directory_restructure; post-move rerun not yet claimed",
+        "status": "current_pass",
+        "registration": "formal",
+        "execution": "default",
+        "algorithms": [
+          "ordinary static"
+        ],
+        "algorithm_records": [
+          {
+            "name": "ordinary static",
+            "mode": "fixed",
+            "status": "current_pass"
+          }
+        ],
+        "last_verified": "2026-10-26",
+        "evidence": [
+          {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\default.xml",
+            "sha256": "063133bfc8c52a7ef172fd584d2db63c6d27885cc4291181c82132524c1fcf3d",
+            "kind": "current_run"
+          }
+        ],
+        "legacy_test_bindings": [
+          "TrussStaticTest.FileToSolutionMatchesIndependentTensionCompressionEquilibriumAtEveryIncrement"
+        ],
+        "validation_scope": "N=1500*log(lambda)/lambda 稳定区间独立求根，逐增量核位移/内力/反力。"
+      },
+      "test_bindings": [
+        "TrussAxial.NewtonTensionCompressionAtEveryIncrement"
+      ],
+      "current_evidence": {
+        "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+        "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+        "kind": "final_post_move_default_run",
+        "record_phase": "post_directory_restructure",
+        "record_stage": "final_runner_guard",
+        "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+        "test_bindings": [
+          "TrussAxial.NewtonTensionCompressionAtEveryIncrement"
+        ]
+      },
+      "record_stage": "final_runner_guard",
+      "last_executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+    },
+    {
+      "id": "rectangular-cantilever",
+      "title": "矩形悬臂梁常规受力",
+      "analysis": "static",
+      "registration": "formal",
+      "execution": "default",
+      "status": "current_pass",
+      "source_files": [
+        "YQYTests/Statics/CantileverBeam/CantileverBeamTest.cpp"
+      ],
+      "data": [
+        "YQYTests/TestModels/Statics/CantileverBeam/Beams.bdf"
+      ],
+      "conditions": [
+        {
+          "id": "axial"
+        },
+        {
+          "id": "bending-y"
+        },
+        {
+          "id": "bending-z"
+        },
+        {
+          "id": "torsion"
+        }
+      ],
+      "algorithms": [
+        "NewtonRaphson"
+      ],
+      "algorithm_records": [
+        {
+          "name": "NewtonRaphson",
+          "mode": "load_increment",
+          "status": "current_pass",
+          "pseudo_time_increment": 0.25,
+          "pseudo_time_end": 1.0,
+          "newton_residual_tolerance": 1e-09,
+          "maximum_newton_iterations": 50,
+          "record_phase": "post_directory_restructure",
+          "test_bindings": [
+            "CantileverBeam.NewtonAxialAndBothBendingSolutions",
+            "CantileverBeam.NewtonSaintVenantTorsionAndEndMoments"
+          ],
+          "evidence": [
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default.xml",
+              "sha256": "2e98de4017fd01362b52a547c3b4cc3c49bf48fd6da7564fb58dffc29b99adba",
+              "kind": "post_move_default_run",
+              "record_phase": "post_directory_restructure",
+              "test_bindings": [
+                "CantileverBeam.NewtonAxialAndBothBendingSolutions",
+                "CantileverBeam.NewtonSaintVenantTorsionAndEndMoments"
+              ]
+            },
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+              "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+              "kind": "final_post_move_default_run",
+              "record_phase": "post_directory_restructure",
+              "record_stage": "final_runner_guard",
+              "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+              "test_bindings": [
+                "CantileverBeam.NewtonAxialAndBothBendingSolutions",
+                "CantileverBeam.NewtonSaintVenantTorsionAndEndMoments"
+              ]
+            }
+          ],
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+          "current_evidence": {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+            "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+            "kind": "final_post_move_default_run",
+            "record_phase": "post_directory_restructure",
+            "record_stage": "final_runner_guard",
+            "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+            "test_bindings": [
+              "CantileverBeam.NewtonAxialAndBothBendingSolutions",
+              "CantileverBeam.NewtonSaintVenantTorsionAndEndMoments"
+            ]
+          }
+        }
+      ],
+      "available_algorithms_unassessed": [],
+      "reference": {
+        "kind": "analytical_small_rotation_beam",
+        "scope": "轴拉、Euler-Bernoulli 双向弯曲、Saint-Venant 扭转；节点力矩与实际支反力。"
+      },
+      "validation_scope": "轴拉、Euler-Bernoulli 双向弯曲、Saint-Venant 扭转；节点力矩与实际支反力。",
+      "evidence": [
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\default.xml",
+          "sha256": "063133bfc8c52a7ef172fd584d2db63c6d27885cc4291181c82132524c1fcf3d",
+          "kind": "current_run"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default.xml",
+          "sha256": "2e98de4017fd01362b52a547c3b4cc3c49bf48fd6da7564fb58dffc29b99adba",
+          "kind": "post_move_default_run",
+          "record_phase": "post_directory_restructure",
+          "test_bindings": [
+            "CantileverBeam.NewtonAxialAndBothBendingSolutions",
+            "CantileverBeam.NewtonSaintVenantTorsionAndEndMoments"
+          ]
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+          "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+          "kind": "final_post_move_default_run",
+          "record_phase": "post_directory_restructure",
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+          "test_bindings": [
+            "CantileverBeam.NewtonAxialAndBothBendingSolutions",
+            "CantileverBeam.NewtonSaintVenantTorsionAndEndMoments"
+          ]
+        }
+      ],
+      "last_verified": "2026-10-26",
+      "record_phase": "post_directory_restructure",
+      "legacy_test_bindings": [
+        "BeamStaticTest.RectangularCantileversMatchAxialAndBothBendingSolutions",
+        "BeamStaticTest.RectangularCantileverMatchesSaintVenantTorsionAndEndMoments"
+      ],
+      "notes": "同一物理族四载荷工况；不是四种算法。",
+      "pre_move_record": {
+        "record_phase": "before_directory_restructure; post-move rerun not yet claimed",
+        "status": "current_pass",
+        "registration": "formal",
+        "execution": "default",
+        "algorithms": [
+          "ordinary static"
+        ],
+        "algorithm_records": [
+          {
+            "name": "ordinary static",
+            "mode": "fixed",
+            "status": "current_pass"
+          }
+        ],
+        "last_verified": "2026-10-26",
+        "evidence": [
+          {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\default.xml",
+            "sha256": "063133bfc8c52a7ef172fd584d2db63c6d27885cc4291181c82132524c1fcf3d",
+            "kind": "current_run"
+          }
+        ],
+        "legacy_test_bindings": [
+          "BeamStaticTest.RectangularCantileversMatchAxialAndBothBendingSolutions",
+          "BeamStaticTest.RectangularCantileverMatchesSaintVenantTorsionAndEndMoments"
+        ],
+        "validation_scope": "轴拉、Euler-Bernoulli 双向弯曲、Saint-Venant 扭转；节点力矩与实际支反力。"
+      },
+      "test_bindings": [
+        "CantileverBeam.NewtonAxialAndBothBendingSolutions",
+        "CantileverBeam.NewtonSaintVenantTorsionAndEndMoments"
+      ],
+      "test_binding_conditions": {
+        "CantileverBeam.NewtonAxialAndBothBendingSolutions": [
+          "axial",
+          "bending-y",
+          "bending-z"
+        ],
+        "CantileverBeam.NewtonSaintVenantTorsionAndEndMoments": [
+          "torsion"
+        ]
+      },
+      "current_evidence": {
+        "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+        "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+        "kind": "final_post_move_default_run",
+        "record_phase": "post_directory_restructure",
+        "record_stage": "final_runner_guard",
+        "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+        "test_bindings": [
+          "CantileverBeam.NewtonAxialAndBothBendingSolutions",
+          "CantileverBeam.NewtonSaintVenantTorsionAndEndMoments"
+        ]
+      },
+      "record_stage": "final_runner_guard",
+      "last_executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+    },
+    {
+      "id": "nonlinear-spring-system",
+      "title": "非线性弹簧与空间V形系统",
+      "analysis": "static",
+      "registration": "formal",
+      "execution": "default",
+      "status": "current_pass",
+      "source_files": [
+        "YQYTests/Statics/NonlinearSprings/NonlinearSpringsTest.cpp"
+      ],
+      "data": [
+        "YQYTests/TestModels/Statics/NonlinearSprings/Springs.bdf"
+      ],
+      "conditions": [
+        {
+          "id": "signed-spring1"
+        },
+        {
+          "id": "mixed-axis-spring2"
+        },
+        {
+          "id": "v-shaped-springa"
+        }
+      ],
+      "algorithms": [
+        "NewtonRaphson"
+      ],
+      "algorithm_records": [
+        {
+          "name": "NewtonRaphson",
+          "mode": "load_increment",
+          "status": "current_pass",
+          "pseudo_time_increment": 0.1,
+          "pseudo_time_end": 1.0,
+          "newton_residual_tolerance": 1e-10,
+          "maximum_newton_iterations": 40,
+          "record_phase": "post_directory_restructure",
+          "test_bindings": [
+            "NonlinearSprings.NewtonSignedLoadsAndRotatingAxes"
+          ],
+          "evidence": [
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default.xml",
+              "sha256": "2e98de4017fd01362b52a547c3b4cc3c49bf48fd6da7564fb58dffc29b99adba",
+              "kind": "post_move_default_run",
+              "record_phase": "post_directory_restructure",
+              "test_bindings": [
+                "NonlinearSprings.NewtonSignedLoadsAndRotatingAxes"
+              ]
+            },
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+              "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+              "kind": "final_post_move_default_run",
+              "record_phase": "post_directory_restructure",
+              "record_stage": "final_runner_guard",
+              "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+              "test_bindings": [
+                "NonlinearSprings.NewtonSignedLoadsAndRotatingAxes"
+              ]
+            }
+          ],
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+          "current_evidence": {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+            "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+            "kind": "final_post_move_default_run",
+            "record_phase": "post_directory_restructure",
+            "record_stage": "final_runner_guard",
+            "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+            "test_bindings": [
+              "NonlinearSprings.NewtonSignedLoadsAndRotatingAxes"
+            ]
+          }
+        }
+      ],
+      "available_algorithms_unassessed": [],
+      "reference": {
+        "kind": "independent_constitutive_and_geometric_equilibrium",
+        "scope": "分段本构反函数和V形几何平衡独立求根。"
+      },
+      "validation_scope": "分段本构反函数和V形几何平衡独立求根。",
+      "evidence": [
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\default.xml",
+          "sha256": "063133bfc8c52a7ef172fd584d2db63c6d27885cc4291181c82132524c1fcf3d",
+          "kind": "current_run"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default.xml",
+          "sha256": "2e98de4017fd01362b52a547c3b4cc3c49bf48fd6da7564fb58dffc29b99adba",
+          "kind": "post_move_default_run",
+          "record_phase": "post_directory_restructure",
+          "test_bindings": [
+            "NonlinearSprings.NewtonSignedLoadsAndRotatingAxes"
+          ]
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+          "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+          "kind": "final_post_move_default_run",
+          "record_phase": "post_directory_restructure",
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+          "test_bindings": [
+            "NonlinearSprings.NewtonSignedLoadsAndRotatingAxes"
+          ]
+        }
+      ],
+      "last_verified": "2026-10-26",
+      "record_phase": "post_directory_restructure",
+      "legacy_test_bindings": [
+        "SpringStaticTest.SolvesAllSpringTypesWithSignedLoadsAndRotatingAxes"
+      ],
+      "notes": "本文件还含多项读取/保护/状态测试；这些不是独立数值case，不能整文件测试数当算例数。",
+      "pre_move_record": {
+        "record_phase": "before_directory_restructure; post-move rerun not yet claimed",
+        "status": "current_pass",
+        "registration": "formal",
+        "execution": "default",
+        "algorithms": [
+          "ordinary static"
+        ],
+        "algorithm_records": [
+          {
+            "name": "ordinary static",
+            "mode": "fixed",
+            "status": "current_pass"
+          }
+        ],
+        "last_verified": "2026-10-26",
+        "evidence": [
+          {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\default.xml",
+            "sha256": "063133bfc8c52a7ef172fd584d2db63c6d27885cc4291181c82132524c1fcf3d",
+            "kind": "current_run"
+          }
+        ],
+        "legacy_test_bindings": [
+          "SpringStaticTest.SolvesAllSpringTypesWithSignedLoadsAndRotatingAxes"
+        ],
+        "validation_scope": "分段本构反函数和V形几何平衡独立求根。"
+      },
+      "test_bindings": [
+        "NonlinearSprings.NewtonSignedLoadsAndRotatingAxes"
+      ],
+      "current_evidence": {
+        "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+        "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+        "kind": "final_post_move_default_run",
+        "record_phase": "post_directory_restructure",
+        "record_stage": "final_runner_guard",
+        "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+        "test_bindings": [
+          "NonlinearSprings.NewtonSignedLoadsAndRotatingAxes"
+        ]
+      },
+      "record_stage": "final_runner_guard",
+      "last_executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+    },
+    {
+      "id": "axial-beam-step-response",
+      "title": "轴向梁阶跃响应",
+      "analysis": "dynamic",
+      "registration": "formal",
+      "execution": "default",
+      "status": "current_pass",
+      "source_files": [
+        "YQYTests/Dynamics/AxialOscillation/AxialOscillationTest.cpp"
+      ],
+      "data": [
+        "YQYTests/TestModels/Dynamics/AxialOscillation/AxialBeam.bdf"
+      ],
+      "conditions": [
+        {
+          "id": "force-step",
+          "duration": 0.5,
+          "force": 0.004
+        },
+        {
+          "id": "force-step-with-axial-gravity",
+          "duration": 0.5,
+          "force": 0.004,
+          "gravity_x": 0.01,
+          "algorithms": ["Newmark"],
+          "fixed_step": 0.001,
+          "test_binding": "AxialOscillation.NewmarkFixed",
+          "reference": "m=rho*A*L/3; q=rho*A*g; effective_k=E*A/L-q/2; effective_force=P+q*L/2",
+          "energy_checks": "T=m*v^2/2; U=(E*A/L)*u^2/2; Vg=-q*L*u/2; mechanical=T+U+Vg; absolute tolerance 1e-14",
+          "output_checks": "full and streaming HDF5 energy history equals the physically checked frame values"
+        }
+      ],
+      "algorithms": [
+        "Newmark",
+        "RK4",
+        "AdaptiveTSSBN"
+      ],
+      "algorithm_records": [
+        {
+          "name": "Newmark",
+          "mode": "fixed",
+          "status": "current_pass",
+          "fixed_steps": [
+            0.002,
+            0.001
+          ],
+          "record_phase": "post_directory_restructure",
+          "test_bindings": [
+            "AxialOscillation.NewmarkFixed"
+          ],
+          "evidence": [
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default.xml",
+              "sha256": "2e98de4017fd01362b52a547c3b4cc3c49bf48fd6da7564fb58dffc29b99adba",
+              "kind": "post_move_default_run",
+              "record_phase": "post_directory_restructure",
+              "test_bindings": [
+                "AxialOscillation.NewmarkFixed"
+              ]
+            },
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+              "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+              "kind": "final_post_move_default_run",
+              "record_phase": "post_directory_restructure",
+              "record_stage": "final_runner_guard",
+              "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+              "test_bindings": [
+                "AxialOscillation.NewmarkFixed"
+              ]
+            }
+          ],
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+          "current_evidence": {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+            "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+            "kind": "final_post_move_default_run",
+            "record_phase": "post_directory_restructure",
+            "record_stage": "final_runner_guard",
+            "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+            "test_bindings": [
+              "AxialOscillation.NewmarkFixed"
+            ]
+          }
+        },
+        {
+          "name": "RK4",
+          "mode": "fixed",
+          "status": "current_pass",
+          "fixed_steps": [
+            0.004,
+            0.002
+          ],
+          "record_phase": "post_directory_restructure",
+          "test_bindings": [
+            "AxialOscillation.Rk4Fixed"
+          ],
+          "evidence": [
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default.xml",
+              "sha256": "2e98de4017fd01362b52a547c3b4cc3c49bf48fd6da7564fb58dffc29b99adba",
+              "kind": "post_move_default_run",
+              "record_phase": "post_directory_restructure",
+              "test_bindings": [
+                "AxialOscillation.Rk4Fixed"
+              ]
+            },
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+              "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+              "kind": "final_post_move_default_run",
+              "record_phase": "post_directory_restructure",
+              "record_stage": "final_runner_guard",
+              "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+              "test_bindings": [
+                "AxialOscillation.Rk4Fixed"
+              ]
+            }
+          ],
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+          "current_evidence": {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+            "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+            "kind": "final_post_move_default_run",
+            "record_phase": "post_directory_restructure",
+            "record_stage": "final_runner_guard",
+            "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+            "test_bindings": [
+              "AxialOscillation.Rk4Fixed"
+            ]
+          }
+        },
+        {
+          "name": "AdaptiveTSSBN",
+          "mode": "adaptive",
+          "status": "current_pass",
+          "maximum_steps": [
+            0.004,
+            0.002
+          ],
+          "controller_enabled": true,
+          "record_phase": "post_directory_restructure",
+          "test_bindings": [
+            "AxialOscillation.TssbnAdaptive"
+          ],
+          "evidence": [
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default.xml",
+              "sha256": "2e98de4017fd01362b52a547c3b4cc3c49bf48fd6da7564fb58dffc29b99adba",
+              "kind": "post_move_default_run",
+              "record_phase": "post_directory_restructure",
+              "test_bindings": [
+                "AxialOscillation.TssbnAdaptive"
+              ]
+            },
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+              "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+              "kind": "final_post_move_default_run",
+              "record_phase": "post_directory_restructure",
+              "record_stage": "final_runner_guard",
+              "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+              "test_bindings": [
+                "AxialOscillation.TssbnAdaptive"
+              ]
+            }
+          ],
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+          "current_evidence": {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+            "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+            "kind": "final_post_move_default_run",
+            "record_phase": "post_directory_restructure",
+            "record_stage": "final_runner_guard",
+            "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+            "test_bindings": [
+              "AxialOscillation.TssbnAdaptive"
+            ]
+          }
+        }
+      ],
+      "available_algorithms_unassessed": [],
+      "reference": {
+        "kind": "analytical_matched_semidiscrete",
+        "scope": "一致质量约化SDOF精确时程；不是连续杆波动解。"
+      },
+      "validation_scope": "一致质量约化SDOF精确时程；不是连续杆波动解。",
+      "evidence": [
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\default.xml",
+          "sha256": "063133bfc8c52a7ef172fd584d2db63c6d27885cc4291181c82132524c1fcf3d",
+          "kind": "current_run"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default.xml",
+          "sha256": "2e98de4017fd01362b52a547c3b4cc3c49bf48fd6da7564fb58dffc29b99adba",
+          "kind": "post_move_default_run",
+          "record_phase": "post_directory_restructure",
+          "test_bindings": [
+            "AxialOscillation.NewmarkFixed",
+            "AxialOscillation.Rk4Fixed",
+            "AxialOscillation.TssbnAdaptive"
+          ]
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+          "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+          "kind": "final_post_move_default_run",
+          "record_phase": "post_directory_restructure",
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+          "test_bindings": [
+            "AxialOscillation.NewmarkFixed",
+            "AxialOscillation.Rk4Fixed",
+            "AxialOscillation.TssbnAdaptive"
+          ]
+        }
+      ],
+      "last_verified": "2026-10-26",
+      "record_phase": "post_directory_restructure",
+      "legacy_test_bindings": [
+        "AxialDynamicsTest.NewmarkMatchesConsistentMassOscillationAndConverges",
+        "AxialDynamicsTest.RungeKutta4MatchesConsistentMassOscillationAndConverges",
+        "AxialDynamicsTest.TssbnMatchesConsistentMassOscillationAndConvergesWithStepCap"
+      ],
+      "notes": "Newmark与RK4是固定步细化；TSSBN是控制器启用的步长上限细化。",
+      "pre_move_record": {
+        "record_phase": "before_directory_restructure; post-move rerun not yet claimed",
+        "status": "current_pass",
+        "registration": "formal",
+        "execution": "default",
+        "algorithms": [
+          "Newmark",
+          "RK4",
+          "AdaptiveTSSBN"
+        ],
+        "algorithm_records": [
+          {
+            "name": "Newmark",
+            "mode": "fixed",
+            "status": "current_pass",
+            "fixed_steps": [
+              0.002,
+              0.001
+            ]
+          },
+          {
+            "name": "RK4",
+            "mode": "fixed",
+            "status": "current_pass",
+            "fixed_steps": [
+              0.004,
+              0.002
+            ]
+          },
+          {
+            "name": "AdaptiveTSSBN",
+            "mode": "adaptive",
+            "status": "current_pass",
+            "maximum_steps": [
+              0.004,
+              0.002
+            ],
+            "controller_enabled": true
+          }
+        ],
+        "last_verified": "2026-10-26",
+        "evidence": [
+          {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\default.xml",
+            "sha256": "063133bfc8c52a7ef172fd584d2db63c6d27885cc4291181c82132524c1fcf3d",
+            "kind": "current_run"
+          }
+        ],
+        "legacy_test_bindings": [
+          "AxialDynamicsTest.NewmarkMatchesConsistentMassOscillationAndConverges",
+          "AxialDynamicsTest.RungeKutta4MatchesConsistentMassOscillationAndConverges",
+          "AxialDynamicsTest.TssbnMatchesConsistentMassOscillationAndConvergesWithStepCap"
+        ],
+        "validation_scope": "一致质量约化SDOF精确时程；不是连续杆波动解。"
+      },
+      "test_bindings": [
+        "AxialOscillation.NewmarkFixed",
+        "AxialOscillation.Rk4Fixed",
+        "AxialOscillation.TssbnAdaptive"
+      ],
+      "current_evidence": {
+        "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+        "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+        "kind": "final_post_move_default_run",
+        "record_phase": "post_directory_restructure",
+        "record_stage": "final_runner_guard",
+        "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+        "test_bindings": [
+          "AxialOscillation.NewmarkFixed",
+          "AxialOscillation.Rk4Fixed",
+          "AxialOscillation.TssbnAdaptive"
+        ]
+      },
+      "record_stage": "final_runner_guard",
+      "last_executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+    },
+    {
+      "id": "three-element-rod-motion",
+      "title": "三单元杆微幅与非线性轴向运动",
+      "analysis": "dynamic",
+      "registration": "formal",
+      "execution": "default",
+      "status": "current_pass",
+      "source_files": [
+        "YQYTests/Dynamics/TrussVibration/TrussVibrationTest.cpp"
+      ],
+      "data": [
+        "YQYTests/TestModels/Dynamics/TrussVibration",
+        "YQYTests/TestModels/Support/AlgorithmPlans/AdaptiveNewmark/truss-cable-plan.json",
+        "YQYTests/TestModels/Support/AlgorithmPlans/RungeKuttaDynamics/truss-cable-plan.json",
+        "YQYTests/TestModels/Support/AlgorithmPlans/TssbnDynamics/truss-cable-plan.json"
+      ],
+      "conditions": [
+        {
+          "id": "small",
+          "input": "small.bdf"
+        },
+        {
+          "id": "nonlinear",
+          "input": "nonlinear.bdf"
+        }
+      ],
+      "algorithms": [
+        "Newmark"
+      ],
+      "algorithm_records": [
+        {
+          "name": "Newmark",
+          "mode": "fixed",
+          "status": "current_pass",
+          "fixed_steps": [
+            0.01,
+            0.005,
+            0.0025
+          ],
+          "conditions": [
+            "small",
+            "nonlinear"
+          ],
+          "record_phase": "post_directory_restructure",
+          "test_bindings": [
+            "TrussVibration.NewmarkFixed"
+          ],
+          "evidence": [
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default.xml",
+              "sha256": "2e98de4017fd01362b52a547c3b4cc3c49bf48fd6da7564fb58dffc29b99adba",
+              "kind": "post_move_default_run",
+              "record_phase": "post_directory_restructure",
+              "test_bindings": [
+                "TrussVibration.NewmarkFixed"
+              ]
+            },
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+              "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+              "kind": "final_post_move_default_run",
+              "record_phase": "post_directory_restructure",
+              "record_stage": "final_runner_guard",
+              "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+              "test_bindings": [
+                "TrussVibration.NewmarkFixed"
+              ]
+            }
+          ],
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+          "current_evidence": {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+            "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+            "kind": "final_post_move_default_run",
+            "record_phase": "post_directory_restructure",
+            "record_stage": "final_runner_guard",
+            "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+            "test_bindings": [
+              "TrussVibration.NewmarkFixed"
+            ]
+          }
+        }
+      ],
+      "available_algorithms_unassessed": [
+        "AdaptiveNewmark",
+        "RK4",
+        "AdaptiveRK4",
+        "AdaptiveTSSBN",
+        "ReferenceTSSBN"
+      ],
+      "reference": {
+        "kind": "independent_matched_ode_plus_linear_modes",
+        "scope": "独立DOP853与线性模态；Abaqus公开几何的对数应变/一致质量派生题，不是官方线性集中质量原题逐数值复现。"
+      },
+      "validation_scope": "独立DOP853与线性模态；Abaqus公开几何的对数应变/一致质量派生题，不是官方线性集中质量原题逐数值复现。",
+      "evidence": [
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\default.xml",
+          "sha256": "063133bfc8c52a7ef172fd584d2db63c6d27885cc4291181c82132524c1fcf3d",
+          "kind": "current_run"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default.xml",
+          "sha256": "2e98de4017fd01362b52a547c3b4cc3c49bf48fd6da7564fb58dffc29b99adba",
+          "kind": "post_move_default_run",
+          "record_phase": "post_directory_restructure",
+          "test_bindings": [
+            "TrussVibration.NewmarkFixed"
+          ]
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+          "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+          "kind": "final_post_move_default_run",
+          "record_phase": "post_directory_restructure",
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+          "test_bindings": [
+            "TrussVibration.NewmarkFixed"
+          ]
+        }
+      ],
+      "last_verified": "2026-10-26",
+      "record_phase": "post_directory_restructure",
+      "legacy_test_bindings": [
+        "NewmarkStructuralTest.TrussThreeElementFullHistoryAndSecondOrder"
+      ],
+      "notes": "参考reference.json与validation-plan.json留在物理case；三算法计划共享文件不能搬走一份就断其他case。其他算法available不代表当前严格数值通过。",
+      "pre_move_record": {
+        "record_phase": "before_directory_restructure; post-move rerun not yet claimed",
+        "status": "current_pass",
+        "registration": "formal",
+        "execution": "default",
+        "algorithms": [
+          "Newmark"
+        ],
+        "algorithm_records": [
+          {
+            "name": "Newmark",
+            "mode": "fixed",
+            "status": "current_pass",
+            "fixed_steps": [
+              0.01,
+              0.005,
+              0.0025
+            ],
+            "conditions": [
+              "small",
+              "nonlinear"
+            ]
+          }
+        ],
+        "last_verified": "2026-10-26",
+        "evidence": [
+          {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\default.xml",
+            "sha256": "063133bfc8c52a7ef172fd584d2db63c6d27885cc4291181c82132524c1fcf3d",
+            "kind": "current_run"
+          }
+        ],
+        "legacy_test_bindings": [
+          "NewmarkStructuralTest.TrussThreeElementFullHistoryAndSecondOrder"
+        ],
+        "validation_scope": "独立DOP853与线性模态；Abaqus公开几何的对数应变/一致质量派生题，不是官方线性集中质量原题逐数值复现。"
+      },
+      "test_bindings": [
+        "TrussVibration.NewmarkFixed"
+      ],
+      "current_evidence": {
+        "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+        "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+        "kind": "final_post_move_default_run",
+        "record_phase": "post_directory_restructure",
+        "record_stage": "final_runner_guard",
+        "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+        "test_bindings": [
+          "TrussVibration.NewmarkFixed"
+        ]
+      },
+      "record_stage": "final_runner_guard",
+      "last_executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+    },
+    {
+      "id": "prestressed-cable-transverse",
+      "title": "预张紧十三单元索横振",
+      "analysis": "dynamic",
+      "registration": "formal",
+      "execution": "explicit",
+      "status": "blocked_missing_input",
+      "source_files": [
+        "YQYTests/Dynamics/CableVibration/CableVibrationTest.cpp"
+      ],
+      "data": [
+        "YQYTests/TestModels/Dynamics/CableVibration/TautString.bdf",
+        "YQYTests/TestModels/Dynamics/CableVibration/taut-string-reference.csv",
+        "YQYTests/TestModels/Dynamics/CableVibration/validation-plan.json"
+      ],
+      "conditions": [
+        {
+          "id": "taut-string",
+          "elements": 13,
+          "input": "TautString.bdf"
+        }
+      ],
+      "algorithms": [
+        "Newmark"
+      ],
+      "historical_algorithm_records": [
+        {
+          "name": "Newmark",
+          "mode": "fixed",
+          "status": "current_pass",
+          "record_phase": "post_directory_restructure",
+          "test_bindings": [
+            "PrestressedCable.NewmarkFixed"
+          ],
+          "evidence": [
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default.xml",
+              "sha256": "2e98de4017fd01362b52a547c3b4cc3c49bf48fd6da7564fb58dffc29b99adba",
+              "kind": "post_move_default_run",
+              "record_phase": "post_directory_restructure",
+              "test_bindings": [
+                "PrestressedCable.NewmarkFixed"
+              ]
+            },
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+              "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+              "kind": "final_post_move_default_run",
+              "record_phase": "post_directory_restructure",
+              "record_stage": "final_runner_guard",
+              "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+              "test_bindings": [
+                "PrestressedCable.NewmarkFixed"
+              ]
+            }
+          ],
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+          "current_evidence": {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+            "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+            "kind": "final_post_move_default_run",
+            "record_phase": "post_directory_restructure",
+            "record_stage": "final_runner_guard",
+            "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+            "test_bindings": [
+              "PrestressedCable.NewmarkFixed"
+            ]
+          }
+        }
+      ],
+      "available_algorithms_unassessed": [
+        "AdaptiveNewmark",
+        "RK4",
+        "AdaptiveRK4",
+        "AdaptiveTSSBN",
+        "ReferenceTSSBN"
+      ],
+      "reference": {
+        "kind": "independent_matched_ode_and_linearized_mode",
+        "scope": "独立工程应变仅受拉索、一致质量DOP853；预拉平衡和横向模态独立检查。"
+      },
+      "validation_scope": "独立工程应变仅受拉索、一致质量DOP853；预拉平衡和横向模态独立检查。",
+      "historical_evidence": [
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\default.xml",
+          "sha256": "063133bfc8c52a7ef172fd584d2db63c6d27885cc4291181c82132524c1fcf3d",
+          "kind": "current_run"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default.xml",
+          "sha256": "2e98de4017fd01362b52a547c3b4cc3c49bf48fd6da7564fb58dffc29b99adba",
+          "kind": "post_move_default_run",
+          "record_phase": "post_directory_restructure",
+          "test_bindings": [
+            "PrestressedCable.NewmarkFixed"
+          ]
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+          "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+          "kind": "final_post_move_default_run",
+          "record_phase": "post_directory_restructure",
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+          "test_bindings": [
+            "PrestressedCable.NewmarkFixed"
+          ]
+        }
+      ],
+      "last_verified": "2026-10-26",
+      "historical_record_phase": "post_directory_restructure",
+      "legacy_test_bindings": [
+        "NewmarkRealCable.PrestressedTransverseThreeLevels"
+      ],
+      "notes": "2026-10-29 按用户要求删除默认 GoogleTest PrestressedCable.NewmarkFixed；两项索算例共用的显式 CLI 仍保留，但缺少原始模型、独立参考和验收计划，当前不能执行。historical_* 和 pre_move_record 保留 2026-10-26 的原始证据与当时状态，不代表当前通过；删除前的缺输入失败记录保持不变。",
+      "pre_move_record": {
+        "record_phase": "before_directory_restructure; post-move rerun not yet claimed",
+        "status": "current_pass",
+        "registration": "formal",
+        "execution": "default",
+        "algorithms": [
+          "Newmark"
+        ],
+        "algorithm_records": [
+          {
+            "name": "Newmark",
+            "mode": "fixed",
+            "status": "current_pass"
+          }
+        ],
+        "last_verified": "2026-10-26",
+        "evidence": [
+          {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\default.xml",
+            "sha256": "063133bfc8c52a7ef172fd584d2db63c6d27885cc4291181c82132524c1fcf3d",
+            "kind": "current_run"
+          }
+        ],
+        "legacy_test_bindings": [
+          "NewmarkRealCable.PrestressedTransverseThreeLevels"
+        ],
+        "validation_scope": "独立工程应变仅受拉索、一致质量DOP853；预拉平衡和横向模态独立检查。"
+      },
+      "historical_current_evidence": {
+        "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+        "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+        "kind": "final_post_move_default_run",
+        "record_phase": "post_directory_restructure",
+        "record_stage": "final_runner_guard",
+        "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+        "test_bindings": [
+          "PrestressedCable.NewmarkFixed"
+        ]
+      },
+      "historical_record_stage": "final_runner_guard",
+      "last_executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+    },
+    {
+      "id": "single-cable-large-transverse-motion",
+      "title": "单索大横移自由振动",
+      "analysis": "dynamic",
+      "registration": "formal",
+      "execution": "explicit",
+      "status": "blocked_missing_input",
+      "source_files": [
+        "YQYTests/Dynamics/CableVibration/CableVibrationTest.cpp"
+      ],
+      "data": [
+        "YQYTests/TestModels/Dynamics/CableVibration/NonlinearCable.bdf",
+        "YQYTests/TestModels/Dynamics/CableVibration/nonlinear-reference.csv",
+        "YQYTests/TestModels/Dynamics/CableVibration/validation-plan.json"
+      ],
+      "conditions": [
+        {
+          "id": "nonlinear",
+          "input": "NonlinearCable.bdf"
+        }
+      ],
+      "algorithms": [
+        "Newmark"
+      ],
+      "historical_algorithm_records": [
+        {
+          "name": "Newmark",
+          "mode": "fixed",
+          "status": "current_pass",
+          "record_phase": "post_directory_restructure",
+          "test_bindings": [
+            "NonlinearCable.NewmarkFixed"
+          ],
+          "evidence": [
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default.xml",
+              "sha256": "2e98de4017fd01362b52a547c3b4cc3c49bf48fd6da7564fb58dffc29b99adba",
+              "kind": "post_move_default_run",
+              "record_phase": "post_directory_restructure",
+              "test_bindings": [
+                "NonlinearCable.NewmarkFixed"
+              ]
+            },
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+              "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+              "kind": "final_post_move_default_run",
+              "record_phase": "post_directory_restructure",
+              "record_stage": "final_runner_guard",
+              "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+              "test_bindings": [
+                "NonlinearCable.NewmarkFixed"
+              ]
+            }
+          ],
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+          "current_evidence": {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+            "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+            "kind": "final_post_move_default_run",
+            "record_phase": "post_directory_restructure",
+            "record_stage": "final_runner_guard",
+            "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+            "test_bindings": [
+              "NonlinearCable.NewmarkFixed"
+            ]
+          }
+        }
+      ],
+      "available_algorithms_unassessed": [
+        "AdaptiveNewmark",
+        "RK4",
+        "AdaptiveRK4",
+        "AdaptiveTSSBN",
+        "ReferenceTSSBN"
+      ],
+      "reference": {
+        "kind": "independent_nonlinear_energy_ode",
+        "scope": "初始横移为长度10%，恢复力偏离线性超过30%；独立非线性周期与全q/v/a参考。"
+      },
+      "validation_scope": "初始横移为长度10%，恢复力偏离线性超过30%；独立非线性周期与全q/v/a参考。",
+      "historical_evidence": [
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\default.xml",
+          "sha256": "063133bfc8c52a7ef172fd584d2db63c6d27885cc4291181c82132524c1fcf3d",
+          "kind": "current_run"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default.xml",
+          "sha256": "2e98de4017fd01362b52a547c3b4cc3c49bf48fd6da7564fb58dffc29b99adba",
+          "kind": "post_move_default_run",
+          "record_phase": "post_directory_restructure",
+          "test_bindings": [
+            "NonlinearCable.NewmarkFixed"
+          ]
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+          "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+          "kind": "final_post_move_default_run",
+          "record_phase": "post_directory_restructure",
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+          "test_bindings": [
+            "NonlinearCable.NewmarkFixed"
+          ]
+        }
+      ],
+      "last_verified": "2026-10-26",
+      "historical_record_phase": "post_directory_restructure",
+      "legacy_test_bindings": [
+        "NewmarkRealCable.NonlinearTransverseThreeLevels"
+      ],
+      "notes": "2026-10-29 按用户要求删除默认 GoogleTest NonlinearCable.NewmarkFixed；两项索算例共用的显式 CLI 仍保留，但缺少原始模型、独立参考和验收计划，当前不能执行。historical_* 和 pre_move_record 保留 2026-10-26 的原始证据与当时状态，不代表当前通过；删除前的缺输入失败记录保持不变。",
+      "pre_move_record": {
+        "record_phase": "before_directory_restructure; post-move rerun not yet claimed",
+        "status": "current_pass",
+        "registration": "formal",
+        "execution": "default",
+        "algorithms": [
+          "Newmark"
+        ],
+        "algorithm_records": [
+          {
+            "name": "Newmark",
+            "mode": "fixed",
+            "status": "current_pass"
+          }
+        ],
+        "last_verified": "2026-10-26",
+        "evidence": [
+          {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\default.xml",
+            "sha256": "063133bfc8c52a7ef172fd584d2db63c6d27885cc4291181c82132524c1fcf3d",
+            "kind": "current_run"
+          }
+        ],
+        "legacy_test_bindings": [
+          "NewmarkRealCable.NonlinearTransverseThreeLevels"
+        ],
+        "validation_scope": "初始横移为长度10%，恢复力偏离线性超过30%；独立非线性周期与全q/v/a参考。"
+      },
+      "historical_current_evidence": {
+        "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+        "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+        "kind": "final_post_move_default_run",
+        "record_phase": "post_directory_restructure",
+        "record_stage": "final_runner_guard",
+        "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+        "test_bindings": [
+          "NonlinearCable.NewmarkFixed"
+        ]
+      },
+      "historical_record_stage": "final_runner_guard",
+      "last_executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+    },
+    {
+      "id": "beam-small-amplitude-bending",
+      "title": "CR梁微幅弯曲与阻尼",
+      "analysis": "dynamic",
+      "registration": "formal",
+      "execution": "default",
+      "status": "current_pass",
+      "source_files": [
+        "YQYTests/Dynamics/PlanarBeam/SmallAmplitudeTest.cpp"
+      ],
+      "data": [
+        "YQYTests/TestModels/Dynamics/PlanarBeam/SmallAmplitude",
+        "YQYTests/TestModels/Support/AlgorithmPlans/AdaptiveNewmark/beam-plan.json",
+        "YQYTests/TestModels/Support/AlgorithmPlans/RungeKuttaDynamics/beam-plan.json"
+      ],
+      "conditions": [
+        {
+          "id": "undamped",
+          "damping_ratio": 0
+        },
+        {
+          "id": "modal-damped",
+          "damping_ratio": 0.02
+        }
+      ],
+      "algorithms": [
+        "Newmark"
+      ],
+      "algorithm_records": [
+        {
+          "name": "Newmark",
+          "mode": "fixed",
+          "status": "current_pass",
+          "fixed_step_counts_per_condition": [
+            240,
+            480,
+            960
+          ],
+          "beta": 0.25,
+          "gamma": 0.5,
+          "record_phase": "post_directory_restructure",
+          "test_bindings": [
+            "PlanarBeamSmallAmplitude.NewmarkFixed"
+          ],
+          "evidence": [
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default.xml",
+              "sha256": "2e98de4017fd01362b52a547c3b4cc3c49bf48fd6da7564fb58dffc29b99adba",
+              "kind": "post_move_default_run",
+              "record_phase": "post_directory_restructure",
+              "test_bindings": [
+                "PlanarBeamSmallAmplitude.NewmarkFixed"
+              ]
+            },
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+              "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+              "kind": "final_post_move_default_run",
+              "record_phase": "post_directory_restructure",
+              "record_stage": "final_runner_guard",
+              "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+              "test_bindings": [
+                "PlanarBeamSmallAmplitude.NewmarkFixed"
+              ]
+            }
+          ],
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+          "current_evidence": {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+            "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+            "kind": "final_post_move_default_run",
+            "record_phase": "post_directory_restructure",
+            "record_stage": "final_runner_guard",
+            "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+            "test_bindings": [
+              "PlanarBeamSmallAmplitude.NewmarkFixed"
+            ]
+          }
+        }
+      ],
+      "available_algorithms_unassessed": [
+        "AdaptiveNewmark",
+        "RK4",
+        "AdaptiveRK4"
+      ],
+      "reference": {
+        "kind": "analytical_matched_semidiscrete",
+        "scope": "独立2DOF线性质量/刚度/阻尼和闭式时程；不是Code_Aster原网格/原时程复现。"
+      },
+      "validation_scope": "独立2DOF线性质量/刚度/阻尼和闭式时程；不是Code_Aster原网格/原时程复现。",
+      "evidence": [
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\default.xml",
+          "sha256": "063133bfc8c52a7ef172fd584d2db63c6d27885cc4291181c82132524c1fcf3d",
+          "kind": "current_run"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\micro\\summary.json",
+          "sha256": "5cb259b3c2e4f1fc25d453bc5088535d58d9ec4ff187d40c3cf47a1b4c200184",
+          "kind": "current_run"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\independent-audit\\report.json",
+          "sha256": "d2fb97fcb78f27fe67e34b62839eb3f52c885571f58adbd056a47481d325e0ae",
+          "kind": "current_run"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default.xml",
+          "sha256": "2e98de4017fd01362b52a547c3b4cc3c49bf48fd6da7564fb58dffc29b99adba",
+          "kind": "post_move_default_run",
+          "record_phase": "post_directory_restructure",
+          "test_bindings": [
+            "PlanarBeamSmallAmplitude.NewmarkFixed"
+          ]
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\micro\\summary.json",
+          "sha256": "325f7dc91af72e8a371ec2c31fe1832470bfb7b07be5a9a0197c39d6d92d0d8e",
+          "kind": "post_move_explicit_full_suite",
+          "record_phase": "post_directory_restructure"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\micro-process.json",
+          "sha256": "3d27c59c725c802cc23bf7e5eaaa0ad5f4612a2e513e63faea1d44b369e20888",
+          "kind": "post_move_process_exit",
+          "record_phase": "post_directory_restructure"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\independent-audit\\report.json",
+          "sha256": "ac531638312b1e9b19b6df1b72711765b17cac6fb308d61eab97392aa789e71b",
+          "kind": "post_move_independent_csv_audit",
+          "record_phase": "post_directory_restructure"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\independent-audit\\pre-post-comparison.json",
+          "sha256": "c7fbb1b28075dbde8812e37155c93c585634090d6d70d445a5ecaea1bdfe7255",
+          "kind": "pre_post_migration_numeric_comparison",
+          "record_phase": "post_directory_restructure"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+          "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+          "kind": "final_post_move_default_run",
+          "record_phase": "post_directory_restructure",
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+          "test_bindings": [
+            "PlanarBeamSmallAmplitude.NewmarkFixed"
+          ]
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\micro-final\\summary.json",
+          "sha256": "d4c1a431bda5f9b65c5f162cc5efc29d7677472e1e7434dd3677a608876edfcd",
+          "kind": "final_post_move_explicit_full_suite",
+          "record_phase": "post_directory_restructure",
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\micro-final-process.json",
+          "sha256": "75876e0e3f497cad271143ba85bd4f36569cd81195509043f860dab14265b716",
+          "kind": "final_post_move_process_exit",
+          "record_phase": "post_directory_restructure",
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\final-independent-audit\\report.json",
+          "sha256": "018697b294ccc0fb515e0c4fdfc69044baac9ddb50128067325f91630d2222bc",
+          "kind": "final_post_move_independent_csv_audit",
+          "record_phase": "post_directory_restructure",
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\final-independent-audit\\initial-final-comparison.json",
+          "sha256": "366bd0cdfcafd187f062d5b42cd953bf0371b36a535c4ae4a6fdb85933bd39c3",
+          "kind": "initial_final_runner_numeric_comparison",
+          "record_phase": "post_directory_restructure",
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+        }
+      ],
+      "last_verified": "2026-10-26",
+      "record_phase": "post_directory_restructure",
+      "legacy_test_bindings": [
+        "NewmarkProductionBeamTest.CoupledBendingAndModalDamping"
+      ],
+      "notes": "2026-10-26当前exe另有micro/summary.json与独立CSV复核PASS。普通Newmark和显式RK的激励模态/计划不同，必须登记子条件，不混成同一输入算法对比。",
+      "pre_move_record": {
+        "record_phase": "before_directory_restructure; post-move rerun not yet claimed",
+        "status": "current_pass",
+        "registration": "formal",
+        "execution": "default",
+        "algorithms": [
+          "Newmark"
+        ],
+        "algorithm_records": [
+          {
+            "name": "Newmark",
+            "mode": "fixed",
+            "status": "current_pass",
+            "fixed_step_counts_per_condition": [
+              240,
+              480,
+              960
+            ],
+            "beta": 0.25,
+            "gamma": 0.5
+          }
+        ],
+        "last_verified": "2026-10-26",
+        "evidence": [
+          {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\default.xml",
+            "sha256": "063133bfc8c52a7ef172fd584d2db63c6d27885cc4291181c82132524c1fcf3d",
+            "kind": "current_run"
+          },
+          {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\micro\\summary.json",
+            "sha256": "5cb259b3c2e4f1fc25d453bc5088535d58d9ec4ff187d40c3cf47a1b4c200184",
+            "kind": "current_run"
+          },
+          {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\independent-audit\\report.json",
+            "sha256": "d2fb97fcb78f27fe67e34b62839eb3f52c885571f58adbd056a47481d325e0ae",
+            "kind": "current_run"
+          }
+        ],
+        "legacy_test_bindings": [
+          "NewmarkProductionBeamTest.CoupledBendingAndModalDamping"
+        ],
+        "validation_scope": "独立2DOF线性质量/刚度/阻尼和闭式时程；不是Code_Aster原网格/原时程复现。"
+      },
+      "test_bindings": [
+        "PlanarBeamSmallAmplitude.NewmarkFixed"
+      ],
+      "precision_evidence_scope": "Internal precision count unavailable; full retained process log has zero newmark_precision_limited events; every accepted production residual meets the original normal gate.",
+      "current_evidence": {
+        "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+        "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+        "kind": "final_post_move_default_run",
+        "record_phase": "post_directory_restructure",
+        "record_stage": "final_runner_guard",
+        "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+        "test_bindings": [
+          "PlanarBeamSmallAmplitude.NewmarkFixed"
+        ]
+      },
+      "record_stage": "final_runner_guard",
+      "last_executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+    },
+    {
+      "id": "beam-finite-amplitude-planar-bending",
+      "title": "CR梁有限幅值平面弯曲",
+      "analysis": "dynamic",
+      "registration": "formal",
+      "execution": "default",
+      "status": "current_pass",
+      "source_files": [
+        "YQYTests/Dynamics/PlanarBeam/FiniteAmplitudeTest.cpp"
+      ],
+      "data": [
+        "YQYTests/TestModels/Dynamics/PlanarBeam/FiniteAmplitude",
+        "YQYTests/TestModels/Support/AlgorithmPlans/AdaptiveNewmark/beam-plan.json",
+        "YQYTests/TestModels/Support/AlgorithmPlans/RungeKuttaDynamics/beam-plan.json"
+      ],
+      "conditions": [
+        {
+          "id": "free-motion",
+          "initial_q_y_rz": [
+            0.2,
+            0
+          ],
+          "initial_v_y_rz": [
+            0,
+            0
+          ]
+        }
+      ],
+      "algorithms": [
+        "Newmark"
+      ],
+      "algorithm_records": [
+        {
+          "name": "Newmark",
+          "mode": "fixed",
+          "status": "current_pass",
+          "fixed_step_counts": [
+            256,
+            512,
+            1024
+          ],
+          "beta": 0.25,
+          "gamma": 0.5,
+          "record_phase": "post_directory_restructure",
+          "test_bindings": [
+            "PlanarBeamFiniteAmplitude.NewmarkFixed"
+          ],
+          "evidence": [
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default.xml",
+              "sha256": "2e98de4017fd01362b52a547c3b4cc3c49bf48fd6da7564fb58dffc29b99adba",
+              "kind": "post_move_default_run",
+              "record_phase": "post_directory_restructure",
+              "test_bindings": [
+                "PlanarBeamFiniteAmplitude.NewmarkFixed"
+              ]
+            },
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+              "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+              "kind": "final_post_move_default_run",
+              "record_phase": "post_directory_restructure",
+              "record_stage": "final_runner_guard",
+              "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+              "test_bindings": [
+                "PlanarBeamFiniteAmplitude.NewmarkFixed"
+              ]
+            }
+          ],
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+          "current_evidence": {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+            "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+            "kind": "final_post_move_default_run",
+            "record_phase": "post_directory_restructure",
+            "record_stage": "final_runner_guard",
+            "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+            "test_bindings": [
+              "PlanarBeamFiniteAmplitude.NewmarkFixed"
+            ]
+          }
+        }
+      ],
+      "available_algorithms_unassessed": [
+        "AdaptiveNewmark",
+        "RK4",
+        "AdaptiveRK4"
+      ],
+      "reference": {
+        "kind": "independent_matched_nonlinear_ode",
+        "scope": "独立势能方程DOP853；单2m梁、y0=.2、两最高线性化频率周期的派生题，不是文献原题时程。"
+      },
+      "validation_scope": "独立势能方程DOP853；单2m梁、y0=.2、两最高线性化频率周期的派生题，不是文献原题时程。",
+      "evidence": [
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\default.xml",
+          "sha256": "063133bfc8c52a7ef172fd584d2db63c6d27885cc4291181c82132524c1fcf3d",
+          "kind": "current_run"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\nonlinear\\summary.json",
+          "sha256": "f0df48ed8c612baef316550772599a493841ea7ab5928c312a4c85c6561ae683",
+          "kind": "current_run"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\independent-audit\\report.json",
+          "sha256": "d2fb97fcb78f27fe67e34b62839eb3f52c885571f58adbd056a47481d325e0ae",
+          "kind": "current_run"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default.xml",
+          "sha256": "2e98de4017fd01362b52a547c3b4cc3c49bf48fd6da7564fb58dffc29b99adba",
+          "kind": "post_move_default_run",
+          "record_phase": "post_directory_restructure",
+          "test_bindings": [
+            "PlanarBeamFiniteAmplitude.NewmarkFixed"
+          ]
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\nonlinear\\summary.json",
+          "sha256": "24a017d614884aa25fcceae66bc2dd098070b685a1c470118e69ec1888c6a6a9",
+          "kind": "post_move_explicit_full_suite",
+          "record_phase": "post_directory_restructure"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\nonlinear-process.json",
+          "sha256": "bf61b8fb29f7f759dabac5cfb04e81259e86c47b99a566340849c4f9736edbac",
+          "kind": "post_move_process_exit",
+          "record_phase": "post_directory_restructure"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\independent-audit\\report.json",
+          "sha256": "ac531638312b1e9b19b6df1b72711765b17cac6fb308d61eab97392aa789e71b",
+          "kind": "post_move_independent_csv_audit",
+          "record_phase": "post_directory_restructure"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\independent-audit\\pre-post-comparison.json",
+          "sha256": "c7fbb1b28075dbde8812e37155c93c585634090d6d70d445a5ecaea1bdfe7255",
+          "kind": "pre_post_migration_numeric_comparison",
+          "record_phase": "post_directory_restructure"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+          "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+          "kind": "final_post_move_default_run",
+          "record_phase": "post_directory_restructure",
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+          "test_bindings": [
+            "PlanarBeamFiniteAmplitude.NewmarkFixed"
+          ]
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\nonlinear-final\\summary.json",
+          "sha256": "47278886e695f5635f23380c3439f79ef56ee210063d3abeb87a88ea79bce639",
+          "kind": "final_post_move_explicit_full_suite",
+          "record_phase": "post_directory_restructure",
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\nonlinear-final-process.json",
+          "sha256": "75876e0e3f497cad271143ba85bd4f36569cd81195509043f860dab14265b716",
+          "kind": "final_post_move_process_exit",
+          "record_phase": "post_directory_restructure",
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\final-independent-audit\\report.json",
+          "sha256": "018697b294ccc0fb515e0c4fdfc69044baac9ddb50128067325f91630d2222bc",
+          "kind": "final_post_move_independent_csv_audit",
+          "record_phase": "post_directory_restructure",
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\final-independent-audit\\initial-final-comparison.json",
+          "sha256": "366bd0cdfcafd187f062d5b42cd953bf0371b36a535c4ae4a6fdb85933bd39c3",
+          "kind": "initial_final_runner_numeric_comparison",
+          "record_phase": "post_directory_restructure",
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+        }
+      ],
+      "last_verified": "2026-10-26",
+      "record_phase": "post_directory_restructure",
+      "legacy_test_bindings": [
+        "NewmarkProductionBeamTest.NonlinearFiniteAmplitudePlanarHistory"
+      ],
+      "notes": "同时间Hermite参考修复已保留；NonlinearReferenceUsesActualAcceptedTime是参考工具单测，不另计物理case。当前独立CSV审计PASS。",
+      "pre_move_record": {
+        "record_phase": "before_directory_restructure; post-move rerun not yet claimed",
+        "status": "current_pass",
+        "registration": "formal",
+        "execution": "default",
+        "algorithms": [
+          "Newmark"
+        ],
+        "algorithm_records": [
+          {
+            "name": "Newmark",
+            "mode": "fixed",
+            "status": "current_pass",
+            "fixed_step_counts": [
+              256,
+              512,
+              1024
+            ],
+            "beta": 0.25,
+            "gamma": 0.5
+          }
+        ],
+        "last_verified": "2026-10-26",
+        "evidence": [
+          {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\default.xml",
+            "sha256": "063133bfc8c52a7ef172fd584d2db63c6d27885cc4291181c82132524c1fcf3d",
+            "kind": "current_run"
+          },
+          {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\nonlinear\\summary.json",
+            "sha256": "f0df48ed8c612baef316550772599a493841ea7ab5928c312a4c85c6561ae683",
+            "kind": "current_run"
+          },
+          {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\independent-audit\\report.json",
+            "sha256": "d2fb97fcb78f27fe67e34b62839eb3f52c885571f58adbd056a47481d325e0ae",
+            "kind": "current_run"
+          }
+        ],
+        "legacy_test_bindings": [
+          "NewmarkProductionBeamTest.NonlinearFiniteAmplitudePlanarHistory"
+        ],
+        "validation_scope": "独立势能方程DOP853；单2m梁、y0=.2、两最高线性化频率周期的派生题，不是文献原题时程。"
+      },
+      "test_bindings": [
+        "PlanarBeamFiniteAmplitude.NewmarkFixed"
+      ],
+      "precision_evidence_scope": "Direct solver precision_limited_solves is zero at all three levels and retained process log has zero precision events.",
+      "current_evidence": {
+        "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+        "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+        "kind": "final_post_move_default_run",
+        "record_phase": "post_directory_restructure",
+        "record_stage": "final_runner_guard",
+        "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+        "test_bindings": [
+          "PlanarBeamFiniteAmplitude.NewmarkFixed"
+        ]
+      },
+      "record_stage": "final_runner_guard",
+      "last_executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+    },
+    {
+      "id": "forced-damped-and-plastic-oscillator",
+      "title": "Chopra受迫阻尼与弹塑性振子",
+      "analysis": "dynamic",
+      "registration": "formal",
+      "execution": "default",
+      "status": "current_pass",
+      "source_files": [
+        "YQYTests/Dynamics/Oscillators/OscillatorCases.cpp",
+        "YQYTests/Dynamics/Oscillators/OscillatorTests.cpp"
+      ],
+      "data": [
+        "YQYTests/TestModels/Dynamics/Oscillators/chopra",
+        "YQYTests/TestModels/Dynamics/Oscillators/regression-reference.json"
+      ],
+      "conditions": [
+        {
+          "id": "elastic-damped"
+        },
+        {
+          "id": "ideal-elastoplastic"
+        }
+      ],
+      "algorithms": [
+        "Newmark"
+      ],
+      "algorithm_records": [
+        {
+          "name": "Newmark",
+          "mode": "fixed",
+          "status": "current_pass",
+          "record_phase": "post_directory_restructure",
+          "test_bindings": [
+            "DampedOscillator.NewmarkFixed"
+          ],
+          "evidence": [
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default.xml",
+              "sha256": "2e98de4017fd01362b52a547c3b4cc3c49bf48fd6da7564fb58dffc29b99adba",
+              "kind": "post_move_default_run",
+              "record_phase": "post_directory_restructure",
+              "test_bindings": [
+                "DampedOscillator.NewmarkFixed"
+              ]
+            },
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+              "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+              "kind": "final_post_move_default_run",
+              "record_phase": "post_directory_restructure",
+              "record_stage": "final_runner_guard",
+              "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+              "test_bindings": [
+                "DampedOscillator.NewmarkFixed"
+              ]
+            }
+          ],
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+          "current_evidence": {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+            "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+            "kind": "final_post_move_default_run",
+            "record_phase": "post_directory_restructure",
+            "record_stage": "final_runner_guard",
+            "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+            "test_bindings": [
+              "DampedOscillator.NewmarkFixed"
+            ]
+          }
+        }
+      ],
+      "available_algorithms_unassessed": [],
+      "reference": {
+        "kind": "published_original_tables_and_independent_equations",
+        "scope": "Chopra例5.3--5.6原始参数/表与独立方程；物理SDOF/工厂积分器层，非完整有限元装配。"
+      },
+      "validation_scope": "Chopra例5.3--5.6原始参数/表与独立方程；物理SDOF/工厂积分器层，非完整有限元装配。",
+      "evidence": [
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\default.xml",
+          "sha256": "063133bfc8c52a7ef172fd584d2db63c6d27885cc4291181c82132524c1fcf3d",
+          "kind": "current_run"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default.xml",
+          "sha256": "2e98de4017fd01362b52a547c3b4cc3c49bf48fd6da7564fb58dffc29b99adba",
+          "kind": "post_move_default_run",
+          "record_phase": "post_directory_restructure",
+          "test_bindings": [
+            "DampedOscillator.NewmarkFixed"
+          ]
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+          "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+          "kind": "final_post_move_default_run",
+          "record_phase": "post_directory_restructure",
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+          "test_bindings": [
+            "DampedOscillator.NewmarkFixed"
+          ]
+        }
+      ],
+      "last_verified": "2026-10-26",
+      "record_phase": "post_directory_restructure",
+      "legacy_test_bindings": [
+        "NewmarkLiteratureTest.ChopraDampedElasticAndPlasticHistory"
+      ],
+      "notes": "建议登记为约化物理方程case，不能宣称真实杆索梁验证。",
+      "pre_move_record": {
+        "record_phase": "before_directory_restructure; post-move rerun not yet claimed",
+        "status": "current_pass",
+        "registration": "formal",
+        "execution": "default",
+        "algorithms": [
+          "Newmark"
+        ],
+        "algorithm_records": [
+          {
+            "name": "Newmark",
+            "mode": "fixed",
+            "status": "current_pass"
+          }
+        ],
+        "last_verified": "2026-10-26",
+        "evidence": [
+          {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\default.xml",
+            "sha256": "063133bfc8c52a7ef172fd584d2db63c6d27885cc4291181c82132524c1fcf3d",
+            "kind": "current_run"
+          }
+        ],
+        "legacy_test_bindings": [
+          "NewmarkLiteratureTest.ChopraDampedElasticAndPlasticHistory"
+        ],
+        "validation_scope": "Chopra例5.3--5.6原始参数/表与独立方程；物理SDOF/工厂积分器层，非完整有限元装配。"
+      },
+      "test_bindings": [
+        "DampedOscillator.NewmarkFixed"
+      ],
+      "current_evidence": {
+        "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+        "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+        "kind": "final_post_move_default_run",
+        "record_phase": "post_directory_restructure",
+        "record_stage": "final_runner_guard",
+        "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+        "test_bindings": [
+          "DampedOscillator.NewmarkFixed"
+        ]
+      },
+      "record_stage": "final_runner_guard",
+      "last_executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+    },
+    {
+      "id": "finite-amplitude-pendulum",
+      "title": "非线性单摆",
+      "analysis": "dynamic",
+      "registration": "formal",
+      "execution": "default",
+      "status": "current_pass",
+      "source_files": [
+        "YQYTests/Dynamics/Oscillators/OscillatorCases.cpp",
+        "YQYTests/Dynamics/Oscillators/OscillatorTests.cpp"
+      ],
+      "data": [
+        "YQYTests/TestModels/Dynamics/Oscillators/liang",
+        "YQYTests/TestModels/Dynamics/Oscillators/regression-reference.json"
+      ],
+      "conditions": [
+        {
+          "id": "small-angle",
+          "initial_angle_over_pi": 0.1
+        },
+        {
+          "id": "large-angle",
+          "initial_angle_over_pi": 0.5
+        }
+      ],
+      "algorithms": [
+        "Newmark"
+      ],
+      "algorithm_records": [
+        {
+          "name": "Newmark",
+          "mode": "fixed",
+          "status": "current_pass",
+          "record_phase": "post_directory_restructure",
+          "test_bindings": [
+            "NonlinearPendulum.NewmarkFixed"
+          ],
+          "evidence": [
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default.xml",
+              "sha256": "2e98de4017fd01362b52a547c3b4cc3c49bf48fd6da7564fb58dffc29b99adba",
+              "kind": "post_move_default_run",
+              "record_phase": "post_directory_restructure",
+              "test_bindings": [
+                "NonlinearPendulum.NewmarkFixed"
+              ]
+            },
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+              "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+              "kind": "final_post_move_default_run",
+              "record_phase": "post_directory_restructure",
+              "record_stage": "final_runner_guard",
+              "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+              "test_bindings": [
+                "NonlinearPendulum.NewmarkFixed"
+              ]
+            }
+          ],
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+          "current_evidence": {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+            "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+            "kind": "final_post_move_default_run",
+            "record_phase": "post_directory_restructure",
+            "record_stage": "final_runner_guard",
+            "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+            "test_bindings": [
+              "NonlinearPendulum.NewmarkFixed"
+            ]
+          }
+        }
+      ],
+      "available_algorithms_unassessed": [],
+      "reference": {
+        "kind": "published_indicators_and_independent_elliptic_solution",
+        "scope": "Liang/Mosalam原图指标、独立椭圆函数精确参考；约化单摆方程层，不替代生产MPC。"
+      },
+      "validation_scope": "Liang/Mosalam原图指标、独立椭圆函数精确参考；约化单摆方程层，不替代生产MPC。",
+      "evidence": [
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\default.xml",
+          "sha256": "063133bfc8c52a7ef172fd584d2db63c6d27885cc4291181c82132524c1fcf3d",
+          "kind": "current_run"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default.xml",
+          "sha256": "2e98de4017fd01362b52a547c3b4cc3c49bf48fd6da7564fb58dffc29b99adba",
+          "kind": "post_move_default_run",
+          "record_phase": "post_directory_restructure",
+          "test_bindings": [
+            "NonlinearPendulum.NewmarkFixed"
+          ]
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+          "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+          "kind": "final_post_move_default_run",
+          "record_phase": "post_directory_restructure",
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+          "test_bindings": [
+            "NonlinearPendulum.NewmarkFixed"
+          ]
+        }
+      ],
+      "last_verified": "2026-10-26",
+      "record_phase": "post_directory_restructure",
+      "legacy_test_bindings": [
+        "NewmarkLiteratureTest.LiangNonlinearPendulumSecondOrder"
+      ],
+      "notes": "与生产MPC平面摆是不同实现范围，应分别登记。",
+      "pre_move_record": {
+        "record_phase": "before_directory_restructure; post-move rerun not yet claimed",
+        "status": "current_pass",
+        "registration": "formal",
+        "execution": "default",
+        "algorithms": [
+          "Newmark"
+        ],
+        "algorithm_records": [
+          {
+            "name": "Newmark",
+            "mode": "fixed",
+            "status": "current_pass"
+          }
+        ],
+        "last_verified": "2026-10-26",
+        "evidence": [
+          {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\default.xml",
+            "sha256": "063133bfc8c52a7ef172fd584d2db63c6d27885cc4291181c82132524c1fcf3d",
+            "kind": "current_run"
+          }
+        ],
+        "legacy_test_bindings": [
+          "NewmarkLiteratureTest.LiangNonlinearPendulumSecondOrder"
+        ],
+        "validation_scope": "Liang/Mosalam原图指标、独立椭圆函数精确参考；约化单摆方程层，不替代生产MPC。"
+      },
+      "test_bindings": [
+        "NonlinearPendulum.NewmarkFixed"
+      ],
+      "current_evidence": {
+        "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+        "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+        "kind": "final_post_move_default_run",
+        "record_phase": "post_directory_restructure",
+        "record_stage": "final_runner_guard",
+        "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+        "test_bindings": [
+          "NonlinearPendulum.NewmarkFixed"
+        ]
+      },
+      "record_stage": "final_runner_guard",
+      "last_executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+    },
+    {
+      "id": "rayleigh-damped-free-decay",
+      "title": "Rayleigh阻尼振子自由衰减",
+      "analysis": "dynamic",
+      "registration": "formal",
+      "execution": "default",
+      "status": "current_pass",
+      "source_files": [
+        "YQYTests/Dynamics/DampedOscillator/RayleighDecayTest.cpp"
+      ],
+      "data": [
+        "YQYTests/TestModels/Dynamics/DampedOscillator"
+      ],
+      "conditions": [
+        {
+          "id": "mass-proportional"
+        },
+        {
+          "id": "stiffness-proportional"
+        },
+        {
+          "id": "combined"
+        }
+      ],
+      "algorithms": [
+        "ReferenceTSSBN"
+      ],
+      "algorithm_records": [
+        {
+          "name": "ReferenceTSSBN",
+          "mode": "adaptive",
+          "status": "current_pass",
+          "maximum_steps": [
+            0.01,
+            0.005,
+            0.0025,
+            0.00125
+          ],
+          "coefficient_paths": [
+            "explicit-local-coefficients",
+            "automatic-calibration"
+          ],
+          "controller_enabled": true,
+          "record_phase": "post_directory_restructure",
+          "test_bindings": [
+            "RayleighDecay.ReferenceTssbnAdaptive"
+          ],
+          "evidence": [
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default.xml",
+              "sha256": "2e98de4017fd01362b52a547c3b4cc3c49bf48fd6da7564fb58dffc29b99adba",
+              "kind": "post_move_default_run",
+              "record_phase": "post_directory_restructure",
+              "test_bindings": [
+                "RayleighDecay.ReferenceTssbnAdaptive"
+              ]
+            },
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+              "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+              "kind": "final_post_move_default_run",
+              "record_phase": "post_directory_restructure",
+              "record_stage": "final_runner_guard",
+              "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+              "test_bindings": [
+                "RayleighDecay.ReferenceTssbnAdaptive"
+              ]
+            }
+          ],
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+          "current_evidence": {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+            "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+            "kind": "final_post_move_default_run",
+            "record_phase": "post_directory_restructure",
+            "record_stage": "final_runner_guard",
+            "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+            "test_bindings": [
+              "RayleighDecay.ReferenceTssbnAdaptive"
+            ]
+          }
+        }
+      ],
+      "available_algorithms_unassessed": [],
+      "reference": {
+        "kind": "official_discrete_parameters_and_analytic_solution",
+        "scope": "Abaqus官方集中质量杆的SDOF参数与独立闭式时程；生产阻尼构造/工厂积分器级，不执行Abaqus，不是完整非线性索。"
+      },
+      "validation_scope": "Abaqus官方集中质量杆的SDOF参数与独立闭式时程；生产阻尼构造/工厂积分器级，不执行Abaqus，不是完整非线性索。",
+      "evidence": [
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\default.xml",
+          "sha256": "063133bfc8c52a7ef172fd584d2db63c6d27885cc4291181c82132524c1fcf3d",
+          "kind": "current_run"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default.xml",
+          "sha256": "2e98de4017fd01362b52a547c3b4cc3c49bf48fd6da7564fb58dffc29b99adba",
+          "kind": "post_move_default_run",
+          "record_phase": "post_directory_restructure",
+          "test_bindings": [
+            "RayleighDecay.ReferenceTssbnAdaptive"
+          ]
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+          "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+          "kind": "final_post_move_default_run",
+          "record_phase": "post_directory_restructure",
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+          "test_bindings": [
+            "RayleighDecay.ReferenceTssbnAdaptive"
+          ]
+        }
+      ],
+      "last_verified": "2026-10-26",
+      "record_phase": "post_directory_restructure",
+      "legacy_test_bindings": [
+        "DampedBenchmarkTest.AbaqusRayleighFreeDecayMatchesIndependentExactSolution"
+      ],
+      "notes": "局部系数与自动标定是两种实现路径；3工况×2路径×4上限=24运行，不能称24算例。用户若只要完整FE，放补充层而非主层。",
+      "pre_move_record": {
+        "record_phase": "before_directory_restructure; post-move rerun not yet claimed",
+        "status": "current_pass",
+        "registration": "formal",
+        "execution": "default",
+        "algorithms": [
+          "ReferenceTSSBN"
+        ],
+        "algorithm_records": [
+          {
+            "name": "ReferenceTSSBN",
+            "mode": "adaptive",
+            "status": "current_pass",
+            "maximum_steps": [
+              0.01,
+              0.005,
+              0.0025,
+              0.00125
+            ],
+            "coefficient_paths": [
+              "explicit-local-coefficients",
+              "automatic-calibration"
+            ],
+            "controller_enabled": true
+          }
+        ],
+        "last_verified": "2026-10-26",
+        "evidence": [
+          {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\default.xml",
+            "sha256": "063133bfc8c52a7ef172fd584d2db63c6d27885cc4291181c82132524c1fcf3d",
+            "kind": "current_run"
+          }
+        ],
+        "legacy_test_bindings": [
+          "DampedBenchmarkTest.AbaqusRayleighFreeDecayMatchesIndependentExactSolution"
+        ],
+        "validation_scope": "Abaqus官方集中质量杆的SDOF参数与独立闭式时程；生产阻尼构造/工厂积分器级，不执行Abaqus，不是完整非线性索。"
+      },
+      "test_bindings": [
+        "RayleighDecay.ReferenceTssbnAdaptive"
+      ],
+      "current_evidence": {
+        "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+        "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+        "kind": "final_post_move_default_run",
+        "record_phase": "post_directory_restructure",
+        "record_stage": "final_runner_guard",
+        "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+        "test_bindings": [
+          "RayleighDecay.ReferenceTssbnAdaptive"
+        ]
+      },
+      "record_stage": "final_runner_guard",
+      "last_executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+      "supplemental_checks": [
+        {
+          "id": "adaptive-velocity-tolerance-20261028",
+          "status": "pass",
+          "test_bindings": [
+            "RayleighDecay.AdaptiveVelocityTolerance"
+          ],
+          "algorithms": [
+            "AdaptiveNewmark",
+            "AdaptiveRungeKutta4",
+            "AdaptiveTSSBN",
+            "ReferenceTSSBN"
+          ],
+          "condition": "mass-proportional, duration 0.5; displacement atol 1000; velocity atol 0.1 and 0.001",
+          "reference": "same independent closed-form SDOF decay; integrator scope only",
+          "acceptance": "complete both runs; tightening velocity tolerance increases steps; normalized velocity error falls below 0.8 times coarse error and 0.01",
+          "runs": 8,
+          "evidence": {
+            "path": "C:/APP/VS/YQY_CAE/tmp/error-control-20261028/regression-final.xml",
+            "sha256": "2c68208c8054f0ec6cfcbcc2821c1ca7528764f18702106ce6ca694abafba24b"
+          },
+          "executable": {
+            "path": "C:/APP/VS/YQY_CAE/YQY/x64/Release/YQYTests.exe",
+            "sha256": "1936e2eae1dedc7c7e25c64576a8cdf7d863122a291ee38567b8beb84cdc0334"
+          },
+          "results": [
+            {
+              "algorithm": "AdaptiveNewmark",
+              "runs": [
+                {
+                  "velocity_absolute_tolerance": 0.1,
+                  "accepted_steps": 21,
+                  "maximum_normalized_velocity_error": 0.07442350367276324
+                },
+                {
+                  "velocity_absolute_tolerance": 0.001,
+                  "accepted_steps": 93,
+                  "maximum_normalized_velocity_error": 0.004095358316784017
+                }
+              ]
+            },
+            {
+              "algorithm": "AdaptiveRungeKutta4",
+              "runs": [
+                {
+                  "velocity_absolute_tolerance": 0.1,
+                  "accepted_steps": 11,
+                  "maximum_normalized_velocity_error": 0.010001030069203701
+                },
+                {
+                  "velocity_absolute_tolerance": 0.001,
+                  "accepted_steps": 22,
+                  "maximum_normalized_velocity_error": 0.000616507906290474
+                }
+              ]
+            },
+            {
+              "algorithm": "AdaptiveTSSBN",
+              "runs": [
+                {
+                  "velocity_absolute_tolerance": 0.1,
+                  "accepted_steps": 22,
+                  "maximum_normalized_velocity_error": 0.07131500732178428
+                },
+                {
+                  "velocity_absolute_tolerance": 0.001,
+                  "accepted_steps": 93,
+                  "maximum_normalized_velocity_error": 0.004159652501452244
+                }
+              ]
+            },
+            {
+              "algorithm": "ReferenceTSSBN",
+              "runs": [
+                {
+                  "velocity_absolute_tolerance": 0.1,
+                  "accepted_steps": 22,
+                  "maximum_normalized_velocity_error": 0.07228270128168574
+                },
+                {
+                  "velocity_absolute_tolerance": 0.001,
+                  "accepted_steps": 92,
+                  "maximum_normalized_velocity_error": 0.00420536539824622
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "adaptive-displacement-tolerance-20261028",
+          "status": "unassessed",
+          "test_bindings": [
+            "RayleighDecay.AdaptiveDisplacementTolerance"
+          ],
+          "algorithms": [
+            "AdaptiveNewmark",
+            "AdaptiveRungeKutta4",
+            "AdaptiveTSSBN",
+            "ReferenceTSSBN"
+          ],
+          "condition": "mass-proportional decay; duration 2.5; relative tolerance 1e-4/1e-6/1e-8; q_atol=0.01*rtol, v_atol=rtol, reference keeps factory binding",
+          "reference": "IndependentDecayReference closed-form scalar solution, same original SDOF constants",
+          "acceptance": "All complete and finite; maximum normalized displacement error decreases below 0.5 times preceding level and finest is below 0.001",
+          "runs": 12,
+          "scope": "Production factory integrators on the scalar physical model; not full spatial assembly."
+        }
+      ]
+    },
+    {
+      "id": "spatial-noncommuting-rigid-motion",
+      "title": "空间梁非交换刚体运动制造解",
+      "analysis": "dynamic",
+      "registration": "formal",
+      "execution": "explicit",
+      "status": "current_pass",
+      "source_files": [
+        "YQYTests/Dynamics/SpatialBeam/SpatialRigidMotionTest.cpp"
+      ],
+      "data": [
+        "YQYTests/TestModels/Dynamics/SpatialBeam/input.json",
+        "YQYTests/TestModels/Dynamics/SpatialBeam/validation-plan.json"
+      ],
+      "conditions": [
+        {
+          "id": "noncommuting-zyx",
+          "duration": 2.0
+        }
+      ],
+      "algorithms": [
+        "Newmark"
+      ],
+      "algorithm_records": [
+        {
+          "name": "Newmark",
+          "mode": "fixed",
+          "steps": [
+            0.02,
+            0.01,
+            0.005
+          ],
+          "status": "current_pass",
+          "record_phase": "post_directory_restructure",
+          "cli_bindings": [
+            "--verify-spatial-beam-dynamics <output-directory>"
+          ],
+          "evidence": [
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\spatial-manufactured-comparison.json",
+              "sha256": "91bd3dbe097d551725890193697b780524157ae75c323e55cf56c7d03686e044",
+              "kind": "post_move_independent_spatial_comparison",
+              "record_phase": "post_directory_restructure"
+            },
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\spatial-summary.json",
+              "sha256": "208a540de673ba5b6716dccd34465035a04106795a6053a3d1549e12e755ca7e",
+              "kind": "post_move_spatial_campaign",
+              "record_phase": "post_directory_restructure"
+            },
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\final-validation\\spatial-manufactured-comparison.json",
+              "sha256": "91bd3dbe097d551725890193697b780524157ae75c323e55cf56c7d03686e044",
+              "kind": "final_post_move_independent_spatial_comparison",
+              "record_phase": "post_directory_restructure",
+              "record_stage": "final_runner_guard",
+              "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+            },
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\final-validation\\spatial-summary.json",
+              "sha256": "ebe4d97b32b3277ef4b3b233407568a00ecabb24a84c8896eb5a773f5fd9187d",
+              "kind": "final_post_move_spatial_campaign",
+              "record_phase": "post_directory_restructure",
+              "record_stage": "final_runner_guard",
+              "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+            }
+          ],
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+          "current_evidence": {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\final-validation\\spatial-manufactured-comparison.json",
+            "sha256": "91bd3dbe097d551725890193697b780524157ae75c323e55cf56c7d03686e044",
+            "kind": "final_post_move_independent_spatial_comparison",
+            "record_phase": "post_directory_restructure",
+            "record_stage": "final_runner_guard",
+            "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+          }
+        }
+      ],
+      "reference": {
+        "kind": "manufactured_exact_motion",
+        "scope": "闭式Rz(.7t)Ry(.4t)Rx(.9t)与独立惯性载荷；未强制运动自由度。"
+      },
+      "validation_scope": "真实CR/Node/AnalysisStep下制造载荷实现的非交换空间运动，核完整p/R/v/omega/a/alpha及二阶；不是作者原柔性轨迹复现。",
+      "evidence": [
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\spatial-manufactured-comparison.json",
+          "sha256": "91bd3dbe097d551725890193697b780524157ae75c323e55cf56c7d03686e044",
+          "kind": "current_run"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\spatial-summary.json",
+          "sha256": "a204c97ed7b5afecd6be544a576f0ba606763405ec752159c3463f4e79939c90",
+          "kind": "current_run"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\spatial-manufactured-comparison.json",
+          "sha256": "91bd3dbe097d551725890193697b780524157ae75c323e55cf56c7d03686e044",
+          "kind": "post_move_independent_spatial_comparison",
+          "record_phase": "post_directory_restructure"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\spatial-summary.json",
+          "sha256": "208a540de673ba5b6716dccd34465035a04106795a6053a3d1549e12e755ca7e",
+          "kind": "post_move_spatial_campaign",
+          "record_phase": "post_directory_restructure"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\final-validation\\spatial-manufactured-comparison.json",
+          "sha256": "91bd3dbe097d551725890193697b780524157ae75c323e55cf56c7d03686e044",
+          "kind": "final_post_move_independent_spatial_comparison",
+          "record_phase": "post_directory_restructure",
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\final-validation\\spatial-summary.json",
+          "sha256": "ebe4d97b32b3277ef4b3b233407568a00ecabb24a84c8896eb5a773f5fd9187d",
+          "kind": "final_post_move_spatial_campaign",
+          "record_phase": "post_directory_restructure",
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+        }
+      ],
+      "last_verified": "2026-10-26",
+      "record_phase": "post_directory_restructure",
+      "pre_move_record": {
+        "record_phase": "before_directory_restructure",
+        "status": "current_pass",
+        "registration": "formal",
+        "execution": "explicit",
+        "algorithms": [
+          "Newmark"
+        ],
+        "algorithm_records": [
+          {
+            "name": "Newmark",
+            "mode": "fixed",
+            "steps": [
+              0.02,
+              0.01,
+              0.005
+            ],
+            "status": "current_pass"
+          }
+        ],
+        "last_verified": "2026-10-26",
+        "evidence": [
+          {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\spatial-manufactured-comparison.json",
+            "sha256": "91bd3dbe097d551725890193697b780524157ae75c323e55cf56c7d03686e044",
+            "kind": "current_run"
+          },
+          {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\spatial-summary.json",
+            "sha256": "a204c97ed7b5afecd6be544a576f0ba606763405ec752159c3463f4e79939c90",
+            "kind": "current_run"
+          }
+        ],
+        "validation_scope": "真实CR/Node/AnalysisStep下制造载荷实现的非交换空间运动，核完整p/R/v/omega/a/alpha及二阶；不是作者原柔性轨迹复现。"
+      },
+      "cli_bindings": [
+        "--verify-spatial-beam-dynamics <output-directory>"
+      ],
+      "current_evidence": {
+        "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\final-validation\\spatial-manufactured-comparison.json",
+        "sha256": "91bd3dbe097d551725890193697b780524157ae75c323e55cf56c7d03686e044",
+        "kind": "final_post_move_independent_spatial_comparison",
+        "record_phase": "post_directory_restructure",
+        "record_stage": "final_runner_guard",
+        "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+      },
+      "record_stage": "final_runner_guard",
+      "last_executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+    },
+    {
+      "id": "spatial-flexible-right-angle-frame",
+      "title": "空间柔性直角框架脉冲响应",
+      "analysis": "dynamic",
+      "registration": "formal",
+      "execution": "explicit",
+      "status": "current_pass",
+      "source_files": [
+        "YQYTests/Dynamics/SpatialBeam/SpatialFrameTest.cpp"
+      ],
+      "data": [
+        "YQYTests/TestModels/Dynamics/SpatialBeam/right-angle"
+      ],
+      "conditions": [
+        {
+          "id": "two-flexible-beams",
+          "duration": 2.5,
+          "elements_per_leg": 1
+        }
+      ],
+      "algorithms": [
+        "Newmark"
+      ],
+      "algorithm_records": [
+        {
+          "name": "Newmark",
+          "mode": "fixed",
+          "steps": [
+            0.0003125,
+            0.00015625,
+            7.8125e-05
+          ],
+          "status": "current_pass",
+          "record_phase": "post_directory_restructure",
+          "cli_bindings": [
+            "--verify-duan2026-beam --paper-solver newmark --paper-beam-elements-per-leg 1 --paper-duration 2.5 --paper-max-dt <registered-step> --paper-tolerance 1e-7 --paper-output <fresh-output-directory>"
+          ],
+          "evidence": [
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\spatial-flexible-comparison.json",
+              "sha256": "6a46a9529ab554e0e18c7d7fd53167f14dd008722b1a5a716465a5acb58fab37",
+              "kind": "post_move_independent_spatial_comparison",
+              "record_phase": "post_directory_restructure"
+            },
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\spatial-summary.json",
+              "sha256": "208a540de673ba5b6716dccd34465035a04106795a6053a3d1549e12e755ca7e",
+              "kind": "post_move_spatial_campaign",
+              "record_phase": "post_directory_restructure"
+            },
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\final-validation\\spatial-flexible-comparison.json",
+              "sha256": "7a9defa578e694e01526ae0fd129898711b8830e80225813056a62e3d5e0c328",
+              "kind": "final_post_move_independent_spatial_comparison",
+              "record_phase": "post_directory_restructure",
+              "record_stage": "final_runner_guard",
+              "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+            },
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\final-validation\\spatial-summary.json",
+              "sha256": "ebe4d97b32b3277ef4b3b233407568a00ecabb24a84c8896eb5a773f5fd9187d",
+              "kind": "final_post_move_spatial_campaign",
+              "record_phase": "post_directory_restructure",
+              "record_stage": "final_runner_guard",
+              "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+            }
+          ],
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+          "current_evidence": {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\final-validation\\spatial-flexible-comparison.json",
+            "sha256": "7a9defa578e694e01526ae0fd129898711b8830e80225813056a62e3d5e0c328",
+            "kind": "final_post_move_independent_spatial_comparison",
+            "record_phase": "post_directory_restructure",
+            "record_stage": "final_runner_guard",
+            "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+          }
+        }
+      ],
+      "reference": {
+        "kind": "independent_matched_spatial_ode",
+        "scope": "独立局部势能复步导数、物理质量/Euler陀螺与节点/Gauss四元数DOP853；不是Le原网格/算法逐数值复现。"
+      },
+      "validation_scope": "完整多节点六类空间状态、原精度/阶次门及零回退/precision；测试IAnalysisModel复用生产Node/CR/Newmark，不是AnalysisStep全工作流。",
+      "evidence": [
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\spatial-flexible-attempt2-comparison.json",
+          "sha256": "2347a05531f8d4a537d40d0f8cc42daa8241482f95bcdd53bc823dd83b95329f",
+          "kind": "current_run"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\spatial-summary.json",
+          "sha256": "a204c97ed7b5afecd6be544a576f0ba606763405ec752159c3463f4e79939c90",
+          "kind": "current_run"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\spatial-flexible-comparison.json",
+          "sha256": "6a46a9529ab554e0e18c7d7fd53167f14dd008722b1a5a716465a5acb58fab37",
+          "kind": "post_move_independent_spatial_comparison",
+          "record_phase": "post_directory_restructure"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\spatial-summary.json",
+          "sha256": "208a540de673ba5b6716dccd34465035a04106795a6053a3d1549e12e755ca7e",
+          "kind": "post_move_spatial_campaign",
+          "record_phase": "post_directory_restructure"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\final-validation\\spatial-flexible-comparison.json",
+          "sha256": "7a9defa578e694e01526ae0fd129898711b8830e80225813056a62e3d5e0c328",
+          "kind": "final_post_move_independent_spatial_comparison",
+          "record_phase": "post_directory_restructure",
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\final-validation\\spatial-summary.json",
+          "sha256": "ebe4d97b32b3277ef4b3b233407568a00ecabb24a84c8896eb5a773f5fd9187d",
+          "kind": "final_post_move_spatial_campaign",
+          "record_phase": "post_directory_restructure",
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+        }
+      ],
+      "last_verified": "2026-10-26",
+      "record_phase": "post_directory_restructure",
+      "historical_note": "数据目录README保存10-19的旧失败事实，不重写；当前通过仅据本条新证据。",
+      "pre_move_record": {
+        "record_phase": "before_directory_restructure",
+        "status": "current_pass",
+        "registration": "formal",
+        "execution": "explicit",
+        "algorithms": [
+          "Newmark"
+        ],
+        "algorithm_records": [
+          {
+            "name": "Newmark",
+            "mode": "fixed",
+            "steps": [
+              0.0003125,
+              0.00015625,
+              7.8125e-05
+            ],
+            "status": "current_pass"
+          }
+        ],
+        "last_verified": "2026-10-26",
+        "evidence": [
+          {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\spatial-flexible-attempt2-comparison.json",
+            "sha256": "2347a05531f8d4a537d40d0f8cc42daa8241482f95bcdd53bc823dd83b95329f",
+            "kind": "current_run"
+          },
+          {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\spatial-summary.json",
+            "sha256": "a204c97ed7b5afecd6be544a576f0ba606763405ec752159c3463f4e79939c90",
+            "kind": "current_run"
+          }
+        ],
+        "validation_scope": "完整多节点六类空间状态、原精度/阶次门及零回退/precision；测试IAnalysisModel复用生产Node/CR/Newmark，不是AnalysisStep全工作流。"
+      },
+      "cli_bindings": [
+        "--verify-duan2026-beam --paper-solver newmark --paper-beam-elements-per-leg 1 --paper-duration 2.5 --paper-max-dt <registered-step> --paper-tolerance 1e-7 --paper-output <fresh-output-directory>"
+      ],
+      "current_evidence": {
+        "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\final-validation\\spatial-flexible-comparison.json",
+        "sha256": "7a9defa578e694e01526ae0fd129898711b8830e80225813056a62e3d5e0c328",
+        "kind": "final_post_move_independent_spatial_comparison",
+        "record_phase": "post_directory_restructure",
+        "record_stage": "final_runner_guard",
+        "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+      },
+      "record_stage": "final_runner_guard",
+      "last_executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+    },
+    {
+      "id": "helical-beam-proportional-load",
+      "title": "Battini螺旋梁比例加载",
+      "analysis": "static",
+      "registration": "formal",
+      "execution": "explicit",
+      "status": "current_graphical_pass",
+      "source_files": [
+        "YQYTests/Statics/HelicalBeam/HelicalBeamTest.cpp"
+      ],
+      "data": [
+        "YQYTests/TestModels/Statics/HelicalBeam"
+      ],
+      "conditions": [
+        {
+          "id": "sixty-elements-physical-branch",
+          "pseudo_time_end": 6
+        }
+      ],
+      "algorithms": [
+        "NewtonRaphson"
+      ],
+      "reference": {
+        "kind": "digitized_published_figure",
+        "scope": "Battini图7.4独立755图点；当前EB与原Timoshenko不同，.02是图示级差门。"
+      },
+      "validation_scope": "完整静力主响应的图示级验收PASS：3001帧至伪时间6，755图点最大差0.011564264935937985小于0.02。当前EB共旋梁与论文Timoshenko离散不同，不认证精确同模型数值误差或作者全部参数化结果。",
+      "evidence": [
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\YQY\\YQY\\TestModels\\Statics\\HelicalBeam\\README.md",
+          "sha256": "0f7d798795af70e016b7f600a39fcf27751b6ee773e7ac610530c454ae28fa1d",
+          "kind": "historical_documentation"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\helical\\verification.json",
+          "sha256": "455109ba5b58a3160fcc0234fc34e131c93ca322f8a59d9bc73ccdd102346143",
+          "kind": "post_move_graphical_verification",
+          "record_phase": "post_directory_restructure"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\helical-process.json",
+          "sha256": "228f307cad0bf5442ed1d9c5411eedc457dd503f0fd8e97e1473679e07b5dee3",
+          "kind": "post_move_process_exit",
+          "record_phase": "post_directory_restructure"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\helical-final\\verification.json",
+          "sha256": "8b8fa3c7d608460c310269179948fb6d18e320ad624b971fa7beba27fe5c915a",
+          "kind": "final_post_move_graphical_verification",
+          "record_phase": "post_directory_restructure",
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+        },
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\helical-final-process.json",
+          "sha256": "75876e0e3f497cad271143ba85bd4f36569cd81195509043f860dab14265b716",
+          "kind": "final_post_move_process_exit",
+          "record_phase": "post_directory_restructure",
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+        }
+      ],
+      "last_verified": "2026-10-26",
+      "pre_move_record": {
+        "status": "historical_pass_requires_rerun",
+        "registration": "explicit",
+        "execution": "explicit",
+        "algorithms": [
+          "ordinary static"
+        ],
+        "last_verified": "historical 2026-10-13 per preserved README; not a current executable claim",
+        "evidence": [
+          {
+            "path": "C:\\APP\\VS\\YQY_CAE\\YQY\\YQY\\TestModels\\Statics\\HelicalBeam\\README.md",
+            "sha256": "0f7d798795af70e016b7f600a39fcf27751b6ee773e7ac610530c454ae28fa1d",
+            "kind": "historical_documentation"
+          }
+        ],
+        "validation_scope": "完整静力主响应图线对照；不得称精确同半离散数值PASS。当前待复跑。"
+      },
+      "record_phase": "post_directory_restructure",
+      "algorithm_records": [
+        {
+          "name": "NewtonRaphson",
+          "mode": "load_increment",
+          "status": "current_graphical_pass",
+          "record_phase": "post_directory_restructure",
+          "pseudo_time_increment": 0.002,
+          "pseudo_time_end": 6.0,
+          "newton_residual_tolerance": 1e-08,
+          "maximum_newton_iterations": 80,
+          "cli_bindings": [
+            "--verify-battini-helical-beam <output-directory>"
+          ],
+          "evidence": [
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\helical\\verification.json",
+              "sha256": "455109ba5b58a3160fcc0234fc34e131c93ca322f8a59d9bc73ccdd102346143",
+              "kind": "post_move_graphical_verification",
+              "record_phase": "post_directory_restructure"
+            },
+            {
+              "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\helical-final\\verification.json",
+              "sha256": "8b8fa3c7d608460c310269179948fb6d18e320ad624b971fa7beba27fe5c915a",
+              "kind": "final_post_move_graphical_verification",
+              "record_phase": "post_directory_restructure",
+              "record_stage": "final_runner_guard",
+              "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+            }
+          ],
+          "record_stage": "final_runner_guard",
+          "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+          "current_evidence": {
+            "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\helical-final\\verification.json",
+            "sha256": "8b8fa3c7d608460c310269179948fb6d18e320ad624b971fa7beba27fe5c915a",
+            "kind": "final_post_move_graphical_verification",
+            "record_phase": "post_directory_restructure",
+            "record_stage": "final_runner_guard",
+            "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+          }
+        }
+      ],
+      "cli_bindings": [
+        "--verify-battini-helical-beam <output-directory>"
+      ],
+      "current_evidence": {
+        "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\helical-final\\verification.json",
+        "sha256": "8b8fa3c7d608460c310269179948fb6d18e320ad624b971fa7beba27fe5c915a",
+        "kind": "final_post_move_graphical_verification",
+        "record_phase": "post_directory_restructure",
+        "record_stage": "final_runner_guard",
+        "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+      },
+      "record_stage": "final_runner_guard",
+      "last_executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+    },
+    {
+      "id": "spatial-double-pendulum-constraints",
+      "title": "Betsch双球面摆约束运动",
+      "analysis": "dynamic",
+      "registration": "explicit",
+      "execution": "explicit",
+      "status": "historical_pass_current_unassessed",
+      "source_files": [
+        "YQYTests/Dynamics/ConstrainedPendulum/ConstrainedPendulumTest.cpp"
+      ],
+      "data": [
+        "YQYTests/TestModels/Dynamics/ConstrainedPendulum"
+      ],
+      "conditions": [
+        {
+          "id": "double-pendulum",
+          "duration": 10
+        }
+      ],
+      "algorithms": [
+        "Newmark",
+        "AdaptiveTSSBN"
+      ],
+      "reference": {
+        "kind": "published_problem_and_independent_constraint_ode",
+        "scope": "Betsch原题绝对坐标等价变换；连续DOP853与论文中点参考分开。"
+      },
+      "validation_scope": "历史通过保留；当前没有重新完成同题全时程独立比较；不列默认通过。",
+      "needs_external_comparison_step": true,
+      "evidence": [
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\YQY\\YQY\\TestModels\\Dynamics\\ConstrainedPendulum\\README.md",
+          "sha256": "b30d069956468f512fd5bd28bf7ded1dbb67472397c8ae3483c194e224373769",
+          "kind": "historical_documentation"
+        }
+      ],
+      "last_verified": "historical; current unassessed",
+      "supplemental_checks": [
+        {
+          "id": "qv-iteration-change-20261028",
+          "status": "pass",
+          "algorithms": [
+            "Newmark fixed",
+            "AdaptiveTSSBN with locked step"
+          ],
+          "condition": "automatic slave selection; original 10 s initial-value problem; all four frozen step sizes",
+          "runs": 8,
+          "acceptance_plan": "YQYTests/TestModels/Dynamics/ConstrainedPendulum/validation-plan.json",
+          "evidence": {
+            "path": "C:/APP/VS/YQY_CAE/tmp/error-control-20261028/mpc-comparison/comparison.json",
+            "sha256": "fc1199ef57e75961e25236537d76caa0b6751f13f4d64da7ed815d807f554fd3"
+          },
+          "executable": {
+            "path": "C:/APP/VS/YQY_CAE/YQY/x64/Release/YQYTests.exe",
+            "sha256": "1936e2eae1dedc7c7e25c64576a8cdf7d863122a291ee38567b8beb84cdc0334"
+          },
+          "scope": "Original independent trajectory, convergence-order and q/v/a constraint gates; acceleration constraint checking is physical kinematics and is not an acceleration LTE controller."
+        }
+      ]
+    },
+    {
+      "id": "beam-full-circle-pure-bending",
+      "title": "梁端矩卷圆路径",
+      "analysis": "static",
+      "registration": "pending",
+      "execution": "pending",
+      "status": "pending_failure",
+      "source_files": [
+        "YQYTests/Pending/Statics/CircularBending/CorotationalMomentTest.cpp"
+      ],
+      "data": [
+        "YQYTests/TestModels/Pending/Statics/CircularBending"
+      ],
+      "conditions": [
+        {
+          "id": "circle-and-spatial-refinement"
+        }
+      ],
+      "algorithms": [
+        "NewtonRaphson"
+      ],
+      "reference": {
+        "kind": "analytical_pure_bending",
+        "scope": "独立圆弧路径与空间细化。"
+      },
+      "validation_scope": "本次严格FAIL，未列正式默认；不修门槛、不把其余通过项替代该原门。",
+      "evidence": [
+        {
+          "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\newmark_cr_retest_20261026\\default.xml",
+          "sha256": "063133bfc8c52a7ef172fd584d2db63c6d27885cc4291181c82132524c1fcf3d",
+          "kind": "current_run"
+        }
+      ],
+      "last_verified": "2026-10-26",
+      "algorithm_mode": "load_increment"
+    },
+    {
+      "id": "single-conductor-galloping",
+      "title": "单跨覆冰导线气动响应：论文参数重建及空间CR梁扩展",
+      "analysis": "dynamic",
+      "registration": "formal",
+      "execution": "explicit",
+      "duration_class": "long",
+      "status": "current_failed",
+      "status_scope": "The registered campaign did not meet completion/response acceptance; this does not identify a correct time-discrete solution or prove an integrator formula error.",
+      "last_verified": "2026-10-27",
+      "registered": "2026-10-26",
+      "source_files": [
+        "YQYTests/Dynamics/SingleConductor/SingleConductorTest.cpp",
+        "YQYTests/Dynamics/SingleConductor/SingleConductorModel.cpp"
+      ],
+      "data": [
+        "YQYTests/TestModels/Dynamics/SingleConductor/cable.h5",
+        "YQYTests/TestModels/Dynamics/SingleConductor/beam.h5",
+        "YQYTests/TestModels/Dynamics/SingleConductor/cable.json",
+        "YQYTests/TestModels/Dynamics/SingleConductor/beam.json",
+        "YQYTests/TestModels/Dynamics/SingleConductor/comparison-plan.json",
+        "YQYTests/TestModels/Dynamics/SingleConductor/source_audit.json",
+        "YQYTests/TestModels/Dynamics/SingleConductor/manifest.json"
+      ],
+      "conditions": [
+        {
+          "id": "cable",
+          "input": "YQYTests/TestModels/Dynamics/SingleConductor/cable.h5",
+          "sha256": "b53660adddcd0b596d41aa2d9b1fda5f1b3d57cb174f7e5164e7428ebea94c6d",
+          "duration_seconds": 300,
+          "nodes": 53,
+          "elements": 52,
+          "element": "geometrically nonlinear cable with independent axial torsion",
+          "scope": "Table 7 based reconstruction; 3 translations plus scalar axial torsion; eccentric mass and gravity active"
+        },
+        {
+          "id": "beam",
+          "input": "YQYTests/TestModels/Dynamics/SingleConductor/beam.h5",
+          "sha256": "09aa4a7230bdc371898f814a4c92f3d09cc7c33ecebbd828e9f22e8e82e54358",
+          "duration_seconds": 300,
+          "nodes": 53,
+          "elements": 52,
+          "element": "spatial corotational beam",
+          "scope": "Derived beam model; lacks cable first-mass-moment/eccentric-gravity coupling; all channels use y1*M+y2*K and torsion c1/c2 are unused"
+        }
+      ],
+      "algorithms": [
+        "Newmark",
+        "AdaptiveNewmark"
+      ],
+      "algorithm_records": [
+        {
+          "name": "Newmark",
+          "condition_id": "cable",
+          "mode": "fixed",
+          "dt": 0.005,
+          "status": "current_failed",
+          "execution_status": "completed",
+          "response_status": "failed_time_refinement_gates",
+          "response_evidence_key": "cases.cable.comparisons.fixed",
+          "completion_observation": {
+            "completed": true,
+            "last_accepted_time": 300,
+            "accepted_steps": 60000,
+            "dynamic_wall_seconds": 157.2424182,
+            "static_wall_seconds": 0.2346026,
+            "damping_valid": true,
+            "non_nominal_steps_excluding_terminal": 0,
+            "all_saved_qva_integrity_pass": true,
+            "hdf5_frame_count": 60001,
+            "qualification": "Solver/output completion only. Final same-model time-refinement response gates failed; no physical/galloping validation is established.",
+            "evidence": {
+              "path": "C:/APP/VS/YQY_CAE/tmp/newmark-duan-galloping-20261026/runs/main_cable_fixed/summary.json",
+              "sha256": "2f988d083a64543987b1c24f0b2e16ad556be546c595d99dc51e10ccdbd3a1fd"
+            },
+            "all_saved_qva_evidence": {
+              "path": "C:/APP/VS/YQY_CAE/tmp/newmark-duan-galloping-20261026/runs/main_cable_fixed/hdf5-audit.json",
+              "sha256": "fe0235fe8d51ba8340eed38b728241a5e5ba2b53a0b4f1548432b26c8c2bbc8b"
+            }
+          }
+        },
+        {
+          "name": "AdaptiveNewmark",
+          "condition_id": "cable",
+          "mode": "adaptive_step_doubling",
+          "status": "current_failed",
+          "execution_status": "completed",
+          "response_status": "failed_time_refinement_gates",
+          "response_evidence_key": "cases.cable.comparisons.adaptive",
+          "completion_observation": {
+            "completed": true,
+            "last_accepted_time": 300,
+            "accepted_steps": 133922,
+            "dynamic_wall_seconds": 1211.9969285,
+            "static_wall_seconds": 0.2341462,
+            "damping_valid": true,
+            "minimum_accepted_dt": 0.0005059854358362486,
+            "maximum_accepted_dt": 0.008028141315293169,
+            "all_saved_qva_integrity_pass": true,
+            "hdf5_frame_count": 133923,
+            "qualification": "Solver/output completion only. Final same-model time-refinement response gates failed; no physical/galloping validation is established.",
+            "evidence": {
+              "path": "C:/APP/VS/YQY_CAE/tmp/newmark-duan-galloping-20261026/runs/main_cable_adaptive/summary.json",
+              "sha256": "8a8938ebad2bbe7f9e7d157d7ae22349b8348ec2b95eaef9c7d8ed4181055bc2"
+            },
+            "all_saved_qva_evidence": {
+              "path": "C:/APP/VS/YQY_CAE/tmp/newmark-duan-galloping-20261026/runs/main_cable_adaptive/hdf5-audit.json",
+              "sha256": "ba148f076ea76023f6cd14982e431bba9c368727212006cf90960c2aafe4a4b0"
+            }
+          }
+        },
+        {
+          "name": "Newmark",
+          "condition_id": "beam",
+          "mode": "fixed",
+          "dt": 0.005,
+          "status": "current_failed",
+          "execution_status": "completed",
+          "response_status": "failed_time_refinement_gates",
+          "response_evidence_key": "cases.beam.comparisons.fixed",
+          "correctness_status": "blocked_by_known_aerodynamic_rotation_branch_discontinuity",
+          "completion_observation": {
+            "completed": true,
+            "last_accepted_time": 300,
+            "accepted_steps": 60000,
+            "dynamic_wall_seconds": 423.2541496,
+            "static_wall_seconds": 0.2227674,
+            "damping_valid": true,
+            "non_nominal_steps_excluding_terminal": 0,
+            "all_saved_qva_integrity_pass": true,
+            "hdf5_frame_count": 60001,
+            "qualification": "Solver/output completion only. Final same-model time-refinement response gates failed, and the known beam aerodynamic defect independently blocks correctness acceptance.",
+            "evidence": {
+              "path": "C:/APP/VS/YQY_CAE/tmp/newmark-duan-galloping-20261026/runs/main_beam_fixed/summary.json",
+              "sha256": "42852187ec70a68d07fff05d061a6ff04024ab96e03211b121ab841b05346e21"
+            },
+            "all_saved_qva_evidence": {
+              "path": "C:/APP/VS/YQY_CAE/tmp/newmark-duan-galloping-20261026/runs/main_beam_fixed/hdf5-audit.json",
+              "sha256": "7a4be1f46b495ee6c00ed1c59df6c84db64689994bc0a5669c69fe3fe0c03933"
+            }
+          }
+        },
+        {
+          "name": "AdaptiveNewmark",
+          "condition_id": "beam",
+          "mode": "adaptive_step_doubling",
+          "status": "current_failed",
+          "execution_status": "failed_before_requested_endpoint",
+          "response_status": "unverified_incomplete_300s",
+          "response_evidence_key": "cases.beam.comparisons.adaptive",
+          "correctness_status": "blocked_by_known_aerodynamic_rotation_branch_discontinuity",
+          "last_verified": "2026-10-27",
+          "failure_observation": {
+            "completed": false,
+            "duration_requested_seconds": 300,
+            "last_accepted_time": 14.211889140609067,
+            "accepted_steps": 51550,
+            "dynamic_wall_seconds": 1280.8985435,
+            "static_wall_seconds": 0.2310448,
+            "exit_code": 6,
+            "timed_out": false,
+            "minimum_dt": 1e-06,
+            "minimum_accepted_dt": 9.999999992515995e-07,
+            "maximum_accepted_dt": 0.004283131905410187,
+            "result_complete": false,
+            "partial_hdf5_frame_count": 51551,
+            "failure_classification": "normalized LTE remained above one at minimum dt; not a Newton failure",
+            "normalized_error_at_failure_from_log": 10.168029,
+            "rejected_attempts_at_failure_from_log": 1,
+            "summary_failure_reason_limitation": "summary.failure_reason incorrectly repeats the last accepted progress message with E=4.567e-8; use the terminal solver log for the actual LTE rejection. Original summary is preserved.",
+            "evidence": {
+              "path": "C:/APP/VS/YQY_CAE/tmp/newmark-duan-galloping-20261026/runs/main_beam_adaptive/summary.json",
+              "sha256": "7109df4fcb63049515c427146d389fd7baa7356070937cfedf8981ecabceae62"
+            },
+            "failure_log": {
+              "path": "C:/APP/VS/YQY_CAE/tmp/newmark-duan-galloping-20261026/logs/main_beam_adaptive.log",
+              "sha256": "27bb55a43b6dac0853a13100b2c24c0ac92cac6213caaa17b5984ef5e527b182"
+            },
+            "process_record": {
+              "path": "C:/APP/VS/YQY_CAE/tmp/newmark-duan-galloping-20261026/logs/main_beam_adaptive.json",
+              "sha256": "0011d378c8805f16da4f695fe55202afee86e3215c3cfb23cbc9326bc1a69f84"
+            },
+            "qualification": "The registered 300 s beam/adaptive configuration failed after 14.211889 s. Partial response cannot pass the planned 300 s comparison or galloping assessment. The earlier 1e-5-floor pilot failure remains separately recorded."
+          }
+        }
+      ],
+      "reference_runs": [
+        {
+          "name": "reference_cable_fixed",
+          "condition_id": "cable",
+          "role": "same_model_time_refinement",
+          "algorithm": "Newmark",
+          "nominal_dt": 0.0025,
+          "execution_status": "completed",
+          "last_accepted_time": 300,
+          "accepted_steps": 120000,
+          "dynamic_wall_seconds": 397.5370915,
+          "static_wall_seconds": 0.2475504,
+          "non_nominal_steps_excluding_terminal": 0,
+          "minimum_accepted_dt": 0.0024999999999693046,
+          "maximum_accepted_dt": 0.0025000002365800356,
+          "damping_valid": true,
+          "all_saved_qva_integrity_pass": true,
+          "hdf5_frame_count": 120001,
+          "evidence": {
+            "path": "C:/APP/VS/YQY_CAE/tmp/newmark-duan-galloping-20261026/runs/reference_cable_fixed/summary.json",
+            "sha256": "b35df4b48845812cb7e25bfbd9688394971f70daeec2e28befd02519b72e5f26"
+          },
+          "all_saved_qva_evidence": {
+            "path": "C:/APP/VS/YQY_CAE/tmp/newmark-duan-galloping-20261026/runs/reference_cable_fixed/hdf5-audit.json",
+            "sha256": "218d0fd7376c6cb28f4bde456801c6fbcffd6fdb5da9913af122d99dbcb30fc0"
+          }
+        },
+        {
+          "name": "reference_beam_fixed",
+          "condition_id": "beam",
+          "role": "same_model_time_refinement",
+          "algorithm": "Newmark",
+          "nominal_dt": 0.0025,
+          "execution_status": "completed_with_non_nominal_steps",
+          "last_accepted_time": 300,
+          "accepted_steps": 120003,
+          "dynamic_wall_seconds": 987.1742582,
+          "static_wall_seconds": 0.2223257,
+          "non_nominal_steps_excluding_terminal": 8,
+          "minimum_accepted_dt": 0.0005859377365595719,
+          "maximum_accepted_dt": 0.002500000000026148,
+          "damping_valid": true,
+          "all_saved_qva_integrity_pass": true,
+          "hdf5_frame_count": 120004,
+          "correctness_status": "blocked_by_known_aerodynamic_rotation_branch_discontinuity",
+          "qualification": "Nominal dt=0.0025 s with eight non-nominal accepted steps; not a uniformly fixed-step reference and not an independently correct solution.",
+          "evidence": {
+            "path": "C:/APP/VS/YQY_CAE/tmp/newmark-duan-galloping-20261026/runs/reference_beam_fixed/summary.json",
+            "sha256": "87a308d0c6cdeae564d0d723563167bd790a655c2f42d42787d8ae09aed20da0"
+          },
+          "all_saved_qva_evidence": {
+            "path": "C:/APP/VS/YQY_CAE/tmp/newmark-duan-galloping-20261026/runs/reference_beam_fixed/hdf5-audit.json",
+            "sha256": "fa939dcb5b0bfe55be50e3b982dfb01c420cfefb94dd6a520a3ee47f9fb62f0f"
+          }
+        }
+      ],
+      "final_comparison": {
+        "date": "2026-10-27",
+        "campaign_state": "all_six_requested_runs_terminated",
+        "physical_case_families": 1,
+        "element_model_conditions": 2,
+        "candidate_runs": 4,
+        "time_refinement_runs": 2,
+        "complete_candidate_runs": 3,
+        "failed_candidate_runs": 1,
+        "complete_time_refinement_runs": 2,
+        "all_main_runs_complete": false,
+        "all_response_gates_passed": false,
+        "comparison": {
+          "path": "C:/APP/VS/YQY_CAE/tmp/newmark-duan-galloping-20261026/comparison.json",
+          "sha256": "32db226fb2835cb46770be54c146f7d5fb0940db9dd6a7d3342e5101499cf7dd"
+        },
+        "report": {
+          "path": "C:/APP/VS/YQY_CAE/tmp/newmark-duan-galloping-20261026/report.html",
+          "kind": "derived presentation; numerical provenance is the separately hashed comparison.json"
+        },
+        "maximum_metrics_over_three_probes": [
+          {
+            "condition_id": "cable",
+            "mode": "fixed",
+            "displacement_nrms": 0.6011850630033841,
+            "twist_nrms": 1.4152575598444888,
+            "window_p2p_relative_difference": 3.4376012037081143,
+            "active_frequency_relative_difference": 0.20473765424667278
+          },
+          {
+            "condition_id": "cable",
+            "mode": "adaptive",
+            "displacement_nrms": 0.5214058609577149,
+            "twist_nrms": 1.3642681090297002,
+            "window_p2p_relative_difference": 0.7082695070098198,
+            "active_frequency_relative_difference": 0.9740001486765862
+          },
+          {
+            "condition_id": "beam",
+            "mode": "fixed",
+            "displacement_nrms": 0.8005380495729653,
+            "twist_nrms": 1.4500700839200757,
+            "window_p2p_relative_difference": 2.017088423835561,
+            "active_frequency_relative_difference": 0.00320103551629465
+          }
+        ],
+        "interpretation": "All three complete candidates failed the planned agreement gates against their same-model finer run. This proves disagreement under this plan, not that dt/2 is the true solution or that the adaptive integrator is wrong. Beam/adaptive is unverified for 300 s because the solve failed early. The known beam aerodynamic correctness blocker remains active.",
+        "timing_conclusion": "The measured cable adaptive/fixed wall-time ratio remains 7.707824, but no equal-accuracy speed ranking is established. Failed beam/adaptive timing is not comparable to a completed 300 s run.",
+        "frozen_campaign": "No production-source/runtime/input change or extra solve was introduced for the final registration."
+      },
+      "known_correctness_blockers": [
+        {
+          "id": "beam-aerodynamic-principal-rotation-branch",
+          "condition_id": "beam",
+          "affected_algorithms": [
+            "Newmark",
+            "AdaptiveNewmark"
+          ],
+          "status": "confirmed_unfixed_in_frozen_runtime",
+          "runtime_scope": "Historical frozen 2026-10-26 300 s campaign; current direction-based source repair is tracked separately and remains unaccepted.",
+          "finding": "The six-DOF beam projects each nodal principal Log(R) rotation vector onto the current chord, then arithmetically averages the projected values. Crossing a nodal +pi/-pi branch produces an approximately 180-degree element attack-angle discontinuity at a continuous physical orientation.",
+          "last_saved_center_node": 27,
+          "last_saved_center_principal_angle_rad": 3.141586459748944,
+          "distance_to_pi_rad": 6.1938408491002406e-06,
+          "algebraic_element_mean_jump_degrees": -179.99990427802726,
+          "algebraic_attack_before_degrees": 220.0614691941862,
+          "algebraic_attack_after_degrees": 40.06156491615896,
+          "measurement_scope": "Saved accepted states and branch-limit algebra verify the discontinuity. Extrapolated/piecewise-limit loads are not measured rejected coarse/half-step states; separate Eq/Ev contributions were not saved.",
+          "acceptance_effect": "Fixed beam uses the same defective aerodynamic path. Agreement with fixed dt/2 can only be recorded as a time-step comparison within the same defective model; it must not establish algorithm correctness, physical correctness, galloping validation or paper reproduction.",
+          "code_evidence": [
+            {
+              "path": "YQY/Utility/CR.cpp",
+              "line": 145,
+              "meaning": "Extract_RotationVector returns the principal rotation vector"
+            },
+            {
+              "path": "C:/APP/VS/YQY_CAE/tmp/newmark-beam-optimization-20261027/baseline/YQY/DataStructure/Load/LoadAssembler.cpp",
+              "line": 558,
+              "end_line": 565,
+              "meaning": "Six-DOF beam twist uses principal rotation-vector projection"
+            },
+            {
+              "path": "C:/APP/VS/YQY_CAE/tmp/newmark-beam-optimization-20261027/baseline/YQY/DataStructure/Load/AerodynamicLoadCalculator.cpp",
+              "line": 84,
+              "meaning": "Arithmetic mean twist enters the aerodynamic attack angle"
+            }
+          ],
+          "additional_unresolved_issue": "TimeStepError.cpp:53 directly subtracts rotational q coordinates; a separate principal-branch contribution to LTE remains possible and was not isolated from rejected-stage data.",
+          "evidence": {
+            "path": "C:/APP/VS/YQY_CAE/tmp/newmark-duan-galloping-20261026/runs/main_beam_adaptive/beam-failure-diagnosis.json",
+            "sha256": "d8d1dc4ce94bfa08b973c0b08ab20242219c51ed04b804bf5e03d25bda86e50c"
+          },
+          "runtime_policy": "Keep this historical 300 s source/runtime/output evidence frozen. The separately recorded 2026-10-27 direction-based repair and build do not replace or validate those results."
+        }
+      ],
+      "interim_cable_comparison": {
+        "status": "diagnostic_only_final_time_refinement_gates_failed",
+        "adaptive_over_fixed_wall_time": 7.707824277787658,
+        "adaptive_over_fixed_accepted_macro_steps": 2.2320333333333333,
+        "equal_accuracy_speed_comparison": false,
+        "input_and_all_node_initial_state_identical": true,
+        "midspan_late_window_seconds": [
+          250,
+          300
+        ],
+        "fixed_vertical_p2p_m": 0.07638520087049039,
+        "adaptive_vertical_p2p_m": 0.009538,
+        "fixed_twist_dominant_frequency_hz": 1.3438992372379133,
+        "adaptive_twist_dominant_frequency_hz": 1.272011064501541,
+        "qualification": "Both cable runs completed but late amplitudes and frequency composition differ; neither accuracy winner nor galloping/paper-reproduction pass is established. The 7.708 wall-time ratio is not an equal-accuracy speedup.",
+        "evidence": {
+          "path": "C:/APP/VS/YQY_CAE/tmp/newmark-duan-galloping-20261026/cable-diagnosis.json",
+          "sha256": "78ac8c473e7c69932cae75686a4c604866cc64f22fab834a17dca7cc41616522"
+        }
+      },
+      "optimization_retests": [
+        {
+          "date": "2026-10-27",
+          "id": "newmark-terminal-tangent-deduplication",
+          "status": "passed_2s_numerical_equivalence_only",
+          "change": "Skip unused terminal effective/aerodynamic tangent evaluation after nonlinear convergence.",
+          "duration_seconds": 2,
+          "matched_pairs": 4,
+          "completed_runs": 8,
+          "new_physical_case_families": 0,
+          "registered_pass_count_increment": 0,
+          "time_grids_exact_equal": true,
+          "all_saved_qva_exact_equal": true,
+          "total_compared_scalar_values": 7208424,
+          "maximum_absolute_qva_difference": 0.0,
+          "maximum_scaled_qva_difference": 0.0,
+          "all_frozen_equivalence_gates_passed": true,
+          "frozen_comparison_gates": {
+            "same_accepted_count": true,
+            "same_time_grid_rtol": 1e-10,
+            "same_time_grid_atol": 1e-10,
+            "nodal_qva_max_scaled_difference": 1e-08,
+            "scale": "max(1, abs(before)) per component; exact equality also reported"
+          },
+          "strategy": "Unchanged full-step/two-half-step step doubling with q/v LTE control; no new acceleration LTE control.",
+          "inputs_tolerances_physics_changed": false,
+          "counting_scope": "Optimization equivalence evidence only; do not increment physical, algorithm or formal numerical acceptance totals.",
+          "scope": "Eight completed 2 s runs, four matched A/B pairs; every saved HDF5 node/frame and all 18 q/v/a components including t=0. No interpolation or solver run.",
+          "timing_qualification": "One serial measurement per configuration; reports observed timing, no confidence interval or 300 s extrapolation.",
+          "minimum_step_qualification": "The recorded minimum_dt=1e-6 configures adaptive Newmark only. Fixed Newmark retains its factory/Params cutback floor of 1e-5; the fixed A/B runs accepted the same 400 nominal steps.",
+          "correctness_qualification": "Neutral optimization equivalence only; preserves the baseline physical model and its known beam aerodynamic defect. Not physical/paper/galloping acceptance.",
+          "comparison": {
+            "path": "C:/APP/VS/YQY_CAE/tmp/newmark-beam-optimization-20261027/neutral-comparison.json",
+            "sha256": "42644c588227949a7e8b48207bfb3340917a35896df6d40ea3373d681b287c02"
+          },
+          "summary": {
+            "path": "C:/APP/VS/YQY_CAE/tmp/newmark-beam-optimization-20261027/neutral-summary.txt",
+            "sha256": "dce05a4b98107e6e52af79747cd8578272005467c4150a88f83637c3a6eed398"
+          },
+          "plan": {
+            "path": "C:/APP/VS/YQY_CAE/tmp/newmark-beam-optimization-20261027/neutral-plan.json",
+            "sha256": "f95d406347b022e944bef5bd6a1b23d0c4d63c0c0d4a1274d28ca87d02ea80a5"
+          },
+          "optimized_executable": {
+            "path": "C:/APP/VS/YQY_CAE/tmp/newmark-beam-optimization-20261027/bin-neutral/YQYTests.exe",
+            "sha256": "305a22a6fd05e7169138c706c343b0a8fb35122abc7c6ef8db8838233b34149d"
+          },
+          "pairs": [
+            {
+              "condition_and_mode": "cable_fixed",
+              "before_run": "before_cable_fixed_2s",
+              "after_run": "neutral_cable_fixed_2s",
+              "accepted_steps_before": 400,
+              "accepted_steps_after": 400,
+              "dynamic_wall_seconds_before": 0.9807387,
+              "dynamic_wall_seconds_after": 0.7700949,
+              "calls_before": {
+                "accepted_steps": 400,
+                "system_evaluation_calls": 1980,
+                "effective_tangent_calls": 1190,
+                "external_tangent_calls": 1190,
+                "residual_calls": 1981,
+                "iteration_records": 400
+              },
+              "calls_after": {
+                "accepted_steps": 400,
+                "system_evaluation_calls": 1580,
+                "effective_tangent_calls": 790,
+                "external_tangent_calls": 790,
+                "residual_calls": 1581,
+                "iteration_records": 400
+              },
+              "all_time_grid_values_exact_equal": true,
+              "all_saved_qva_exact_equal": true,
+              "compared_scalar_count": 382554,
+              "maximum_scaled_qva_difference": 0.0,
+              "performance_change": {
+                "dynamic_wall_before_over_neutral": 1.273529664980251,
+                "dynamic_wall_reduction_fraction": 0.21478075658684614,
+                "system_evaluation_reduction": 400,
+                "effective_tangent_reduction": 400,
+                "external_tangent_reduction": 400
+              },
+              "before_evidence": {
+                "summary_sha256": "f5e09ccf1ce204fa68434bb66e12ce5e49b58f8adaa103b23da9ac36a69f34ad",
+                "process_sha256": "7c579f3dc49a397c329cb20c1bb3fab23964c300bb0a2a49778d42ca014ae8d7",
+                "dynamic_hdf5_sha256": "748d90ff8971cf9937ec211f06467882afec1fe81ef46336e57cd739a0e4c690",
+                "dynamic_hdf5_bytes": 9202600,
+                "executable_sha256": "4b67bec18b048cc1e01a186ac86247c997af99e78ba5cc4ec5dbec0f379b278a"
+              },
+              "after_evidence": {
+                "summary_sha256": "dfcbaa05814305a0b0c1a21f1fc10bcdf390ccde7dba25a5a11f709db0346343",
+                "process_sha256": "09e7b258658cadd37e5db0e000931f8a19cd6c559d3f6139765d4c3f86b2608b",
+                "dynamic_hdf5_sha256": "2ec9d539636ba5d96452d78bf09d01ead6e91e6649d320755fc7a897f7618fa6",
+                "dynamic_hdf5_bytes": 9202600,
+                "executable_sha256": "305a22a6fd05e7169138c706c343b0a8fb35122abc7c6ef8db8838233b34149d"
+              }
+            },
+            {
+              "condition_and_mode": "cable_adaptive",
+              "before_run": "before_cable_adaptive_2s",
+              "after_run": "neutral_cable_adaptive_2s",
+              "accepted_steps_before": 988,
+              "accepted_steps_after": 988,
+              "dynamic_wall_seconds_before": 6.8404478,
+              "dynamic_wall_seconds_after": 4.4759441,
+              "calls_before": {
+                "accepted_steps": 988,
+                "system_evaluation_calls": 13135,
+                "effective_tangent_calls": 8522,
+                "external_tangent_calls": 8522,
+                "residual_calls": 13136,
+                "iteration_records": 988
+              },
+              "calls_after": {
+                "accepted_steps": 988,
+                "system_evaluation_calls": 9226,
+                "effective_tangent_calls": 4613,
+                "external_tangent_calls": 4613,
+                "residual_calls": 9227,
+                "iteration_records": 988
+              },
+              "all_time_grid_values_exact_equal": true,
+              "all_saved_qva_exact_equal": true,
+              "compared_scalar_count": 943506,
+              "maximum_scaled_qva_difference": 0.0,
+              "performance_change": {
+                "dynamic_wall_before_over_neutral": 1.5282692650250032,
+                "dynamic_wall_reduction_fraction": 0.34566504549599797,
+                "system_evaluation_reduction": 3909,
+                "effective_tangent_reduction": 3909,
+                "external_tangent_reduction": 3909
+              },
+              "before_evidence": {
+                "summary_sha256": "11ea4d372494dd34df050e1539bca5a5e509d0458b6c83db324cd3207c534301",
+                "process_sha256": "c7fa64bfcce262e832bf7937e56df8f17b85f23ffbdb0d87cf4ece182e111afe",
+                "dynamic_hdf5_sha256": "f5c200d6c2a95ef9d5ff8c4a38fbb0e58f2bed1f0dac4243618d7718abfe42b3",
+                "dynamic_hdf5_bytes": 22064040,
+                "executable_sha256": "4b67bec18b048cc1e01a186ac86247c997af99e78ba5cc4ec5dbec0f379b278a"
+              },
+              "after_evidence": {
+                "summary_sha256": "119b295df27a7764259acf07cb7a83f9e822011fafb0bec7f987ecd0a49cb21d",
+                "process_sha256": "a6f5623477752f4b2661d81d5a8b18c0b7d1dc49c4ef4327771c8c41ca6b7278",
+                "dynamic_hdf5_sha256": "e6b11321a785c23ed527bc8e234e2f1638f2bc426cf0fd2c82f60a32eb26f4bf",
+                "dynamic_hdf5_bytes": 22064040,
+                "executable_sha256": "305a22a6fd05e7169138c706c343b0a8fb35122abc7c6ef8db8838233b34149d"
+              }
+            },
+            {
+              "condition_and_mode": "beam_fixed",
+              "before_run": "before_beam_fixed_2s",
+              "after_run": "neutral_beam_fixed_2s",
+              "accepted_steps_before": 400,
+              "accepted_steps_after": 400,
+              "dynamic_wall_seconds_before": 2.7180735,
+              "dynamic_wall_seconds_after": 1.9986596,
+              "calls_before": {
+                "accepted_steps": 400,
+                "system_evaluation_calls": 1992,
+                "effective_tangent_calls": 1196,
+                "external_tangent_calls": 1196,
+                "residual_calls": 1993,
+                "iteration_records": 400
+              },
+              "calls_after": {
+                "accepted_steps": 400,
+                "system_evaluation_calls": 1592,
+                "effective_tangent_calls": 796,
+                "external_tangent_calls": 796,
+                "residual_calls": 1593,
+                "iteration_records": 400
+              },
+              "all_time_grid_values_exact_equal": true,
+              "all_saved_qva_exact_equal": true,
+              "compared_scalar_count": 382554,
+              "maximum_scaled_qva_difference": 0.0,
+              "performance_change": {
+                "dynamic_wall_before_over_neutral": 1.3599481872751118,
+                "dynamic_wall_reduction_fraction": 0.26467786835050633,
+                "system_evaluation_reduction": 400,
+                "effective_tangent_reduction": 400,
+                "external_tangent_reduction": 400
+              },
+              "before_evidence": {
+                "summary_sha256": "eb91cd0b10b4c24b31bb12a1973cf7c2e8d99a9bbea54bbea029f59e5df46625",
+                "process_sha256": "954683e176fed5f9f42121849c207a84062c6fce3b4aa157e5d59fa59a609885",
+                "dynamic_hdf5_sha256": "545325ce1f6d8e5341c7382761d7558239b9a5da7791c6012fa13341929ae0a2",
+                "dynamic_hdf5_bytes": 10054680,
+                "executable_sha256": "4b67bec18b048cc1e01a186ac86247c997af99e78ba5cc4ec5dbec0f379b278a"
+              },
+              "after_evidence": {
+                "summary_sha256": "c70c0728dd18d57ac690dba01f3d02cb4e330bb477e4285d4c7b0d285a3b5650",
+                "process_sha256": "8505aaec8fc7c9b7ef0bd008978b4d067b06707ffc6f48a74891b2c6212fb400",
+                "dynamic_hdf5_sha256": "db6c43eed2831fe6d9f9d9622b009f1d34cdd3aff2b6f57c66854e8ab0a7b4d2",
+                "dynamic_hdf5_bytes": 10054680,
+                "executable_sha256": "305a22a6fd05e7169138c706c343b0a8fb35122abc7c6ef8db8838233b34149d"
+              }
+            },
+            {
+              "condition_and_mode": "beam_adaptive",
+              "before_run": "before_beam_adaptive_2s",
+              "after_run": "neutral_beam_adaptive_2s",
+              "accepted_steps_before": 5764,
+              "accepted_steps_after": 5764,
+              "dynamic_wall_seconds_before": 111.0924099,
+              "dynamic_wall_seconds_after": 64.6432569,
+              "calls_before": {
+                "accepted_steps": 5764,
+                "system_evaluation_calls": 73084,
+                "effective_tangent_calls": 48719,
+                "external_tangent_calls": 48719,
+                "residual_calls": 73085,
+                "iteration_records": 5764
+              },
+              "calls_after": {
+                "accepted_steps": 5764,
+                "system_evaluation_calls": 48730,
+                "effective_tangent_calls": 24365,
+                "external_tangent_calls": 24365,
+                "residual_calls": 48731,
+                "iteration_records": 5764
+              },
+              "all_time_grid_values_exact_equal": true,
+              "all_saved_qva_exact_equal": true,
+              "compared_scalar_count": 5499810,
+              "maximum_scaled_qva_difference": 0.0,
+              "performance_change": {
+                "dynamic_wall_before_over_neutral": 1.718545989597254,
+                "dynamic_wall_reduction_fraction": 0.41811274993324277,
+                "system_evaluation_reduction": 24354,
+                "effective_tangent_reduction": 24354,
+                "external_tangent_reduction": 24354
+              },
+              "before_evidence": {
+                "summary_sha256": "aab074f8ca473b5677346d9f3a7a16dac4cacd97b74647df58f7715da652d830",
+                "process_sha256": "77fb30e90771f5da09296cdadaf021be98bbbe081cb06617eb2c4eaaff9bd4f7",
+                "dynamic_hdf5_sha256": "b68df202d86b12ac8384d70a19d65bb9238a35b4ddc079945a222f2fc4bac431",
+                "dynamic_hdf5_bytes": 138417432,
+                "executable_sha256": "4b67bec18b048cc1e01a186ac86247c997af99e78ba5cc4ec5dbec0f379b278a"
+              },
+              "after_evidence": {
+                "summary_sha256": "f2ac6b05ef2946a4e3595cc5ddcb12fb7034ee7d1b38f3a5caf5e310032c5cc8",
+                "process_sha256": "3889b9767616ff99e606b75b38a5fdc996b0af2fbc548f8ee7c2ea30a300dc57",
+                "dynamic_hdf5_sha256": "26bc15780cca41a4e9eb97f2ea2e4fb83a8e8e79e098e525b8ed695a238dae1d",
+                "dynamic_hdf5_bytes": 138417432,
+                "executable_sha256": "305a22a6fd05e7169138c706c343b0a8fb35122abc7c6ef8db8838233b34149d"
+              }
+            }
+          ]
+        }
+      ],
+      "aerodynamic_repair_follow_up": {
+        "date": "2026-10-27",
+        "status": "applied_and_compiled_short_16s_integrity_and_branch_check_passed_300s_not_started",
+        "ordinary_CR_beam_only": true,
+        "cable_and_reference_tssbn_paths_preserved": true,
+        "change": "Use passed trial-node Rg and initial material-section reference; align to the common current normal plane and average directions before taking a periodic angle.",
+        "initial_attack_definition_changed": false,
+        "newmark_velocity_acceleration_control_changed": false,
+        "time_step_strategy": "unchanged_step_doubling",
+        "input_or_tolerance_changes": false,
+        "production_sources": [
+          {
+            "path": "YQY/Solver/Dynamic/Integrators/SolverNewmark.cpp",
+            "sha256": "493c27ecc11e105bf4f04cbeab8d99b73a9a410fe4c85c3d9bbbb0af3385272e"
+          },
+          {
+            "path": "YQY/DataStructure/Load/LoadAssembler.cpp",
+            "sha256": "aa8e9b62b17e2f8384318f6c9aa903a9ff11890057deb75c781b5248945d59d2"
+          },
+          {
+            "path": "YQY/DataStructure/Load/AerodynamicLoadCalculator.cpp",
+            "sha256": "9fb7d810d76eace811bc05c7e63c17ddbaaee821498fe9dedf464f9d45b9168b"
+          },
+          {
+            "path": "YQY/DataStructure/Load/AerodynamicLoadCalculator.h",
+            "sha256": "51969a5eb8e745f1731766233f3074cace8068c0690626b8d1f8430ae7a6e0d3"
+          }
+        ],
+        "compiled_executable": {
+          "path": "C:/APP/VS/YQY_CAE/tmp/newmark-beam-optimization-20261027/bin-aero/YQYTests.exe",
+          "sha256": "50340271a54768004c1c01781317787f3fb26b82b53cc17ec219b6e38aa7e013"
+        },
+        "plan": {
+          "path": "C:/APP/VS/YQY_CAE/tmp/newmark-beam-optimization-20261027/aero-plan.json",
+          "sha256": "285d9d2fbce077789c5adbb030befdf618e43561a79bfdb729f02b6d8e73fe71"
+        },
+        "branch_fix_patch": {
+          "path": "C:/APP/VS/YQY_CAE/tmp/newmark-beam-optimization-20261027/aero-candidate/aero-branch-fix.patch",
+          "sha256": "14e68c431906534f1ea3205ed8a6b6609f4f084459f5d17387b58bb2aabcb62e"
+        },
+        "validation_16s_status": "completed_integrity_and_branch_crossing_only_not_response_acceptance",
+        "validation_300s_started": false,
+        "numerical_acceptance_pass": false,
+        "limitations": [
+          "Existing CanonicalAxis sign convention retained.",
+          "Global RX-fixed / RY-RZ-free beam supports are not identical to fixed current-axis torsion.",
+          "SO(3) rotational q error measurement is a separate unresolved validation item."
+        ],
+        "historical_300s_policy": "Preserve all frozen 2026-10-26 baseline failures and response gates; new source changes do not retroactively validate those outputs.",
+        "error_norm_changed": false,
+        "low_cost_error_estimator_implemented": false,
+        "short_16s_validation": {
+          "evidence": {
+            "path": "C:/APP/VS/YQY_CAE/tmp/newmark-beam-optimization-20261027/aero-16s-audit.json",
+            "sha256": "f61344402b44b4dba215bd55aa982505d74527238b67311d3445ba87d4b312b0"
+          },
+          "scope": "Completion/integrity and branch-crossing evidence only. This is not a 300 s completion, 20 s envelope gate, paper reproduction, or proof of response accuracy. Fixed dt/2 is not truth. No short-window response pass gate is introduced.",
+          "all_integrity_checks_passed": true,
+          "all_qva_scalars_audited": 65826000,
+          "nodes_per_run": 53,
+          "same_input_hash": true,
+          "same_initial_grid_and_qva_exactly": true,
+          "runs": {
+            "aero_beam_fixed_16s": {
+              "accepted_steps": 3200,
+              "frame_count": 3201,
+              "end_time": 16,
+              "dynamic_wall_seconds": 19.2447506,
+              "input_sha256": "09aa4a7230bdc371898f814a4c92f3d09cc7c33ecebbd828e9f22e8e82e54358"
+            },
+            "aero_beam_fixed_half_16s": {
+              "accepted_steps": 6400,
+              "frame_count": 6401,
+              "end_time": 16,
+              "dynamic_wall_seconds": 30.7396742,
+              "input_sha256": "09aa4a7230bdc371898f814a4c92f3d09cc7c33ecebbd828e9f22e8e82e54358"
+            },
+            "aero_beam_adaptive_16s": {
+              "accepted_steps": 59397,
+              "frame_count": 59398,
+              "end_time": 16,
+              "dynamic_wall_seconds": 746.3808232,
+              "input_sha256": "09aa4a7230bdc371898f814a4c92f3d09cc7c33ecebbd828e9f22e8e82e54358"
+            }
+          },
+          "old_failure_time": 14.211889140609067,
+          "first_accepted_midpoint_branch_change": {
+            "before_time": 14.211753648269916,
+            "after_time": 14.212047024246603,
+            "rx_coordinate_jump": -6.280677259904911,
+            "relative_SO3_angle_radians": 0.0025080472746761514
+          },
+          "accepted_branch_change_count": 6,
+          "original_20s_envelope_gate_passed": false,
+          "response_accuracy_acceptance_pass": false,
+          "paper_or_galloping_acceptance_pass": false
+        },
+        "existing_physical_regression": {
+          "evidence": {
+            "path": "C:/APP/VS/YQY_CAE/tmp/newmark-beam-optimization-20261027/regression-result.json",
+            "sha256": "972fd8123ec24b7020468b97ee4c1f3a52c99eb1369d37a0a3cbd01a778d7772"
+          },
+          "executable_sha256": "50340271a54768004c1c01781317787f3fb26b82b53cc17ec219b6e38aa7e013",
+          "gtest_tests": 6,
+          "gtest_failures": 0,
+          "gtest_filter": "AxialOscillation.NewmarkFixed:PrestressedCable.NewmarkFixed:NonlinearCable.NewmarkFixed:DampedOscillator.NewmarkFixed:NonlinearPendulum.NewmarkFixed:TrussVibration.NewmarkFixed",
+          "spatial_steps": [
+            0.02,
+            0.01,
+            0.005
+          ],
+          "spatial_full_qva_accuracy_and_second_order_gates": {
+            "all_complete_finite_and_time_matched": true,
+            "strict_solver_execution": true,
+            "finest_full_state_accuracy": true,
+            "all_channels_second_order": true
+          },
+          "spatial_finest_errors": {
+            "position": 1.479391616025356e-06,
+            "rotation": 3.070342189369741e-06,
+            "velocity": 1.14392438793322e-06,
+            "angular_velocity": 3.651327984382027e-06,
+            "acceleration": 9.529865511330803e-07,
+            "angular_acceleration": 4.189052511636172e-05
+          },
+          "spatial_certified_orders": [
+            {
+              "position": 1.9997050743576323,
+              "rotation": 2.009334487278747,
+              "velocity": 1.9818459585125086,
+              "angular_velocity": 2.014627336480534,
+              "acceleration": 1.9981656233942708,
+              "angular_acceleration": 1.9966565506874507
+            },
+            {
+              "position": 2.003452107595384,
+              "rotation": 2.0059787101098956,
+              "velocity": 1.9994223889049905,
+              "angular_velocity": 1.9879362312525857,
+              "acceleration": 1.9997108716644691,
+              "angular_acceleration": 1.9737221521934714
+            }
+          ],
+          "scope": "Existing physical-case regression, no new test family; full q/v/a independent references and spatial noncommuting exact motion. Does not validate all constrained beam/galloping inputs.",
+          "spatial_scope": "Actual flexible CR element and production AnalysisStep/Newmark, under loads realizing an exact noncommuting rigid-motion solution; no prescribed DOFs. Not a published flexible trajectory certificate.",
+          "launch_retry_record": {
+            "path": "C:/APP/VS/YQY_CAE/tmp/newmark-beam-optimization-20261027/regression-launch-failure.json",
+            "sha256": "aca3a14e0bbfe1237c8c19b8951444a6c7b29cc83f850cd7dcd6fb6697731b5e",
+            "reason": "Initial pre-solve input locator failure with executable outside repository; same SHA executable copied inside repository and all listed regressions rerun successfully."
+          },
+          "new_physical_family_registered": false,
+          "registered_pass_totals_changed": false
+        },
+        "report_path": "C:/APP/VS/YQY_CAE/tmp/newmark-beam-optimization-20261027/report.html"
+      },
+      "common_parameters": {
+        "beta": 0.25,
+        "gamma": 0.5,
+        "newton_tolerance": 1e-06,
+        "maximum_newton_iterations": 48,
+        "adaptive_initial_dt": 0.005,
+        "adaptive_minimum_dt": 1e-06,
+        "adaptive_maximum_dt": 0.02,
+        "adaptive_rtol": 0.0005,
+        "adaptive_atol": 1e-05,
+        "adaptive_velocity_rtol": 0.0005,
+        "adaptive_velocity_atol": 0.0001,
+        "adaptive_include_velocity_error": true,
+        "fixed_default_cutback_floor": 1e-05,
+        "minimum_dt_scope": "CLI --min-dt configures m_AdaptiveTimeStep, consumed only by AdaptiveNewmark. Fixed Newmark retains Params default minimumTimeStep=1e-5; record actual accepted dt and cutbacks.",
+        "damping": "Explicit local Rayleigh coefficients in frozen input; active matrix and production damping power checked after the timed solve"
+      },
+      "reference": {
+        "kind": "same_model_time_refinement",
+        "fixed_dt": 0.0025,
+        "conditions_compared_separately": true,
+        "scope": "Compare each candidate to the identical element model with fixed Newmark dt=0.0025 s; this is not a theoretical exact solution, independent solver result, proof of convergence, or the original paper trajectory.",
+        "paper": {
+          "title": "An efficient adaptive time-integration method for second-order nonlinear dynamics",
+          "authors": "Z. Duan et al.",
+          "doi": "10.1016/j.apm.2026.116740",
+          "section": "4.2.3; Table 7, Figures 9 and 10",
+          "role": "Published physical parameters and background; missing inputs explicitly reconstructed in source_audit.json"
+        }
+      },
+      "acceptance_plan": "YQYTests/TestModels/Dynamics/SingleConductor/comparison-plan.json",
+      "validation_scope": "Full production HDF5 import, gravity equilibrium, inherited dynamic AnalysisStep and aerodynamic loading. Check 300 s endpoint, all saved nodal q/v/a finite, identical input and initial state; compare quarter/mid/three-quarter response, 20 s envelopes, late-window frequency and phase-sensitive RMS. Completion and same-model agreement do not prove paper reproduction or galloping.",
+      "acceptance": {
+        "phase_sensitive_displacement_and_twist_nrms": 0.05,
+        "maximum_20s_window_p2p_relative_error": 0.02,
+        "active_late_50s_dominant_frequency_relative_error": 0.02,
+        "translation_normalization_floor_m": 0.01,
+        "rotation_normalization_floor_rad": 0.01,
+        "velocity_and_acceleration": "Report differences separately; no numerical pass is inferred from displacement gates",
+        "all_saved_nodes_and_frames": "Require hdf5-audit.json integrity_pass in addition to CSV/summary checks",
+        "beam_correctness_block": "Known principal-rotation aerodynamic discontinuity blocks physical/algorithm/galloping acceptance even if same-runtime dt versus dt/2 response gates agree",
+        "galloping": "Report growth/decay and persistent cycles; use no-aero control when needed. Wind-startup motion or successful completion alone is insufficient."
+      },
+      "timing_policy": "Serial same Release binary, one execution thread, full HDF5 at every accepted step for all configurations. Static and dynamic wall times separate; output costs retained. One observation per configuration is not a timing confidence interval.",
+      "cli_bindings": [
+        "--verify-single-conductor-newmark --input YQYTests/TestModels/Dynamics/SingleConductor/<cable|beam>.h5 --output <fresh-output-directory> --solver fixed --duration 300 --dt 0.005",
+        "--verify-single-conductor-newmark --input YQYTests/TestModels/Dynamics/SingleConductor/<cable|beam>.h5 --output <fresh-output-directory> --solver adaptive --duration 300 --dt 0.005 --max-dt 0.02 --min-dt 1e-6 --rtol 5e-4 --atol 1e-5 --velocity-atol 1e-4",
+        "--verify-single-conductor-newmark --input YQYTests/TestModels/Dynamics/SingleConductor/<cable|beam>.h5 --output <fresh-output-directory> --solver fixed --duration 300 --dt 0.0025"
+      ],
+      "execution_matrix": "One physical family, two distinct element-model conditions, four candidate runs and two fixed-refinement runs; optional no-aero runs are separate controls.",
+      "retained_failure": {
+        "condition": "beam",
+        "algorithm": "AdaptiveNewmark",
+        "duration_requested_seconds": 2,
+        "minimum_dt": 1e-05,
+        "accepted_end_time": 0,
+        "normalized_error_at_minimum": 1.33446,
+        "reason": "LTE remained above one at minimum dt despite converged Newton solves",
+        "revision": "Lower adaptive minimum only to 1e-6, preserving physical input and error tolerances; keep original failure evidence",
+        "evidence_directory": "C:/APP/VS/YQY_CAE/tmp/newmark-duan-galloping-20261026/runs/pilot_beam_adaptive"
+      },
+      "evidence_directory": "C:/APP/VS/YQY_CAE/tmp/newmark-duan-galloping-20261026",
+      "notes": "300 s is shorter than the paper's 2000 s and t>1000 s steady trajectory. Do not replace the registered 40-degree/GJ101 condition with historical 171.5-degree/GJ140 variants. No algorithm/condition is marked numerically passed until its complete comparison is available."
+    },
+    {
+      "id": "free-ring-qv-displacement",
+      "title": "自由圆环位移精度与迭代容差细化",
+      "analysis": "dynamic",
+      "registration": "formal",
+      "execution": "explicit",
+      "status": "unassessed",
+      "source_files": [
+        "YQYTests/Dynamics/SpatialBeam/SpatialFrameTest.cpp"
+      ],
+      "data": [
+        "YQYTests/TestModels/Dynamics/SpatialBeam/displacement-plan.json"
+      ],
+      "conditions": [
+        {
+          "id": "32-element-free-ring",
+          "duration": 150
+        }
+      ],
+      "algorithms": [
+        "AdaptiveNewmark",
+        "AdaptiveRungeKutta4",
+        "AdaptiveTSSBN",
+        "ReferenceTSSBN"
+      ],
+      "reference": "Fixed Newmark three-step convergence, independently cross-checked by fixed RK4 on the identical spatial model",
+      "validation_scope": "Same-model time-discretization assessment; the model adapter reuses production Node/CR/integrators, not the entire AnalysisStep workflow or author exact reference.",
+      "acceptance": "User approved 0.1% maximum vector displacement error relative to reference peak displacement; reference qualification, whole-history finite/completion, outer trend and inner sensitivity are separate frozen gates.",
+      "cli_bindings": [
+        "--verify-duan2026-ring --paper-solver <adaptive-newmark|adaptive-rk4|adaptive-tssbn|reference-tssbn|newmark|rk4> --paper-duration 150 --paper-output <fresh-directory>"
+      ],
+      "planned_runs": {
+        "candidate": 12,
+        "inner_sensitivity_additional": 6,
+        "reference_initial": 4,
+        "conditional_reference_refinements": "up to four additional runs"
+      }
+    }
+  ],
+  "unregistered_legacy_data": {
+    "directory": "YQYTests/TestModels/Pending/Legacy",
+    "status": "pending_inventory",
+    "scope": "Unclassified inputs, external/cross-model diagnostics and old reference data are preserved, not counted as formal cases."
+  },
+  "latest_post_move_campaign": {
+    "record_phase": "post_directory_restructure",
+    "executable": "C:\\APP\\VS\\YQY_CAE\\YQY\\tmp\\case-restructure-20261026\\bin\\YQYTests.exe",
+    "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63",
+    "runtime_library": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\bin\\YQYRuntime.lib",
+    "runtime_library_sha256": "4b16b55be8a2088026904b0f69695c48e999a5a72e28be34583bbdec2adca3ec",
+    "default_registered_physical_cases": 12,
+    "default_xml_test_items": 15,
+    "default_xml_failures": 0,
+    "default_xml": {
+      "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final.xml",
+      "sha256": "fb4e34629abb23ecf1de03e1edefa7c19f814eecbda238a869aab8a5aaa231e6",
+      "kind": "final_post_move_default_run",
+      "record_phase": "post_directory_restructure",
+      "record_stage": "final_runner_guard",
+      "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+    },
+    "explicit_cases_with_current_independent_comparison": [
+      "helical-beam-proportional-load",
+      "spatial-noncommuting-rigid-motion",
+      "spatial-flexible-right-angle-frame"
+    ],
+    "qualification": "Current evidence is limited to registered condition + algorithm combinations. Previous seven failures were not rerun or converted to passes. Betsch remains historical/current unassessed; circular bending remains pending failure. Graphical Battini agreement has its own restricted scope.",
+    "executable_artifact": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\bin\\YQYTests.exe",
+    "repository_context": "Execute the repository-local YQY/tmp alias so TestPaths can find YQYTests and YQY/Import/ImportFile by walking executable ancestors; outer scratch/bin retains the identical artifact.",
+    "record_stage": "final_runner_guard",
+    "default_process": {
+      "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default-final-process.json",
+      "sha256": "75876e0e3f497cad271143ba85bd4f36569cd81195509043f860dab14265b716",
+      "kind": "final_post_move_process_exit",
+      "record_phase": "post_directory_restructure",
+      "record_stage": "final_runner_guard",
+      "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+    },
+    "independent_beam_audit": {
+      "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\final-independent-audit\\report.json",
+      "sha256": "018697b294ccc0fb515e0c4fdfc69044baac9ddb50128067325f91630d2222bc",
+      "kind": "final_post_move_independent_csv_audit",
+      "record_phase": "post_directory_restructure",
+      "record_stage": "final_runner_guard",
+      "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+    },
+    "initial_final_comparison": {
+      "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\final-independent-audit\\initial-final-comparison.json",
+      "sha256": "366bd0cdfcafd187f062d5b42cd953bf0371b36a535c4ae4a6fdb85933bd39c3",
+      "kind": "initial_final_runner_numeric_comparison",
+      "record_phase": "post_directory_restructure",
+      "record_stage": "final_runner_guard",
+      "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+    },
+    "spatial_campaign": {
+      "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\final-validation\\spatial-summary.json",
+      "sha256": "ebe4d97b32b3277ef4b3b233407568a00ecabb24a84c8896eb5a773f5fd9187d",
+      "kind": "final_post_move_spatial_campaign",
+      "record_phase": "post_directory_restructure",
+      "record_stage": "final_runner_guard",
+      "executable_sha256": "79d079ea3244ffe3855acaf1edc2d8a62006b41d8f5684836035dc85faba0e63"
+    }
+  },
+  "historical_post_move_campaigns": [
+    {
+      "record_phase": "post_directory_restructure",
+      "executable": "C:\\APP\\VS\\YQY_CAE\\YQY\\tmp\\case-restructure-20261026\\bin\\YQYTests.exe",
+      "executable_sha256": "936a249c77bced5c19a48a75107db0d271467fa3695f5a6ecd5b49b2d7c2f20d",
+      "runtime_library": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\bin\\YQYRuntime.lib",
+      "runtime_library_sha256": "4b16b55be8a2088026904b0f69695c48e999a5a72e28be34583bbdec2adca3ec",
+      "default_registered_physical_cases": 12,
+      "default_xml_test_items": 15,
+      "default_xml_failures": 0,
+      "default_xml": {
+        "path": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\default.xml",
+        "sha256": "2e98de4017fd01362b52a547c3b4cc3c49bf48fd6da7564fb58dffc29b99adba",
+        "kind": "post_move_default_run",
+        "record_phase": "post_directory_restructure"
+      },
+      "explicit_cases_with_current_independent_comparison": [
+        "helical-beam-proportional-load",
+        "spatial-noncommuting-rigid-motion",
+        "spatial-flexible-right-angle-frame"
+      ],
+      "qualification": "Current evidence is limited to registered condition + algorithm combinations. Previous seven failures were not rerun or converted to passes. Betsch remains historical/current unassessed; circular bending remains pending failure. Graphical Battini agreement has its own restricted scope.",
+      "executable_artifact": "C:\\APP\\VS\\YQY_CAE\\tmp\\case-restructure-20261026\\bin\\YQYTests.exe",
+      "repository_context": "Execute the repository-local YQY/tmp alias so TestPaths can find YQYTests and YQY/Import/ImportFile by walking executable ancestors; outer scratch/bin retains the identical artifact."
+    }
+  ],
+  "error_control_campaign_20261028": {
+    "evidence": {
+      "path": "C:/APP/VS/YQY_CAE/tmp/error-control-20261028/validation.json",
+      "sha256": "48dc98263c469d9f0b2bf5a7dcc6d4a2b8103494dfad6cbd0b8c4652edf0ba52"
+    },
+    "default_test_items": 16,
+    "default_failures": 0,
+    "mpc_explicit_runs": 8,
+    "mpc_groups_passed": [
+      "newmark",
+      "tssbn"
+    ],
+    "qualification": "Evidence belongs to the recorded successful Release binary. A subsequent whole-workspace build was blocked by concurrent GUI splitting edits; historical campaign records remain unchanged."
+  }
+}

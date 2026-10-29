@@ -21,14 +21,20 @@
     <WindowsTargetPlatformVersion Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">10.0</WindowsTargetPlatformVersion>
     <WindowsTargetPlatformVersion Condition="'$(Configuration)|$(Platform)' == 'ReleaseVerification|x64'">10.0</WindowsTargetPlatformVersion>
     <QtMsBuild Condition="'$(QtMsBuild)'=='' OR !Exists('$(QtMsBuild)\qt.targets')">$(MSBuildProjectDirectory)\QtMsBuild</QtMsBuild>
-    <CudssRoot>$(ProjectDir)ThirdPartyLibrary\cuDSS\libcudss-windows-x86_64-0.8.0.10_cuda13-archive</CudssRoot>
-    <OneMklRoot>D:\VS\Vcpkg\vcpkg\installed\x64-windows-static-md</OneMklRoot>
+    <CudaRoot Condition="'$(CUDA_PATH)' != ''">$(CUDA_PATH)</CudaRoot>
+    <CudaRoot Condition="'$(CUDA_PATH)' == '' and Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0')">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0</CudaRoot>
+    <CudssRoot>$(SolutionDir)ThirdPartyLibrary\cuDSS\libcudss-windows-x86_64-0.8.0.10_cuda13-archive</CudssRoot>
+    <OneMklRoot Condition="'$(YQY_MKL_ROOT)' != ''">$(YQY_MKL_ROOT)</OneMklRoot>
+    <OneMklRoot Condition="'$(YQY_MKL_ROOT)' == '' and '$(VCPKG_ROOT)' != ''">$(VCPKG_ROOT)\installed\x64-windows-static-md</OneMklRoot>
+    <OneMklRoot Condition="'$(YQY_MKL_ROOT)' == '' and '$(VCPKG_ROOT)' == '' and Exists('$(SolutionDir)ThirdPartyLibrary\vcpkg_installed\x64-windows-static-md')">$(SolutionDir)ThirdPartyLibrary\vcpkg_installed\x64-windows-static-md</OneMklRoot>
+    <OneMklRoot Condition="'$(YQY_MKL_ROOT)' == '' and '$(VCPKG_ROOT)' == '' and !Exists('$(SolutionDir)ThirdPartyLibrary\vcpkg_installed\x64-windows-static-md')">D:\VS\Vcpkg\vcpkg\installed\x64-windows-static-md</OneMklRoot>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <PlatformToolset>v143</PlatformToolset>
-    <UseDebugLibraries>true</UseDebugLibraries>
+    <!-- Match the Release-built VTK/Qt binaries while retaining Debug symbols and checks. -->
+    <UseDebugLibraries>false</UseDebugLibraries>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="Configuration">
@@ -52,7 +58,8 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="QtSettings">
     <QtInstall>6.8.2_msvc2022_64</QtInstall>
     <QtModules>core;gui;widgets;opengl;openglwidgets;concurrent;svg</QtModules>
-    <QtBuildConfig>debug</QtBuildConfig>
+    <!-- VTK is currently built as Release; use the matching Qt runtime in Debug too. -->
+    <QtBuildConfig>release</QtBuildConfig>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="QtSettings">
     <QtInstall>6.8.2_msvc2022_64</QtInstall>
@@ -67,7 +74,9 @@
   <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\qt.targets') or !Exists('$(QtMsBuild)\qt.props')">
     <Message Importance="High" Text="QtMsBuild: could not locate qt.targets, qt.props; project may not build correctly." />
   </Target>
-  <ImportGroup Label="ExtensionSettings" />
+  <ImportGroup Label="ExtensionSettings">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 13.0.props" />
+  </ImportGroup>
   <ImportGroup Label="Shared" />
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
@@ -87,6 +96,7 @@
   <PropertyGroup Label="UserMacros">
     <!-- 由 vcpkg.exe 复制运行时 DLL，避免 vcpkg 先尝试不存在的 pwsh.exe。 -->
     <VcpkgXUseBuiltInApplocalDeps>true</VcpkgXUseBuiltInApplocalDeps>
+    <VtkRuntimeConfiguration Condition="'$(Configuration)' == 'Debug'">Release</VtkRuntimeConfiguration>
     <VtkRuntimeConfiguration Condition="'$(Configuration)' == 'ReleaseVerification'">Release</VtkRuntimeConfiguration>
     <VtkRuntimeConfiguration Condition="'$(VtkRuntimeConfiguration)' == ''">$(Configuration)</VtkRuntimeConfiguration>
   </PropertyGroup>
@@ -114,13 +124,13 @@
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalOptions>/std:c++20 /utf-8 /bigobj %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)GUI;$(ProjectDir)ThirdPartyLibrary\spectra-1.2.0\include;$(CUDA_PATH)\include;$(CudssRoot)\include;$(OneMklRoot)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)GUI;$(SolutionDir)ThirdPartyLibrary\spectra-1.2.0\include;$(CudaRoot)\include;$(CudssRoot)\include;$(OneMklRoot)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(CUDA_PATH)\lib\x64;$(CudssRoot)\lib;$(OneMklRoot)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>cudart.lib;cublas.lib;cusparse.lib;cudss.lib;mkl_intel_lp64.lib;mkl_intel_thread.lib;mkl_core.lib;$(ProjectDir)ThirdPartyLibrary\oneMKLRuntime\libiomp5md.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(CudaRoot)\lib\x64;$(CudssRoot)\lib;$(OneMklRoot)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>cudart.lib;cublas.lib;cusparse.lib;cudss.lib;mkl_intel_lp64.lib;mkl_intel_thread.lib;mkl_core.lib;$(OneMklRoot)\lib\libiomp5md.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="Configuration">
@@ -139,15 +149,15 @@
       <AdditionalOptions>/std:c++20 /utf-8 /bigobj %(AdditionalOptions)</AdditionalOptions>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)GUI;$(ProjectDir)ThirdPartyLibrary\spectra-1.2.0\include;$(CUDA_PATH)\include;$(CudssRoot)\include;$(OneMklRoot)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)GUI;$(SolutionDir)ThirdPartyLibrary\spectra-1.2.0\include;$(CudaRoot)\include;$(CudssRoot)\include;$(OneMklRoot)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>false</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalLibraryDirectories>$(CUDA_PATH)\lib\x64;$(CudssRoot)\lib;$(OneMklRoot)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>cudart.lib;cublas.lib;cusparse.lib;cudss.lib;mkl_intel_lp64.lib;mkl_intel_thread.lib;mkl_core.lib;$(ProjectDir)ThirdPartyLibrary\oneMKLRuntime\libiomp5md.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(CudaRoot)\lib\x64;$(CudssRoot)\lib;$(OneMklRoot)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>cudart.lib;cublas.lib;cusparse.lib;cudss.lib;mkl_intel_lp64.lib;mkl_intel_thread.lib;mkl_core.lib;$(OneMklRoot)\lib\libiomp5md.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'ReleaseVerification|x64'" Label="Configuration">
@@ -163,19 +173,18 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <PreprocessorDefinitions>YQY_VERIFICATION_BUILD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalOptions>/std:c++20 /utf-8 /bigobj %(AdditionalOptions)</AdditionalOptions>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)GUI;$(ProjectDir)ThirdPartyLibrary\spectra-1.2.0\include;$(CUDA_PATH)\include;$(CudssRoot)\include;$(OneMklRoot)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)GUI;$(SolutionDir)ThirdPartyLibrary\spectra-1.2.0\include;$(CudaRoot)\include;$(CudssRoot)\include;$(OneMklRoot)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>false</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalLibraryDirectories>$(CUDA_PATH)\lib\x64;$(CudssRoot)\lib;$(OneMklRoot)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>cudart.lib;cublas.lib;cusparse.lib;cudss.lib;mkl_intel_lp64.lib;mkl_intel_thread.lib;mkl_core.lib;$(ProjectDir)ThirdPartyLibrary\oneMKLRuntime\libiomp5md.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(CudaRoot)\lib\x64;$(CudssRoot)\lib;$(OneMklRoot)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>cudart.lib;cublas.lib;cusparse.lib;cudss.lib;mkl_intel_lp64.lib;mkl_intel_thread.lib;mkl_core.lib;$(OneMklRoot)\lib\libiomp5md.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -194,12 +203,23 @@
       <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)' == 'ReleaseVerification|x64'">
       </ForcedIncludeFiles>
     </ClCompile>
+    <ClCompile Include="Utility\RuntimeOptions.cpp" />
+    <ClCompile Include="Utility\AnalysisDiagnostics.cpp" />
+    <ClCompile Include="Utility\UiIcons.cpp" />
+    <ClCompile Include="Utility\DialogScreenAdapter.cpp" />
+    <ClCompile Include="GUI\Widgets\DialogFormView.cpp" />
+    <ClInclude Include="GUI\Widgets\DialogFormView.h" />
     <ClCompile Include="Conductor\Conductor.cpp" />
     <ClCompile Include="Conductor\ConductorModelBuilder.cpp" />
     <ClCompile Include="Conductor\PropertyLibrary.cpp" />
+    <ClCompile Include="DataStructure\Factory\ElementFactory.cpp" />
+    <ClCompile Include="DataStructure\Factory\LoadFactory.cpp" />
+    <ClCompile Include="DataStructure\Factory\SectionFactory.cpp" />
+    <ClCompile Include="Solver\Factory\SolverFactory.cpp" />
     <ClCompile Include="DataStructure\Section\SectionRectangle.cpp" />
     <ClCompile Include="Solver\Dynamic\Integrators\SolverAdaptiveTSSBN.cpp" />
     <ClCompile Include="Solver\Dynamic\Damping\StructuralDamping.cpp" />
+    <ClCompile Include="Solver\Dynamic\Damping\ConductorModalClassifier.cpp" />
     <ClCompile Include="Solver\Linear\Gpu\GpuSettings.cpp" />
     <ClCompile Include="Utility\CR.cpp" />
     <ClCompile Include="Utility\ResultTextFormat.cpp" />
@@ -243,36 +263,44 @@
     <ClCompile Include="Solver\Linear\Gpu\CudaSparseSolver.cpp" />
     <ClCompile Include="Solver\Linear\Gpu\CudssSolver.cpp" />
     <ClCompile Include="Solver\Linear\Direct\PardisoSolver.cpp" />
+    <ClCompile Include="Solver\Assembly\ParallelAssemblyEngine.cpp" />
+    <CudaCompile Include="Solver\Assembly\Gpu\CudaTrussBatchEvaluator.cu">
+      <CodeGeneration>compute_120,sm_120</CodeGeneration>
+      <AdditionalOptions>--std c++20 -Xcompiler /utf-8 %(AdditionalOptions)</AdditionalOptions>
+    </CudaCompile>
+    <CudaCompile Include="Solver\Assembly\Gpu\CudaCableBatchEvaluator.cu">
+      <CodeGeneration>compute_120,sm_120</CodeGeneration>
+      <AdditionalOptions>--std c++20 -Xcompiler /utf-8 %(AdditionalOptions)</AdditionalOptions>
+    </CudaCompile>
+    <CudaCompile Include="Solver\Assembly\Gpu\CudaBeamBatchEvaluator.cu">
+      <CodeGeneration>compute_120,sm_120</CodeGeneration>
+      <AdditionalOptions>--std c++20 -Xcompiler /utf-8 %(AdditionalOptions)</AdditionalOptions>
+    </CudaCompile>
+    <CudaCompile Include="Solver\Linear\Gpu\CudssDeviceTransfer.cu">
+      <CodeGeneration>compute_120,sm_120</CodeGeneration>
+      <AdditionalOptions>--std c++20 -Xcompiler /utf-8 %(AdditionalOptions)</AdditionalOptions>
+    </CudaCompile>
     <ClCompile Include="Utility\EnumKeyword.cpp" />
     <ClCompile Include="DataStructure\Section\SectionBase.cpp" />
     <QtRcc Include="Resource\YQY.qrc" />
-    <QtUic Include="GUI\Ui\YQY.ui" />
-    <QtUic Include="GUI\Ui\SettingsPanel.ui" />
-    <QtUic Include="GUI\Ui\ResultControlPanel.ui" />
-    <QtUic Include="GUI\Ui\AnalysisSummaryPanel.ui" />
-    <QtUic Include="GUI\Ui\SolveTaskManagerDialog.ui" />
-    <QtUic Include="GUI\Ui\PropertyModule.ui" />
-    <QtUic Include="GUI\Ui\ConductorModule.ui" />
-    <QtUic Include="GUI\Ui\AnalysisManagerDialog.ui" />
-    <QtUic Include="GUI\Ui\StepEditorDialog.ui" />
-    <QtUic Include="GUI\Ui\LoadEditorDialog.ui" />
-    <QtUic Include="GUI\Ui\ConstraintEditorDialog.ui" />
-    <QtUic Include="GUI\Ui\PropertyItemEditorDialog.ui" />
-    <QtUic Include="GUI\Ui\PropertyLibraryDialog.ui" />
-    <QtUic Include="GUI\Ui\NodeResultExportDialog.ui" />
     <QtMoc Include="GUI\YQY.h" />
     <QtMoc Include="GUI\Controllers\ModelController.h" />
     <QtMoc Include="GUI\Controllers\SolveTaskController.h" />
     <QtMoc Include="GUI\Widgets\ModelViewport.h" />
+    <ClInclude Include="GUI\Widgets\ViewportCameraController.h" />
     <ClInclude Include="GUI\Widgets\NavigationButton.h" />
+    <ClInclude Include="GUI\Widgets\SingleLineLabel.h" />
+    <ClInclude Include="GUI\Widgets\WorkspaceSplitter.h" />
     <ClInclude Include="GUI\Widgets\SettingsPanel.h" />
     <ClInclude Include="GUI\Widgets\ResultControlPanel.h" />
+    <ClInclude Include="GUI\Widgets\NodeTimeHistoryPanel.h" />
     <ClInclude Include="GUI\Widgets\AnalysisSummaryPanel.h" />
     <ClInclude Include="GUI\Widgets\PropertyModule.h" />
     <ClInclude Include="GUI\Widgets\ConductorModule.h" />
     <ClInclude Include="GUI\Widgets\CompactDoubleSpinBox.h" />
     <ClInclude Include="GUI\Widgets\ResultControlInputWidgets.h" />
     <ClInclude Include="GUI\Dialogs\AnalysisManagerDialog.h" />
+    <ClInclude Include="GUI\Dialogs\AnalysisEditor.h" />
     <ClInclude Include="GUI\Dialogs\ComputeRegionManagerDialog.h" />
     <ClInclude Include="GUI\Dialogs\ModelSetManagerDialog.h" />
     <ClInclude Include="GUI\Dialogs\SolveTaskManagerDialog.h" />
@@ -285,9 +313,7 @@
     <ClInclude Include="GUI\Widgets\ProgressBarAnimation.h" />
     <ClInclude Include="Application\ApplicationPaths.h" />
     <ClInclude Include="Application\ApplicationBootstrap.h" />
-    <ClInclude Include="Application\PaperBeamDynamicsVerification.h" />
-    <ClInclude Include="Application\VerificationRunner.h" />
-    <ClInclude Include="Application\UiAuditRunner.h" />
+    <ClInclude Include="Application\SolveWorker.h" />
     <ClCompile Include="Base\Base.cpp" />
     <ClCompile Include="DataStructure\Element\ElementBase.cpp" />
     <ClCompile Include="DataStructure\Element\ElementTruss.cpp" />
@@ -304,23 +330,18 @@
     <ClCompile Include="GUI\Controllers\SolveTaskController.cpp" />
     <ClCompile Include="GUI\Controllers\WorkspaceController.cpp" />
     <ClCompile Include="GUI\Widgets\ModelViewport.cpp" />
+    <ClCompile Include="GUI\Widgets\ViewportCameraController.cpp" />
     <ClCompile Include="GUI\Widgets\SettingsPanel.cpp" />
     <ClCompile Include="GUI\Widgets\ResultControlPanel.cpp" />
+    <ClCompile Include="GUI\Widgets\NodeTimeHistoryPanel.cpp" />
     <ClCompile Include="GUI\Widgets\AnalysisSummaryPanel.cpp" />
     <ClCompile Include="GUI\Widgets\PropertyModule.cpp" />
     <ClCompile Include="GUI\Widgets\ConductorModule.cpp" />
     <ClCompile Include="GUI\Widgets\ProgressBarAnimation.cpp" />
     <ClCompile Include="Application\ApplicationPaths.cpp" />
     <ClCompile Include="Application\ApplicationBootstrap.cpp" />
-    <ClCompile Include="Application\PaperBeamDynamicsVerification.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="Application\VerificationRunner.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="Application\UiAuditRunner.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </ClCompile>
+    <ClCompile Include="Application\SolveWorker.cpp" />
+    <ClCompile Include="DataStructure\Element\ElementBeam_Simo.cpp" />
     <ClCompile Include="Export\Hdf5ModelIO.cpp" />
     <ClCompile Include="Export\Hdf5ModelSerializer.cpp" />
     <ClCompile Include="Export\Hdf5ResultReader.cpp" />
@@ -334,6 +355,9 @@
     <ClInclude Include="Conductor\Conductor.h" />
     <ClInclude Include="Conductor\ConductorModelBuilder.h" />
     <ClInclude Include="Conductor\PropertyLibrary.h" />
+    <ClInclude Include="DataStructure\Factory\ElementFactory.h" />
+    <ClInclude Include="DataStructure\Factory\LoadFactory.h" />
+    <ClInclude Include="DataStructure\Factory\SectionFactory.h" />
     <ClInclude Include="DataStructure\Section\SectionRectangle.h" />
     <ClInclude Include="Solver\Dynamic\TimeStepping\AdaptiveTssbnSettings.h" />
     <ClInclude Include="Solver\Dynamic\Integrators\SolverAdaptiveTSSBN.h" />
@@ -378,10 +402,17 @@
     <ClInclude Include="Solver\Dynamic\Integrators\SolverRungeKutta4.h" />
     <ClInclude Include="Solver\Dynamic\TimeStepping\TimeStepControl.h" />
     <ClInclude Include="Solver\Dynamic\TimeStepping\StateCheckpointGuard.h" />
+    <ClInclude Include="Solver\Dynamic\TimeStepping\NewtonPrecisionScale.h" />
+    <ClInclude Include="Solver\Dynamic\TimeStepping\TssbnRotationPrecision.h" />
+    <ClInclude Include="Solver\Dynamic\TimeStepping\TssbnLinearPrecision.h" />
+    <ClInclude Include="Solver\Dynamic\TimeStepping\TssbnRotationIncrement.h" />
+    <ClCompile Include="Solver\Dynamic\TimeStepping\NewtonPrecisionScale.cpp" />
     <ClInclude Include="Solver\Dynamic\TimeStepping\TimeStepError.h" />
     <ClInclude Include="Solver\Dynamic\Damping\RayleighDamping.h" />
+    <ClInclude Include="Solver\Dynamic\Damping\LocalRayleighMatrix.h" />
     <ClInclude Include="GUI\Controllers\WorkspaceController.h" />
     <ClInclude Include="Solver\Dynamic\Damping\StructuralDamping.h" />
+    <ClInclude Include="Solver\Dynamic\Damping\ConductorModalClassifier.h" />
     <ClInclude Include="Solver\Interface\IAnalysisModel.h" />
     <ClInclude Include="Solver\Interface\ISolver.h" />
     <ClInclude Include="Solver\Linear\LinearSystemSolver.h" />
@@ -391,6 +422,12 @@
     <ClInclude Include="Solver\Linear\Direct\PardisoSolver.h" />
     <ClInclude Include="Solver\Linear\Gpu\GpuSettings.h" />
     <ClInclude Include="Solver\Assembly\AssemblySettings.h" />
+    <ClInclude Include="Solver\Assembly\ParallelAssemblyEngine.h" />
+    <ClInclude Include="Solver\Assembly\SystemEvaluation.h" />
+    <ClInclude Include="Solver\Assembly\Gpu\CudaTrussBatchEvaluator.h" />
+    <ClInclude Include="Solver\Assembly\Gpu\CudaCableBatchEvaluator.h" />
+    <ClInclude Include="Solver\Assembly\Gpu\CudaBeamBatchEvaluator.h" />
+    <ClInclude Include="Solver\Linear\Gpu\CudssDeviceTransfer.h" />
     <ClInclude Include="Solver\Workflow\AnalysisSolve.h" />
     <ClInclude Include="Solver\Factory\SolverFactory.h" />
     <ClInclude Include="Solver\Static\SolverStatic.h" />
@@ -404,32 +441,38 @@
     <ClInclude Include="Export\Hdf5ResultData.h" />
     <ClInclude Include="Export\ResultFrameUtilities.h" />
     <ClInclude Include="Export\ResultExporter.h" />
-      <ClInclude Include="Export\Outputter.h" />
-      <ClInclude Include="Export\ResultOutputSettings.h" />
+    <ClInclude Include="Export\Outputter.h" />
+    <ClInclude Include="Export\EnergyResult.h" />
+    <ClInclude Include="Export\ResultOutputSettings.h" />
     <ClInclude Include="Utility\pch.h" />
+    <ClInclude Include="Utility\RuntimeOptions.h" />
+    <ClInclude Include="Utility\AnalysisDiagnostics.h" />
+    <ClInclude Include="Utility\UiIcons.h" />
+    <ClInclude Include="Utility\DialogScreenAdapter.h" />
   </ItemGroup>
   <ItemGroup>
-    <Text Include="Import\ImportFile\11.txt" />
-    <Text Include="Import\ImportFile\daoxian.txt" />
-    <Text Include="Import\ImportFile\sifenlie.txt" />
-    <Text Include="Import\ImportFile\两斜杆受压.bdf" />
-    <Text Include="Import\ImportFile\1111.bdf" />
-    <Text Include="Import\ImportFile\ce.txt" />
-    <Text Include="Import\ImportFile\Von-Mises-Truss.txt" />
+    <Text Include="Import\ImportFile\Examples\Trusses\11.txt" />
+    <Text Include="Import\ImportFile\Examples\Conductors\daoxian.txt" />
+    <Text Include="Import\ImportFile\Examples\Conductors\sifenlie.txt" />
+    <Text Include="Import\ImportFile\Examples\Trusses\两斜杆受压.bdf" />
+    <Text Include="Import\ImportFile\Examples\Misc\1111.bdf" />
+    <Text Include="Import\ImportFile\Examples\Misc\ce.txt" />
+    <Text Include="Import\ImportFile\Examples\Trusses\Von-Mises-Truss.txt" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Import\FileFormat.md" />
+    <None Include="..\docs\02_模型与格式\文本模型格式.md" />
     <None Include="Resource\app_icon.ico" />
     <None Include="Resource\app_icon_source.png" />
-    <None Include="Import\ImportFile\45梁.bdf" />
-    <None Include="Import\ImportFile\两维梁.bdf" />
-    <None Include="Import\ImportFile\斜杆一端受压.bdf" />
-    <None Include="Import\ImportFile\测试梁.bdf" />
-    <None Include="Import\ImportFile\直角梁.bdf" />
-    <None Include="Import\ImportFile\竖直杆受轴和水平力.bdf" />
+    <None Include="Import\ImportFile\Examples\Beams\45梁.bdf" />
+    <None Include="Import\ImportFile\Examples\Beams\两维梁.bdf" />
+    <None Include="Import\ImportFile\Examples\Trusses\斜杆一端受压.bdf" />
+    <None Include="Import\ImportFile\Examples\Beams\测试梁.bdf" />
+    <None Include="Import\ImportFile\Examples\Beams\直角梁.bdf" />
+    <None Include="Import\ImportFile\Examples\Trusses\竖直杆受轴和水平力.bdf" />
     <None Include="packages.config" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 13.0.targets" />
   <ImportGroup Condition="Exists('$(QtMsBuild)\qt.targets')">
     <Import Project="$(QtMsBuild)\qt.targets" />
   </ImportGroup>
@@ -452,23 +495,22 @@
       <AdditionalOptions>/std:c++20 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
   </ItemDefinitionGroup>
-  <Target Name="CopyCudaRuntime" AfterTargets="Build" Condition="Exists('$(CUDA_PATH)\bin\x64\cudart64_13.dll')">
+  <Target Name="CopyCudaRuntime" AfterTargets="Build" Condition="Exists('$(CudaRoot)\bin\x64\cudart64_13.dll')">
     <ItemGroup>
-      <CudaRuntimeDll Include="$(CUDA_PATH)\bin\x64\cudart64_13.dll" />
-      <CudaRuntimeDll Include="$(CUDA_PATH)\bin\x64\cublas64_13.dll" />
-      <CudaRuntimeDll Include="$(CUDA_PATH)\bin\x64\cublasLt64_13.dll" />
-      <CudaRuntimeDll Include="$(CUDA_PATH)\bin\x64\cusparse64_12.dll" />
+      <CudaRuntimeDll Include="$(CudaRoot)\bin\x64\cudart64_13.dll" />
+      <CudaRuntimeDll Include="$(CudaRoot)\bin\x64\cublas64_13.dll" />
+      <CudaRuntimeDll Include="$(CudaRoot)\bin\x64\cublasLt64_13.dll" />
+      <CudaRuntimeDll Include="$(CudaRoot)\bin\x64\cusparse64_12.dll" />
+      <CudaRuntimeDll Include="$(CudaRoot)\bin\x64\nvJitLink_130_0.dll" />
       <CudaRuntimeDll Include="$(CudssRoot)\bin\cudss64_0.dll" />
-      <CudaRuntimeDll Include="$(ProjectDir)ThirdPartyLibrary\oneMKLRuntime\libiomp5md.dll" />
-      <CudaRuntimeDll Include="$(APPDATA)\Python\Python312\site-packages\nvidia\cu13\bin\x86_64\nvJitLink_130_0.dll"
-                      Condition="Exists('$(APPDATA)\Python\Python312\site-packages\nvidia\cu13\bin\x86_64\nvJitLink_130_0.dll')" />
+      <CudaRuntimeDll Include="$(OneMklRoot)\bin\libiomp5md.dll" />
+      <CudaRuntimeDll Include="$(APPDATA)\Python\Python312\site-packages\nvidia\cu13\bin\x86_64\nvJitLink_130_0.dll" Condition="Exists('$(APPDATA)\Python\Python312\site-packages\nvidia\cu13\bin\x86_64\nvJitLink_130_0.dll')" />
     </ItemGroup>
     <Copy SourceFiles="@(CudaRuntimeDll)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
   </Target>
-  <Target Name="CopyVtkRuntime" AfterTargets="Build"
-          Condition="Exists('$(ProjectDir)ThirdPartyLibrary\VTK9.4.2\$(VtkRuntimeConfiguration)\bin')">
+  <Target Name="CopyVtkRuntime" AfterTargets="Build" Condition="Exists('$(SolutionDir)ThirdPartyLibrary\VTK9.4.2\$(VtkRuntimeConfiguration)\bin')">
     <ItemGroup>
-      <VtkRuntimeDll Include="$(ProjectDir)ThirdPartyLibrary\VTK9.4.2\$(VtkRuntimeConfiguration)\bin\*.dll" />
+      <VtkRuntimeDll Include="$(SolutionDir)ThirdPartyLibrary\VTK9.4.2\$(VtkRuntimeConfiguration)\bin\*.dll" />
     </ItemGroup>
     <Copy SourceFiles="@(VtkRuntimeDll)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
   </Target>
@@ -476,9 +518,69 @@
     <ItemGroup>
       <QtRuntimeDll Include="$(QtDllPath)\*.dll" />
       <QtPlatformPlugin Include="$(QtDllPath)\..\plugins\platforms\*.dll" />
+      <QtImagePlugin Include="$(QtDllPath)\..\plugins\imageformats\qsvg.dll" />
+      <QtImagePlugin Include="$(QtDllPath)\..\plugins\imageformats\qico.dll" />
+      <QtSvgIconPlugin Include="$(QtDllPath)\..\plugins\iconengines\qsvgicon.dll" />
     </ItemGroup>
     <Copy SourceFiles="@(QtRuntimeDll)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
     <MakeDir Directories="$(OutDir)platforms" />
     <Copy SourceFiles="@(QtPlatformPlugin)" DestinationFolder="$(OutDir)platforms" SkipUnchangedFiles="true" />
+    <MakeDir Directories="$(OutDir)imageformats;$(OutDir)iconengines" />
+    <Copy SourceFiles="@(QtImagePlugin)" DestinationFolder="$(OutDir)imageformats" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(QtSvgIconPlugin)" DestinationFolder="$(OutDir)iconengines" SkipUnchangedFiles="true" />
   </Target>
+  <!-- 仅正式生产目标更新共享对象库，临时检查程序不得覆盖测试依赖。 -->
+  <Target Name="ExportYQYRuntime" AfterTargets="Link"
+          Condition="'$(DesignTimeBuild)' != 'true' and ('$(TargetName)' == 'YQY' or '$(TargetName)' == 'YQYVerification')">
+    <ItemGroup>
+      <YQYRuntimeEntryObject Include="@(Link)"
+                             Condition="'%(Link.Extension)' == '.obj' and '%(Link.Filename)' == 'main'" />
+      <YQYRuntimeCoreObject Include="@(Link)"
+                            Condition="'%(Link.Extension)' == '.obj' and '%(Link.Filename)' == 'Outputter'" />
+      <YQYRuntimeObject Include="@(Link)"
+                        Condition="'%(Link.Extension)' == '.obj' and '%(Link.Filename)' != 'main'" />
+    </ItemGroup>
+    <Error Condition="'@(YQYRuntimeEntryObject)' == '' or '@(YQYRuntimeCoreObject)' == ''"
+           Text="正式生产链接缺少 main.obj 或 Outputter.obj，拒绝覆盖测试共享库。" />
+    <Error Condition="'@(YQYRuntimeObject)' == ''" Text="未找到本次构建的生产代码对象，无法生成测试依赖库。" />
+    <MakeDir Directories="$(IntDir)RuntimeLibrary\" />
+    <LIB Sources="@(YQYRuntimeObject)" OutputFile="$(OutDir)YQYRuntime.lib" TargetMachine="MachineX64"
+         SuppressStartupBanner="true" ToolPath="$(LIBToolPath)" ToolExe="$(LIBToolExe)"
+         ToolArchitecture="$(VCToolArchitecture)" MinimalRebuildFromTracking="true"
+         TrackFileAccess="$(TrackFileAccess)" TrackerLogDirectory="$(IntDir)RuntimeLibrary\"
+         TLogReadFiles="$(IntDir)RuntimeLibrary\runtime.read.1.tlog"
+         TLogWriteFiles="$(IntDir)RuntimeLibrary\runtime.write.1.tlog" />
+    <ItemGroup>
+      <FileWrites Include="$(OutDir)YQYRuntime.lib" />
+    </ItemGroup>
+  </Target>
+  <ItemGroup>
+    <ClInclude Include="GUI\Dialogs\AdaptiveTssbnSettingsEditor.h" />
+    <ClCompile Include="GUI\Dialogs\AdaptiveTssbnSettingsEditor.cpp" />
+    <ClInclude Include="GUI\Dialogs\AdaptiveTimeStepSettingsEditor.h" />
+    <ClCompile Include="GUI\Dialogs\AdaptiveTimeStepSettingsEditor.cpp" />
+    <ClInclude Include="GUI\Dialogs\StepAlgorithmStack.h" />
+    <ClCompile Include="GUI\Dialogs\StepAlgorithmStack.cpp" />
+    <ClInclude Include="GUI\Dialogs\StepEditorDialog.h" />
+    <ClCompile Include="GUI\Dialogs\StepEditorDialog.cpp" />
+    <ClInclude Include="GUI\Dialogs\LoadTimeFunctionPreview.h" />
+    <ClCompile Include="GUI\Dialogs\LoadTimeFunctionPreview.cpp" />
+    <ClInclude Include="GUI\Dialogs\LoadEditorDialog.h" />
+    <ClCompile Include="GUI\Dialogs\LoadEditorDialog.cpp" />
+    <ClInclude Include="GUI\Dialogs\MPCEditorDialog.h" />
+    <ClCompile Include="GUI\Dialogs\MPCEditorDialog.cpp" />
+    <ClInclude Include="GUI\Dialogs\ConstraintEditorDialog.h" />
+    <ClCompile Include="GUI\Dialogs\ConstraintEditorDialog.cpp" />
+    <ClInclude Include="Utility\ResultExportPaths.h" />
+    <ClCompile Include="Utility\ResultExportPaths.cpp" />
+    <ClInclude Include="Utility\AnalysisDisplay.h" />
+    <ClCompile Include="Utility\AnalysisDisplay.cpp" />
+    <ClCompile Include="GUI\Dialogs\NodeResultExportDialog.cpp" />
+    <ClCompile Include="GUI\Dialogs\ElementResultExportDialog.cpp" />
+    <ClCompile Include="GUI\Dialogs\ResultPlotExportDialog.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="GUI\YQYLayout.cpp" />
+    <ClCompile Include="GUI\Widgets\ConductorModuleLayout.cpp" />
+  </ItemGroup>
 </Project>

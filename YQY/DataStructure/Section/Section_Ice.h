@@ -22,6 +22,11 @@ public:
     double m_IceArea = 0.0;    // 覆冰截面积 (m^2)
     double m_TotalArea = 0.0;  // 总截面积 (m^2)
     double yc = 0.0, zc = 0.0; // 形心位置 (相对于导线圆心)
+    double m_IceCentroidY = 0.0;              // 冰层形心相对于导线圆心的 Y 坐标 (m)
+    double m_IceCentroidZ = 0.0;              // 冰层形心相对于导线圆心的 Z 坐标 (m)
+    double m_IceIyyAboutWire = 0.0;           // 冰层相对于导线圆心的面惯性矩 (m^4)
+    double m_IceIzzAboutWire = 0.0;
+    double m_IcePolarMomentAboutWire = 0.0;  // 冰层对导线轴的面积极惯性矩 (m^4)
 
     double Iyy = 0.0; // 绕形心 y 轴惯性矩 (m^4)
     double Izz = 0.0; // 绕形心 z 轴惯性矩 (m^4)
@@ -29,6 +34,7 @@ public:
     double J = 0.0;   // 极惯性矩 (m^4)
 
     void Calculate();
+    void Calculate_I(_OUT double& Iy, _OUT double& Iz, _OUT double& polarMoment) override;
     void SetIceParameters(double iceThickness, double iceAngle, double iceHalfAngle = 90.0, double shapeFactor = 1.0);
 
 private:

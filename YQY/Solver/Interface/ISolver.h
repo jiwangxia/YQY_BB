@@ -24,7 +24,8 @@ enum class SolverType
     CentralDifference = 4, ///< 中心差分 显式动力（未来扩展）
     HHT = 5,               ///< HHT-α 隐式动力（未来扩展）
     AdaptiveNewmark = 6,   ///< 自适应 Newmark-β
-    AdaptiveRungeKutta4 = 7 ///< 自适应 Runge-Kutta 4
+    AdaptiveRungeKutta4 = 7, ///< 自适应 Runge-Kutta 4
+    ReferenceTSSBN = 8      ///< 参考 TSSBN 舞动计算流程
 };
 
 /// 状态相关外载荷数值切线的通用更新策略，适用于所有隐式动力积分器。

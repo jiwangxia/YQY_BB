@@ -1,0 +1,104 @@
+{
+  "schema": "newmark-real-truss-plan-v1",
+  "frozen_before_candidate_runs": true,
+  "source_url": "https://docs.software.vt.edu/abaqusv2025/English/SIMACAEBMKRefMap/simabmk-c-rodlindynamic.htm",
+  "official_input_url": "https://docs.software.vt.edu/abaqusv2025/English/SIMAINPRefResources/rodlindynamic_modal_nodamp.inp",
+  "official_input_sha256": "736ee253e895e444993c4ac1866f8e06fd8162ee3baf8b0590fe581d525ad7ca",
+  "source_scope": "Public three-T3D2 rod geometry/material/constraints; original linear/lumped response is not the reference for native logarithmic/consistent rods.",
+  "declared_changes": [
+    "consistent rather than lumped mass",
+    "native logarithmic strain and incompressible area instead of linear perturbation",
+    "undamped tip step forces1e-6 and1 instead of10",
+    "time0..10 rather than official modal table0..0.3",
+    "rho exactly1/90 from explanatory text; official input rounds it to.011111"
+  ],
+  "element": "actual production ElementTruss; no beam substitute; engineering flag false",
+  "units": "consistent source numerical units; no physical unit names invented",
+  "lengths": [
+    10.0,
+    10.0,
+    10.0
+  ],
+  "area": 2.0,
+  "young": 5.0,
+  "density": 0.011111111111111112,
+  "mass": [
+    [
+      0.14814814814814814,
+      0.037037037037037035,
+      0.0
+    ],
+    [
+      0.037037037037037035,
+      0.14814814814814814,
+      0.037037037037037035
+    ],
+    [
+      0.0,
+      0.037037037037037035,
+      0.07407407407407407
+    ]
+  ],
+  "linear_stiffness": [
+    [
+      2.0,
+      -1.0,
+      0.0
+    ],
+    [
+      -1.0,
+      2.0,
+      -1.0
+    ],
+    [
+      0.0,
+      -1.0,
+      1.0
+    ]
+  ],
+  "constitutive_equation": "lambda_e=(10+u_(e+1)-u_e)/10; N_e=10*log(lambda_e)/lambda_e; R=[N1-N2,N2-N3,N3]",
+  "state_equation": "M*a+[N1-N2,N2-N3,N3]=[0,0,F],u0=v0=0",
+  "reference_method": "SciPy DOP853, two independent tolerance/max_step settings; analytic modal linear comparison for micro-amplitude.",
+  "duration": 10.0,
+  "steps": [
+    0.01,
+    0.005,
+    0.0025
+  ],
+  "forces": {
+    "small": 1e-06,
+    "nonlinear": 1.0
+  },
+  "newmark": {
+    "beta": 0.25,
+    "gamma": 0.5,
+    "tolerance": 1e-13,
+    "max_iterations": 40
+  },
+  "normalization": "q_scale=3F; v_scale=3F*omega1; a_scale=norm_inf(M^-1*[0,0,F]); fixed from undeformed independent model.",
+  "criteria": {
+    "all_complete_finite_fixed_step_zero_rejection_and_precision_limited": true,
+    "matrix_absolute_limit": 1e-12,
+    "frame_time_absolute_limit": 1e-09,
+    "finest_normalized_q_v_a_limits": [
+      0.002,
+      0.002,
+      0.002
+    ],
+    "each_level_normalized_error_limit": "finest_limit*4^(2-level)",
+    "every_component_observed_order_range": [
+      1.8,
+      2.2
+    ],
+    "newmark_update_absolute_limit": "max(1e-12,1e-9*respective q/v scale)",
+    "equilibrium_and_force_absolute_limit": "max(1e-12,1e-8*F)",
+    "constrained_component_absolute_limit": 1e-13,
+    "independent_reference_normalized_self_difference_limit": 1e-08,
+    "small_reference_vs_linear_normalized_q_v_a_limit": 2e-05,
+    "nonlinear_reference_minimum_max_abs_engineering_strain": 0.05
+  },
+  "input_sha256": {
+    "small": "203ec4c36ab30e3daf1bf265990d97faf5a3bb55456c1f88d6f4279e3a320049",
+    "nonlinear": "3f6fd7976d4c309b2a03833e2cd4dcb018251c89136c01c19a05fedd9eb7b59a"
+  }
+}

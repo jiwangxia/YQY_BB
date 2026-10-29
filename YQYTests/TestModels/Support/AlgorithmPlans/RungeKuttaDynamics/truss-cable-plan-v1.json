@@ -1,0 +1,365 @@
+{
+  "schema": "runge-kutta-truss-cable-plan-v1",
+  "frozen_before_candidate_execution": true,
+  "algorithms": [
+    "factory RungeKutta4 fixed classical RK4",
+    "factory AdaptiveRungeKutta4 accepted two-half-step fine state without extrapolation"
+  ],
+  "controller": {
+    "safety_factor": 0.9,
+    "minimum_scale_factor": 0.2,
+    "maximum_growth_factor": 2.0,
+    "solve_failure_factor": 0.5,
+    "maximum_rejected_attempts": 32,
+    "include_velocity_in_error": true
+  },
+  "relative_tolerances": [
+    0.001,
+    1e-05,
+    1e-07
+  ],
+  "absolute_tolerance_rule": "0.01*rtol*independent q/v normalization scale",
+  "fixed_source_plans": {
+    "truss": {
+      "path": "Published/NewmarkTrussRod/validation-plan.json",
+      "sha256": "f5d5d5c7e8a493dbe9afd4c8fe7c1e96e8422c0f77a3a279625ae1464a8a38b4"
+    },
+    "cable": {
+      "path": "Published/NewmarkCable/validation-plan.json",
+      "sha256": "80e8d48ddf68fed6585b755d7d44e94233eeb93c88e010abe028b823e5955b83"
+    }
+  },
+  "runtime_criteria": {
+    "all_finite_complete_strictly_increasing": true,
+    "t0_required": true,
+    "accepted_count_matches_frames": true,
+    "fixed_no_rejections": true,
+    "adaptive_rejection_allowed": true,
+    "precision_counter": "not applicable to RK4; report null plus applicable=false, never pretend measured zero",
+    "stability_check": "h*omega_initial < 2sqrt(2) for initial independent M/K; a nonlinear trajectory still requires actual finite/stable/full-time accuracy checks",
+    "end_snap_relative_allowance": 1e-06
+  },
+  "comparison_criteria": {
+    "all_nodes_all_times_q_v_a": true,
+    "fixed_each_q_v_a_order_range": [
+      3.5,
+      4.5
+    ],
+    "adaptive_successive_error_ratio_maximum": 0.9,
+    "finest_limits": "retain per-family original Newmark physical accuracy limits, not its time-update identity",
+    "reference": "existing independently generated dual DOP853 dense reference at actual times; no linear interpolation of frozen rows",
+    "reference_normalized_self_difference_limit": 1e-08,
+    "roundoff_policy": "No observed output may change gates. Steps chosen coarser than previous Newmark refinement to keep RK4 fourth-order error above the known reference/geometry rounding floor; failures stay failures."
+  },
+  "families": [
+    {
+      "element": "truss",
+      "name": "small",
+      "input_file": "small.bdf",
+      "input_path": "Published/NewmarkTrussRod/small.bdf",
+      "input_sha256": "203ec4c36ab30e3daf1bf265990d97faf5a3bb55456c1f88d6f4279e3a320049",
+      "duration": 10.0,
+      "normalization_q_v_a": [
+        3e-06,
+        3.370344910044028e-06,
+        1.5576923076923076e-05
+      ],
+      "finest_normalized_q_v_a_limits": [
+        0.002,
+        0.002,
+        0.002
+      ],
+      "initial_omega_max": 6.665596117528588,
+      "fixed_runs": [
+        {
+          "level": 0,
+          "initial_time_step": 0.08,
+          "minimum_time_step": 0.08,
+          "maximum_time_step": 0.08,
+          "expected_accepted_steps": 125,
+          "initial_h_omega_max": 0.5332476894022871
+        },
+        {
+          "level": 1,
+          "initial_time_step": 0.04,
+          "minimum_time_step": 0.04,
+          "maximum_time_step": 0.04,
+          "expected_accepted_steps": 250,
+          "initial_h_omega_max": 0.26662384470114353
+        },
+        {
+          "level": 2,
+          "initial_time_step": 0.02,
+          "minimum_time_step": 0.02,
+          "maximum_time_step": 0.02,
+          "expected_accepted_steps": 500,
+          "initial_h_omega_max": 0.13331192235057177
+        }
+      ],
+      "adaptive_runs": [
+        {
+          "level": 0,
+          "relative_tolerance": 0.001,
+          "velocity_relative_tolerance": 0.001,
+          "absolute_tolerance": 3.0000000000000006e-11,
+          "velocity_absolute_tolerance": 3.370344910044028e-11,
+          "initial_time_step": 0.08,
+          "minimum_time_step": 1e-08,
+          "maximum_time_step": 0.08
+        },
+        {
+          "level": 1,
+          "relative_tolerance": 1e-05,
+          "velocity_relative_tolerance": 1e-05,
+          "absolute_tolerance": 3.0000000000000003e-13,
+          "velocity_absolute_tolerance": 3.3703449100440286e-13,
+          "initial_time_step": 0.08,
+          "minimum_time_step": 1e-08,
+          "maximum_time_step": 0.08
+        },
+        {
+          "level": 2,
+          "relative_tolerance": 1e-07,
+          "velocity_relative_tolerance": 1e-07,
+          "absolute_tolerance": 3.0000000000000002e-15,
+          "velocity_absolute_tolerance": 3.3703449100440285e-15,
+          "initial_time_step": 0.08,
+          "minimum_time_step": 1e-08,
+          "maximum_time_step": 0.08
+        }
+      ]
+    },
+    {
+      "element": "truss",
+      "name": "nonlinear",
+      "input_file": "nonlinear.bdf",
+      "input_path": "Published/NewmarkTrussRod/nonlinear.bdf",
+      "input_sha256": "3f6fd7976d4c309b2a03833e2cd4dcb018251c89136c01c19a05fedd9eb7b59a",
+      "duration": 10.0,
+      "normalization_q_v_a": [
+        3.0,
+        3.370344910044028,
+        15.576923076923078
+      ],
+      "finest_normalized_q_v_a_limits": [
+        0.002,
+        0.002,
+        0.002
+      ],
+      "initial_omega_max": 6.665596117528588,
+      "fixed_runs": [
+        {
+          "level": 0,
+          "initial_time_step": 0.08,
+          "minimum_time_step": 0.08,
+          "maximum_time_step": 0.08,
+          "expected_accepted_steps": 125,
+          "initial_h_omega_max": 0.5332476894022871
+        },
+        {
+          "level": 1,
+          "initial_time_step": 0.04,
+          "minimum_time_step": 0.04,
+          "maximum_time_step": 0.04,
+          "expected_accepted_steps": 250,
+          "initial_h_omega_max": 0.26662384470114353
+        },
+        {
+          "level": 2,
+          "initial_time_step": 0.02,
+          "minimum_time_step": 0.02,
+          "maximum_time_step": 0.02,
+          "expected_accepted_steps": 500,
+          "initial_h_omega_max": 0.13331192235057177
+        }
+      ],
+      "adaptive_runs": [
+        {
+          "level": 0,
+          "relative_tolerance": 0.001,
+          "velocity_relative_tolerance": 0.001,
+          "absolute_tolerance": 3.0000000000000004e-05,
+          "velocity_absolute_tolerance": 3.370344910044028e-05,
+          "initial_time_step": 0.08,
+          "minimum_time_step": 1e-08,
+          "maximum_time_step": 0.08
+        },
+        {
+          "level": 1,
+          "relative_tolerance": 1e-05,
+          "velocity_relative_tolerance": 1e-05,
+          "absolute_tolerance": 3.0000000000000004e-07,
+          "velocity_absolute_tolerance": 3.370344910044028e-07,
+          "initial_time_step": 0.08,
+          "minimum_time_step": 1e-08,
+          "maximum_time_step": 0.08
+        },
+        {
+          "level": 2,
+          "relative_tolerance": 1e-07,
+          "velocity_relative_tolerance": 1e-07,
+          "absolute_tolerance": 3.0000000000000004e-09,
+          "velocity_absolute_tolerance": 3.3703449100440283e-09,
+          "initial_time_step": 0.08,
+          "minimum_time_step": 1e-08,
+          "maximum_time_step": 0.08
+        }
+      ]
+    },
+    {
+      "element": "cable",
+      "name": "taut-string",
+      "input_file": "TautString.bdf",
+      "input_path": "Published/NewmarkCable/TautString.bdf",
+      "input_sha256": "ca45ba86339f2e83c27d744c2b0c150cc3c0207d62c74b8391b71e456692fe3c",
+      "duration": 0.0669425834794515,
+      "normalization_q_v_a": [
+        0.001,
+        0.46929659572432353,
+        218.6335023554716
+      ],
+      "finest_normalized_q_v_a_limits": [
+        0.001,
+        0.001,
+        0.001
+      ],
+      "initial_omega_max": 6567.154059453714,
+      "fixed_runs": [
+        {
+          "level": 0,
+          "initial_time_step": 0.0003347129173972575,
+          "minimum_time_step": 0.0003347129173972575,
+          "maximum_time_step": 0.0003347129173972575,
+          "expected_accepted_steps": 200,
+          "initial_h_omega_max": 2.198111294236995
+        },
+        {
+          "level": 1,
+          "initial_time_step": 0.00016735645869862874,
+          "minimum_time_step": 0.00016735645869862874,
+          "maximum_time_step": 0.00016735645869862874,
+          "expected_accepted_steps": 400,
+          "initial_h_omega_max": 1.0990556471184976
+        },
+        {
+          "level": 2,
+          "initial_time_step": 8.367822934931437e-05,
+          "minimum_time_step": 8.367822934931437e-05,
+          "maximum_time_step": 8.367822934931437e-05,
+          "expected_accepted_steps": 800,
+          "initial_h_omega_max": 0.5495278235592488
+        }
+      ],
+      "adaptive_runs": [
+        {
+          "level": 0,
+          "relative_tolerance": 0.001,
+          "velocity_relative_tolerance": 0.001,
+          "absolute_tolerance": 1e-08,
+          "velocity_absolute_tolerance": 4.6929659572432355e-06,
+          "initial_time_step": 0.0003347129173972575,
+          "minimum_time_step": 1.33885166958903e-10,
+          "maximum_time_step": 0.0003347129173972575
+        },
+        {
+          "level": 1,
+          "relative_tolerance": 1e-05,
+          "velocity_relative_tolerance": 1e-05,
+          "absolute_tolerance": 1.0000000000000002e-10,
+          "velocity_absolute_tolerance": 4.6929659572432355e-08,
+          "initial_time_step": 0.0003347129173972575,
+          "minimum_time_step": 1.33885166958903e-10,
+          "maximum_time_step": 0.0003347129173972575
+        },
+        {
+          "level": 2,
+          "relative_tolerance": 1e-07,
+          "velocity_relative_tolerance": 1e-07,
+          "absolute_tolerance": 1.0000000000000002e-12,
+          "velocity_absolute_tolerance": 4.692965957243235e-10,
+          "initial_time_step": 0.0003347129173972575,
+          "minimum_time_step": 1.33885166958903e-10,
+          "maximum_time_step": 0.0003347129173972575
+        }
+      ]
+    },
+    {
+      "element": "cable",
+      "name": "nonlinear",
+      "input_file": "NonlinearCable.bdf",
+      "input_path": "Published/NewmarkCable/NonlinearCable.bdf",
+      "input_sha256": "7e8e3aa923227cce95c69c384063091b2491b0679959af9d19ee82167e74ac84",
+      "duration": 0.09391166021003311,
+      "normalization_q_v_a": [
+        10.0,
+        3122.242140691314,
+        1278347.2576503546
+      ],
+      "finest_normalized_q_v_a_limits": [
+        0.001,
+        0.001,
+        0.001
+      ],
+      "initial_omega_max": 498.6341711431299,
+      "fixed_runs": [
+        {
+          "level": 0,
+          "initial_time_step": 0.00046955830105016556,
+          "minimum_time_step": 0.00046955830105016556,
+          "maximum_time_step": 0.00046955830105016556,
+          "expected_accepted_steps": 200,
+          "initial_h_omega_max": 0.23413781424752556
+        },
+        {
+          "level": 1,
+          "initial_time_step": 0.00023477915052508278,
+          "minimum_time_step": 0.00023477915052508278,
+          "maximum_time_step": 0.00023477915052508278,
+          "expected_accepted_steps": 400,
+          "initial_h_omega_max": 0.11706890712376278
+        },
+        {
+          "level": 2,
+          "initial_time_step": 0.00011738957526254139,
+          "minimum_time_step": 0.00011738957526254139,
+          "maximum_time_step": 0.00011738957526254139,
+          "expected_accepted_steps": 800,
+          "initial_h_omega_max": 0.05853445356188139
+        }
+      ],
+      "adaptive_runs": [
+        {
+          "level": 0,
+          "relative_tolerance": 0.001,
+          "velocity_relative_tolerance": 0.001,
+          "absolute_tolerance": 0.0001,
+          "velocity_absolute_tolerance": 0.031222421406913142,
+          "initial_time_step": 0.00046955830105016556,
+          "minimum_time_step": 1.8782332042006623e-10,
+          "maximum_time_step": 0.00046955830105016556
+        },
+        {
+          "level": 1,
+          "relative_tolerance": 1e-05,
+          "velocity_relative_tolerance": 1e-05,
+          "absolute_tolerance": 1.0000000000000002e-06,
+          "velocity_absolute_tolerance": 0.00031222421406913145,
+          "initial_time_step": 0.00046955830105016556,
+          "minimum_time_step": 1.8782332042006623e-10,
+          "maximum_time_step": 0.00046955830105016556
+        },
+        {
+          "level": 2,
+          "relative_tolerance": 1e-07,
+          "velocity_relative_tolerance": 1e-07,
+          "absolute_tolerance": 1e-08,
+          "velocity_absolute_tolerance": 3.1222421406913143e-06,
+          "initial_time_step": 0.00046955830105016556,
+          "minimum_time_step": 1.8782332042006623e-10,
+          "maximum_time_step": 0.00046955830105016556
+        }
+      ]
+    }
+  ],
+  "scope": "Same source-derived real ElementTruss/ElementCable physics and consistent mass; not original paper linear/lumped discretization or any Newmark algorithm assertion."
+}

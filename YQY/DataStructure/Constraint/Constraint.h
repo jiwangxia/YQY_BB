@@ -43,6 +43,9 @@ public:
      */
     bool HasTimePoints() const;
 
+    /** @brief 判断给定时间区间内的实际规定位移是否恒定，包含区间内全部时程拐点。 */
+    bool IsConstantOverInterval(double startTime, double endTime) const;
+
     /**
      * @brief 计算当前时间的绝对约束位移
      * @param currentTime 当前分析步伪时间

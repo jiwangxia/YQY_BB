@@ -1,0 +1,30 @@
+** Derived from Abaqus Linear analysis of a rod under dynamic loading.
+** Actual native logarithmic T3D2 and CONSISTENT mass; NOT official linear/lumped golden.
+** Step tip force1 gives appreciable axial strain; independent matched DOP853 reference.
+*MATERIAL,1
+1,5,0,0.011111111111111111,1000000000,0
+*SECTION,1
+1,2
+*NODE,4
+1,0,0,0
+2,10,0,0
+3,20,0,0
+4,30,0,0
+*ELEMENT,T3D2,3
+1,1,2,1,1
+2,2,3,1,1
+3,3,4,1,1
+*CONSTRAINT,9
+1,1,0,0
+2,1,1,0
+3,1,2,0
+4,2,1,0
+5,2,2,0
+6,3,1,0
+7,3,2,0
+8,4,1,0
+9,4,2,0
+*LOAD,FORCE_NODE,1
+1,4,0,1,1
+*ANALYSIS_STEP,1
+1,DYNAMIC,10,0.01,1e-13,40

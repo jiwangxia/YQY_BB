@@ -1,0 +1,188 @@
+{
+  "source": "C:\\APP\\VS\\YQY_CAE\\YQY\\tmp\\newmark-paper-20261019\\LiangMosalam2016_PEER.pdf",
+  "source_sha256": "a728d0e66502fe7d16695620a32686c10dff1561b548844a18bdb470bf8f5a5c",
+  "method": "Original PDF vector circle marker centers; the legend identifies hollow circles as Implicit Newmark. Axis mapping x=[0,.14], y=[-4,8]. Source figures were also rendered and visually checked.",
+  "qualification": "These are digitized figure coordinates, not author-supplied numerical data. Line width is about .072 percentage points. Unknown author peak-detection/window protocol remains a separate limitation. Root must freeze any matching tolerance before inspecting production outputs.",
+  "records": [
+    {
+      "case": "weak",
+      "PDF_page": 78,
+      "printed_page": 56,
+      "figure": "4.5",
+      "metric": "period_elongation_percent",
+      "requested_h_over_T": 0.04,
+      "digitized_h_over_T": 0.04000155451081224,
+      "digitized_value_percent": 0.5404501016993635,
+      "circle_center_pdf_points": [
+        267.738943987947,
+        182.22959688937203
+      ],
+      "line_width_as_percentage_points": 0.07202003626385148
+    },
+    {
+      "case": "weak",
+      "PDF_page": 78,
+      "printed_page": 56,
+      "figure": "4.5",
+      "metric": "period_elongation_percent",
+      "requested_h_over_T": 0.08,
+      "digitized_h_over_T": 0.07999546250898046,
+      "digitized_value_percent": 2.0896266649170023,
+      "circle_center_pdf_points": [
+        330.34677106197,
+        160.54372515768
+      ],
+      "line_width_as_percentage_points": 0.07202003626385148
+    },
+    {
+      "case": "weak",
+      "PDF_page": 78,
+      "printed_page": 56,
+      "figure": "4.5",
+      "metric": "period_elongation_percent",
+      "requested_h_over_T": 0.1,
+      "digitized_h_over_T": 0.09999697500598698,
+      "digitized_value_percent": 3.207663539137851,
+      "circle_center_pdf_points": [
+        361.65782062704,
+        144.89308544280004
+      ],
+      "line_width_as_percentage_points": 0.07202003626385148
+    },
+    {
+      "case": "weak",
+      "PDF_page": 78,
+      "printed_page": 56,
+      "figure": "4.5",
+      "metric": "amplitude_decay_percent",
+      "requested_h_over_T": 0.04,
+      "digitized_h_over_T": 0.040001554510812234,
+      "digitized_value_percent": -0.0005248999409506183,
+      "circle_center_pdf_points": [
+        267.547142234245,
+        407.74533106414003
+      ],
+      "line_width_as_percentage_points": 0.07202053417831532
+    },
+    {
+      "case": "weak",
+      "PDF_page": 78,
+      "printed_page": 56,
+      "figure": "4.5",
+      "metric": "amplitude_decay_percent",
+      "requested_h_over_T": 0.08,
+      "digitized_h_over_T": 0.07999546250898046,
+      "digitized_value_percent": -0.0005248999409506183,
+      "circle_center_pdf_points": [
+        330.15316582215,
+        407.74533106414003
+      ],
+      "line_width_as_percentage_points": 0.07202053417831532
+    },
+    {
+      "case": "weak",
+      "PDF_page": 78,
+      "printed_page": 56,
+      "figure": "4.5",
+      "metric": "amplitude_decay_percent",
+      "requested_h_over_T": 0.1,
+      "digitized_h_over_T": 0.09999697500598699,
+      "digitized_value_percent": -0.0005248999409506183,
+      "circle_center_pdf_points": [
+        361.46331343860004,
+        407.74533106414003
+      ],
+      "line_width_as_percentage_points": 0.07202053417831532
+    },
+    {
+      "case": "strong",
+      "PDF_page": 79,
+      "printed_page": 57,
+      "figure": "4.6",
+      "metric": "period_elongation_percent",
+      "requested_h_over_T": 0.04,
+      "digitized_h_over_T": 0.040003193156561284,
+      "digitized_value_percent": 0.5044944557443714,
+      "circle_center_pdf_points": [
+        267.86840118962493,
+        182.74642629421407
+      ],
+      "line_width_as_percentage_points": 0.07202252194487303
+    },
+    {
+      "case": "strong",
+      "PDF_page": 79,
+      "printed_page": 57,
+      "figure": "4.6",
+      "metric": "period_elongation_percent",
+      "requested_h_over_T": 0.08,
+      "digitized_h_over_T": 0.0799963866912596,
+      "digitized_value_percent": 2.0181090479627306,
+      "circle_center_pdf_points": [
+        330.47963881124997,
+        161.55684881958007
+      ],
+      "line_width_as_percentage_points": 0.07202252194487303
+    },
+    {
+      "case": "strong",
+      "PDF_page": 79,
+      "printed_page": 57,
+      "figure": "4.6",
+      "metric": "period_elongation_percent",
+      "requested_h_over_T": 0.1,
+      "digitized_h_over_T": 0.10000151254784485,
+      "digitized_value_percent": 3.1000590512433606,
+      "circle_center_pdf_points": [
+        361.79861031499996,
+        146.41028275444
+      ],
+      "line_width_as_percentage_points": 0.07202252194487303
+    },
+    {
+      "case": "strong",
+      "PDF_page": 79,
+      "printed_page": 57,
+      "figure": "4.6",
+      "metric": "amplitude_decay_percent",
+      "requested_h_over_T": 0.04,
+      "digitized_h_over_T": 0.040003193156561284,
+      "digitized_value_percent": -0.0005248999409506183,
+      "circle_center_pdf_points": [
+        267.86840118962493,
+        407.766354675256
+      ],
+      "line_width_as_percentage_points": 0.072022521944873
+    },
+    {
+      "case": "strong",
+      "PDF_page": 79,
+      "printed_page": 57,
+      "figure": "4.6",
+      "metric": "amplitude_decay_percent",
+      "requested_h_over_T": 0.08,
+      "digitized_h_over_T": 0.0799963866912596,
+      "digitized_value_percent": -0.0005248999409506183,
+      "circle_center_pdf_points": [
+        330.47963881124997,
+        407.766354675256
+      ],
+      "line_width_as_percentage_points": 0.072022521944873
+    },
+    {
+      "case": "strong",
+      "PDF_page": 79,
+      "printed_page": 57,
+      "figure": "4.6",
+      "metric": "amplitude_decay_percent",
+      "requested_h_over_T": 0.1,
+      "digitized_h_over_T": 0.10000151254784485,
+      "digitized_value_percent": -0.0005248999409506183,
+      "circle_center_pdf_points": [
+        361.79861031499996,
+        407.766354675256
+      ],
+      "line_width_as_percentage_points": 0.072022521944873
+    }
+  ]
+}

@@ -12,9 +12,9 @@ void ElementSpringA::Get_ke(_OUT MatrixXd& ke)
     const auto firstNode = m_pNode[0].lock();
     const auto secondNode = m_pNode[1].lock();
     if (!firstNode || !secondNode)
-        throw std::runtime_error("SPRINGA node is invalid.");
+        throw std::runtime_error("SPRINGA 节点无效。");
     if (firstNode->m_Displacement.size() < 3 || secondNode->m_Displacement.size() < 3)
-        throw std::runtime_error("SPRINGA node displacement is invalid.");
+        throw std::runtime_error("SPRINGA 节点位移无效。");
 
     const Vector3d firstPosition(firstNode->m_X + firstNode->m_Displacement[0],
                                  firstNode->m_Y + firstNode->m_Displacement[1],
@@ -26,12 +26,12 @@ void ElementSpringA::Get_ke(_OUT MatrixXd& ke)
     const double currentLength = currentAxis.norm();
     constexpr double lengthTolerance = 1.0e-12;
     if (currentLength <= lengthTolerance)
-        throw std::runtime_error("SPRINGA current length is too small.");
+        throw std::runtime_error("SPRINGA 当前长度太小。");
 
     if (L0 <= lengthTolerance)
         Get_L0();
     if (L0 <= lengthTolerance)
-        throw std::runtime_error("SPRINGA initial length is too small.");
+        throw std::runtime_error("SPRINGA 初始长度太小。");
 
     const Vector3d direction = currentAxis / currentLength;
     double force = 0.0;

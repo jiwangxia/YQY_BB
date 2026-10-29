@@ -1,0 +1,40 @@
+{
+  "schema": "newmark-production-beam-bending-frozen-plan-v1",
+  "frozen_before_candidate_runs": true,
+  "algorithm": "actual AnalysisStep::Solve(false), production SolverFactory fixed Newmark beta=.25 gamma=.5",
+  "runs": [
+    {"damped": false, "level": 0, "h_over_T1": 0.0125},
+    {"damped": false, "level": 1, "h_over_T1": 0.00625},
+    {"damped": false, "level": 2, "h_over_T1": 0.003125},
+    {"damped": true, "level": 0, "h_over_T1": 0.0125},
+    {"damped": true, "level": 1, "h_over_T1": 0.00625},
+    {"damped": true, "level": 2, "h_over_T1": 0.003125}
+  ],
+  "newton_residual_tolerance": 1e-12,
+  "initial_matrix_relative_limit": 1e-10,
+  "initial_state_normalized_limit": 1e-9,
+  "finest_max_normalized_state_error": 0.0015,
+  "order_lower": 1.8,
+  "order_upper": 2.2,
+  "all_accepted_states_must_meet_normal_Newton_residual": true,
+  "all_runs_complete_finite_strictly_increasing_fixed_steps": true,
+  "rollback_count_must_be_zero": true,
+  "stdout_precision_limited_event_count_must_be_zero": true,
+  "normalization": "q:(A,|r|A), v:omega1*q_scale, a:omega1^2*q_scale; each of 6 state channels is checked separately over the full 3T1 window",
+  "pre_candidate_nonlinear_model_budget": {
+    "assumption_enforced_in_candidate": "|y|<=2A and |theta|<=2|r|A; independent closed-form low-mode solution is inside this envelope",
+    "exact_planar_energy": "U=EA/(2L)*(sqrt(L^2+y^2)-L)^2 + 2EI/L*(theta^2-3theta*atan(y/L)+3atan(y/L)^2)",
+    "exact_planar_inertia": "M is constant for global-Z planar rotations because the Iz principal axis is unchanged; gyroscopic term is zero",
+    "nonlinear_force_bounds": "s=2A/L,theta_max=2|r|A; |delta_fy|<=EA*(2A)^3/(2L^3)+2EI/L^2*(8*s^3+3*theta_max*s^2); |delta_ftheta|<=2EI/L*s^3",
+    "Duhamel_mass_norm_bound": "eta=||M^(-1/2)*force_bound||; |delta_q_i|<=duration*eta/(omega1*sqrt(Mii)); |delta_v_i|<=duration*eta/sqrt(Mii); |delta_a_i|<=(omega_high^2*duration/omega1+1)*eta/sqrt(Mii). Positive Rayleigh damping is dissipative; same conservative budget is retained.",
+    "conservative_max_normalized_q_v_bound": 2e-8,
+    "conservative_max_normalized_a_bound": 0.0001,
+    "qualification": "Precomputed from independent expressions before production candidates. This is a model-error budget inside the declared micro-amplitude envelope, not a large-rotation result. Acceleration bound is deliberately conservative because it uses the highest eigenfrequency. The total finest acceptance limit remains .0015 and is not relaxed by the budget."
+  },
+  "limits": [
+    "Only one spatial element and its declared linear-N inertia discretization are certified here.",
+    "The pure lowest bending mode still exercises coupled transverse and finite-rotation Node kinematics, inertia and formal modal damping; it does not certify the full spatial spectrum.",
+    "Precision count is not exposed by AnalysisStep::Solve; preserve process stdout. The production solver always prints the first precision-limited acceptance, so absence of that event establishes zero for a complete captured process.",
+    "Micro-amplitude success does not certify large rotations, aero loads, or previously failing nonlinear beam/Chrono comparisons."
+  ]
+}

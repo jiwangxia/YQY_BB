@@ -19,33 +19,29 @@ void SkewSymmetric(const Eigen::Vector3d& v, _OUT Eigen::Matrix3d& result)
 // ========================================================================
 void Calculate_Ts(const Eigen::Vector3d& vartheta, _OUT Eigen::Matrix3d& result)
 {
-    double theta = vartheta.norm();
-    Eigen::Vector3d n;
-    double c1, c2;
+    const double theta = vartheta.norm();
+    double c1;
+    double c2;
 
-    // 泰勒展开防止极小角度下的除零奇异性
-    if (theta < 1e-8)
+    // 泰勒展开避免极小角度下的除零和相消误差。
+    if (theta < 1e-4)
     {
-        n = Eigen::Vector3d(1, 0, 0);
-        double t2 = theta * theta;
-        double t4 = t2 * t2;
+        const double t2 = theta * theta;
+        const double t4 = t2 * t2;
 
-        c1 = 1.0 - t2 / 6.0 + t4 / 120.0;
-        c2 = 0.5 * theta - t2 * theta / 24.0 + t4 * theta / 720.0;
+        c1 = 0.5 - t2 / 24.0 + t4 / 720.0;
+        c2 = 1.0 / 6.0 - t2 / 120.0 + t4 / 5040.0;
     }
     else
     {
-        n = vartheta / theta;
-        c1 = std::sin(theta) / theta;
-        c2 = 2.0 * pow(sin(theta / 2.0), 2) / theta;
+        const double halfSine = std::sin(0.5 * theta);
+        c1 = 2.0 * halfSine * halfSine / (theta * theta);
+        c2 = (theta - std::sin(theta)) / (theta * theta * theta);
     }
 
-    // 组装切线自旋张量。
-    Eigen::Matrix3d nnT = n * n.transpose();
-    Eigen::Matrix3d rotationMatrix;
-    Calculate_RotationMatrix(n, rotationMatrix);
-
-    result = nnT + c1 * (Eigen::Matrix3d::Identity() - nnT) + c2 * rotationMatrix;
+    Eigen::Matrix3d skewRotation;
+    SkewSymmetric(vartheta, skewRotation);
+    result = Eigen::Matrix3d::Identity() + c1 * skewRotation + c2 * skewRotation * skewRotation;
 }
 
 // ========================================================================
@@ -202,7 +198,10 @@ void Update_NodalRotation(const Eigen::Vector3d& delta_theta, const Eigen::Matri
 
     // 2. 矩阵左乘更新姿态 (基于全局坐标系的增量)
     R_new = delta_R * R_old;
-    Orthonormalize_SVD(R_new);
+    // 每次 SVD 会抹去可表示的极小转角；仅在累计正交误差超限时修复姿态。
+    if ((R_new.transpose() * R_new - Eigen::Matrix3d::Identity()).norm() > 1.0e-12 ||
+        std::abs(R_new.determinant() - 1.0) > 1.0e-12)
+        Orthonormalize_SVD(R_new);
 }
 
 // ========================================================================
@@ -286,6 +285,10 @@ void Calculate_Khi(const Eigen::Vector3d& v, const Eigen::Vector3d& m, _OUT Eige
     Eigen::RowVector3d vT = v.transpose();
     result = c1 * m * vT + c3 * vT * m * v * vT + c2 * (vT * m * Eigen::Matrix3d::Identity() + v * m.transpose()) -
              0.5 * skew_m;
+    // 上式对局部旋转向量 v 求导；Newton 列是空间左乘微转，dv = Ts^{-1}(v) dphi。
+    Eigen::Matrix3d spinInverse;
+    Calculate_Ts_Inv(v, spinInverse);
+    result *= spinInverse;
 }
 
 // ========================================================================
@@ -297,7 +300,7 @@ void Assemble_Matrix_Kh(const Eigen::Vector3d& vartheta1, const Eigen::Vector3d&
     result = Eigen::MatrixXd::Zero(7, 7);
 
     // 从局部内力 fl 中精确提取两端节点的弯矩向量
-    // fl(1,2,3) 对应 node 1; fl(4,5,6) 对应 node 2
+    // fl(1,2,3) 对应节点 1；fl(4,5,6) 对应节点 2
     Eigen::Vector3d m1 = fl.segment<3>(1);
     Eigen::Vector3d m2 = fl.segment<3>(4);
 
@@ -394,14 +397,10 @@ void Assemble_stress_k(double L, const Eigen::VectorXd& fa, const Eigen::MatrixX
     if (std::abs(q_y) < 1e-12)
         q_y = (q_y < 0 ? -1e-12 : 1e-12);
 
-    double q1x = q1_l(0), q1y = q1_l(1);
-    double q2x = q2_l(0), q2y = q2_l(1);
+    const double q1x = q1_l(0);
+    const double q2x = q2_l(0);
 
     const double eta = q_x / q_y;
-    const double eta11 = q1x / q_y;
-    const double eta12 = q1y / q_y;
-    const double eta21 = q2x / q_y;
-    const double eta22 = q2y / q_y;
 
     Eigen::MatrixXd E = Eigen::MatrixXd::Zero(12, 12);
     E.block<3, 3>(0, 0) = Rr;
@@ -456,6 +455,54 @@ void Assemble_stress_k(double L, const Eigen::VectorXd& fa, const Eigen::MatrixX
     r.segment<3>(6) = r1;
 
     Eigen::MatrixXd Km3 = E * Ga * r.transpose(); // 12x12
+
+    // G 的第一行还依赖两端截面方向；Km3 只包含其长度导数。
+    // 以 t=q_x/q_y、h=(q1_x-q2_x)/(2q_y) 分解方向变化，
+    // 固定局部弯矩合力 T 时遗漏的 -E(dG)^T T 是两个秩一项。
+    const double torsionalMomentSum = fa(1) + fa(4);
+    if (torsionalMomentSum != 0.0 && std::abs(q_l(1)) >= 1e-12)
+    {
+        const double t = eta;
+        const double h = (q1x - q2x) / (2.0 * q_y);
+        const double c = (q1_l.z() - q2_l.z()) / 2.0;
+        using Vector12 = Eigen::Matrix<double, 12, 1>;
+        Vector12 vt = Vector12::Zero();
+        Vector12 vh = Vector12::Zero();
+        Vector12 gt = Vector12::Zero();
+        Vector12 gh = Vector12::Zero();
+        vt(2) = 1.0 / L;
+        vt(8) = -1.0 / L;
+        vt(3) = -h / 2.0;
+        vt(4) = -0.5;
+        vt(9) = h / 2.0;
+        vt(10) = -0.5;
+        vh(3) = -t / 2.0;
+        vh(4) = -0.5;
+        vh(9) = t / 2.0;
+        vh(10) = 0.5;
+        gt(1) = -(1.0 + t * t) / L;
+        gt(7) = -gt(1);
+        gt(3) = c * t / (2.0 * q_y);
+        gt(4) = c / (2.0 * q_y);
+        gt(5) = -(1.0 + t * t) / 2.0;
+        gt(9) = -gt(3);
+        gt(10) = -gt(4);
+        gt(11) = gt(5);
+        gh(2) = -c / (q_y * L);
+        gh(8) = -gh(2);
+        gh(3) = c * h / (2.0 * q_y);
+        gh(4) = c / (2.0 * q_y);
+        gh(5) = -(1.0 + h * h) / 2.0;
+        gh(9) = -gh(3);
+        gh(10) = gh(4);
+        gh(11) = -gh(5);
+        const Vector12 vtGlobal = E * vt;
+        const Vector12 vhGlobal = E * vh;
+        const Vector12 gtGlobal = E * gt;
+        const Vector12 ghGlobal = E * gh;
+        Km3.noalias() -= torsionalMomentSum *
+                         (vtGlobal * gtGlobal.transpose() + vhGlobal * ghGlobal.transpose());
+    }
 
     result = Km1 - Km2 + Km3;
 }
